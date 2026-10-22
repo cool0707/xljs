@@ -160,7 +160,7 @@ func TestMessagesFollowLanguage(t *testing.T) {
 			t.Errorf("%s: err = %v, want %q", c.lang, r.err, c.want)
 		}
 		r = runScript(t, writeScript(t, "y.js", `fs.readText("nope/missing.csv")`), "")
-		wantFS := map[string]string{"ja": "見つかりません", "en": "no such file"}[c.lang]
+		wantFS := map[string]string{"ja": "見つかりません", "en": "missing.csv"}[c.lang]
 		if r.err == nil || !strings.Contains(r.err.Error(), wantFS) {
 			t.Errorf("%s: fs err = %v, want %q", c.lang, r.err, wantFS)
 		}

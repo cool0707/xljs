@@ -22,7 +22,17 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
-      - run: go test ./...
+      - name: go test
+        shell: bash
+        run: |
+          if ! go test ./... > test.log 2>&1; then
+            cat test.log
+            # Surface the failures as an annotation (readable via the API).
+            msg=$(grep -E -- '--- FAIL|_test\.go:[0-9]+|^FAIL|panic:|\.js:[0-9]+' test.log | head -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=go test failed::${msg}"
+            exit 1
+          fi
+          cat test.log
 
   build:
     needs: test
