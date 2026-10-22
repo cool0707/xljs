@@ -30,8 +30,6 @@ func reason(err error) string {
 		case 32, 33: // ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION
 			return T("os.reason.inUse")
 		}
-		// Other Windows error texts come from the system in its language.
-		return Text(err.Error())
 	}
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
@@ -41,7 +39,7 @@ func reason(err error) string {
 	case errors.Is(err, fs.ErrExist):
 		return T("os.reason.exist")
 	}
-	if errors.As(err, &errno) {
+	if runtime.GOOS != "windows" && errors.As(err, &errno) {
 		switch errno {
 		case syscall.ENOTDIR:
 			return T("os.reason.notDir")
@@ -53,6 +51,8 @@ func reason(err error) string {
 			return T("os.reason.noSpace")
 		}
 	}
+	// Other error texts (on Windows they come from the system in its own
+	// language) are passed through the translation rules.
 	return Text(err.Error())
 }
 
