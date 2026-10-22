@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title></title>
+  <link rel="stylesheet" href="xljs.css">
+</head>
+<body class="table-page">
+  <div class="toolbar">
+    <input type="search" id="filter" spellcheck="false">
+    <span id="status" class="status"></span>
+    <button type="button" id="copy" class="small"></button>
+    <button type="button" id="save-csv" class="small"></button>
+    <button type="button" id="save-xlsx" class="small"></button>
+  </div>
+  <div id="scroller" class="scroller" tabindex="0">
+    <div id="head" class="grid-head"></div>
+    <div id="body" class="grid-body"><div id="rows" class="grid-rows"></div></div>
+    <div id="empty" class="empty" hidden></div>
+  </div>
+  <div class="buttons">
+    <button type="button" id="cancel" hidden></button>
+    <button type="button" id="ok" class="primary" hidden></button>
+    <button type="button" id="close" hidden></button>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script src="table.js"></script>
+</body>
+</html>

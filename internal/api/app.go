@@ -1,13 +1,17 @@
 package api
 
 import (
+	"encoding/json"
 	"io/fs"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/cool0707/xljs/internal/ui"
+	"github.com/cool0707/xljs/internal/webui"
 	"github.com/dop251/goja"
 )
 
@@ -33,28 +37,53 @@ func (n *natives) installApp() {
 		n.obj.Set("appWidth", env.Meta.Width)
 		n.obj.Set("appHeight", env.Meta.Height)
 	}
-	// appOpen(html, title, width, height) -> {close(), closed: Promise}
+	// appOpen({html, page, title, width, height, onMessage}) ->
+	//   {close(), post(message), closed: Promise}
+	// html is a file of the script's assets; page names a built-in page
+	// (form, table). onMessage(message, paths) receives the page's messages.
 	n.set("appOpen", func(c goja.FunctionCall) goja.Value {
-		html := n.str(c, 0)
-		u, name, err := pageURL(html)
-		if err != nil {
-			n.throw(err)
-		}
-		if name != "" {
-			if _, err := fs.Stat(env.Assets, name); err != nil {
-				n.throwT("app.htmlNotFound", html)
+		o := c.Argument(0).ToObject(vm)
+		var u string
+		assets := env.Assets
+		if page := n.optStr(o.Get("page"), ""); page != "" {
+			if _, err := fs.Stat(webui.FS, page+".html"); err != nil {
+				n.throwT("engine.internalError", page)
+			}
+			u, assets = ui.AssetOrigin+page+".html", webui.FS
+		} else {
+			html := n.optStr(o.Get("html"), "")
+			var name string
+			var err error
+			if u, name, err = pageURL(html); err != nil {
+				n.throw(err)
+			}
+			if name != "" {
+				if _, err := fs.Stat(env.Assets, name); err != nil {
+					n.throwT("app.htmlNotFound", html)
+				}
 			}
 		}
+		onMessage, _ := goja.AssertFunction(o.Get("onMessage"))
 		closed, resolve, _ := vm.NewPromise()
 		// The open window keeps the event loop (and the process) alive.
 		env.AddPending()
 		w, err := env.UI.OpenWindow(ui.WindowOptions{
-			Title:  n.optStr(c.Argument(1), env.Title),
-			Width:  int(c.Argument(2).ToInteger()),
-			Height: int(c.Argument(3).ToInteger()),
+			Title:  n.optStr(o.Get("title"), env.Title),
+			Width:  int(o.Get("width").ToInteger()),
+			Height: int(o.Get("height").ToInteger()),
 			URL:    u,
-			Assets: env.Assets,
+			Assets: assets,
 			Debug:  env.Debug,
+			OnMessage: func(msg string, files []string) {
+				if onMessage == nil {
+					return
+				}
+				env.AddPending()
+				env.Post(func() error {
+					_, err := onMessage(goja.Undefined(), vm.ToValue(msg), n.strArray(files))
+					return err
+				})
+			},
 			OnClosed: func() {
 				env.Post(func() error {
 					resolve(goja.Undefined())
@@ -72,8 +101,54 @@ func (n *natives) installApp() {
 			w.Close()
 			return goja.Undefined()
 		})
+		obj.Set("post", func(c goja.FunctionCall) goja.Value {
+			w.Post(n.str(c, 0))
+			return goja.Undefined()
+		})
 		obj.Set("closed", closed)
 		return obj
+	})
+
+	// uiForm(specJSON) -> valuesJSON | null (console and mock UIs)
+	n.set("uiForm", func(c goja.FunctionCall) goja.Value {
+		var spec ui.FormSpec
+		if err := json.Unmarshal([]byte(n.str(c, 0)), &spec); err != nil {
+			n.throw(err)
+		}
+		vals, ok := env.UI.Form(spec)
+		if !ok {
+			return goja.Null()
+		}
+		b, err := json.Marshal(vals)
+		if err != nil {
+			n.throw(err)
+		}
+		return vm.ToValue(string(b))
+	})
+	// uiTable(title, text, rows, selectable) -> [row numbers] | null
+	n.set("uiTable", func(c goja.FunctionCall) goja.Value {
+		sel, ok := env.UI.Table(ui.TableSpec{
+			Title:      n.str(c, 0),
+			Text:       n.str(c, 1),
+			Rows:       int(c.Argument(2).ToInteger()),
+			Selectable: n.str(c, 3),
+		})
+		if !ok {
+			return goja.Null()
+		}
+		items := make([]any, len(sel))
+		for i, v := range sel {
+			items[i] = v
+		}
+		return vm.NewArray(items...)
+	})
+	n.set("interrupted", func(goja.FunctionCall) goja.Value { return vm.ToValue(ui.Interrupted()) })
+	n.set("configDir", func(goja.FunctionCall) goja.Value {
+		d, err := os.UserConfigDir()
+		if err != nil {
+			return goja.Null()
+		}
+		return vm.ToValue(filepath.Join(d, "xljs"))
 	})
 }
 

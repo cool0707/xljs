@@ -1,0 +1,11 @@
+{
+  "form": [
+    { "src": "nope", "n": 20, "code": "ab", "files": ["note.txt"] },
+    { "src": "data", "n": "5", "code": "ABC", "mode": "商品別", "files": [] },
+    { "tax": true, "files": ["data/a.xlsx"] },
+    null,
+    { "name": "太郎" },
+    { "a": "前回の値", "pw": "secret" },
+    {}
+  ]
+}

@@ -56,11 +56,46 @@ type WindowOptions struct {
 	Assets fs.FS
 	// Debug enables the developer tools (F12) and the context menu.
 	Debug bool
-	// OnMessage receives the messages posted by the page. OnClosed is called
-	// once after the window has closed (by the user or Close). Both may be
-	// called on any goroutine and must not block.
-	OnMessage func(msg string)
+	// OnMessage receives the messages posted by the page, with the paths of
+	// the files the page attached (see the page bridge, xljs.files). OnClosed
+	// is called once after the window has closed (by the user or Close).
+	// Both may be called on any goroutine and must not block.
+	OnMessage func(msg string, files []string)
 	OnClosed  func()
+}
+
+// FormField is one input of a form shown without an HTML window.
+type FormField struct {
+	Name  string
+	Label string
+	// Type is one of text, password, number, date, month, time, select,
+	// radio, checkbox, textarea, file, files, folder, saveFile.
+	Type     string
+	Options  []string // select, radio
+	Required bool
+	// Value is the current value: a string, true/false for checkbox, a list
+	// of paths for files.
+	Value any
+	// Error is the message from the last validation ("" when valid).
+	Error string
+}
+
+// FormSpec describes a form shown without an HTML window (console, mock).
+type FormSpec struct {
+	Title       string
+	Description string
+	Fields      []FormField
+}
+
+// TableSpec describes a table shown without an HTML window.
+type TableSpec struct {
+	Title string
+	// Text is the table already laid out for a terminal; Rows the number of
+	// data rows (numbered from 0 in the text).
+	Text string
+	Rows int
+	// Selectable is "", "single" or "multiple".
+	Selectable string
 }
 
 // Window is an open HTML window.
@@ -96,6 +131,13 @@ type UI interface {
 	// OpenWindow opens an HTML window (WebView2). It fails when the UI
 	// cannot show one (console) or the WebView2 runtime is missing.
 	OpenWindow(o WindowOptions) (Window, error)
+	// Form asks for the values of a form when no HTML window is used
+	// (console, mock): values by field name, false when cancelled. When some
+	// fields have an Error, only those need to be asked again.
+	Form(f FormSpec) (map[string]any, bool)
+	// Table shows a table when no HTML window is used. For selectable
+	// tables it returns the chosen row numbers (false when cancelled).
+	Table(t TableSpec) ([]int, bool)
 }
 
 // interrupts counts Ctrl+C presses so that progress indicators can report

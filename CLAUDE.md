@@ -14,6 +14,7 @@ JavaScript/TypeScript のスクリプトで Excel・CSV・JSON を処理する W
 | `internal/engine` | esbuild でバンドル（TS 変換、async generator 変換、インラインソースマップ）→ `(async () => {...})` で包んで goja で実行。`loop.go` はタイマーと他 goroutine からの post |
 | `internal/api` | Go 側ネイティブ関数（`natives` に `n.set("name", fn)` で登録）と `prelude.js`（公開 API をすべて JS で組み立てる）。Go→JS は `native.xxx` 経由のみ |
 | `internal/ui` | `UI` インターフェースと実装: `Native`（Win32/COM 直叩き、cgo なし。HTML ウィンドウは `webview_windows.go`＝`wailsapp/go-webview2` の `pkg/edge`）、`Console`、`Mock`（応答 JSON＋ログ。テスト用）。`thread.go` の `ui.Run` がスクリプトを専用スレッドで動かし、UI 呼び出しを呼び出し元（main スレッド）へ転送する |
+| `internal/webui` | `ui.form` / `ui.table` の同梱ページ（form/table の html・js と共通の xljs.css を go:embed）。`https://app.xljs/form.html` などで配信 |
 | `internal/meta` | エントリ先頭の `// ==xljs==` メタデータのパースと、アセット（`@html`＋`@assets`）だけを見せる `AssetFS` |
 | `internal/i18n` | メッセージ。`locales/<lang>.json` を go:embed。`en.json` が基準・フォールバック |
 | `internal/pack` | exe 末尾へのスクリプト埋め込み。v2 = `[zip(manifest.json, main.js, assets/...)][len u64]["XLJSPAK2"]`、v1（`XLJSPAK1`）も読める |
@@ -30,6 +31,7 @@ JavaScript/TypeScript のスクリプトで Excel・CSV・JSON を処理する W
 - **Windows ネイティブ部分**は `//go:build windows`。COM の vtable 呼び出しは `comObject.call(idx, ...)`。`unsafe.Pointer` 変換は go vet が通る書き方にする（uintptr→Pointer 変換は RtlMoveMemory などで回避）。
 - 新規ブックの既定フォントはロケールの `excel.font`（日本語は游ゴシック）。
 - **スレッド**: main スレッド＝UI スレッド（Win32 メッセージループ、ダイアログ、WebView2）、スクリプト＝`ui.Run` が作る専用 goroutine（`LockOSThread`）。`UI` の実装は UI スレッドからだけ呼ばれる。UI → スクリプトは `Env.Post`（＝`loop.post`、事前に `Env.AddPending`）。開いているウィンドウは pending として数え、閉じるまでイベントループ（プロセス）が終わらない。
+- **画面とのメッセージ**: ページには `internal/ui/bridge.js` を注入して `window.xljs`（invoke/handle/emit/on/off/files/close）を定義。形式は `{type: "invoke"|"result"|"error"|"event", id, name, args, value}` の JSON。ホスト→画面は先頭に `\x02`。スクリプト側は prelude の `AppWindow`。`xljs.files(fileList)` は `{$files:[start,n]}` ＋実パスで届き、ハンドルに変わる。`ui.form`/`ui.table` はネイティブ UI ではこの上の同梱ページ、console/mock では `UI.Form`/`UI.Table`（入力チェックと値の変換は prelude で共通）。
 - コミットメッセージは英語、ドキュメント・UI 文言は日本語（英語はロケールファイル側）。
 
 ## 開発

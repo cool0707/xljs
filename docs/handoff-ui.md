@@ -32,6 +32,20 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
   - テスト: `internal/ui/thread_test.go`（転送先スレッド）、`engine_test.go` の `TestAppMode` / `TestAppWindowKeepsRunning`、
     `testdata/scripts/app.test.js`、Windows CI では `TestWebViewWindow`（ランタイムがあれば実ウィンドウを開いて閉じる）。
 
+- **フェーズ 2（`ui.form` / `ui.table`）: 実装済み**。
+  - 画面⇔スクリプトのメッセージ基盤をフェーズ 3 ① の先取りとして実装: ページ側 `internal/ui/bridge.js`（`xljs.invoke/handle/emit/on/off/files/close`、
+    `window.close` も `xljs.close` に差し替え）、スクリプト側 prelude の `AppWindow`（`win.invoke/handle/emit/on/off`）。
+    `UI.WindowOptions.OnMessage(msg, files)` で `postMessageWithAdditionalObjects` の File の実パスを受け取る（`messageFiles`）。
+    まだ無いもの: `export` の自動公開と `app.handle`、`win.state`/`data-bind`、`win.$`、`win.evaluate`、Date などのコーデック（いまは JSON のみ。ハンドルはパス文字列になる）。
+  - 同梱ページ: `internal/webui`（`form.html/js`、`table.html/js`、`xljs.css`。ライト/ダーク対応）。`appOpen({page: "form"})` で開く。
+  - console/mock: `UI.Form(FormSpec)` / `UI.Table(TableSpec)`（Go 実装）。入力チェック（required/pattern/min/max/accept/
+    ファイルの存在/validate）と値の変換（ハンドル化など）は prelude 側で共通。
+  - `remember`: `os.UserConfigDir()/xljs/<スクリプト名>.json` に `{ フォームのキー: { 項目: 値 } }`。password と `remember: false` の項目は保存しない。
+  - テスト: `testdata/scripts/form.test.js` `table.test.js`（mock）、`internal/engine/window_test.go`（ページ役の偽 UI でウィンドウ版の
+    スクリプト側を通しで検証）、`internal/ui/form_console_test.go`、Windows CI の `TestBuiltinPage`。ページ自体は Playwright（Chromium）に
+    偽の `chrome.webview` を入れて手動確認した（20 万行の表で描画・並べ替え・絞り込みが問題ないこと）。
+  - 未確認: 実機の WebView2 での見た目・ドラッグ＆ドロップの実パス取得。
+
 ### 1.1 の調査結果（go-webview2）
 
 - `jchv/go-webview2` は WebResourceRequested はあるが、追加オブジェクト（ファイル実パス）などが無い。

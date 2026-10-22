@@ -3,6 +3,7 @@
 package ui
 
 import (
+	_ "embed"
 	"io"
 	"io/fs"
 	"log"
@@ -19,7 +20,11 @@ import (
 	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/wailsapp/go-webview2/pkg/edge"
 	"github.com/wailsapp/go-webview2/webviewloader"
+	"golang.org/x/sys/windows"
 )
+
+//go:embed bridge.js
+var bridgeJS string
 
 // WebView2DownloadURL is where users get the WebView2 runtime.
 const WebView2DownloadURL = "https://developer.microsoft.com/microsoft-edge/webview2/"
@@ -179,7 +184,12 @@ func (w *webWindow) embed() (err error) {
 	})
 	wv.MessageCallback = func(msg string, _ *edge.ICoreWebView2, _ *edge.ICoreWebView2WebMessageReceivedEventArgs) {
 		if w.o.OnMessage != nil {
-			w.o.OnMessage(msg)
+			w.o.OnMessage(msg, nil)
+		}
+	}
+	wv.MessageWithAdditionalObjectsCallback = func(msg string, _ *edge.ICoreWebView2, args *edge.ICoreWebView2WebMessageReceivedEventArgs) {
+		if w.o.OnMessage != nil {
+			w.o.OnMessage(msg, messageFiles(args))
 		}
 	}
 	wv.WebResourceRequestedCallback = w.serve
@@ -202,6 +212,7 @@ func (w *webWindow) embed() (err error) {
 		s.PutIsStatusBarEnabled(false)
 	}
 	wv.AddWebResourceRequestedFilter(AssetOrigin+"*", edge.COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)
+	wv.Init(bridgeJS)
 	wv.Resize()
 	wv.Focus()
 	if w.o.URL != "" {
@@ -210,6 +221,38 @@ func (w *webWindow) embed() (err error) {
 		wv.NavigateToString("<!doctype html><title></title>")
 	}
 	return nil
+}
+
+var iidICoreWebView2File = mustGUID("{F2C19559-6BC1-4583-A757-90021BE9AFEC}")
+
+// messageFiles returns the paths of the File objects the page attached with
+// postMessageWithAdditionalObjects.
+func messageFiles(args *edge.ICoreWebView2WebMessageReceivedEventArgs) []string {
+	coll, err := args.GetAdditionalObjects()
+	if err != nil || coll == nil {
+		return nil
+	}
+	defer coll.Release()
+	count, _ := coll.GetCount()
+	var paths []string
+	for i := uint32(0); i < count; i++ {
+		v, err := coll.GetValueAtIndex(i)
+		if err != nil || v == nil {
+			continue
+		}
+		unk := (*comObject)(unsafe.Pointer(v))
+		var file *comObject
+		if hr := unk.call(0, uintptr(unsafe.Pointer(&iidICoreWebView2File)), uintptr(unsafe.Pointer(&file))); !failed(hr) && file != nil {
+			var p *uint16
+			if hr := file.call(3, uintptr(unsafe.Pointer(&p))); !failed(hr) && p != nil {
+				paths = append(paths, windows.UTF16PtrToString(p))
+				windows.CoTaskMemFree(unsafe.Pointer(p))
+			}
+			file.release()
+		}
+		unk.release()
+	}
+	return paths
 }
 
 // serve answers requests for AssetOrigin from o.Assets.

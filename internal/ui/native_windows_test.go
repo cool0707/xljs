@@ -3,11 +3,14 @@
 package ui
 
 import (
+	"encoding/json"
 	"runtime"
 	"testing"
 	"testing/fstest"
 	"time"
 	"unsafe"
+
+	"github.com/cool0707/xljs/internal/webui"
 )
 
 var (
@@ -124,7 +127,7 @@ func TestWebViewWindow(t *testing.T) {
 	assets := fstest.MapFS{
 		"ui/index.html": {Data: []byte(`<!doctype html><meta charset="utf-8"><title>t</title>
 <script src="app.js"></script>`)},
-		"ui/app.js": {Data: []byte(`chrome.webview.postMessage("ready " + location.href + " " + document.title)`)},
+		"ui/app.js": {Data: []byte(`chrome.webview.postMessage("ready " + location.href + " " + document.title + " " + typeof xljs.invoke)`)},
 	}
 	got := make(chan string, 1)
 	var msg string
@@ -137,7 +140,7 @@ func TestWebViewWindow(t *testing.T) {
 			Height: 300,
 			URL:    AssetOrigin + "ui/index.html",
 			Assets: assets,
-			OnMessage: func(m string) {
+			OnMessage: func(m string, _ []string) {
 				select {
 				case got <- m:
 				default:
@@ -159,7 +162,50 @@ func TestWebViewWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := "ready https://app.xljs/ui/index.html t"; msg != want {
+	if want := "ready https://app.xljs/ui/index.html t function"; msg != want {
 		t.Fatalf("message = %q, want %q", msg, want)
+	}
+}
+
+// TestBuiltinPage loads the built-in form page and checks that it asks the
+// script for its definition through the injected bridge (window.xljs).
+func TestBuiltinPage(t *testing.T) {
+	if WebView2Version() == "" {
+		t.Skip("WebView2 runtime is not installed")
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	u, err := NewNative()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan string, 4)
+	var first map[string]any
+	Run(u, func(su UI) {
+		closed := make(chan struct{})
+		var w Window
+		w, err = su.OpenWindow(WindowOptions{
+			Title:     "フォーム",
+			URL:       AssetOrigin + "form.html",
+			Assets:    webui.FS,
+			OnMessage: func(m string, _ []string) { got <- m },
+			OnClosed:  func() { close(closed) },
+		})
+		if err != nil {
+			return
+		}
+		select {
+		case m := <-got:
+			json.Unmarshal([]byte(m), &first)
+		case <-time.After(30 * time.Second):
+		}
+		w.Close()
+		<-closed
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first["type"] != "invoke" || first["name"] != "init" {
+		t.Fatalf("first message = %v", first)
 	}
 }

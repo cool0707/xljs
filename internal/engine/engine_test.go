@@ -44,6 +44,10 @@ func runScript(t *testing.T, script string, answers string, args ...string) resu
 		t.Fatal(err)
 	}
 	t.Chdir(t.TempDir())
+	// Remembered form values go to the user's config folder.
+	cfg := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", cfg)
+	t.Setenv("APPDATA", cfg)
 	code, err := Run(Options{ScriptPath: script, Args: args, UI: m, Stdout: &out, Stderr: &errOut, Version: "test"})
 	return result{code, err, out.String(), errOut.String()}
 }
@@ -80,6 +84,31 @@ func TestScripts(t *testing.T) {
 					`window.open("詳細", "https://app.xljs/ui/sub%20page.html", 300x200)`,
 					`window.closed("詳細")`,
 				} {
+					if !strings.Contains(r.stderr, want) {
+						t.Errorf("mock log does not contain %q:\n%s", want, r.stderr)
+					}
+				}
+			}
+			if name == "form.test.js" {
+				for _, want := range []string{
+					`form("売上集計") -> {"code":"ab"`,
+					`form invalid: src: 存在するフォルダを指定してください`,
+					`form invalid: n: 10 以下を入力してください`,
+					`form invalid: code: 形式が正しくありません`,
+					"form invalid: files: .xlsx のファイルを指定してください",
+					`form invalid: tax: 商品別は税込のみ`,
+					`form("form.test") -> null`,
+				} {
+					if !strings.Contains(r.stderr, want) {
+						t.Errorf("mock log does not contain %q:\n%s", want, r.stderr)
+					}
+				}
+				if !strings.Contains(r.stdout, "処理 太郎") {
+					t.Errorf("ctx.log output missing:\n%s", r.stdout)
+				}
+			}
+			if name == "table.test.js" {
+				for _, want := range []string{`table("集計結果", 3 rows)`, `table("選択") -> [0 2]`, `table("配列", 2 rows)`} {
 					if !strings.Contains(r.stderr, want) {
 						t.Errorf("mock log does not contain %q:\n%s", want, r.stderr)
 					}

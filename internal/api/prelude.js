@@ -136,8 +136,10 @@
   const out = (s) => native.stdout(groupIndent ? s.replace(/^/gm, groupIndent) + "\n" : s + "\n");
   const err = (s) => native.stderr(groupIndent ? s.replace(/^/gm, groupIndent) + "\n" : s + "\n");
 
-  function table(data, columns) {
-    if (data === null || typeof data !== "object") return out(inspect(data));
+  function table(data, columns) { out(tableText(data, columns)); }
+  /** console.table's layout as a string. */
+  function tableText(data, columns) {
+    if (data === null || typeof data !== "object") return inspect(data);
     const rows = Array.isArray(data) ? data.map((r, i) => [i, r]) : Object.entries(data);
     const cols = [];
     let hasValues = false;
@@ -156,7 +158,7 @@
     const widths = header.map((h, i) => Math.max(strWidth(h), ...body.map((r) => strWidth(r[i]))));
     const line = (l, m, r) => l + widths.map((w) => "─".repeat(w + 2)).join(m) + r;
     const fmtRow = (r) => "│" + r.map((c, i) => " " + c + " ".repeat(widths[i] - strWidth(c)) + " ").join("│") + "│";
-    out([line("┌", "┬", "┐"), fmtRow(header), line("├", "┼", "┤"), ...body.map(fmtRow), line("└", "┴", "┘")].join("\n"));
+    return [line("┌", "┬", "┐"), fmtRow(header), line("├", "┼", "┤"), ...body.map(fmtRow), line("└", "┴", "┘")].join("\n");
   }
 
   const consoleObj = {
@@ -990,12 +992,119 @@
 
   // ---------------------------------------------------------------- app (HTML windows)
 
+  // Messages between the script and a page (see internal/ui/bridge.js):
+  //   { type: "invoke", id, name, args } -> { type: "result"|"error", id, value }
+  //   { type: "event", name, args }
+  // Files the page passes with xljs.files() arrive as {$files: [start, count]}
+  // plus their paths; they become file/directory handles.
+
+  const errorValue = (e) => ({
+    name: (e && e.name) || "Error",
+    message: e && e.message !== undefined ? String(e.message) : String(e),
+  });
+  function handleFor(p) {
+    const st = native.fsStat(p);
+    return st && st.isDirectory ? new FileSystemDirectoryHandle(p) : new FileSystemFileHandle(p);
+  }
+  function decodeFiles(v, files) {
+    if (Array.isArray(v)) return v.map((x) => decodeFiles(x, files));
+    if (v && typeof v === "object") {
+      const keys = Object.keys(v);
+      if (keys.length === 1 && Array.isArray(v.$files)) {
+        const [start, count] = v.$files;
+        return files.slice(start, start + count).map(handleFor);
+      }
+      const o = {};
+      for (const k of keys) o[k] = decodeFiles(v[k], files);
+      return o;
+    }
+    return v;
+  }
+  function messageReplacer(k, v) {
+    const raw = this[k];
+    return raw instanceof FileSystemHandle ? raw.path : v;
+  }
+
   /** An HTML window opened by app.open (or the main window of @mode app). */
   class AppWindow {
-    constructor(n) {
+    constructor(opts) {
+      define(this, "_handlers", new Map());
+      define(this, "_listeners", new Map());
+      define(this, "_pending", new Map());
+      define(this, "_seq", 0);
+      define(this, "_closed", false);
+      const n = native.appOpen(Object.assign({}, opts, { onMessage: (m, files) => this._receive(m, files) }));
       define(this, "_n", n);
       /** Resolves when the window has been closed. */
-      define(this, "closed", n.closed);
+      define(this, "closed", n.closed.then(() => {
+        this._closed = true;
+        const pending = [...this._pending.values()];
+        this._pending.clear();
+        for (const p of pending) p.reject(new Error(T("app.windowClosed")));
+      }));
+    }
+    _post(m) { if (!this._closed) this._n.post(JSON.stringify(m, messageReplacer)); }
+    _receive(text, files) {
+      let m;
+      try { m = JSON.parse(text); } catch (e) { return; }
+      if (!m || typeof m !== "object") return;
+      const args = files && files.length ? decodeFiles(m.args || [], files) : m.args || [];
+      switch (m.type) {
+        case "invoke": {
+          const fn = this._handlers.get(m.name);
+          Promise.resolve()
+            .then(() => {
+              if (!fn) throw new Error(T("app.noHandler", String(m.name)));
+              return fn.apply(this, args);
+            })
+            .then(
+              (value) => this._post({ type: "result", id: m.id, value: value === undefined ? null : value }),
+              (e) => this._post({ type: "error", id: m.id, value: errorValue(e) }));
+          return;
+        }
+        case "result":
+        case "error": {
+          const p = this._pending.get(m.id);
+          if (!p) return;
+          this._pending.delete(m.id);
+          if (m.type === "result") p.resolve(m.value);
+          else p.reject(Object.assign(new Error(m.value && m.value.message), { name: (m.value && m.value.name) || "Error" }));
+          return;
+        }
+        case "event":
+          if (m.name === "xljs:close") return this.close();
+          for (const fn of [...(this._listeners.get(m.name) || [])]) fn.apply(this, args);
+          return;
+      }
+    }
+    /** Calls a function of the page (xljs.handle, or a global function). */
+    invoke(name, ...args) {
+      if (this._closed) return Promise.reject(new Error(T("app.windowClosed")));
+      const id = ++this._seq;
+      return new Promise((resolve, reject) => {
+        this._pending.set(id, { resolve, reject });
+        this._post({ type: "invoke", id, name: String(name), args });
+      });
+    }
+    /** Lets the page call fn with xljs.invoke(name, ...args). */
+    handle(name, fn) {
+      if (fn) this._handlers.set(String(name), fn);
+      else this._handlers.delete(String(name));
+      return this;
+    }
+    /** Sends an event to the page (xljs.on). */
+    emit(name, ...args) { this._post({ type: "event", name: String(name), args }); return this; }
+    /** Listens to events from the page (xljs.emit). */
+    on(name, fn) {
+      const k = String(name);
+      if (!this._listeners.has(k)) this._listeners.set(k, new Set());
+      this._listeners.get(k).add(fn);
+      return this;
+    }
+    off(name, fn) {
+      const set = this._listeners.get(String(name));
+      if (set) set.delete(fn);
+      return this;
     }
     close() { this._n.close(); }
   }
@@ -1009,15 +1118,502 @@
      */
     open(options = {}) {
       if (typeof options === "string") options = { html: options };
-      return new AppWindow(native.appOpen(options.html === undefined ? "" : String(options.html),
-        options.title === undefined ? title() : String(options.title),
-        Number(options.width) || 0, Number(options.height) || 0));
+      return new AppWindow({
+        html: options.html === undefined ? "" : String(options.html),
+        title: options.title === undefined ? title() : String(options.title),
+        width: Number(options.width) || 0,
+        height: Number(options.height) || 0,
+      });
     },
   };
   defineGlobal("app", appObj);
   native.openMain = () => {
-    appObj.main = new AppWindow(native.appOpen(native.appHTML || "", title(), native.appWidth || 0, native.appHeight || 0));
+    appObj.main = new AppWindow({ html: native.appHTML || "", title: title(), width: native.appWidth || 0, height: native.appHeight || 0 });
   };
+
+  /** A stand-in for a window when the UI has none (console, mock). */
+  const noWindow = () => ({ closed: Promise.resolve(), close() {} });
+
+  // ---------------------------------------------------------------- ui.form
+
+  const FIELD_TYPES = ["text", "password", "number", "date", "month", "time", "select", "radio", "checkbox",
+    "textarea", "file", "files", "folder", "saveFile"];
+
+  function acceptList(a) {
+    if (a === undefined || a === null) return [];
+    const list = Array.isArray(a) ? a : [a];
+    return list.map((e) => String(e).trim()).filter(Boolean).map((e) => (e.startsWith(".") || e.startsWith("*") ? e : "." + e));
+  }
+
+  function normalizeFields(fields) {
+    if (!Array.isArray(fields) || fields.length === 0) throw new TypeError(T("form.noFields"));
+    const names = new Set();
+    return fields.map((f, i) => {
+      if (typeof f === "string") f = { name: f };
+      if (!f || f.name === undefined || f.name === "") throw new TypeError(T("form.noName", i + 1));
+      const name = String(f.name);
+      const type = f.type || "text";
+      if (!FIELD_TYPES.includes(type)) throw new TypeError(T("form.badType", name, String(type)));
+      if (names.has(name)) throw new TypeError(T("form.duplicateName", name));
+      names.add(name);
+      const options = Array.isArray(f.options) ? f.options.map(String) : [];
+      if ((type === "select" || type === "radio") && options.length === 0) throw new TypeError(T("form.noOptions", name));
+      return {
+        spec: f, name, type, options,
+        label: f.label === undefined ? name : String(f.label),
+        required: !!f.required,
+        accept: acceptList(f.accept),
+        remember: f.remember !== false && type !== "password",
+      };
+    });
+  }
+
+  const pad4 = (n) => String(n).padStart(4, "0");
+  /** A value as the page holds it: string, boolean (checkbox) or paths (files). */
+  function toRaw(f, v) {
+    const pathOf = (x) => (x instanceof FileSystemHandle ? x.path : x instanceof File && x.path ? x.path : x === null || x === undefined ? "" : String(x));
+    switch (f.type) {
+      case "checkbox": return v === true || v === "true" || v === 1;
+      case "files": return (Array.isArray(v) ? v : v === null || v === undefined || v === "" ? [] : [v]).map(pathOf).filter(Boolean);
+      case "file": case "folder": case "saveFile": return pathOf(Array.isArray(v) ? v[0] : v);
+    }
+    if (v === null || v === undefined) return "";
+    if (v instanceof Date && !isNaN(v)) {
+      const d = `${pad4(v.getFullYear())}-${pad2(v.getMonth() + 1)}-${pad2(v.getDate())}`;
+      if (f.type === "month") return d.slice(0, 7);
+      if (f.type === "time") return `${pad2(v.getHours())}:${pad2(v.getMinutes())}`;
+      return d;
+    }
+    return String(v);
+  }
+  /** The value handed to the script. */
+  function fromRaw(f, raw) {
+    switch (f.type) {
+      case "checkbox": return !!raw;
+      case "number": return raw === "" ? null : Number(raw);
+      case "files": return raw.map((p) => new FileSystemFileHandle(p));
+      case "file": case "saveFile": return raw ? new FileSystemFileHandle(raw) : null;
+      case "folder": return raw ? new FileSystemDirectoryHandle(raw) : null;
+    }
+    return raw;
+  }
+  function valuesOf(fields, raw) {
+    const values = {};
+    for (const f of fields) values[f.name] = fromRaw(f, raw[f.name]);
+    return values;
+  }
+  const extOk = (f, p) => !f.accept.length || f.accept.some((e) => e === "*" || e === "*.*" || p.toLowerCase().endsWith(e.replace(/^\*/, "").toLowerCase()));
+
+  /** Built-in checks, then options.validate. Returns {field: message}; "" is a message for the whole form. */
+  async function checkForm(fields, raw, validate) {
+    const errors = {};
+    for (const f of fields) {
+      const v = raw[f.name];
+      if (v === "" || v === false || (Array.isArray(v) && v.length === 0)) {
+        if (f.required) errors[f.name] = T("form.required");
+        continue;
+      }
+      const s = f.spec;
+      let e = "";
+      switch (f.type) {
+        case "number": {
+          const n = Number(v);
+          if (!isFinite(n)) e = T("form.notNumber");
+          else if (s.min !== undefined && n < s.min) e = T("form.min", s.min);
+          else if (s.max !== undefined && n > s.max) e = T("form.max", s.max);
+          break;
+        }
+        case "select": case "radio":
+          if (!f.options.includes(v)) e = T("form.badOption");
+          break;
+        case "folder": {
+          const st = native.fsStat(v);
+          if (!st || !st.isDirectory) e = T("form.notFolder");
+          break;
+        }
+        case "file": case "files":
+          for (const p of Array.isArray(v) ? v : [v]) {
+            const st = native.fsStat(p);
+            if (!st || st.isDirectory) e = T("form.notFile", p);
+            else if (!extOk(f, p)) e = T("form.badExtension", f.accept.join(", "));
+            if (e) break;
+          }
+          break;
+        case "saveFile":
+          if (!extOk(f, v)) e = T("form.badExtension", f.accept.join(", "));
+          break;
+      }
+      if (!e && s.pattern !== undefined && typeof v === "string") {
+        const re = s.pattern instanceof RegExp ? s.pattern : new RegExp("^(?:" + s.pattern + ")$");
+        if (!re.test(v)) e = s.patternMessage ? String(s.patternMessage) : T("form.pattern");
+      }
+      if (e) errors[f.name] = e;
+    }
+    if (Object.keys(errors).length === 0 && typeof validate === "function") {
+      const r = await validate(valuesOf(fields, raw));
+      if (typeof r === "string" && r) errors[""] = r;
+      else if (r && typeof r === "object") {
+        for (const k of Object.keys(r)) if (r[k]) errors[fields.some((f) => f.name === k) ? k : ""] = String(r[k]);
+      }
+    }
+    return errors;
+  }
+
+  // Remembered values: <config dir>/<script name>.json, { "<form key>": { field: raw } }.
+  function rememberFile() {
+    const dir = native.configDir();
+    return dir ? native.pathJoin(dir, native.pathBasename(native.script, native.pathExtname(native.script)) + ".json") : null;
+  }
+  function rememberKey(options) {
+    if (!options.remember) return null;
+    return typeof options.remember === "string" ? options.remember : String(options.title || "form");
+  }
+  function loadRemembered(key) {
+    const file = rememberFile();
+    try {
+      const all = file && native.fsStat(file) ? JSON.parse(native.fsReadText(file, "utf8")) : {};
+      return all && typeof all[key] === "object" && all[key] ? all[key] : {};
+    } catch (e) {
+      return {};
+    }
+  }
+  function saveRemembered(key, fields, raw) {
+    const file = rememberFile();
+    if (!file) return;
+    try {
+      let all = {};
+      if (native.fsStat(file)) all = JSON.parse(native.fsReadText(file, "utf8")) || {};
+      const vals = {};
+      for (const f of fields) if (f.remember) vals[f.name] = raw[f.name];
+      all[key] = vals;
+      native.fsMkdir(native.pathDirname(file));
+      native.fsWriteText(file, JSON.stringify(all, null, 2), "utf8", false);
+    } catch (e) {
+      err(T("form.rememberFailed", e && e.message));
+    }
+  }
+
+  /** What onSubmit returned, as a path to offer with "open folder". */
+  function outputPath(r) {
+    if (r instanceof FileSystemHandle) return { path: r.path, dir: r.kind === "directory" };
+    if (typeof r === "string" && r) {
+      const st = native.fsStat(r);
+      if (st) return { path: native.pathResolve(r), dir: st.isDirectory };
+    }
+    return null;
+  }
+
+  /**
+   * Shows a form built from field definitions. Resolves with the values
+   * (null when cancelled). With onSubmit the window stays open while it
+   * runs and shows its progress and log.
+   */
+  async function form(options = {}) {
+    const fields = normalizeFields(options.fields);
+    const key = rememberKey(options);
+    const saved = key ? loadRemembered(key) : {};
+    const raw = {};
+    for (const f of fields) raw[f.name] = toRaw(f, f.remember && f.name in saved ? saved[f.name] : f.spec.default);
+    if (native.uiName === "native") return formWindow(options, fields, raw, key);
+    return formConsole(options, fields, raw, key);
+  }
+
+  async function formConsole(options, fields, raw, key) {
+    let errors = {};
+    for (;;) {
+      const spec = {
+        title: options.title ? String(options.title) : title(),
+        description: options.description ? String(options.description) : "",
+        fields: fields.map((f) => ({ name: f.name, label: f.label, type: f.type, options: f.options, required: f.required, value: raw[f.name], error: errors[f.name] || "" })),
+      };
+      const res = native.uiForm(JSON.stringify(spec));
+      if (res === null) return null;
+      const got = JSON.parse(res);
+      for (const f of fields) if (f.name in got) raw[f.name] = toRaw(f, got[f.name]);
+      errors = await checkForm(fields, raw, options.validate);
+      if (Object.keys(errors).length === 0) break;
+      if (errors[""]) err(errors[""]);
+    }
+    const values = valuesOf(fields, raw);
+    if (key) saveRemembered(key, fields, raw);
+    if (typeof options.onSubmit === "function") {
+      let p = null;
+      const ctx = {
+        get cancelled() { return p ? p.cancelled : native.interrupted(); },
+        progress(done, total, message) {
+          if (!p) p = new Progress({ title: options.title ? String(options.title) : title(), total });
+          if (total !== undefined && total !== p.total) p.total = total;
+          p.update(done, message);
+        },
+        log: (...a) => out(formatArgs(a)),
+        window: null,
+      };
+      try {
+        await options.onSubmit(values, ctx);
+      } finally {
+        if (p) p.close();
+      }
+    }
+    return values;
+  }
+
+  function formWindow(options, fields, raw, key) {
+    const run = typeof options.onSubmit === "function";
+    const formTitle = options.title ? String(options.title) : title();
+    let height = 150 + (options.description ? 40 : 0);
+    for (const f of fields) height += f.type === "textarea" ? 120 : f.type === "radio" ? 34 + 26 * f.options.length : f.type === "checkbox" ? 40 : 66;
+    const win = new AppWindow({
+      page: "form",
+      title: formTitle,
+      width: Number(options.width) || 600,
+      height: Number(options.height) || Math.max(run ? 420 : 260, Math.min(760, height)),
+    });
+    const byName = (name) => {
+      const f = fields.find((x) => x.name === name);
+      if (!f) throw new Error(T("form.unknownField", String(name)));
+      return f;
+    };
+    return new Promise((resolve) => {
+      let result = null, running = false, cancelled = false, closed = false;
+      win.handle("init", () => ({
+        title: formTitle,
+        description: options.description ? String(options.description) : "",
+        submit: options.submit ? String(options.submit) : T("form.submit"),
+        run,
+        fields: fields.map((f) => ({
+          name: f.name, label: f.label, type: f.type, options: f.options, required: f.required,
+          placeholder: f.spec.placeholder === undefined ? "" : String(f.spec.placeholder),
+          help: f.spec.help === undefined ? "" : String(f.spec.help),
+          min: f.spec.min, max: f.spec.max, step: f.spec.step, rows: f.spec.rows, accept: f.accept,
+        })),
+        values: raw,
+        text: {
+          cancel: T("ui.cancel"), browse: T("form.browse"), drop: T("form.drop"), clear: T("form.clear"),
+          close: T("form.close"), back: T("form.back"), openFolder: T("form.openFolder"), openFile: T("form.openFile"),
+          running: T("form.running"), cancelling: T("form.cancelling"), done: T("form.done"),
+          cancelled: T("form.cancelled"), failed: T("form.failed"), required: T("form.requiredMark"),
+          noDrop: T("form.noDrop"),
+        },
+      }));
+      win.handle("pick", async (name) => {
+        const f = byName(name);
+        const cur = raw[f.name];
+        const types = f.accept.length ? [{ description: "", accept: f.accept }] : undefined;
+        const at = (p) => (p ? new FileSystemFileHandle(Array.isArray(p) ? p[0] || "" : p) : undefined);
+        switch (f.type) {
+          case "file": case "files": {
+            const hs = await showOpenFilePicker({ title: f.label, types, multiple: f.type === "files", startIn: at(cur) });
+            if (!hs.length) return null;
+            return f.type === "files" ? hs.map((h) => h.path) : hs[0].path;
+          }
+          case "folder": {
+            const h = await showDirectoryPicker({ title: f.label, startIn: cur ? new FileSystemDirectoryHandle(cur) : undefined });
+            return h ? h.path : null;
+          }
+          case "saveFile": {
+            const h = await showSaveFilePicker({
+              title: f.label, types, startIn: cur ? at(native.pathResolve(cur)) : undefined,
+              suggestedName: cur ? native.pathBasename(cur, "") : f.spec.suggestedName ? String(f.spec.suggestedName) : "",
+            });
+            return h ? h.path : null;
+          }
+        }
+        return null;
+      });
+      // Files dropped on a field arrive as handles (xljs.files on the page).
+      win.handle("drop", (name, handles) => {
+        const f = byName(name);
+        const paths = (handles || []).map((h) => h.path);
+        if (!paths.length) return null;
+        return f.type === "files" ? paths : paths[0];
+      });
+      win.handle("submit", async (pageRaw) => {
+        if (running) return { errors: {} };
+        for (const f of fields) if (pageRaw && f.name in pageRaw) raw[f.name] = toRaw(f, pageRaw[f.name]);
+        const errors = await checkForm(fields, raw, options.validate);
+        if (Object.keys(errors).length) return { errors };
+        result = valuesOf(fields, raw);
+        if (key) saveRemembered(key, fields, raw);
+        if (!run) {
+          win.close();
+          return { ok: true };
+        }
+        running = true;
+        cancelled = false;
+        Promise.resolve().then(() => runSubmit(result));
+        return { ok: true };
+      });
+      win.on("cancel", () => { cancelled = true; });
+      win.handle("open", (p, dir) => {
+        if (dir) native.shellOpen(String(p));
+        else native.shellShowInFolder([String(p)]);
+        return null;
+      });
+      win.closed.then(() => {
+        closed = true;
+        cancelled = true;
+        if (!running) resolve(result);
+      });
+
+      async function runSubmit(values) {
+        let last = 0, timer = null, latest = null;
+        const flush = () => {
+          timer = null;
+          if (latest) win.emit("progress", latest);
+          latest = null;
+          last = Date.now();
+        };
+        const ctx = {
+          get cancelled() { return cancelled; },
+          progress(done, total, message) {
+            latest = { done: Number(done) || 0, total: Number(total) || 0, message: message === undefined ? "" : String(message) };
+            if (Date.now() - last >= 50 || (latest.total && latest.done >= latest.total)) {
+              if (timer !== null) clearTimeout(timer);
+              flush();
+            } else if (timer === null) {
+              timer = setTimeout(flush, 50);
+            }
+          },
+          log: (...a) => { win.emit("log", formatArgs(a)); },
+          window: win,
+        };
+        let state = "done", message = "", output = null;
+        try {
+          output = outputPath(await options.onSubmit(values, ctx));
+          if (cancelled) state = "cancelled";
+        } catch (e) {
+          state = "failed";
+          message = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+          err(inspect(e));
+        }
+        if (timer !== null) { clearTimeout(timer); flush(); }
+        running = false;
+        win.emit("finished", { state, message, output });
+        if (closed) resolve(result);
+      }
+    });
+  }
+
+  // ---------------------------------------------------------------- ui.table
+
+  function tableCell(v) {
+    if (v === null || v === undefined) return null;
+    switch (typeof v) {
+      case "number": return isFinite(v) ? v : String(v);
+      case "string": case "boolean": return v;
+      case "bigint": return String(v);
+    }
+    if (v instanceof Date) {
+      if (isNaN(v)) return "";
+      const s = formatDateLocal(v, false);
+      return s.endsWith(" 00:00:00") ? s.slice(0, 10) : s;
+    }
+    if (v instanceof FileSystemHandle) return v.path;
+    return inspect(v, { depth: 0 });
+  }
+
+  /** Columns and cells of rows (objects, arrays or plain values). */
+  function tableModel(rows, columns) {
+    const isRecord = (r) => r !== null && typeof r === "object" && !Array.isArray(r) && !(r instanceof Date) && !(r instanceof FileSystemHandle);
+    let cols;
+    if (Array.isArray(columns) && columns.length) {
+      cols = columns.map((c) => (c && typeof c === "object" ? { key: c.key, label: String(c.label === undefined ? c.key : c.label) } : { key: c, label: String(c) }));
+    } else if (rows.some(isRecord)) {
+      cols = keysOf(rows.filter(isRecord)).map((k) => ({ key: k, label: k }));
+      if (rows.some((r) => !isRecord(r))) cols.push({ key: undefined, label: T("table.value") });
+    } else if (rows.some(Array.isArray)) {
+      const n = Math.max(...rows.map((r) => (Array.isArray(r) ? r.length : 1)));
+      cols = Array.from({ length: n }, (_, i) => ({ key: i, label: String(i + 1) }));
+    } else {
+      cols = [{ key: undefined, label: T("table.value") }];
+    }
+    const valueAt = (r, c) => {
+      if (c.key === undefined) return isRecord(r) || Array.isArray(r) ? undefined : r;
+      if (Array.isArray(r)) return typeof c.key === "number" ? r[c.key] : undefined;
+      if (isRecord(r)) return r[c.key];
+      return c.key === 0 ? r : undefined;
+    };
+    return { cols, valueAt };
+  }
+
+  function sheetName(s) {
+    const n = String(s).replace(/[\[\]:*?\/\\]/g, "_").slice(0, 31).trim();
+    return n || "Sheet1";
+  }
+
+  /**
+   * Shows rows in a table (sort, filter, copy, save). Without selectable
+   * it returns the window right away; with selectable ("single" |
+   * "multiple") it resolves with the chosen rows ([] when cancelled).
+   */
+  function showTable(rows, options = {}) {
+    if (typeof options === "string") options = { title: options };
+    rows = rows === null || rows === undefined ? [] : Array.from(rows);
+    const selectable = options.selectable === true ? "multiple" : options.selectable ? String(options.selectable) : "";
+    if (selectable && selectable !== "single" && selectable !== "multiple") throw new TypeError(T("table.badSelectable", selectable));
+    const tableTitle = options.title ? String(options.title) : title();
+    const { cols, valueAt } = tableModel(rows, options.columns);
+
+    if (native.uiName !== "native") {
+      const recs = rows.map((r) => {
+        const o = {};
+        for (const c of cols) o[c.label] = valueAt(r, c);
+        return o;
+      });
+      const sel = native.uiTable(tableTitle, tableText(recs), rows.length, selectable);
+      if (!selectable) return noWindow();
+      return Promise.resolve(sel ? sel.map((i) => rows[i]) : []);
+    }
+
+    const win = new AppWindow({ page: "table", title: tableTitle, width: Number(options.width) || 960, height: Number(options.height) || 620 });
+    win.handle("init", () => ({
+      title: tableTitle,
+      selectable,
+      columns: cols.map((c) => c.label),
+      rows: rows.map((r) => cols.map((c) => tableCell(valueAt(r, c)))),
+      text: {
+        filter: T("table.filter"), copy: T("table.copy"), copied: T("table.copied"), saveCSV: T("table.saveCSV"),
+        saveExcel: T("table.saveExcel"), saved: T("table.saved"), ok: "OK", cancel: T("ui.cancel"), close: T("form.close"),
+        count: T("table.count"), filtered: T("table.filtered"), selected: T("table.selected"),
+      },
+    }));
+    win.handle("save", async (format, indices) => {
+      const xlsx = format === "xlsx";
+      const h = await showSaveFilePicker({
+        title: xlsx ? T("table.saveExcel") : T("table.saveCSV"),
+        suggestedName: tableTitle.replace(/[\\\/:*?"<>|]/g, "_") + (xlsx ? ".xlsx" : ".csv"),
+        types: [xlsx ? { description: "Excel", accept: [".xlsx"] } : { description: "CSV", accept: [".csv"] }],
+      });
+      if (!h) return null;
+      const data = indices.map((i) => cols.map((c) => {
+        const v = valueAt(rows[i], c);
+        return v !== null && typeof v === "object" && !(v instanceof Date) ? tableCell(v) : v;
+      }));
+      const columns = cols.map((c) => c.label);
+      if (xlsx) {
+        const book = workbooks.create();
+        book.addSheet(sheetName(tableTitle)).write(data, { columns });
+        book.save(h);
+      } else {
+        csvObj.write(h, data, { columns });
+      }
+      return h.name;
+    });
+    if (!selectable) return win;
+    return new Promise((resolve) => {
+      let done = false;
+      win.handle("ok", (indices) => {
+        done = true;
+        resolve((indices || []).filter((i) => i >= 0 && i < rows.length).map((i) => rows[i]));
+        win.close();
+        return null;
+      });
+      win.closed.then(() => { if (!done) resolve([]); });
+    });
+  }
+
+  uiObj.form = form;
+  uiObj.table = showTable;
 
   // ---------------------------------------------------------------- csv
 

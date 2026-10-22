@@ -163,6 +163,16 @@ func (p *threaded) Progress(o ProgressOptions) Progress {
 	return &threadedProgress{p: inner, t: p.t}
 }
 
+func (p *threaded) Form(f FormSpec) (v map[string]any, ok bool) {
+	call(p.t, func() { v, ok = p.u.Form(f) })
+	return
+}
+
+func (p *threaded) Table(t TableSpec) (sel []int, ok bool) {
+	call(p.t, func() { sel, ok = p.u.Table(t) })
+	return
+}
+
 func (p *threaded) OpenWindow(o WindowOptions) (Window, error) {
 	var w Window
 	var err error

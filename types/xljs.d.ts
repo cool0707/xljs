@@ -169,8 +169,109 @@ declare global {
     readonly cancelled: boolean;
     /** エラーダイアログを表示する */
     error(message: unknown): void;
+    /**
+     * 項目の定義だけから入力フォームを表示する。キャンセルは null。
+     * ネイティブ UI では HTML のウィンドウ、コンソールでは対話入力、mock では応答 JSON の "form"。
+     */
+    form<const F extends readonly FormField[]>(options: FormOptions<F>): Promise<FormValues<F> | null>;
+    /**
+     * 行を表に表示する（並べ替え・絞り込み・コピー・CSV/Excel に保存）。
+     * selectable を付けると選んだ行（元のオブジェクト）を返す。キャンセルは []
+     */
+    table<T>(rows: Iterable<T>, options: TableOptions & { selectable: "single" | "multiple" | true }): Promise<T[]>;
+    /** 表示のみ。ウィンドウを開いてすぐ戻る（閉じるまでプロセスは終了しない） */
+    table(rows: Iterable<unknown>, options?: TableOptions | string): AppWindow;
   }
   const ui: Ui;
+
+  // ------------------------------------------------------------------ ui.form / ui.table
+
+  type FormFieldType = "text" | "password" | "number" | "date" | "month" | "time" | "select" | "radio"
+    | "checkbox" | "textarea" | "file" | "files" | "folder" | "saveFile";
+  interface FormFieldSpec {
+    /** 値のキー */
+    name: string;
+    /** 表示名（既定は name） */
+    label?: string;
+    /** 既定は "text" */
+    type?: FormFieldType;
+    /** 初期値（ファイル系はパスかハンドル、date/month/time は文字列か Date） */
+    default?: unknown;
+    required?: boolean;
+    /** select / radio の選択肢 */
+    options?: readonly string[];
+    /** 文字列全体が一致すべき正規表現（文字列なら全体一致） */
+    pattern?: string | RegExp;
+    /** pattern に一致しないときのメッセージ */
+    patternMessage?: string;
+    /** number の範囲 */
+    min?: number;
+    max?: number;
+    step?: number;
+    /** file / files / saveFile の拡張子（例: [".xlsx"]） */
+    accept?: string | readonly string[];
+    /** saveFile の既定のファイル名 */
+    suggestedName?: string;
+    placeholder?: string;
+    /** 項目の下に出す説明 */
+    help?: string;
+    /** textarea の行数 */
+    rows?: number;
+    /** false で remember の対象から外す（password は常に対象外） */
+    remember?: boolean;
+  }
+  type FormField = FormFieldSpec | string;
+  /** required: true の項目は null にならない */
+  type FormNullable<T, V> = T extends { required: true } ? V : V | null;
+  type FormFieldValue<T> =
+    T extends { type: "number" } ? FormNullable<T, number> :
+    T extends { type: "checkbox" } ? boolean :
+    T extends { type: "file" | "saveFile" } ? FormNullable<T, FileSystemFileHandle> :
+    T extends { type: "files" } ? FileSystemFileHandle[] :
+    T extends { type: "folder" } ? FormNullable<T, FileSystemDirectoryHandle> :
+    string;
+  type FormValues<F extends readonly FormField[]> = {
+    [K in F[number] as K extends string ? K : K extends { name: infer N extends string } ? N : never]: FormFieldValue<K>;
+  };
+  interface FormSubmitContext {
+    /** キャンセルボタンが押されたか、ウィンドウが閉じられたか */
+    readonly cancelled: boolean;
+    /** 進捗を表示する（total 0 で不定） */
+    progress(done: number, total?: number, message?: string): void;
+    /** ウィンドウのログ欄に 1 行出す（console.log と同じ書式） */
+    log(...args: unknown[]): void;
+    /** フォームのウィンドウ（コンソール・mock では null） */
+    readonly window: AppWindow | null;
+  }
+  interface FormOptions<F extends readonly FormField[] = readonly FormField[]> {
+    title?: string;
+    /** タイトルの下に出す説明 */
+    description?: string;
+    fields: F;
+    /** 送信ボタンの文字（既定は OK） */
+    submit?: string;
+    /** 前回の入力値を保存・復元する（%APPDATA%\xljs\<スクリプト名>.json）。文字列ならそのキーで保存 */
+    remember?: boolean | string;
+    /** 組み込みの検査のあとに呼ばれる。{ 項目名: メッセージ } か、全体へのメッセージ（文字列）を返すとエラー */
+    validate?: (values: FormValues<F>) => Record<string, string> | string | null | undefined | void
+      | Promise<Record<string, string> | string | null | undefined | void>;
+    /**
+     * 指定するとウィンドウを開いたまま実行し、進捗・ログを表示する。
+     * ファイル・フォルダ（パスかハンドル）を返すと完了後に「フォルダを開く」ボタンを出す
+     */
+    onSubmit?: (values: FormValues<F>, ctx: FormSubmitContext) => unknown;
+    width?: number;
+    height?: number;
+  }
+  interface TableOptions {
+    title?: string;
+    /** 表示する列（キー、または { key, label }）。既定はすべてのキー */
+    columns?: readonly (string | number | { key: string | number; label?: string })[];
+    /** 行を選んで OK で返す */
+    selectable?: "single" | "multiple" | true;
+    width?: number;
+    height?: number;
+  }
 
   // ------------------------------------------------------------------ app (HTML windows)
 
@@ -189,6 +290,15 @@ declare global {
     readonly closed: Promise<void>;
     /** ウィンドウを閉じる（閉じていれば何もしない） */
     close(): void;
+    /** 画面の関数を呼ぶ（画面側の xljs.handle で登録したもの、なければグローバル関数） */
+    invoke<R = unknown>(name: string, ...args: unknown[]): Promise<R>;
+    /** 画面から xljs.invoke(name, ...) で呼べる関数を登録する（fn を省略すると解除） */
+    handle(name: string, fn?: (...args: any[]) => unknown): this;
+    /** 画面へイベントを送る（画面側は xljs.on） */
+    emit(name: string, ...args: unknown[]): this;
+    /** 画面からのイベント（xljs.emit）を受け取る */
+    on(name: string, fn: (...args: any[]) => void): this;
+    off(name: string, fn: (...args: any[]) => void): this;
   }
   interface App {
     /** `@mode app` のメインウィンドウ（スクリプト実行前に自動で開く）。`@mode app` 以外では null */

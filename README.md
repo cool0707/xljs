@@ -78,7 +78,7 @@ xljsw pack 集計.js -o 集計.exe  （GUI 版をベースにする場合）
 - エントリのスクリプトの先頭（最初のコード行より前）の `//` コメントだけを読みます。知らないキーは警告を出して無視します。
 - `@mode app` にすると、スクリプトの実行前に `@html` のページを表示するウィンドウ（`app.main`）が開き、ウィンドウを閉じるまでプロセスは終了しません。`app.open({ html, title, width, height })` で別のウィンドウも開けます（`await win.closed` で閉じるのを待てます）。サンプル: `examples/app-hello/`
 - ウィンドウは Microsoft Edge WebView2 で表示します（Windows 10/11 には通常インストール済み）。ランタイムがない場合はダウンロードページを案内して終了します。ページは `https://app.xljs/` から配信され、見えるのは `@html` と `@assets` に書いたファイルだけです（pack した exe と同じ）。
-- 画面とスクリプトのやり取り（関数呼び出し・イベント・状態共有）、簡易フォーム `ui.form`、表表示 `ui.table` は今後追加予定です。
+- 画面とスクリプトは `win.invoke` / `win.handle` / `win.emit` / `win.on`（画面側は `xljs.invoke` / `xljs.handle` / `xljs.emit` / `xljs.on`）でやり取りできます。`export` した関数の自動公開・状態共有（`win.state`）・簡易 DOM 操作は今後追加予定です。
 
 ### エディタの補完
 
@@ -118,6 +118,33 @@ for await (const h of ui.withProgress(dir.values())) { /* 総数不明ならマ�
 ```
 
 Windows では標準の進捗ダイアログ（IProgressDialog）、コンソールでは標準エラー出力にバーを表示します。
+
+### 入力フォーム・表表示
+
+```js
+const v = await ui.form({
+  title: "売上集計",
+  fields: [
+    { name: "src", label: "集計フォルダ", type: "folder", required: true },
+    { name: "out", label: "出力先", type: "saveFile", accept: [".xlsx"], default: "集計.xlsx" },
+    { name: "mode", label: "集計単位", type: "select", options: ["顧客別", "商品別"] },
+    { name: "tax", label: "税込で集計", type: "checkbox" },
+  ],
+  submit: "実行",
+  remember: true,          // 前回の入力値を %APPDATA%\xljs\<スクリプト名>.json に保存・復元
+});
+if (!v) exit();            // キャンセルは null。folder / file 系の値はハンドル
+
+const picked = await ui.table(rows, { title: "処理するファイル", selectable: "multiple" }); // 選んだ行。キャンセルは []
+ui.table(results, { title: "集計結果" });   // 表示のみ（閉じるまでプロセスは終了しない）
+```
+
+- `ui.form` の項目の型: `text` `password` `number`（`min`/`max`/`step`）`date` `month` `time` `select` `radio` `checkbox` `textarea` `file` `files` `folder` `saveFile`。ファイル系は「参照…」ボタンのほか、ドラッグ＆ドロップでも指定できます。
+- 入力チェック: `required`、`pattern`（文字列全体が一致）、`accept`（拡張子）、`validate(values)`（`{ 項目名: "メッセージ" }` か文字列を返すとエラー）。`date` などの値は文字列（`"2026-04-01"`）、`number` は数値です。
+- `onSubmit: async (values, ctx) => { ... }` を指定すると、ウィンドウを開いたまま実行して、`ctx.progress(i, n, "…")` の進捗と `ctx.log(...)` のログを表示します。キャンセルボタンで `ctx.cancelled` が true になります。ファイル・フォルダを返すと完了後に「フォルダを開く」ボタンが出ます。
+- `ui.table`: 列見出しのクリックで並べ替え、絞り込み、列幅の変更、行の選択（Shift / Ctrl）、コピー（Ctrl+C、Excel に貼れる TSV）、CSV / Excel に保存。数十万行でも表示できます。
+- どちらもネイティブ UI では WebView2 のウィンドウ、コンソールでは対話入力（表は罫線付きの表＋番号入力）、mock では応答 JSON の `"form": [{...}]` / `"table": [[0, 2]]` を使います。
+- サンプル: `examples/form-demo.js`、`examples/table-demo.js`
 
 ### ファイル・フォルダ
 
@@ -278,7 +305,8 @@ go test ./...
 | `internal/engine` | esbuild でバンドル → goja で実行、イベントループ、エラー表示 |
 | `internal/api` | Go 側のネイティブ関数と `prelude.js`（公開 API の JS 実装） |
 | `internal/i18n` | メッセージの多言語化（`locales/*.json` を埋め込み） |
-| `internal/ui` | UI インターフェースと native（Win32・WebView2）/ console / mock 実装、UI スレッド |
+| `internal/ui` | UI インターフェースと native（Win32・WebView2）/ console / mock 実装、UI スレッド、画面側ブリッジ（`bridge.js`） |
+| `internal/webui` | `ui.form` / `ui.table` の画面（HTML・CSS・JS を埋め込み） |
 | `internal/pack` | exe へのスクリプト・アセット埋め込み（zip） |
 | `internal/meta` | スクリプト先頭のメタデータの読み取りとアセットの範囲 |
 | `types/xljs.d.ts` | 型定義（`xljs init` で出力） |

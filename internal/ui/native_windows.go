@@ -569,3 +569,9 @@ func (p *nativeProgress) Close() {
 
 func (n *Native) ShowInFolder(paths []string) error { return ShellShowInFolder(paths) }
 func (n *Native) OpenPath(target string) error      { return ShellOpen(target) }
+
+// Form and Table are only used without HTML windows; scripts show forms
+// and tables in WebView2 windows with the native UI. Fall back to the
+// console.
+func (n *Native) Form(f FormSpec) (map[string]any, bool) { return NewConsole().Form(f) }
+func (n *Native) Table(t TableSpec) ([]int, bool)        { return NewConsole().Table(t) }

@@ -20,7 +20,9 @@ import (
 //	  "showOpenFilePicker": [["a.xlsx", "b.xlsx"], []],
 //	  "showSaveFilePicker": ["out.xlsx", null],
 //	  "showDirectoryPicker": ["data", null],
-//	  "progress": [{"cancelAfter": 3}]
+//	  "progress": [{"cancelAfter": 3}],
+//	  "form": [{"src": "data", "tax": true}, null],
+//	  "table": [[0, 2], null]
 //	}
 //
 // When a queue is empty the call behaves as if the user cancelled. Windows
@@ -212,4 +214,45 @@ func (w *mockWindow) Close() {
 	if w.o.OnClosed != nil {
 		w.o.OnClosed()
 	}
+}
+
+// Form returns the next "form" answer merged over the current values (null
+// or an exhausted queue cancels).
+func (m *Mock) Form(f FormSpec) (map[string]any, bool) {
+	for _, fl := range f.Fields {
+		if fl.Error != "" {
+			m.logf("form invalid: %s: %s", fl.Name, fl.Error)
+		}
+	}
+	var answer map[string]any
+	if !m.next("form", &answer) {
+		m.logf("form(%s) -> null", q(f.Title))
+		return nil, false
+	}
+	vals := map[string]any{}
+	for _, fl := range f.Fields {
+		vals[fl.Name] = fl.Value
+	}
+	for k, v := range answer {
+		vals[k] = v
+	}
+	b, _ := json.Marshal(answer)
+	m.logf("form(%s) -> %s", q(f.Title), b)
+	return vals, true
+}
+
+// Table logs the table; selectable tables take the next "table" answer
+// (a list of row numbers).
+func (m *Mock) Table(t TableSpec) ([]int, bool) {
+	m.logf("table(%s, %d rows)", q(t.Title), t.Rows)
+	if t.Selectable == "" {
+		return nil, true
+	}
+	var sel []int
+	if !m.next("table", &sel) {
+		m.logf("table(%s) -> cancel", q(t.Title))
+		return nil, false
+	}
+	m.logf("table(%s) -> %v", q(t.Title), sel)
+	return sel, true
 }

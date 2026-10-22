@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title></title>
+  <link rel="stylesheet" href="xljs.css">
+</head>
+<body class="form-page">
+  <form id="form" novalidate autocomplete="off" hidden>
+    <main>
+      <h1 id="title"></h1>
+      <p id="description" class="description" hidden></p>
+      <div id="fields"></div>
+      <p id="form-error" class="form-error" hidden></p>
+    </main>
+    <div class="buttons">
+      <button type="button" id="cancel"></button>
+      <button type="submit" id="submit" class="primary"></button>
+    </div>
+  </form>
+
+  <section id="run" hidden>
+    <main>
+      <p id="run-status" class="run-status"></p>
+      <div class="progress-row">
+        <progress id="progress"></progress>
+        <span id="progress-count" class="progress-count"></span>
+      </div>
+      <p id="progress-message" class="progress-message"></p>
+      <pre id="log" class="log"></pre>
+      <p id="run-message" class="run-message" hidden></p>
+    </main>
+    <div class="buttons">
+      <button type="button" id="back" hidden></button>
+      <span class="spacer"></span>
+      <button type="button" id="open" hidden></button>
+      <button type="button" id="run-cancel"></button>
+      <button type="button" id="close" class="primary" hidden></button>
+    </div>
+  </section>
+
+  <script src="form.js"></script>
+</body>
+</html>
