@@ -22,5 +22,5 @@ const dest = await showSaveFilePicker({
 });
 if (dest) {
   book.save(dest);
-  alert("保存しました:\n" + dest.path);
+  if (confirm("保存しました。開きますか？")) shell.openPath(dest);
 }

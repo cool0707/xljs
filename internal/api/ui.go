@@ -62,6 +62,18 @@ func (n *natives) installUI() {
 		u.ShowError(n.str(c, 0), n.str(c, 1))
 		return goja.Undefined()
 	})
+	n.set("shellShowInFolder", func(c goja.FunctionCall) goja.Value {
+		if err := u.ShowInFolder(n.strings(c.Argument(0))); err != nil {
+			n.throw(err)
+		}
+		return goja.Undefined()
+	})
+	n.set("shellOpen", func(c goja.FunctionCall) goja.Value {
+		if err := u.OpenPath(n.str(c, 0)); err != nil {
+			n.throw(err)
+		}
+		return goja.Undefined()
+	})
 	// uiProgress(title, total, message, cancellable) -> {update, cancelled, close}
 	n.set("uiProgress", func(c goja.FunctionCall) goja.Value {
 		p := u.Progress(ui.ProgressOptions{

@@ -37,7 +37,9 @@ var rules = []rule{
 	r(`Cannot mix BigInt and other types.*`, "BigInt と他の型は混ぜて計算できません"),
 	r(`invalid character '([^']*)' looking for beginning of value`, "JSON の解析に失敗しました（予期しない文字 '$1'）"),
 	r(`invalid character '([^']*)' after (object key|object key:value pair|array element)`, "JSON の解析に失敗しました（予期しない文字 '$1'）"),
-	r(`unexpected end of JSON input`, "JSON の解析に失敗しました（途中で終わっています）"),
+	r(`(?i)unexpected end of JSON input( \(EOF\))?`, "JSON が途中で終わっています"),
+	r(`invalid character '([^']*)' (looking for beginning of object key string|in string literal|in literal \w+ \(expecting '[^']*'\))`, "予期しない文字 '$1'"),
+	r(`(?m)invalid character '([^']*)'$`, "予期しない文字 '$1'"),
 	r(`Unhandled promise rejection: `, "処理されなかった Promise の reject: "),
 
 	// esbuild (syntax / resolution errors)

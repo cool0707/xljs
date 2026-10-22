@@ -652,6 +652,45 @@
 
   // ---------------------------------------------------------------- fs / path
 
+  // ---------------------------------------------------------------- json helpers
+
+  /** Reads text from a path, handle, File or Blob. */
+  function readSourceText(src, encoding) {
+    if (src instanceof Blob && !(src instanceof File && src.path)) return native.decode(src._bytes(), encoding || "auto");
+    return native.fsReadText(toPath(src), encoding || "auto");
+  }
+  function localISO(d) {
+    if (isNaN(d.getTime())) return null;
+    const off = -d.getTimezoneOffset();
+    const sign = off >= 0 ? "+" : "-";
+    const ms = d.getMilliseconds() ? "." + String(d.getMilliseconds()).padStart(3, "0") : "";
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}${ms}` +
+      `${sign}${pad2(Math.floor(Math.abs(off) / 60))}:${pad2(Math.abs(off) % 60)}`;
+  }
+  const ISO_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})?$/;
+  function jsonParse(text, opts = {}) {
+    const reviver = opts.dates
+      ? (k, v) => (typeof v === "string" && ISO_DATETIME.test(v) ? new Date(v) : v)
+      : undefined;
+    return JSON.parse(text.replace(/^\uFEFF/, ""), reviver);
+  }
+  function jsonParseFile(src, text, opts, line) {
+    try {
+      return jsonParse(text, opts);
+    } catch (e) {
+      const where = (src instanceof Blob && !(src instanceof File && src.path) ? "Blob" : toPath(src)) + (line ? `:${line}` : "");
+      throw new SyntaxError(L(`JSON の解析に失敗しました (${where}): ${e.message}`, `invalid JSON (${where}): ${e.message}`));
+    }
+  }
+  /** JSON.stringify where Dates use local time with offset by default (dates: "iso" for UTC). */
+  function jsonStringify(value, opts = {}, space) {
+    const local = opts.dates !== "iso";
+    return JSON.stringify(value, local ? function (k, v) {
+      const raw = this[k];
+      return raw instanceof Date ? localISO(raw) : v;
+    } : null, space);
+  }
+
   const fsObj = {
     file: (p) => new FileSystemFileHandle(toPath(p)),
     dir: (p) => new FileSystemDirectoryHandle(toPath(p)),
@@ -675,8 +714,26 @@
     appendText: (p, text, encoding = "utf8") => native.fsWriteText(toPath(p), String(text), encoding, true),
     readBytes: (p) => native.fsReadBytes(toPath(p)),
     writeBytes: (p, data) => native.fsWriteBytes(toPath(p), toUint8(data), false),
-    readJSON: (p) => JSON.parse(native.fsReadText(toPath(p), "auto")),
-    writeJSON: (p, v, space = 2) => native.fsWriteText(toPath(p), JSON.stringify(v, null, space) + "\n", "utf8", false),
+    /** Reads a JSON file (path, handle, File or Blob). opts: { encoding = "auto", dates = false } */
+    readJSON: (src, opts = {}) => jsonParseFile(src, readSourceText(src, opts.encoding), opts),
+    /** Writes value as JSON. opts: { space = 2, encoding = "utf8", dates = "local" | "iso", append } (a number means space) */
+    writeJSON: (dest, value, opts = {}) => {
+      if (typeof opts === "number" || typeof opts === "string") opts = { space: opts };
+      native.fsWriteText(toPath(dest), jsonStringify(value, opts, opts.space === undefined ? 2 : opts.space) + "\n", opts.encoding || "utf8", false);
+    },
+    /** Reads JSON Lines (one JSON value per line). */
+    readJSONL: (src, opts = {}) => {
+      const out = [];
+      readSourceText(src, opts.encoding).split(/\r?\n/).forEach((l, i) => {
+        if (l.trim() !== "") out.push(jsonParseFile(src, l, opts, i + 1));
+      });
+      return out;
+    },
+    /** Writes an array as JSON Lines. opts: { encoding = "utf8", dates, append } */
+    writeJSONL: (dest, rows, opts = {}) => {
+      const text = Array.from(rows || []).map((r) => jsonStringify(r, opts)).join("\n") + "\n";
+      native.fsWriteText(toPath(dest), text, opts.encoding || "utf8", !!opts.append);
+    },
     list: (p = ".") => native.fsReadDir(toPath(p)).map((e) => e.name),
     walk: (p, opts) => walkEntries(toPath(p), opts),
     glob: (pattern, opts = {}) => walkEntries(opts.cwd ? toPath(opts.cwd) : native.fsCwd(), { glob: pattern, exclude: opts.exclude }).toArray(),
@@ -776,6 +833,31 @@
   defineGlobal("showOpenFilePicker", showOpenFilePicker);
   defineGlobal("showSaveFilePicker", showSaveFilePicker);
   defineGlobal("showDirectoryPicker", showDirectoryPicker);
+
+  // ---------------------------------------------------------------- shell
+
+  const isURL = (s) => typeof s === "string" && /^[a-z][a-z0-9+.-]*:\/\//i.test(s);
+  const shellObj = {
+    /**
+     * Opens Explorer with the files selected. Accepts paths, handles or Files,
+     * as separate arguments or arrays. Files in different folders open one
+     * window per folder.
+     */
+    showItemInFolder(...items) {
+      const paths = items.flat(Infinity).filter((x) => x !== null && x !== undefined).map((x) => toPath(x));
+      native.shellShowInFolder(paths);
+    },
+    /** Opens a file or folder with its default application. */
+    openPath(target) { native.shellOpen(toPath(target)); },
+    /** Opens a URL in the default browser. */
+    openExternal(url) {
+      if (!isURL(url)) throw new TypeError(L(`URL を指定してください: ${url}`, `expected a URL: ${url}`));
+      native.shellOpen(String(url));
+    },
+  };
+  shellObj.showInFolder = shellObj.showItemInFolder;
+  shellObj.open = (target) => (isURL(target) ? shellObj.openExternal(target) : shellObj.openPath(target));
+  defineGlobal("shell", shellObj);
 
   // ---------------------------------------------------------------- progress
 

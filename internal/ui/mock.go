@@ -170,3 +170,13 @@ func (p *mockProgress) Close() {
 	activeProgress.Add(-1)
 	p.m.logf("progress closed at %d/%d", p.done, p.total)
 }
+
+func (m *Mock) ShowInFolder(paths []string) error {
+	m.logf("showItemInFolder(%q)", paths)
+	return checkPaths(paths)
+}
+
+func (m *Mock) OpenPath(target string) error {
+	m.logf("openPath(%s)", q(target))
+	return nil
+}

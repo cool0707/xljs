@@ -48,3 +48,4 @@ if (errors.length) out.addSheet("エラー").write(errors.map((e) => [e]));
 out.save(dest);
 
 alert(`${files.length} ファイル、${rows.length} 件を集計しました` + (errors.length ? `\n（読めなかったファイル: ${errors.length}）` : ""));
+shell.showItemInFolder(dest); // 保存したファイルをエクスプローラーで選択表示

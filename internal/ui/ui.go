@@ -58,6 +58,11 @@ type UI interface {
 	Progress(opts ProgressOptions) Progress
 	// ShowError reports a fatal script error to the user.
 	ShowError(title, message string)
+	// ShowInFolder opens the file manager with the given files selected
+	// (files in different folders open one window per folder).
+	ShowInFolder(paths []string) error
+	// OpenPath opens a file, folder or URL with its default application.
+	OpenPath(target string) error
 }
 
 // interrupts counts Ctrl+C presses so that progress indicators can report

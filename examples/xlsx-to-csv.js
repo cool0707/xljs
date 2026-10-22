@@ -5,6 +5,7 @@ let targets = xljs.args.map((p) => fs.file(p));
 if (targets.length === 0) {
   targets = await showOpenFilePicker({ multiple: true, types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }] });
 }
+const created = [];
 for (const h of ui.withProgress(targets, "CSV に変換中")) {
   const book = workbooks.open(h);
   const rows = book.sheet(0).toArrays({ text: true }); // 表示どおりの文字列で出力
@@ -12,4 +13,7 @@ for (const h of ui.withProgress(targets, "CSV に変換中")) {
   csv.write(dest, rows, { encoding: "cp932" });
   book.close();
   console.log("作成:", dest);
+  created.push(dest);
 }
+// 作成した CSV をまとめて選択した状態でエクスプローラーを開く
+if (created.length) shell.showItemInFolder(created);

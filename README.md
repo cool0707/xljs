@@ -1,4 +1,4 @@
-# xljs
+# <img src="assets/xljs.png" width="40" align="top"> xljs
 
 JavaScript / TypeScript で書いたスクリプトで Excel・CSV の集計やデータ変換を行う、Windows 用のシングルバイナリです。Excel のインストールは不要です。
 
@@ -24,7 +24,8 @@ if (dest) {
 - **言語**: ES2023 相当（オプショナルチェーン、`??`、async/await、トップレベル await、クラスフィールドなど）と TypeScript。`import` でファイル分割可能
 - **ファイル操作**: ブラウザの File System Access API 風（`showOpenFilePicker` / `FileSystemFileHandle` など）＋ フォルダ走査などの独自拡張
 - **Excel**: xlsx の読み書き（[excelize](https://github.com/xuri/excelize)）。値は数値・文字列・真偽値・`Date` で受け渡し
-- **CSV**: Shift_JIS(CP932) / UTF-8 の自動判定、BOM 付き UTF-8 での書き出し
+- **CSV / JSON**: Shift_JIS(CP932) / UTF-8 の自動判定、BOM 付き UTF-8 での書き出し、JSON Lines
+- **エクスプローラー連携**: 出力したファイルを選択した状態でエクスプローラーを開く、既定のアプリで開く
 - **UI**: Windows ネイティブのダイアログ（メッセージボックス、ファイル選択、進捗ダイアログ）。コンソールでも動作
 
 ## 使い方
@@ -129,6 +130,32 @@ csv.write("out.csv", rows, { encoding: "cp932", columns: ["日付", "金額"] })
 csv.parse(text) / csv.stringify(rows)
 ```
 
+### JSON
+
+```js
+const data = fs.readJSON(h);                          // パス・ハンドル・File・Blob。BOM・CP932 も自動判定
+const withDates = fs.readJSON(h, { dates: true });    // ISO 形式の日時文字列を Date に戻す
+fs.writeJSON("out.json", rows);                       // 2 スペースでインデント、UTF-8
+fs.writeJSON("out.json", rows, { space: 0, encoding: "cp932", dates: "iso" });
+fs.readJSONL("log.jsonl") / fs.writeJSONL("log.jsonl", rows, { append: true })
+import master from "./master.json";                   // import でも読める（exe に埋め込まれる）
+```
+
+- `Date` は既定でローカル時刻＋オフセット（`2026-04-01T09:00:00+09:00`）で書き出します。`dates: "iso"` で `JSON.stringify` と同じ UTC 表記になります。
+- 解析エラーはファイル名（JSON Lines は行番号も）付きで表示します。
+
+### エクスプローラー・既定のアプリ
+
+```js
+shell.showItemInFolder(dest);                 // 保存したファイルを選択した状態でエクスプローラーを開く
+shell.showItemInFolder([a, b, c]);            // 複数選択（フォルダが違えばフォルダごとに開く）
+shell.openPath("集計.xlsx");                  // 既定のアプリ（Excel など）で開く
+shell.openPath(dir);                          // フォルダを開く
+shell.openExternal("https://example.com/");   // ブラウザで開く
+```
+
+パス・ハンドル・`File` のどれでも渡せます。mock UI では実際には開かず、ログに出すだけです。
+
 ### Excel
 
 ```js
@@ -155,6 +182,7 @@ out.save("集計.xlsx");
 ### その他
 
 - `console.log/error/table/time` など、`setTimeout` / `setInterval`、`sleep(ms)`
+- `fs.readJSON` などのほか、`csv.read` / `workbooks.open` もパス・ハンドル・`File`・`Blob` を受け付けます
 - `xljs.args` `xljs.script` `xljs.scriptDir` `xljs.version` `xljs.title`（ダイアログのタイトル） `xljs.env(name)` `exit(code)`
 - 補っている組み込み: `Array.fromAsync`, `structuredClone`, `TextEncoder` / `TextDecoder`（Shift_JIS 対応）, `atob` / `btoa`, `Blob` / `File`, 数値・日付の `toLocaleString`（日本語形式）, 簡易 `Intl`
 
@@ -172,7 +200,13 @@ make windows        # dist/x64/
 make dist           # dist/xljs-windows-x64.zip と xljs-windows-arm64.zip
 ```
 
-Windows 上なら PowerShell で `go build -o xljs.exe ./cmd/xljs` だけでも構いません。`cmd/xljs/rsrc_windows_*.syso` はビジュアルスタイルと高 DPI 対応のマニフェストです（`xljs.manifest` から [rsrc](https://github.com/akavel/rsrc) で生成）。
+Windows 上なら PowerShell で `go build -o xljs.exe ./cmd/xljs` だけでも構いません。`cmd/xljs/rsrc_windows_*.syso` はアイコン（`assets/xljs.ico`、16〜256px）と、ビジュアルスタイル・高 DPI 対応のマニフェストのリソースです。作り直すときは次のようにします。
+
+```
+python3 tools/make_icon.py ロゴ.png          # assets/xljs.png と assets/xljs.ico を生成（背景を透過）
+go run github.com/akavel/rsrc@latest -manifest cmd/xljs/xljs.manifest -ico assets/xljs.ico -arch amd64 -o cmd/xljs/rsrc_windows_amd64.syso
+go run github.com/akavel/rsrc@latest -manifest cmd/xljs/xljs.manifest -ico assets/xljs.ico -arch arm64 -o cmd/xljs/rsrc_windows_arm64.syso
+```
 
 ## 開発
 

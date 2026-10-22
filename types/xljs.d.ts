@@ -302,8 +302,14 @@ declare global {
     appendText(path: PathLike, text: string, encoding?: Encoding): void;
     readBytes(path: PathLike): ArrayBuffer;
     writeBytes(path: PathLike, data: ArrayBuffer | ArrayBufferView | string): void;
-    readJSON<T = any>(path: PathLike): T;
-    writeJSON(path: PathLike, value: unknown, space?: number): void;
+    /** JSON ファイルを読む（BOM・CP932 も自動判定） */
+    readJSON<T = any>(src: PathLike | Blob, options?: JsonReadOptions): T;
+    /** JSON で書き出す。日付は既定でローカル時刻＋オフセット（例 2026-04-01T09:00:00+09:00） */
+    writeJSON(dest: PathLike, value: unknown, options?: JsonWriteOptions | number): void;
+    /** JSON Lines（1 行 1 JSON）を読む */
+    readJSONL<T = any>(src: PathLike | Blob, options?: JsonReadOptions): T[];
+    /** 配列を JSON Lines で書き出す */
+    writeJSONL(dest: PathLike, rows: Iterable<unknown>, options?: JsonWriteOptions): void;
     /** 直下の名前一覧 */
     list(path?: PathLike): string[];
     walk(path: PathLike, options?: WalkOptions | string | string[]): WalkResult<FileSystemFileHandle>;
@@ -318,6 +324,37 @@ declare global {
     chdir(path: PathLike): void;
   }
   const fs: Fs;
+
+  interface JsonReadOptions {
+    /** 既定 "auto" */
+    encoding?: Encoding;
+    /** ISO 形式の日時文字列を Date に戻す（既定 false） */
+    dates?: boolean;
+  }
+  interface JsonWriteOptions {
+    /** インデント（既定 2。JSON Lines では無視） */
+    space?: number | string;
+    /** 既定 "utf8" */
+    encoding?: Encoding;
+    /** "local"（既定）: 2026-04-01T09:00:00+09:00、"iso": JSON.stringify と同じ UTC 表記 */
+    dates?: "local" | "iso";
+    /** 追記する（writeJSONL のみ） */
+    append?: boolean;
+  }
+
+  interface Shell {
+    /** エクスプローラーでファイルを選択した状態で表示する（複数可。フォルダが違えばフォルダごとに開く） */
+    showItemInFolder(...items: (PathLike | PathLike[])[]): void;
+    /** showItemInFolder と同じ */
+    showInFolder(...items: (PathLike | PathLike[])[]): void;
+    /** ファイル・フォルダを既定のアプリで開く */
+    openPath(target: PathLike): void;
+    /** URL を既定のブラウザで開く */
+    openExternal(url: string): void;
+    /** URL なら openExternal、それ以外は openPath */
+    open(target: PathLike): void;
+  }
+  const shell: Shell;
 
   interface Path {
     readonly sep: string;

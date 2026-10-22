@@ -272,3 +272,6 @@ func (p *consoleProgress) line() string {
 	}
 	return s
 }
+
+func (c *Console) ShowInFolder(paths []string) error { return ShellShowInFolder(paths) }
+func (c *Console) OpenPath(target string) error      { return ShellOpen(target) }

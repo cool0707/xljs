@@ -71,6 +71,13 @@ func TestScripts(t *testing.T) {
 			if !strings.Contains(r.stdout, " ok") {
 				t.Errorf("missing completion marker in stdout:\n%s", r.stdout)
 			}
+			if name == "ui.test.js" {
+				for _, want := range []string{"showItemInFolder([", "a.xlsx", "b.csv", `openPath(`, `"https://example.com/"`} {
+					if !strings.Contains(r.stderr, want) {
+						t.Errorf("mock log does not contain %q:\n%s", want, r.stderr)
+					}
+				}
+			}
 		})
 	}
 }

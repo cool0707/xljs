@@ -556,3 +556,6 @@ func (p *nativeProgress) Close() {
 	p.dlg.release()
 	activeProgress.Add(-1)
 }
+
+func (n *Native) ShowInFolder(paths []string) error { return ShellShowInFolder(paths) }
+func (n *Native) OpenPath(target string) error      { return ShellOpen(target) }

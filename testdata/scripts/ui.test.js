@@ -57,4 +57,16 @@ equal(ui.cancelled, false);
 // Breaking out early closes the indicator.
 for (const x of ui.withProgress([1, 2, 3], "break")) { if (x === 1) break; }
 
+// Explorer / default app (the mock UI only logs them).
+shell.showItemInFolder(picked);
+shell.showInFolder("in/a.xlsx", fs.file("in/b.csv"));
+shell.openPath(dir);
+shell.open("https://example.com/");
+let threw = false;
+try { shell.showItemInFolder("in/missing.txt"); } catch (e) { threw = true; }
+equal(threw, true, "missing files are reported");
+threw = false;
+try { shell.openExternal("not a url"); } catch (e) { threw = true; }
+equal(threw, true);
+
 console.log("ui ok");
