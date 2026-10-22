@@ -53,7 +53,7 @@ func (c *Console) header(title string) string {
 func (c *Console) Alert(title, message string) {
 	fmt.Fprintf(c.Out, "%s%s\n", c.header(title), message)
 	if c.interactive() {
-		fmt.Fprint(c.Out, i18n.S("(Enter で続行) ", "(press Enter) "))
+		fmt.Fprint(c.Out, i18n.T("ui.pressEnter"))
 		c.readLine()
 	}
 }
@@ -116,9 +116,9 @@ func filterHint(fs []FileFilter) string {
 }
 
 func (c *Console) OpenFiles(o PickerOptions) []string {
-	msg := i18n.S("開くファイルのパス", "File to open") + filterHint(o.Filters)
+	msg := i18n.T("ui.fileToOpen") + filterHint(o.Filters)
 	if o.Multiple {
-		msg += i18n.S("、複数は ; 区切り", ", separate multiple with ;")
+		msg += i18n.T("ui.multipleHint")
 	}
 	paths := c.askPath(o.Title, msg)
 	if !o.Multiple && len(paths) > 1 {
@@ -132,13 +132,13 @@ func (c *Console) SaveFile(o PickerOptions) (string, bool) {
 	if def != "" && o.StartIn != "" {
 		def = filepath.Join(o.StartIn, def)
 	}
-	p, ok := c.Prompt(o.Title, i18n.S("保存先のパス", "Save as")+filterHint(o.Filters), def)
+	p, ok := c.Prompt(o.Title, i18n.T("ui.saveAs")+filterHint(o.Filters), def)
 	p = strings.Trim(strings.TrimSpace(p), `"`)
 	return p, ok && p != ""
 }
 
 func (c *Console) PickDirectory(o PickerOptions) (string, bool) {
-	p := c.askPath(o.Title, i18n.S("フォルダのパス", "Folder"))
+	p := c.askPath(o.Title, i18n.T("ui.folder"))
 	if len(p) == 0 {
 		return "", false
 	}

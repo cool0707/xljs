@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/dop251/goja"
 	"github.com/xuri/excelize/v2"
 )
@@ -39,10 +40,10 @@ func newBook(f *excelize.File, path string) *book {
 func (n *natives) book(v goja.Value) *book {
 	b, ok := v.Export().(*book)
 	if !ok || b == nil {
-		n.throwf("ブックではありません", "invalid workbook handle")
+		n.throwT("xlsx.invalidHandle")
 	}
 	if b.closed {
-		n.throwf("ブックは閉じられています", "workbook is closed")
+		n.throwT("xlsx.closed")
 	}
 	return b
 }
@@ -253,6 +254,19 @@ func (n *natives) installXLSX() {
 	n.set("xlsxCreate", func(c goja.FunctionCall) goja.Value {
 		b := newBook(excelize.NewFile(), "")
 		b.fresh = true
+		// New workbooks use the language's default font (游ゴシック for
+		// Japanese, like Excel itself); create({ font }) overrides it.
+		font := i18n.Current().Excel.Font
+		if r, ok := n.child(c.Argument(0)); ok {
+			if f := r.str("font"); f != nil {
+				font = *f
+			}
+		}
+		if font != "" {
+			if err := b.f.SetDefaultFont(font); err != nil {
+				n.throw(err)
+			}
+		}
 		return n.track(b)
 	})
 	n.set("xlsxPath", func(c goja.FunctionCall) goja.Value {
@@ -269,7 +283,7 @@ func (n *natives) installXLSX() {
 		b := n.book(c.Argument(0))
 		name := n.str(c, 1)
 		if idx, _ := b.f.GetSheetIndex(name); idx >= 0 {
-			n.throwf("シート %q は既に存在します", "sheet %q already exists", name)
+			n.throwT("xlsx.sheetExists", name)
 		}
 		if b.fresh {
 			b.fresh = false
@@ -457,7 +471,7 @@ func (n *natives) installXLSX() {
 			path = b.path
 		}
 		if path == "" {
-			n.throwf("保存先が指定されていません", "no destination to save to")
+			n.throwT("xlsx.noDestination")
 		}
 		b.prepareSave()
 		if err := b.f.SaveAs(path); err != nil {

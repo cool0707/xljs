@@ -3,7 +3,6 @@
 package ui
 
 import (
-	"fmt"
 	"runtime"
 	"unsafe"
 
@@ -41,7 +40,7 @@ func ShellShowInFolder(paths []string) error {
 	for _, dir := range order {
 		folder := pidl(dir)
 		if folder == 0 {
-			return fmt.Errorf("%s: %s", dir, i18n.S("フォルダを開けません", "cannot open folder"))
+			return i18n.Err("shell.cannotOpenFolder", dir)
 		}
 		var items, children []uintptr
 		for _, f := range groups[dir] {
@@ -76,7 +75,7 @@ func ShellOpen(target string) error {
 	runtime.KeepAlive(verb)
 	runtime.KeepAlive(t)
 	if r <= 32 {
-		return fmt.Errorf("%s: %s (%d)", target, i18n.S("開けません", "cannot open"), r)
+		return i18n.Err("shell.cannotOpen", target, r)
 	}
 	return nil
 }

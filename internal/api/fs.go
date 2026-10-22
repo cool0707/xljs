@@ -238,7 +238,7 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	if st.IsDir() {
-		return i18n.Errorf("%s: フォルダはコピーできません", "copy: %s is a directory", src)
+		return i18n.Err("fs.copyDirectory", src)
 	}
 	out, err := os.Create(dst)
 	if err != nil {
@@ -292,7 +292,7 @@ func walk(root string, include, exclude []string, dirs, files bool) ([]map[strin
 		return nil, err
 	}
 	if !st.IsDir() {
-		return nil, i18n.Errorf("%s: フォルダではありません", "%s is not a directory", root)
+		return nil, i18n.Err("fs.notDirectory", root)
 	}
 	var out []map[string]any
 	err = filepath.WalkDir(abs, func(p string, d fs.DirEntry, err error) error {

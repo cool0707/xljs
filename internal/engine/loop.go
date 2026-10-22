@@ -42,7 +42,7 @@ func (l *loop) install() {
 		return func(call goja.FunctionCall) goja.Value {
 			fn, ok := goja.AssertFunction(call.Argument(0))
 			if !ok {
-				panic(vm.NewTypeError(i18n.S("コールバックには関数を指定してください", "callback must be a function")))
+				panic(vm.NewTypeError(i18n.T("engine.callbackNotFunction")))
 			}
 			delay := call.Argument(1).ToFloat()
 			if delay != delay || delay < 0 { // NaN or negative

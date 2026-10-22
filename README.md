@@ -47,6 +47,7 @@ xljs version
 
 - `xljs.exe` はコンソール版、`xljsw.exe` は GUI 版（ダブルクリックしても黒い窓が出ない）です。中身は同じで、GUI 版をコマンドプロンプトから起動した場合はそのコンソールに出力します。GUI 版で出力先がないときのエラーはダイアログで表示し、文字列を選択したり「コピー」ボタンでクリップボードにコピーしたりできます。
 - エラー・警告はシステムの表示言語に合わせて日本語または英語で表示します。`--lang=ja|en`（または環境変数 `XLJS_LANG`）で切り替えられます。JavaScript エンジンや構文チェック、Excel 読み込み、OS のエラーのうちよく出るものは日本語に訳して表示します（`catch` で受け取る `e.message` は元のままです）。
+- メッセージは言語ごとのファイル `internal/i18n/locales/<言語>.json` にまとまっています（`en.json` が基準）。言語を追加するときはファイルを 1 つ足してビルドするだけです（手順は同じフォルダの README.md）。
 - 引数なしで起動すると、実行するスクリプトを選ぶダイアログが開きます。exe にスクリプトをドラッグ＆ドロップしても実行できます。
 - コンソール版をダブルクリックで起動した場合は、終了時に Enter 待ちになります。
 - 進捗表示中の Ctrl+C はキャンセル要求（`cancelled` が true になる）、2 回目で強制終了です。
@@ -175,9 +176,43 @@ out.addSheet("集計").write(summary).setColumnWidth("A:C", 16);
 out.save("集計.xlsx");
 ```
 
+- 新しいブック（`workbooks.create()`）の既定フォントは表示言語に合わせます（日本語では Excel と同じ游ゴシック）。`workbooks.create({ font: "Meiryo UI" })` で変更できます。
 - 日付の書式が付いた数値セルは `Date` になります（Excel の日付はタイムゾーンを持たないので、ローカル時刻として扱います）。
 - 数式は保存時に「開いたときに再計算」フラグを立てるので、Excel で開けば計算結果が表示されます。スクリプト内で値が必要なら `cell.calc()`（対応関数は一部）。
 - xlsx / xlsm に対応しています（旧形式の .xls は不可）。マクロ、ピボットテーブル、グラフなどは読み書きの過程で失われることがあります。
+
+### 書式（フォント・罫線・塗りつぶしなど）
+
+```js
+// 表の体裁をまとめて付ける（見出しの太字・塗り・罫線、列幅自動、先頭行固定、フィルター）
+sheet.write(rows, { table: true, columnStyles: { 金額: { format: "#,##0" } } });
+
+// 範囲・セル単位（指定した項目だけが既存の書式に上書きされる）
+sheet.style("A1:D1", { bold: true, color: "#FFFFFF", background: "#305496", align: "center" });
+sheet.cell("D10").style({ font: { size: 14, bold: true }, format: "¥#,##0", border: { top: "double" } });
+sheet.range("A3:D10").border({ outline: "medium", inside: { style: "thin", color: "#BFBFBF" } });
+
+sheet.merge("A1:D1");          // セル結合
+sheet.freeze("A2");            // 1 行目を固定（freeze({ rows: 1, columns: 1 }) も可）
+sheet.autoFilter("A3:D10");    // フィルター
+sheet.autoFit();               // 列幅を内容に合わせる（全角は 2 文字分）
+sheet.setRowHeight(1, 30);
+sheet.cell("A1").getStyle();   // 現在の書式を取得
+```
+
+| 項目 | 指定方法 |
+|---|---|
+| `font` | `{ name, size, bold, italic, underline, strike, color, vertAlign }` |
+| `fill` | `"#RRGGBB"`（`null` で塗りなし） |
+| `border` | `"thin"` など（全セルの上下左右）、または `{ all, outline, inside, horizontal, vertical, top, bottom, left, right, diagonalUp, diagonalDown }`。各辺は `"thin"` `"medium"` `"thick"` `"double"` `"dashed"` `"dotted"` `"hair"` など、または `{ style, color }` |
+| `alignment` | `{ horizontal, vertical, wrap, shrink, indent, rotation }` |
+| `numberFormat` | `"#,##0"` `"yyyy/m/d"` `"0.0%"` `"¥#,##0"` など（`"General"` で標準） |
+| 省略形 | `bold` `italic` `underline` `strike` `color` `fontSize` `fontName` `background` `align` `valign` `wrap` `format` |
+
+- 色は `"#RRGGBB"`・`"#RGB"`・`red` などの色名で指定します。
+- 既定では既存の書式にマージします。`{ replace: true }` を渡すと書式を置き換えます。
+- 範囲の端に引いた罫線は、隣の（書式が設定済みの）セルの接する辺にも反映するので、線が食い違いません。
+- サンプル: `examples/styled-report.js`
 
 ### その他
 
@@ -222,6 +257,7 @@ go test ./...
 | `cmd/xljs` | CLI（引数処理、exe 埋め込み、コンソール処理） |
 | `internal/engine` | esbuild でバンドル → goja で実行、イベントループ、エラー表示 |
 | `internal/api` | Go 側のネイティブ関数と `prelude.js`（公開 API の JS 実装） |
+| `internal/i18n` | メッセージの多言語化（`locales/*.json` を埋め込み） |
 | `internal/ui` | UI インターフェースと native（Win32）/ console / mock 実装 |
 | `internal/pack` | exe へのスクリプト埋め込み |
 | `types/xljs.d.ts` | 型定義（`xljs init` で出力） |

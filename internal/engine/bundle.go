@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,7 +56,7 @@ func Bundle(entry string) ([]byte, error) {
 		return nil, &BundleError{Messages: res.Errors}
 	}
 	if len(res.OutputFiles) == 0 {
-		return nil, errors.New(i18n.S("バンドル結果が空です", "esbuild produced no output"))
+		return nil, i18n.Err("engine.emptyBundle")
 	}
 	return res.OutputFiles[0].Contents, nil
 }

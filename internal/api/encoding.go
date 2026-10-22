@@ -53,7 +53,7 @@ func textEncoding(norm string) (encoding.Encoding, error) {
 	case "utf16be":
 		return unicode.UTF16(unicode.BigEndian, unicode.IgnoreBOM), nil
 	}
-	return nil, i18n.Errorf("未対応の文字コードです: %q", "unsupported encoding %q", norm)
+	return nil, i18n.Err("data.unsupportedEncoding", norm)
 }
 
 // DetectEncoding guesses the encoding of b: a BOM wins, then valid UTF-8,

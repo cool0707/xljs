@@ -4,11 +4,12 @@ package i18n
 
 import "os"
 
-func systemJapanese() bool {
+// systemLanguage returns the language tag from the POSIX locale variables.
+func systemLanguage() string {
 	for _, k := range []string{"LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"} {
-		if v := os.Getenv(k); v != "" {
-			return isJapaneseTag(v)
+		if v := os.Getenv(k); v != "" && v != "C" && v != "POSIX" {
+			return v
 		}
 	}
-	return false
+	return ""
 }

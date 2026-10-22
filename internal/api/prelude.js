@@ -8,8 +8,8 @@
   const asyncIteratorSymbol = Symbol.asyncIterator || Symbol.for("Symbol.asyncIterator");
   const inspectSymbol = Symbol.for("xljs.inspect");
 
-  /** Picks the message for the system language. */
-  const L = (ja, en) => (native.lang === "ja" ? ja : en);
+  /** Localized message for key (see internal/i18n/locales/*.json). */
+  const T = (key, ...args) => native.t(key, ...args);
 
   const define = (obj, name, value) =>
     Object.defineProperty(obj, name, { value, writable: true, configurable: true, enumerable: false });
@@ -97,7 +97,7 @@
         const single = `${prefix}${open} ${parts.join(", ")} ${close}`;
         if (single.length <= 76 && !single.includes("\n")) return single;
         const ind = "  ".repeat(depth + 1);
-        return `${prefix}${open}\n${ind}${parts.map((p) => p.replace(/\n/g, "\n  ")).join(`,\n${ind}`)}\n${"  ".repeat(depth)}${close}`;
+        return `${prefix}${open}\n${ind}${parts.join(`,\n${ind}`)}\n${"  ".repeat(depth)}${close}`;
       } finally {
         seen.pop();
       }
@@ -203,7 +203,7 @@
       const memo = new Map();
       function clone(v) {
         if (v === null || typeof v !== "object") {
-          if (typeof v === "function" || typeof v === "symbol") throw new TypeError(L("structuredClone: 複製できない値です", "structuredClone: value could not be cloned"));
+          if (typeof v === "function" || typeof v === "symbol") throw new TypeError(T("data.structuredClone"));
           return v;
         }
         if (memo.has(v)) return memo.get(v);
@@ -257,7 +257,7 @@
       const bytes = new Uint8Array(s.length);
       for (let i = 0; i < s.length; i++) {
         const c = s.charCodeAt(i);
-        if (c > 255) throw new Error(L("btoa: Latin1 の範囲外の文字が含まれています", "btoa: string contains characters outside of the Latin1 range"));
+        if (c > 255) throw new Error(T("data.btoa"));
         bytes[i] = c;
       }
       return bytesToBase64(bytes);
@@ -368,8 +368,8 @@
     }
   }
   if (typeof G.DOMException !== "function") defineGlobal("DOMException", DOMException);
-  const notFound = (p) => new DOMException(L(`見つかりません: ${p}`, `not found: ${p}`), "NotFoundError");
-  const typeMismatch = (p) => new DOMException(L(`ファイル／フォルダの種類が違います: ${p}`, `type mismatch: ${p}`), "TypeMismatchError");
+  const notFound = (p) => new DOMException(T("fs.notFound", p), "NotFoundError");
+  const typeMismatch = (p) => new DOMException(T("fs.typeMismatch", p), "TypeMismatchError");
 
   // ---------------------------------------------------------------- Blob / File
 
@@ -459,7 +459,7 @@
     if (x instanceof FileSystemHandle) return x.path;
     if (x instanceof File && x.path) return x.path;
     if (x && typeof x.path === "string") return x.path;
-    throw new TypeError(L(`${what} にはパス文字列またはハンドルを指定してください`, `${what} expects a path string or a handle`));
+    throw new TypeError(T("fs.expectedPath", what));
   }
 
   const sameName = native.platform === "windows"
@@ -507,7 +507,7 @@
       this._len = this._len || 0;
     }
     async write(data) {
-      if (this._closed) throw new TypeError(L("ストリームは閉じられています", "stream is closed"));
+      if (this._closed) throw new TypeError(T("fs.streamClosed"));
       if (data && typeof data === "object" && !(data instanceof Blob) && !(data instanceof ArrayBuffer) && !ArrayBuffer.isView(data) && data.type) {
         if (data.type === "seek") { this._pos = data.position; return; }
         if (data.type === "truncate") { this._truncate(data.size); return; }
@@ -594,7 +594,7 @@
   class FileSystemDirectoryHandle extends FileSystemHandle {
     constructor(path, relativePath) { super("directory", path, relativePath); }
     _child(name) {
-      if (/[\\/]/.test(name) || name === "." || name === "..") throw new TypeError(L(`不正な名前です: ${name}`, `invalid name: ${name}`));
+      if (/[\\/]/.test(name) || name === "." || name === "..") throw new TypeError(T("fs.invalidName", name));
       return native.pathJoin(this._path, name);
     }
     async getFileHandle(name, options = {}) {
@@ -679,7 +679,7 @@
       return jsonParse(text, opts);
     } catch (e) {
       const where = (src instanceof Blob && !(src instanceof File && src.path) ? "Blob" : toPath(src)) + (line ? `:${line}` : "");
-      throw new SyntaxError(L(`JSON の解析に失敗しました (${where}): ${e.message}`, `invalid JSON (${where}): ${e.message}`));
+      throw new SyntaxError(T("json.parseError", where, e.message));
     }
   }
   /** JSON.stringify where Dates use local time with offset by default (dates: "iso" for UTC). */
@@ -797,7 +797,7 @@
       const patterns = exts.map((e) => (e.startsWith("*") ? e : e.startsWith(".") ? "*" + e : "*." + e));
       if (patterns.length) filters.push({ description: t.description || "", patterns });
     }
-    if (filters.length && !excludeAll) filters.push({ description: L("すべてのファイル", "All files"), patterns: ["*.*"] });
+    if (filters.length && !excludeAll) filters.push({ description: T("ui.allFiles"), patterns: ["*.*"] });
     return filters;
   }
   function startInPath(startIn) {
@@ -851,7 +851,7 @@
     openPath(target) { native.shellOpen(toPath(target)); },
     /** Opens a URL in the default browser. */
     openExternal(url) {
-      if (!isURL(url)) throw new TypeError(L(`URL を指定してください: ${url}`, `expected a URL: ${url}`));
+      if (!isURL(url)) throw new TypeError(T("shell.expectedURL", url));
       native.shellOpen(String(url));
     },
   };
@@ -969,7 +969,7 @@
     }
     if (iterable && typeof iterable[Symbol.iterator] === "function") return withProgressSync(iterable, options, label, total);
     if (iterable && typeof iterable[asyncIteratorSymbol] === "function") return withProgressAsync(iterable, options, label, total);
-    throw new TypeError(L("withProgress: 配列などの反復可能なオブジェクトを指定してください", "withProgress: expected an iterable"));
+    throw new TypeError(T("ui.expectedIterable"));
   }
 
   const uiObj = {
@@ -1098,6 +1098,81 @@
 
   const XLSX_MIME = MIME[".xlsx"];
 
+  /**
+   * Normalizes a style spec. Besides the full form
+   * { font, fill, border, alignment, numberFormat } it accepts shorthands:
+   * bold, italic, underline, strike, color, fontSize, fontName,
+   * background (= fill), align, valign, wrap, format (= numberFormat).
+   */
+  function normStyle(s) {
+    if (!s || typeof s !== "object") return {};
+    const out = {};
+    const font = Object.assign({}, s.font);
+    for (const k of ["bold", "italic", "underline", "strike"]) if (s[k] !== undefined) font[k] = s[k];
+    if (s.color !== undefined) font.color = s.color;
+    if (s.fontSize !== undefined) font.size = s.fontSize;
+    if (s.fontName !== undefined) font.name = s.fontName;
+    if (Object.keys(font).length) out.font = font;
+    const fill = s.fill !== undefined ? s.fill : s.background;
+    if (fill !== undefined) out.fill = fill;
+    const al = Object.assign({}, s.alignment);
+    if (s.align !== undefined) al.horizontal = s.align;
+    if (s.valign !== undefined) al.vertical = s.valign;
+    if (s.wrap !== undefined) al.wrap = s.wrap;
+    if (Object.keys(al).length) out.alignment = al;
+    if (s.border !== undefined) out.border = s.border;
+    const nf = s.numberFormat !== undefined ? s.numberFormat : s.format;
+    if (nf !== undefined) out.numberFormat = nf;
+    if (s.protection !== undefined) out.protection = s.protection;
+    return out;
+  }
+
+  /** Style used by write({ table: true }). */
+  const TABLE_STYLE = {
+    header: { bold: true, background: "#DDEBF7", align: "center", valign: "center", border: { all: { style: "thin", color: "#8EA9DB" } } },
+    body: { border: { all: { style: "thin", color: "#BFBFBF" } } },
+  };
+
+  class Range {
+    constructor(sheet, address) {
+      define(this, "_sheet", sheet);
+      define(this, "_address", String(address).toUpperCase());
+    }
+    get address() { return this._address; }
+    get sheet() { return this._sheet; }
+    /** Applies (merges) a style; opts.replace discards the existing style first. */
+    style(spec, opts = {}) {
+      native.xlsxStyle(this._sheet._book._h, this._sheet._name, this._address, normStyle(spec), !!opts.replace);
+      return this;
+    }
+    font(spec) { return this.style({ font: spec }); }
+    fill(color) { return this.style({ fill: color }); }
+    border(spec) { return this.style({ border: spec }); }
+    align(horizontal, vertical) { return this.style({ alignment: { horizontal, vertical } }); }
+    numberFormat(format) { return this.style({ numberFormat: format }); }
+    merge() { native.xlsxMerge(this._sheet._book._h, this._sheet._name, this._address, false); return this; }
+    unmerge() { native.xlsxMerge(this._sheet._book._h, this._sheet._name, this._address, true); return this; }
+    /** Values of the range as a 2-D array; assigning writes from the top-left cell. */
+    get values() {
+      const [a, b] = this._address.split(":");
+      const [c1, r1] = native.xlsxParseRef(a);
+      const [c2, r2] = native.xlsxParseRef(b || a);
+      const rows = this._sheet.toArrays();
+      const out = [];
+      for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) {
+        const row = rows[r - 1] || [];
+        const line = [];
+        for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++) line.push(c - 1 < row.length ? row[c - 1] : null);
+        out.push(line);
+      }
+      return out;
+    }
+    set values(rows) {
+      native.xlsxWriteRows(this._sheet._book._h, this._sheet._name, this._address.split(":")[0], rows);
+    }
+    [inspectSymbol]() { return `Range ${this._sheet._name}!${this._address}`; }
+  }
+
   class Cell {
     constructor(sheet, address) {
       define(this, "_sheet", sheet);
@@ -1116,6 +1191,10 @@
     set formula(f) { native.xlsxSetFormula(this._sheet._book._h, this._sheet._name, this._address, f === null || f === undefined ? "" : String(f)); }
     /** Evaluates the formula with excelize's calculation engine (subset of Excel functions). */
     calc() { return native.xlsxCalc(this._sheet._book._h, this._sheet._name, this._address); }
+    /** Applies (merges) a style to the cell. */
+    style(spec, opts) { new Range(this._sheet, this._address).style(spec, opts); return this; }
+    /** The cell's current style ({ font, fill, border, alignment, numberFormat }). */
+    getStyle() { return native.xlsxGetStyle(this._sheet._book._h, this._sheet._name, this._address); }
     [inspectSymbol]() { return `Cell ${this._sheet._name}!${this._address} ${inspect(this.value)}`; }
   }
 
@@ -1179,18 +1258,45 @@
      */
     write(rows, opts = {}) {
       rows = Array.from(rows || []);
-      const start = opts.start || "A1";
-      let data;
+      const start = String(opts.start || "A1").toUpperCase();
+      let data, cols = null, hasHeader = false;
       if (rows.length && !Array.isArray(rows[0])) {
-        const cols = opts.columns || keysOf(rows);
+        cols = opts.columns || keysOf(rows);
         data = rows.map((r) => cols.map((c) => r[c]));
-        if (opts.header !== false) data.unshift(cols);
+        if (opts.header !== false) { data.unshift(cols); hasHeader = true; }
       } else {
         data = rows;
-        if (opts.columns && opts.header !== false) data = [opts.columns].concat(data);
+        if (opts.columns && opts.header !== false) { data = [opts.columns].concat(data); hasHeader = true; cols = opts.columns; }
       }
       native.xlsxWriteRows(this._book._h, this._name, start, data);
+      this._formatWritten(start, data, cols, hasHeader, opts);
       return this;
+    }
+    /** Applies the formatting options of write() to the written block. */
+    _formatWritten(start, data, cols, hasHeader, opts) {
+      const preset = opts.table ? (typeof opts.table === "object" ? opts.table : TABLE_STYLE) : null;
+      const headerStyle = opts.headerStyle || (preset && preset.header);
+      const bodyStyle = opts.style || (preset && preset.body);
+      const nCols = data.reduce((m, r) => Math.max(m, r.length), 0);
+      if (data.length === 0 || nCols === 0) return;
+      const [c1, r1] = native.xlsxParseRef(start);
+      const c2 = c1 + nCols - 1, r2 = r1 + data.length - 1;
+      const ref = (c, r) => native.xlsxCellName(c, r);
+      const bodyTop = hasHeader ? r1 + 1 : r1;
+      if (bodyStyle) this.style(`${ref(c1, r1)}:${ref(c2, r2)}`, bodyStyle);
+      if (opts.columnStyles && bodyTop <= r2) {
+        for (const [key, spec] of Object.entries(opts.columnStyles)) {
+          let idx = cols ? cols.indexOf(key) : -1;
+          if (idx < 0 && /^\d+$/.test(key)) idx = Number(key);
+          if (idx < 0 && /^[A-Z]+$/i.test(key)) idx = native.xlsxParseRef(key + "1")[0] - c1;
+          if (idx >= 0 && idx < nCols) this.style(`${ref(c1 + idx, bodyTop)}:${ref(c1 + idx, r2)}`, spec);
+        }
+      }
+      if (hasHeader && headerStyle) this.style(`${ref(c1, r1)}:${ref(c2, r1)}`, headerStyle);
+      const want = (k) => opts[k] !== undefined ? opts[k] : !!preset;
+      if (want("autoFit")) this.autoFit(`${native.xlsxColumnName(c1)}:${native.xlsxColumnName(c2)}`);
+      if (want("freeze") && hasHeader) this.freeze(ref(1, r1 + 1));
+      if (want("filter") && hasHeader) this.autoFilter(`${ref(c1, r1)}:${ref(c2, r2)}`);
     }
     /** Appends rows below the last used row (objects are written without a header). */
     append(rows, opts = {}) {
@@ -1205,6 +1311,41 @@
     setColumnWidth(cols, width) {
       const [a, b] = String(cols).split(":");
       native.xlsxSetColWidth(this._book._h, this._name, a, b || a, width);
+      return this;
+    }
+    getColumnWidth(col) { return native.xlsxGetColWidth(this._book._h, this._name, String(col)); }
+    setRowHeight(row, height) {
+      native.xlsxSetRowHeight(this._book._h, this._name, row, height);
+      return this;
+    }
+    /** Sets column widths from the cell contents. cols: "A:D" (default: all used columns). */
+    autoFit(cols, opts = {}) {
+      if (typeof cols === "object" && cols !== null) { opts = cols; cols = undefined; }
+      let c1 = 1, c2 = 16384;
+      if (cols) {
+        const [a, b] = String(cols).toUpperCase().split(":");
+        c1 = native.xlsxParseRef(a + "1")[0];
+        c2 = native.xlsxParseRef((b || a) + "1")[0];
+      }
+      native.xlsxAutoFit(this._book._h, this._name, c1, c2, opts.min !== undefined ? opts.min : 6, opts.max !== undefined ? opts.max : 60);
+      return this;
+    }
+    /** range("A1:D10") */
+    range(address) { return new Range(this, address); }
+    /** style("A1:D1", { bold: true, background: "#DDEBF7", border: "thin" }) */
+    style(address, spec, opts) { new Range(this, address).style(spec, opts); return this; }
+    merge(address) { new Range(this, address).merge(); return this; }
+    unmerge(address) { new Range(this, address).unmerge(); return this; }
+    /** Freezes the rows above and columns left of the cell: freeze("A2") freezes row 1. */
+    freeze(cell) {
+      if (cell && typeof cell === "object") cell = native.xlsxCellName((cell.columns || 0) + 1, (cell.rows || 0) + 1);
+      native.xlsxFreeze(this._book._h, this._name, cell ? String(cell) : "");
+      return this;
+    }
+    unfreeze() { native.xlsxFreeze(this._book._h, this._name, ""); return this; }
+    /** Adds filter buttons to the header row of the range (default: the used range). */
+    autoFilter(address) {
+      native.xlsxAutoFilter(this._book._h, this._name, address || this.dimension);
       return this;
     }
     [inspectSymbol]() { return `Worksheet ${JSON.stringify(this._name)}`; }
@@ -1244,6 +1385,8 @@
     }
     toArrayBuffer() { return native.xlsxToBytes(this._h); }
     toBlob() { return new Blob([native.xlsxToBytes(this._h)], { type: XLSX_MIME }); }
+    /** Default font of the workbook: { name, size } */
+    get defaultFont() { return native.xlsxDefaultFont(this._h); }
     close() { native.xlsxClose(this._h); }
     [inspectSymbol]() { return `Workbook { path: ${JSON.stringify(this.path)}, sheets: ${inspect(this.sheetNames)} }`; }
   }
@@ -1256,10 +1399,11 @@
       return new Workbook(native.xlsxOpen(toPath(src, "workbooks.open()")));
     },
     /** Creates an empty workbook. The first addSheet() replaces the default sheet. */
-    create() { return new Workbook(native.xlsxCreate()); },
+    create(options) { return new Workbook(native.xlsxCreate(options)); },
     Workbook,
     Worksheet,
     Cell,
+    Range,
     /** Converts a column number to letters (1 -> "A"). */
     columnName: (n) => native.xlsxColumnName(n),
     /** Builds a cell reference from (row, column), 1-based. */

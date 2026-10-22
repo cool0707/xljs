@@ -1,0 +1,263 @@
+{
+  "$comment": "日本語のメッセージ。キーは en.json と同じ。translations はエンジン・Excel ライブラリ等の英語メッセージを訳す正規表現（Go の regexp 構文、置換は $1 形式）。",
+  "lang": "ja",
+  "name": "日本語",
+  "match": [
+    "ja"
+  ],
+  "excel": {
+    "font": "游ゴシック"
+  },
+  "messages": {
+    "cli.usage": "xljs - Excel/CSV スクリプトランナー\n\n使い方:\n  xljs [オプション] <script.js|script.ts> [引数...]\n  xljs pack <script> [-o 出力.exe]   スクリプトを埋め込んだ exe を作成\n  xljs check <script>                構文と import を検査（実行しない）\n  xljs init [フォルダ]               型定義 (xljs.d.ts) と jsconfig.json を作成\n  xljs version                       バージョンを表示\n\nオプション:\n  --ui=auto|native|console|mock      UI の種類（既定: auto）\n  --ui-answers=<file.json>           mock UI の応答ファイル\n  --lang=auto|{0}                  メッセージの言語（既定: システムの言語）\n\n環境変数 XLJS_UI / XLJS_UI_ANSWERS / XLJS_LANG でも指定できます（埋め込み exe 向け）。\n",
+    "cli.usageCheck": "使い方: xljs check <script>",
+    "cli.usagePack": "使い方: xljs pack <script> [-o 出力.exe]",
+    "cli.interrupted": "中断しました",
+    "cli.cancelRequested": "キャンセルを要求しました（もう一度 Ctrl+C で強制終了）",
+    "cli.selectScript": "実行するスクリプトを選択",
+    "cli.scripts": "スクリプト",
+    "cli.unknownUI": "--ui の値 \"{0}\" は使えません（auto, native, console, mock）",
+    "cli.unknownLang": "--lang の値 \"{0}\" は使えません（使える言語: {1}）",
+    "cli.checkOK": "問題ありません",
+    "cli.created": "作成しました: {0}",
+    "cli.pressEnterToClose": "Enter キーで閉じます...",
+    "cli.syntaxError": "構文エラー:",
+    "cli.error": "エラー: {0}",
+    "engine.callbackNotFunction": "コールバックには関数を指定してください",
+    "engine.emptyBundle": "バンドル結果が空です",
+    "engine.internalError": "内部エラー: {0}",
+    "engine.bundleNotFunction": "内部エラー: バンドル結果が関数ではありません",
+    "engine.notFinished": "スクリプトが完了しませんでした（解決されない Promise を await しています）",
+    "engine.unhandledRejection": "処理されなかった Promise の reject: {0}",
+    "ui.copy": "コピー",
+    "ui.copied": "コピーしました",
+    "ui.cancel": "キャンセル",
+    "ui.nativeUnavailable": "ネイティブ UI は Windows でのみ使えます",
+    "ui.pressEnter": "(Enter で続行) ",
+    "ui.fileToOpen": "開くファイルのパス",
+    "ui.multipleHint": "、複数は ; 区切り",
+    "ui.saveAs": "保存先のパス",
+    "ui.folder": "フォルダのパス",
+    "ui.allFiles": "すべてのファイル",
+    "ui.expectedIterable": "withProgress: 配列などの反復可能なオブジェクトを指定してください",
+    "shell.noFiles": "表示するファイルが指定されていません",
+    "shell.cannotOpenFolder": "{0}: フォルダを開けません",
+    "shell.cannotOpen": "{0}: 開けません ({1})",
+    "shell.expectedURL": "URL を指定してください: {0}",
+    "fs.copyDirectory": "{0}: フォルダはコピーできません",
+    "fs.notDirectory": "{0}: フォルダではありません",
+    "fs.notFound": "見つかりません: {0}",
+    "fs.typeMismatch": "ファイル／フォルダの種類が違います: {0}",
+    "fs.expectedPath": "{0} にはパス文字列またはハンドルを指定してください",
+    "fs.streamClosed": "ストリームは閉じられています",
+    "fs.invalidName": "不正な名前です: {0}",
+    "data.expectedBytes": "ArrayBuffer・型付き配列・文字列のいずれかを指定してください",
+    "data.unsupportedEncoding": "未対応の文字コードです: \"{0}\"",
+    "data.structuredClone": "structuredClone: 複製できない値です",
+    "data.btoa": "btoa: Latin1 の範囲外の文字が含まれています",
+    "json.parseError": "JSON の解析に失敗しました ({0}): {1}",
+    "xlsx.invalidHandle": "ブックではありません",
+    "xlsx.closed": "ブックは閉じられています",
+    "xlsx.sheetExists": "シート \"{0}\" は既に存在します",
+    "xlsx.noDestination": "保存先が指定されていません",
+    "xlsx.invalidColor": "色の指定 \"{0}\" が不正です（\"#RRGGBB\" の形式で指定してください）",
+    "xlsx.invalidBorder": "罫線の種類 \"{0}\" が不正です",
+    "xlsx.invalidRange": "セル範囲 \"{0}\" が不正です",
+    "xlsx.invalidOption": "{0} の指定 \"{1}\" が不正です",
+    "os.error": "{0}: {1}: {2}",
+    "os.op.open": "開けません",
+    "os.op.read": "読み込めません",
+    "os.op.write": "書き込めません",
+    "os.op.close": "閉じられません",
+    "os.op.remove": "削除できません",
+    "os.op.mkdir": "フォルダを作成できません",
+    "os.op.stat": "アクセスできません",
+    "os.op.readdir": "フォルダを読み込めません",
+    "os.op.chdir": "フォルダに移動できません",
+    "os.op.chtimes": "日時を設定できません",
+    "os.op.rename": "名前を変更・移動できません",
+    "os.op.symlink": "リンクを作成できません",
+    "os.reason.notExist": "ファイルまたはフォルダが見つかりません",
+    "os.reason.permission": "アクセスが拒否されました（読み取り専用、権限、または他のプログラムが使用中）",
+    "os.reason.exist": "既に存在します",
+    "os.reason.inUse": "他のプログラム（Excel など）で開かれています。閉じてから再実行してください",
+    "os.reason.notDir": "フォルダではありません",
+    "os.reason.isDir": "フォルダです",
+    "os.reason.notEmpty": "フォルダが空ではありません",
+    "os.reason.noSpace": "ディスクの空き容量が足りません"
+  },
+  "translations": [
+    [
+      "Cannot read property '([^']*)' of (undefined|null)",
+      "$2 のプロパティ '$1' は読み取れません"
+    ],
+    [
+      "Cannot set property '([^']*)' of (undefined|null)",
+      "$2 にプロパティ '$1' は設定できません"
+    ],
+    [
+      "Object has no member '([^']*)'",
+      "オブジェクトにメンバー '$1' はありません（関数名・プロパティ名を確認してください）"
+    ],
+    [
+      "([\\w$.\\[\\]'\\\"]+) is not a function",
+      "$1 は関数ではありません"
+    ],
+    [
+      "([\\w$.\\[\\]'\\\"]+) is not a constructor",
+      "$1 はコンストラクタではありません"
+    ],
+    [
+      "([\\w$.\\[\\]'\\\"]+) is not iterable",
+      "$1 は反復可能ではありません"
+    ],
+    [
+      "([\\w$]+) is not defined",
+      "$1 は定義されていません"
+    ],
+    [
+      "Assignment to constant variable\\.?",
+      "const で宣言した変数には再代入できません"
+    ],
+    [
+      "Cannot access '([^']*)' before initialization",
+      "初期化前の '$1' にはアクセスできません"
+    ],
+    [
+      "Maximum call stack size exceeded",
+      "呼び出しが深すぎます（無限再帰の可能性があります）"
+    ],
+    [
+      "Invalid array length",
+      "配列の長さが不正です"
+    ],
+    [
+      "Cannot convert undefined or null to object",
+      "undefined / null はオブジェクトに変換できません"
+    ],
+    [
+      "Cannot convert a Symbol value to a string",
+      "Symbol は文字列に変換できません"
+    ],
+    [
+      "Cannot mix BigInt and other types.*",
+      "BigInt と他の型は混ぜて計算できません"
+    ],
+    [
+      "invalid character '([^']*)' looking for beginning of value",
+      "JSON の解析に失敗しました（予期しない文字 '$1'）"
+    ],
+    [
+      "invalid character '([^']*)' after (object key|object key:value pair|array element)",
+      "JSON の解析に失敗しました（予期しない文字 '$1'）"
+    ],
+    [
+      "(?i)unexpected end of JSON input( \\(EOF\\))?",
+      "JSON が途中で終わっています"
+    ],
+    [
+      "invalid character '([^']*)' (looking for beginning of object key string|in string literal|in literal \\w+ \\(expecting '[^']*'\\))",
+      "予期しない文字 '$1'"
+    ],
+    [
+      "(?m)invalid character '([^']*)'$",
+      "予期しない文字 '$1'"
+    ],
+    [
+      "Could not resolve \"([^\"]*)\"",
+      "\"$1\" が見つかりません（import のパスを確認してください）"
+    ],
+    [
+      "Expected \"([^\"]*)\" but found end of file",
+      "\"$1\" が必要ですが、ファイルが終わっています（括弧の閉じ忘れなど）"
+    ],
+    [
+      "Expected \"([^\"]*)\" but found \"([^\"]*)\"",
+      "\"$1\" が必要ですが \"$2\" があります"
+    ],
+    [
+      "Expected identifier but found \"([^\"]*)\"",
+      "識別子が必要ですが \"$1\" があります"
+    ],
+    [
+      "Expected (.+?) but found \"([^\"]*)\"",
+      "$1 が必要ですが \"$2\" があります"
+    ],
+    [
+      "Unexpected end of file",
+      "ファイルが途中で終わっています（括弧の閉じ忘れなど）"
+    ],
+    [
+      "Unexpected \"([^\"]*)\"",
+      "予期しない \"$1\" があります"
+    ],
+    [
+      "Unterminated string literal",
+      "文字列が閉じられていません"
+    ],
+    [
+      "Unterminated template literal",
+      "テンプレート文字列が閉じられていません"
+    ],
+    [
+      "Unterminated regular expression",
+      "正規表現が閉じられていません"
+    ],
+    [
+      "The symbol \"([^\"]*)\" has already been declared",
+      "\"$1\" は既に宣言されています"
+    ],
+    [
+      "Top-level return cannot be used.*",
+      "トップレベルでは return を使えません（exit() を使ってください）"
+    ],
+    [
+      "Cannot use \"await\" outside.*",
+      "async 関数の外では \"await\" を使えません"
+    ],
+    [
+      "zip: not a valid zip file",
+      "xlsx として読み込めません（形式が違うか、ファイルが壊れています）"
+    ],
+    [
+      "sheet (.+?) does not exist",
+      "シート \"$1\" はありません"
+    ],
+    [
+      "cannot convert cell \"([^\"]*)\" to coordinates: invalid cell name \"[^\"]*\"",
+      "セル番地 \"$1\" が不正です"
+    ],
+    [
+      "invalid cell name \"([^\"]*)\"",
+      "セル番地 \"$1\" が不正です"
+    ],
+    [
+      "invalid column name \"([^\"]*)\"",
+      "列名 \"$1\" が不正です"
+    ],
+    [
+      "the sheet name length exceeds the (\\d+) characters limit",
+      "シート名は $1 文字までです"
+    ],
+    [
+      "the sheet can not contain any of the characters.*",
+      "シート名に使えない文字（: \\ / ? * [ ]）が含まれています"
+    ],
+    [
+      "the sheet name can not be blank",
+      "シート名を空にはできません"
+    ],
+    [
+      "the encrypted file is not supported.*|unsupported encryption mechanism",
+      "パスワード付きのファイルには対応していません"
+    ],
+    [
+      "invalid font size",
+      "フォントサイズが不正です"
+    ],
+    [
+      "exceeds maximum font length",
+      "フォント名が長すぎます"
+    ]
+  ]
+}

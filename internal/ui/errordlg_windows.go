@@ -115,7 +115,7 @@ func errorDlgProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 		switch wparam & 0xFFFF {
 		case idCopy:
 			if st != nil && setClipboardText(hwnd, st.text) {
-				p := wstr(i18n.S("コピーしました", "Copied"))
+				p := wstr(i18n.T("ui.copied"))
 				procSetDlgItemTextW.Call(hwnd, idCopy, uintptr(unsafe.Pointer(p)))
 				runtime.KeepAlive(p)
 			}
@@ -168,7 +168,7 @@ func errorDialog(title, message string) bool {
 	btnY := margin + textH + 7
 	cy := btnY + btnH + margin
 
-	copyLabel := i18n.S("コピー", "Copy")
+	copyLabel := i18n.T("ui.copy")
 	copyW := int16(60)
 
 	d := &dlgBuilder{}

@@ -178,3 +178,14 @@ func TestMessagesFollowLanguage(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultFontFollowsLanguage(t *testing.T) {
+	defer i18n.SetLanguage("ja")
+	for lang, font := range map[string]string{"ja": "游ゴシック", "en": "Calibri"} {
+		i18n.SetLanguage(lang)
+		src := `const f = workbooks.create().defaultFont.name; if (f !== "` + font + `") throw new Error(f)`
+		if r := runScript(t, writeScript(t, "f.js", src), ""); r.code != 0 {
+			t.Errorf("%s: %v", lang, r.err)
+		}
+	}
+}

@@ -25,7 +25,7 @@ type consoleState struct {
 
 func (c *consoleState) finish() {
 	if c.own && term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprint(os.Stderr, "\n"+i18n.S("Enter キーで閉じます...", "Press Enter to close..."))
+		fmt.Fprint(os.Stderr, "\n"+i18n.T("cli.pressEnterToClose"))
 		bufio.NewReader(os.Stdin).ReadString('\n')
 	}
 }
@@ -38,11 +38,11 @@ func (c *consoleState) fail(u ui.UI, err error) int {
 	var se *engine.ScriptError
 	switch {
 	case errors.As(err, &be):
-		msg = i18n.S("構文エラー:\n", "Syntax error:\n") + msg
+		msg = i18n.T("cli.syntaxError") + "\n" + msg
 	case errors.As(err, &se):
 		// already formatted and localized
 	default:
-		msg = i18n.S("エラー: ", "Error: ") + i18n.Error(err)
+		msg = i18n.T("cli.error", i18n.Error(err))
 	}
 	fmt.Fprintln(os.Stderr, msg)
 	if !c.has {

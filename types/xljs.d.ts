@@ -417,6 +417,106 @@ declare global {
 
   type CellValue = number | string | boolean | Date | null;
 
+  /** "#RRGGBB" / "#RGB" / "RRGGBB" または red, white, gray などの色名 */
+  type Color = string;
+
+  type BorderStyleName = "none" | "thin" | "medium" | "dashed" | "dotted" | "thick" | "double" | "hair" |
+    "mediumDashed" | "dashDot" | "mediumDashDot" | "dashDotDot" | "mediumDashDotDot" | "slantDashDot";
+  /** "thin" などの線種、{ style, color }、true（細線）、null（線なし） */
+  type BorderSide = BorderStyleName | { style?: BorderStyleName; color?: Color } | boolean | null;
+
+  interface BorderSpec {
+    /** 範囲内のすべてのセルの上下左右 */
+    all?: BorderSide;
+    /** 範囲の外枠 */
+    outline?: BorderSide;
+    /** 範囲の内側の線（縦横） */
+    inside?: BorderSide;
+    /** 内側の横線 */
+    horizontal?: BorderSide;
+    /** 内側の縦線 */
+    vertical?: BorderSide;
+    top?: BorderSide;
+    bottom?: BorderSide;
+    left?: BorderSide;
+    right?: BorderSide;
+    diagonalUp?: BorderSide;
+    diagonalDown?: BorderSide;
+  }
+
+  interface FontSpec {
+    name?: string;
+    size?: number;
+    bold?: boolean;
+    italic?: boolean;
+    /** true / "single" / "double" / "none" */
+    underline?: boolean | "single" | "double" | "singleAccounting" | "doubleAccounting" | "none";
+    strike?: boolean;
+    color?: Color;
+    vertAlign?: "superscript" | "subscript" | "baseline";
+  }
+
+  interface AlignmentSpec {
+    horizontal?: "general" | "left" | "center" | "right" | "fill" | "justify" | "centerContinuous" | "distributed";
+    vertical?: "top" | "center" | "middle" | "bottom" | "justify" | "distributed";
+    /** 折り返して全体を表示 */
+    wrap?: boolean;
+    /** 縮小して全体を表示 */
+    shrink?: boolean;
+    indent?: number;
+    /** 文字の角度（-90〜90、255 で縦書き） */
+    rotation?: number;
+  }
+
+  /**
+   * セルの書式。指定した項目だけが既存の書式に上書きされる。
+   * 省略形: bold, italic, underline, strike, color（文字色）, fontSize, fontName,
+   * background（= fill）, align, valign, wrap, format（= numberFormat）
+   */
+  interface CellStyle {
+    font?: FontSpec;
+    /** 塗りつぶしの色。null または "none" で塗りなし */
+    fill?: Color | { color: Color } | null;
+    /** "thin" などで全セルの上下左右、または辺ごとの指定 */
+    border?: BorderSide | BorderSpec;
+    alignment?: AlignmentSpec;
+    /** "#,##0"、"yyyy/m/d"、"0.0%" などの表示形式、または組み込み番号。"General" で標準に戻す */
+    numberFormat?: string | number;
+    protection?: { locked?: boolean };
+    bold?: boolean;
+    italic?: boolean;
+    underline?: FontSpec["underline"];
+    strike?: boolean;
+    color?: Color;
+    fontSize?: number;
+    fontName?: string;
+    background?: Color | null;
+    align?: AlignmentSpec["horizontal"];
+    valign?: AlignmentSpec["vertical"];
+    wrap?: boolean;
+    format?: string | number;
+  }
+
+  interface StyleOptions {
+    /** 既存の書式を消してから適用する（既定 false: 既存の書式にマージ） */
+    replace?: boolean;
+  }
+
+  interface Range {
+    readonly address: string;
+    readonly sheet: Worksheet;
+    style(style: CellStyle, options?: StyleOptions): this;
+    font(font: FontSpec): this;
+    fill(color: Color | null): this;
+    border(border: BorderSide | BorderSpec): this;
+    align(horizontal?: AlignmentSpec["horizontal"], vertical?: AlignmentSpec["vertical"]): this;
+    numberFormat(format: string | number): this;
+    merge(): this;
+    unmerge(): this;
+    /** 範囲の値（2 次元配列）。代入すると左上から書き込む */
+    values: CellValue[][];
+  }
+
   interface Cell {
     readonly address: string;
     readonly row: number;
@@ -429,6 +529,10 @@ declare global {
     formula: string | null;
     /** 数式を計算する（対応関数は一部） */
     calc(): string;
+    /** 書式を適用する（既存の書式にマージ） */
+    style(style: CellStyle, options?: StyleOptions): this;
+    /** 現在の書式（style() に渡せる形） */
+    getStyle(): CellStyle;
   }
 
   interface ToObjectsOptions {
@@ -446,6 +550,21 @@ declare global {
     /** オブジェクト配列のとき見出し行を書く（既定 true） */
     header?: boolean;
     columns?: string[];
+    /** 見出し行の書式 */
+    headerStyle?: CellStyle;
+    /** 書き込んだ範囲全体の書式 */
+    style?: CellStyle;
+    /** 列ごとの書式（キーは列名・列番号 0〜・列記号 "C"）。見出しを除くデータ部分に適用 */
+    columnStyles?: Record<string, CellStyle>;
+    /** 表の体裁にする: 見出しの太字・塗り・罫線、データの罫線、列幅自動調整、見出し行の固定、フィルター。
+     * { header, body } で書式を差し替えられる */
+    table?: boolean | { header?: CellStyle; body?: CellStyle };
+    /** 列幅を自動調整（table では既定 true） */
+    autoFit?: boolean;
+    /** 見出し行の下でウィンドウ枠を固定（table では既定 true） */
+    freeze?: boolean;
+    /** 見出し行にフィルターを付ける（table では既定 true） */
+    filter?: boolean;
   }
 
   interface Worksheet {
@@ -468,6 +587,22 @@ declare global {
     readonly rowCount: number;
     /** setColumnWidth("A", 20) / setColumnWidth("A:C", 12) */
     setColumnWidth(columns: string, width: number): this;
+    getColumnWidth(column: string): number;
+    setRowHeight(row: number, height: number): this;
+    /** 内容に合わせて列幅を調整する（省略時は全列）。全角文字は 2 文字分として計算 */
+    autoFit(columns?: string, options?: { min?: number; max?: number }): this;
+    autoFit(options: { min?: number; max?: number }): this;
+    /** range("A1:D10") */
+    range(address: string): Range;
+    /** style("A1:D1", { bold: true, background: "#DDEBF7", border: "thin" }) */
+    style(address: string, style: CellStyle, options?: StyleOptions): this;
+    merge(address: string): this;
+    unmerge(address: string): this;
+    /** 指定セルより上の行・左の列を固定する（freeze("A2") で 1 行目を固定）。{ rows, columns } でも指定可 */
+    freeze(cell: string | { rows?: number; columns?: number }): this;
+    unfreeze(): this;
+    /** フィルターを付ける（既定: 使用範囲） */
+    autoFilter(address?: string): this;
   }
 
   interface Workbook {
@@ -483,13 +618,16 @@ declare global {
     toArrayBuffer(): ArrayBuffer;
     toBlob(): Blob;
     close(): void;
+    /** ブックの既定フォント */
+    readonly defaultFont: { name: string; size: number };
   }
 
   interface Workbooks {
     /** .xlsx を開く（パス・ハンドル・File・Blob・ArrayBuffer） */
     open(src: PathLike | Blob | ArrayBuffer | ArrayBufferView): Workbook;
-    /** 新しいブックを作る（最初の addSheet が既定シートを置き換える） */
-    create(): Workbook;
+    /** 新しいブックを作る（最初の addSheet が既定シートを置き換える）。
+     * 既定フォントは表示言語に合わせる（日本語では游ゴシック）。font で変更可 */
+    create(options?: { font?: string }): Workbook;
     /** 1 → "A" */
     columnName(n: number): string;
     /** (行, 列) → "B3" */

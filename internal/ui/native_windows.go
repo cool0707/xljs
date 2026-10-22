@@ -437,7 +437,7 @@ func (n *Native) Prompt(title, message, def string) (string, bool) {
 	d.item(ssNoPrefix, margin, margin, int16(textW), int16(textH), 0xFFFF, 0x0082, message)
 	d.item(wsBorder|wsTabStop|esAutoHScroll, margin, int16(editY), int16(textW), 14, idEdit, 0x0081, "")
 	d.item(wsTabStop|bsDefPushButton, cx-margin-50-4-50, int16(btnY), 50, 14, idOK, 0x0080, "OK")
-	d.item(wsTabStop, cx-margin-50, int16(btnY), 50, 14, idCancel, 0x0080, i18n.S("キャンセル", "Cancel"))
+	d.item(wsTabStop, cx-margin-50, int16(btnY), 50, 14, idCancel, 0x0080, i18n.T("ui.cancel"))
 
 	// The template must be DWORD aligned.
 	words := make([]uint32, (len(d.b)+3)/4)

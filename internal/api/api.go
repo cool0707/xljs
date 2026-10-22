@@ -69,6 +69,7 @@ func Install(vm *goja.Runtime, env *Env) error {
 	n.installEncoding()
 	n.installCSV()
 	n.installXLSX()
+	n.installXLSXStyle()
 	n.installUI()
 
 	fnv, err := vm.RunProgram(preludeProg)
@@ -106,8 +107,8 @@ func (n *natives) throw(err error) {
 	panic(n.vm.NewGoError(err))
 }
 
-// throwf raises a localized error message.
-func (n *natives) throwf(ja, en string, args ...any) { n.throw(i18n.Errorf(ja, en, args...)) }
+// throwT raises the localized message for key.
+func (n *natives) throwT(key string, args ...any) { n.throw(i18n.Err(key, args...)) }
 
 // throwPath raises err for the file at path, adding the path unless the
 // error already names it.
@@ -190,7 +191,7 @@ func (n *natives) bytes(v goja.Value) []byte {
 			}
 		}
 	}
-	n.throwf("ArrayBuffer・型付き配列・文字列のいずれかを指定してください", "expected ArrayBuffer, typed array or string")
+	n.throwT("data.expectedBytes")
 	return nil
 }
 
@@ -225,6 +226,13 @@ func (n *natives) installCore() {
 	n.obj.Set("platform", runtime.GOOS)
 	n.obj.Set("uiName", env.UI.Name())
 	n.obj.Set("lang", i18n.Lang())
+	n.set("t", func(c goja.FunctionCall) goja.Value {
+		args := make([]any, 0, len(c.Arguments))
+		for _, a := range c.Arguments[min(1, len(c.Arguments)):] {
+			args = append(args, a.String())
+		}
+		return n.vm.ToValue(i18n.T(n.str(c, 0), args...))
+	})
 	n.obj.Set("title", strings.TrimSuffix(filepath.Base(env.Script), filepath.Ext(env.Script)))
 }
 

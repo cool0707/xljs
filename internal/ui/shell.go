@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 
@@ -11,7 +10,7 @@ import (
 // checkPaths makes the paths absolute and verifies that they exist.
 func checkPaths(paths []string) error {
 	if len(paths) == 0 {
-		return errors.New(i18n.S("表示するファイルが指定されていません", "no files to show"))
+		return i18n.Err("shell.noFiles")
 	}
 	for _, p := range paths {
 		if _, err := os.Stat(p); err != nil {

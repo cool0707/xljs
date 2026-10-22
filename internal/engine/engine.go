@@ -4,7 +4,6 @@ package engine
 
 import (
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -90,7 +89,7 @@ func Run(o Options) (int, error) {
 	}
 	defer env.Cleanup()
 	if err := api.Install(vm, env); err != nil {
-		return 1, fmt.Errorf("%s: %w", i18n.S("内部エラー", "internal error"), err)
+		return 1, i18n.Err("engine.internalError", err)
 	}
 
 	name := filepath.Base(o.ScriptPath)
@@ -109,7 +108,7 @@ func Run(o Options) (int, error) {
 		if fn, ok := goja.AssertFunction(mainFn); ok {
 			result, err = fn(goja.Undefined())
 		} else {
-			err = errors.New(i18n.S("内部エラー: バンドル結果が関数ではありません", "internal error: bundled script is not a function"))
+			err = i18n.Err("engine.bundleNotFunction")
 		}
 	}
 	if err == nil {
@@ -131,11 +130,11 @@ func Run(o Options) (int, error) {
 		case goja.PromiseStateRejected:
 			return 1, &ScriptError{Message: describeValue(p.Result())}
 		case goja.PromiseStatePending:
-			return 1, &ScriptError{Message: i18n.S("スクリプトが完了しませんでした（解決されない Promise を await しています）", "the script did not finish (it awaits a promise that never settles)")}
+			return 1, &ScriptError{Message: i18n.T("engine.notFinished")}
 		}
 	}
 	for p := range unhandled {
-		return 1, &ScriptError{Message: i18n.S("処理されなかった Promise の reject: ", "Unhandled promise rejection: ") + describeValue(p.Result())}
+		return 1, &ScriptError{Message: i18n.T("engine.unhandledRejection", describeValue(p.Result()))}
 	}
 	return 0, nil
 }
