@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/cool0707/xljs/internal/api"
+	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/cool0707/xljs/internal/ui"
 	"github.com/dop251/goja"
 )
@@ -89,17 +90,17 @@ func Run(o Options) (int, error) {
 	}
 	defer env.Cleanup()
 	if err := api.Install(vm, env); err != nil {
-		return 1, fmt.Errorf("internal error: %w", err)
+		return 1, fmt.Errorf("%s: %w", i18n.S("内部エラー", "internal error"), err)
 	}
 
 	name := filepath.Base(o.ScriptPath)
 	ast, err := goja.Parse(name, string(code))
 	if err != nil {
-		return 1, &ScriptError{Message: cleanStack(err.Error())}
+		return 1, &ScriptError{Message: i18n.Text(cleanStack(err.Error()))}
 	}
 	prog, err := goja.CompileAST(ast, false)
 	if err != nil {
-		return 1, &ScriptError{Message: cleanStack(err.Error())}
+		return 1, &ScriptError{Message: i18n.Text(cleanStack(err.Error()))}
 	}
 
 	var result goja.Value
@@ -108,7 +109,7 @@ func Run(o Options) (int, error) {
 		if fn, ok := goja.AssertFunction(mainFn); ok {
 			result, err = fn(goja.Undefined())
 		} else {
-			err = errors.New("internal error: bundled script is not a function")
+			err = errors.New(i18n.S("内部エラー: バンドル結果が関数ではありません", "internal error: bundled script is not a function"))
 		}
 	}
 	if err == nil {
@@ -130,11 +131,11 @@ func Run(o Options) (int, error) {
 		case goja.PromiseStateRejected:
 			return 1, &ScriptError{Message: describeValue(p.Result())}
 		case goja.PromiseStatePending:
-			return 1, &ScriptError{Message: "スクリプトが完了しませんでした（解決されない Promise を await しています）"}
+			return 1, &ScriptError{Message: i18n.S("スクリプトが完了しませんでした（解決されない Promise を await しています）", "the script did not finish (it awaits a promise that never settles)")}
 		}
 	}
 	for p := range unhandled {
-		return 1, &ScriptError{Message: "Unhandled promise rejection: " + describeValue(p.Result())}
+		return 1, &ScriptError{Message: i18n.S("処理されなかった Promise の reject: ", "Unhandled promise rejection: ") + describeValue(p.Result())}
 	}
 	return 0, nil
 }
@@ -144,7 +145,7 @@ func describeError(vm *goja.Runtime, err error) string {
 	if errors.As(err, &ex) {
 		return describeValue(ex.Value())
 	}
-	return cleanStack(err.Error())
+	return i18n.Text(cleanStack(err.Error()))
 }
 
 func describeValue(v goja.Value) string {
@@ -159,10 +160,10 @@ func describeValue(v goja.Value) string {
 			if msg != nil && !goja.IsUndefined(msg) && !strings.Contains(s, msg.String()) {
 				s = obj.String() + "\n" + s
 			}
-			return cleanStack(s)
+			return i18n.Text(cleanStack(s))
 		}
 	}
-	return v.String()
+	return i18n.Text(v.String())
 }
 
 var (

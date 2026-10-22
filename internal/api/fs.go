@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/bmatcuk/doublestar/v4"
+	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/dop251/goja"
 )
 
@@ -237,7 +238,7 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	if st.IsDir() {
-		return errors.New("copy: " + src + " is a directory")
+		return i18n.Errorf("%s: フォルダはコピーできません", "copy: %s is a directory", src)
 	}
 	out, err := os.Create(dst)
 	if err != nil {
@@ -291,7 +292,7 @@ func walk(root string, include, exclude []string, dirs, files bool) ([]map[strin
 		return nil, err
 	}
 	if !st.IsDir() {
-		return nil, errors.New(root + " is not a directory")
+		return nil, i18n.Errorf("%s: フォルダではありません", "%s is not a directory", root)
 	}
 	var out []map[string]any
 	err = filepath.WalkDir(abs, func(p string, d fs.DirEntry, err error) error {

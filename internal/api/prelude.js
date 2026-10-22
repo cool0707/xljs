@@ -8,6 +8,9 @@
   const asyncIteratorSymbol = Symbol.asyncIterator || Symbol.for("Symbol.asyncIterator");
   const inspectSymbol = Symbol.for("xljs.inspect");
 
+  /** Picks the message for the system language. */
+  const L = (ja, en) => (native.lang === "ja" ? ja : en);
+
   const define = (obj, name, value) =>
     Object.defineProperty(obj, name, { value, writable: true, configurable: true, enumerable: false });
   const defineGlobal = (name, value) => define(G, name, value);
@@ -200,7 +203,7 @@
       const memo = new Map();
       function clone(v) {
         if (v === null || typeof v !== "object") {
-          if (typeof v === "function" || typeof v === "symbol") throw new TypeError("structuredClone: value could not be cloned");
+          if (typeof v === "function" || typeof v === "symbol") throw new TypeError(L("structuredClone: 複製できない値です", "structuredClone: value could not be cloned"));
           return v;
         }
         if (memo.has(v)) return memo.get(v);
@@ -254,7 +257,7 @@
       const bytes = new Uint8Array(s.length);
       for (let i = 0; i < s.length; i++) {
         const c = s.charCodeAt(i);
-        if (c > 255) throw new Error("btoa: string contains characters outside of the Latin1 range");
+        if (c > 255) throw new Error(L("btoa: Latin1 の範囲外の文字が含まれています", "btoa: string contains characters outside of the Latin1 range"));
         bytes[i] = c;
       }
       return bytesToBase64(bytes);
@@ -365,8 +368,8 @@
     }
   }
   if (typeof G.DOMException !== "function") defineGlobal("DOMException", DOMException);
-  const notFound = (p) => new DOMException(`見つかりません: ${p}`, "NotFoundError");
-  const typeMismatch = (p) => new DOMException(`種類が違います: ${p}`, "TypeMismatchError");
+  const notFound = (p) => new DOMException(L(`見つかりません: ${p}`, `not found: ${p}`), "NotFoundError");
+  const typeMismatch = (p) => new DOMException(L(`ファイル／フォルダの種類が違います: ${p}`, `type mismatch: ${p}`), "TypeMismatchError");
 
   // ---------------------------------------------------------------- Blob / File
 
@@ -456,7 +459,7 @@
     if (x instanceof FileSystemHandle) return x.path;
     if (x instanceof File && x.path) return x.path;
     if (x && typeof x.path === "string") return x.path;
-    throw new TypeError(`${what} にはパス文字列またはハンドルを指定してください`);
+    throw new TypeError(L(`${what} にはパス文字列またはハンドルを指定してください`, `${what} expects a path string or a handle`));
   }
 
   const sameName = native.platform === "windows"
@@ -504,7 +507,7 @@
       this._len = this._len || 0;
     }
     async write(data) {
-      if (this._closed) throw new TypeError("stream is closed");
+      if (this._closed) throw new TypeError(L("ストリームは閉じられています", "stream is closed"));
       if (data && typeof data === "object" && !(data instanceof Blob) && !(data instanceof ArrayBuffer) && !ArrayBuffer.isView(data) && data.type) {
         if (data.type === "seek") { this._pos = data.position; return; }
         if (data.type === "truncate") { this._truncate(data.size); return; }
@@ -591,7 +594,7 @@
   class FileSystemDirectoryHandle extends FileSystemHandle {
     constructor(path, relativePath) { super("directory", path, relativePath); }
     _child(name) {
-      if (/[\\/]/.test(name) || name === "." || name === "..") throw new TypeError(`不正な名前です: ${name}`);
+      if (/[\\/]/.test(name) || name === "." || name === "..") throw new TypeError(L(`不正な名前です: ${name}`, `invalid name: ${name}`));
       return native.pathJoin(this._path, name);
     }
     async getFileHandle(name, options = {}) {
@@ -737,7 +740,7 @@
       const patterns = exts.map((e) => (e.startsWith("*") ? e : e.startsWith(".") ? "*" + e : "*." + e));
       if (patterns.length) filters.push({ description: t.description || "", patterns });
     }
-    if (filters.length && !excludeAll) filters.push({ description: "すべてのファイル", patterns: ["*.*"] });
+    if (filters.length && !excludeAll) filters.push({ description: L("すべてのファイル", "All files"), patterns: ["*.*"] });
     return filters;
   }
   function startInPath(startIn) {
@@ -884,7 +887,7 @@
     }
     if (iterable && typeof iterable[Symbol.iterator] === "function") return withProgressSync(iterable, options, label, total);
     if (iterable && typeof iterable[asyncIteratorSymbol] === "function") return withProgressAsync(iterable, options, label, total);
-    throw new TypeError("withProgress: iterable を指定してください");
+    throw new TypeError(L("withProgress: 配列などの反復可能なオブジェクトを指定してください", "withProgress: expected an iterable"));
   }
 
   const uiObj = {

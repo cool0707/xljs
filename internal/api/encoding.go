@@ -2,10 +2,10 @@ package api
 
 import (
 	"bytes"
-	"fmt"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/dop251/goja"
 	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/japanese"
@@ -53,7 +53,7 @@ func textEncoding(norm string) (encoding.Encoding, error) {
 	case "utf16be":
 		return unicode.UTF16(unicode.BigEndian, unicode.IgnoreBOM), nil
 	}
-	return nil, fmt.Errorf("unsupported encoding %q", norm)
+	return nil, i18n.Errorf("未対応の文字コードです: %q", "unsupported encoding %q", norm)
 }
 
 // DetectEncoding guesses the encoding of b: a BOM wins, then valid UTF-8,

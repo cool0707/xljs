@@ -7,8 +7,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/cool0707/xljs/internal/ui"
 )
+
+func TestMain(m *testing.M) {
+	// Script tests assert Japanese messages regardless of the CI locale.
+	i18n.SetLanguage("ja")
+	os.Exit(m.Run())
+}
 
 func scriptsDir(t *testing.T) string {
 	t.Helper()
@@ -103,7 +110,7 @@ func TestExitCodes(t *testing.T) {
 		{"exit-in-timer", `setTimeout(() => xljs.exit(4), 1); await sleep(100); console.log("no")`, 4, ""},
 		{"throw-after-await", `await sleep(1); throw new Error("late")`, 1, "Error: late"},
 		{"throw-value", `throw "plain"`, 1, "plain"},
-		{"unhandled", `Promise.reject(new Error("lost")); await sleep(1)`, 1, "Unhandled promise rejection"},
+		{"unhandled", `Promise.reject(new Error("lost")); await sleep(1)`, 1, "処理されなかった Promise"},
 		{"pending", `await new Promise(() => {})`, 1, "完了しませんでした"},
 		{"syntax", `const = 1`, 1, "x.js:1:"},
 		{"missing-import", `import "./nope.js"`, 1, "nope.js"},
@@ -136,5 +143,31 @@ func TestArgsAndConsole(t *testing.T) {
 	}
 	if !strings.Contains(r.stderr, "to stderr") {
 		t.Fatalf("stderr = %q", r.stderr)
+	}
+}
+
+func TestMessagesFollowLanguage(t *testing.T) {
+	src := `const o = null; console.log(o.name)`
+	cases := []struct{ lang, want string }{
+		{"ja", "のプロパティ 'name' は読み取れません"},
+		{"en", "Cannot read property 'name' of"},
+	}
+	defer i18n.SetLanguage("ja")
+	for _, c := range cases {
+		i18n.SetLanguage(c.lang)
+		r := runScript(t, writeScript(t, "x.js", src), "")
+		if r.err == nil || !strings.Contains(r.err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want %q", c.lang, r.err, c.want)
+		}
+		r = runScript(t, writeScript(t, "y.js", `fs.readText("nope/missing.csv")`), "")
+		wantFS := map[string]string{"ja": "見つかりません", "en": "no such file"}[c.lang]
+		if r.err == nil || !strings.Contains(r.err.Error(), wantFS) {
+			t.Errorf("%s: fs err = %v, want %q", c.lang, r.err, wantFS)
+		}
+		r = runScript(t, writeScript(t, "z.js", `import "./nope.js"`), "")
+		wantImp := map[string]string{"ja": "が見つかりません", "en": "Could not resolve"}[c.lang]
+		if r.err == nil || !strings.Contains(r.err.Error(), wantImp) {
+			t.Errorf("%s: import err = %v, want %q", c.lang, r.err, wantImp)
+		}
 	}
 }

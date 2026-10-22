@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/cool0707/xljs/internal/engine"
+	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/cool0707/xljs/internal/pack"
 	"github.com/cool0707/xljs/internal/ui"
 	"github.com/cool0707/xljs/types"
@@ -39,7 +40,7 @@ func getVersion() string {
 	return "dev"
 }
 
-const usage = `xljs - Excel/CSV スクリプトランナー
+const usageJA = `xljs - Excel/CSV スクリプトランナー
 
 使い方:
   xljs [オプション] <script.js|script.ts> [引数...]
@@ -51,9 +52,29 @@ const usage = `xljs - Excel/CSV スクリプトランナー
 オプション:
   --ui=auto|native|console|mock      UI の種類（既定: auto）
   --ui-answers=<file.json>           mock UI の応答ファイル
+  --lang=auto|ja|en                  メッセージの言語（既定: システムの言語）
 
-環境変数 XLJS_UI / XLJS_UI_ANSWERS でも UI を指定できます（埋め込み exe 向け）。
+環境変数 XLJS_UI / XLJS_UI_ANSWERS / XLJS_LANG でも指定できます（埋め込み exe 向け）。
 `
+
+const usageEN = `xljs - Excel/CSV script runner
+
+Usage:
+  xljs [options] <script.js|script.ts> [args...]
+  xljs pack <script> [-o out.exe]    create an exe with the script embedded
+  xljs check <script>                check syntax and imports without running
+  xljs init [dir]                    write type definitions (xljs.d.ts) and jsconfig.json
+  xljs version                       print the version
+
+Options:
+  --ui=auto|native|console|mock      UI to use (default: auto)
+  --ui-answers=<file.json>           answers file for the mock UI
+  --lang=auto|ja|en                  message language (default: system language)
+
+XLJS_UI / XLJS_UI_ANSWERS / XLJS_LANG environment variables work too (for packed exes).
+`
+
+func usage() string { return i18n.S(usageJA, usageEN) }
 
 func main() {
 	os.Exit(run())
@@ -69,10 +90,10 @@ func run() int {
 		for range signals {
 			n := ui.NotifyInterrupt()
 			if !ui.ProgressActive() || n >= 2 {
-				fmt.Fprintln(os.Stderr, "\n中断しました")
+				fmt.Fprintln(os.Stderr, "\n"+i18n.S("中断しました", "Interrupted"))
 				os.Exit(130)
 			}
-			fmt.Fprintln(os.Stderr, "\nキャンセルを要求しました（もう一度 Ctrl+C で強制終了）")
+			fmt.Fprintln(os.Stderr, "\n"+i18n.S("キャンセルを要求しました（もう一度 Ctrl+C で強制終了）", "Cancellation requested (press Ctrl+C again to force quit)"))
 		}
 	}()
 
@@ -94,7 +115,7 @@ func run() int {
 			fmt.Println("xljs", getVersion())
 			return 0
 		case "help", "--help", "-h", "/?":
-			fmt.Print(usage)
+			fmt.Print(usage())
 			return 0
 		case "pack":
 			return cmdPack(con, args[1:])
@@ -109,11 +130,15 @@ func run() int {
 	fset.SetOutput(io.Discard)
 	uiMode := fset.String("ui", os.Getenv("XLJS_UI"), "")
 	answers := fset.String("ui-answers", os.Getenv("XLJS_UI_ANSWERS"), "")
+	lang := fset.String("lang", "", "")
 	if err := fset.Parse(args); err != nil {
-		fmt.Fprint(os.Stderr, usage)
+		fmt.Fprint(os.Stderr, usage())
 		return con.fail(nil, err)
 	}
 	rest := fset.Args()
+	if *lang != "" {
+		i18n.SetLanguage(*lang)
+	}
 
 	u, err := chooseUI(*uiMode, *answers)
 	if err != nil {
@@ -124,15 +149,15 @@ func run() int {
 		// Double-clicked without a script: let the user pick one.
 		if u.Name() == "native" {
 			paths := u.OpenFiles(ui.PickerOptions{
-				Title:   "実行するスクリプトを選択",
-				Filters: []ui.FileFilter{{Description: "スクリプト", Patterns: []string{"*.js", "*.mjs", "*.ts"}}},
+				Title:   i18n.S("実行するスクリプトを選択", "Select a script to run"),
+				Filters: []ui.FileFilter{{Description: i18n.S("スクリプト", "Scripts"), Patterns: []string{"*.js", "*.mjs", "*.ts"}}},
 			})
 			if len(paths) == 0 {
 				return 0
 			}
 			rest = paths
 		} else {
-			fmt.Fprint(os.Stderr, usage)
+			fmt.Fprint(os.Stderr, usage())
 			return 2
 		}
 	}
@@ -153,7 +178,7 @@ func chooseUI(mode, answers string) (ui.UI, error) {
 	case "mock":
 		return ui.NewMock(answers, os.Stderr)
 	}
-	return nil, fmt.Errorf("unknown --ui value %q (auto, native, console, mock)", mode)
+	return nil, i18n.Errorf("--ui の値 %q は使えません（auto, native, console, mock）", "unknown --ui value %q (auto, native, console, mock)", mode)
 }
 
 func runScript(con *consoleState, u ui.UI, o engine.Options) int {
@@ -168,13 +193,13 @@ func runScript(con *consoleState, u ui.UI, o engine.Options) int {
 
 func cmdCheck(con *consoleState, args []string) int {
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "使い方: xljs check <script>")
+		fmt.Fprintln(os.Stderr, i18n.S("使い方: xljs check <script>", "usage: xljs check <script>"))
 		return 2
 	}
 	if _, err := engine.Bundle(args[0]); err != nil {
 		return con.fail(nil, err)
 	}
-	fmt.Println("OK")
+	fmt.Println(i18n.S("問題ありません", "OK"))
 	return 0
 }
 
@@ -190,7 +215,7 @@ func cmdPack(con *consoleState, args []string) int {
 		args = fset.Args()
 		if len(args) > 0 {
 			if script != "" {
-				fmt.Fprintln(os.Stderr, "使い方: xljs pack <script> [-o 出力.exe]")
+				fmt.Fprintln(os.Stderr, i18n.S("使い方: xljs pack <script> [-o 出力.exe]", "usage: xljs pack <script> [-o out.exe]"))
 				return 2
 			}
 			script = args[0]
@@ -198,7 +223,7 @@ func cmdPack(con *consoleState, args []string) int {
 		}
 	}
 	if script == "" {
-		fmt.Fprintln(os.Stderr, "使い方: xljs pack <script> [-o 出力.exe]")
+		fmt.Fprintln(os.Stderr, i18n.S("使い方: xljs pack <script> [-o 出力.exe]", "usage: xljs pack <script> [-o out.exe]"))
 		return 2
 	}
 	code, err := engine.Bundle(script)
@@ -217,7 +242,7 @@ func cmdPack(con *consoleState, args []string) int {
 	if err := pack.Write(*out, name, code); err != nil {
 		return con.fail(nil, err)
 	}
-	fmt.Println("作成しました:", *out)
+	fmt.Println(i18n.S("作成しました:", "Created:"), *out)
 	return 0
 }
 
@@ -233,7 +258,7 @@ func cmdInit(con *consoleState, args []string) int {
 	if err := os.WriteFile(dts, []byte(types.DTS), 0o644); err != nil {
 		return con.fail(nil, err)
 	}
-	fmt.Println("作成しました:", dts)
+	fmt.Println(i18n.S("作成しました:", "Created:"), dts)
 	jsconfig := filepath.Join(dir, "jsconfig.json")
 	if _, err := os.Stat(jsconfig); errors.Is(err, os.ErrNotExist) {
 		cfg := `{
@@ -253,7 +278,7 @@ func cmdInit(con *consoleState, args []string) int {
 		if err := os.WriteFile(jsconfig, []byte(cfg), 0o644); err != nil {
 			return con.fail(nil, err)
 		}
-		fmt.Println("作成しました:", jsconfig)
+		fmt.Println(i18n.S("作成しました:", "Created:"), jsconfig)
 	}
 	return 0
 }

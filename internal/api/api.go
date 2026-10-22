@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/cool0707/xljs/internal/ui"
 	"github.com/dop251/goja"
 )
@@ -93,18 +95,29 @@ func (n *natives) set(name string, fn func(goja.FunctionCall) goja.Value) {
 	}
 }
 
-// throw raises err as a JavaScript Error.
+// throw raises err as a JavaScript Error with a localized message.
 func (n *natives) throw(err error) {
 	ctor, _ := goja.AssertConstructor(n.vm.Get("Error"))
 	if ctor != nil {
-		if obj, e := ctor(nil, n.vm.ToValue(err.Error())); e == nil {
+		if obj, e := ctor(nil, n.vm.ToValue(i18n.Error(err))); e == nil {
 			panic(obj)
 		}
 	}
 	panic(n.vm.NewGoError(err))
 }
 
-func (n *natives) throwf(format string, args ...any) { n.throw(fmt.Errorf(format, args...)) }
+// throwf raises a localized error message.
+func (n *natives) throwf(ja, en string, args ...any) { n.throw(i18n.Errorf(ja, en, args...)) }
+
+// throwPath raises err for the file at path, adding the path unless the
+// error already names it.
+func (n *natives) throwPath(path string, err error) {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		n.throw(err)
+	}
+	n.throw(fmt.Errorf("%s: %w", path, err))
+}
 
 func (n *natives) str(call goja.FunctionCall, i int) string {
 	v := call.Argument(i)
@@ -177,7 +190,7 @@ func (n *natives) bytes(v goja.Value) []byte {
 			}
 		}
 	}
-	n.throwf("expected ArrayBuffer, typed array or string")
+	n.throwf("ArrayBuffer・型付き配列・文字列のいずれかを指定してください", "expected ArrayBuffer, typed array or string")
 	return nil
 }
 
@@ -211,6 +224,7 @@ func (n *natives) installCore() {
 	n.obj.Set("version", env.Version)
 	n.obj.Set("platform", runtime.GOOS)
 	n.obj.Set("uiName", env.UI.Name())
+	n.obj.Set("lang", i18n.Lang())
 	n.obj.Set("title", strings.TrimSuffix(filepath.Base(env.Script), filepath.Ext(env.Script)))
 }
 

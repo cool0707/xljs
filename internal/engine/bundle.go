@@ -1,11 +1,13 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/evanw/esbuild/pkg/api"
 )
 
@@ -55,7 +57,7 @@ func Bundle(entry string) ([]byte, error) {
 		return nil, &BundleError{Messages: res.Errors}
 	}
 	if len(res.OutputFiles) == 0 {
-		return nil, fmt.Errorf("esbuild produced no output")
+		return nil, errors.New(i18n.S("バンドル結果が空です", "esbuild produced no output"))
 	}
 	return res.OutputFiles[0].Contents, nil
 }
@@ -72,12 +74,12 @@ func (e *BundleError) Error() string {
 			b.WriteString("\n")
 		}
 		if m.Location != nil {
-			fmt.Fprintf(&b, "%s:%d:%d: %s", m.Location.File, m.Location.Line, m.Location.Column+1, m.Text)
+			fmt.Fprintf(&b, "%s:%d:%d: %s", m.Location.File, m.Location.Line, m.Location.Column+1, i18n.Text(m.Text))
 			if m.Location.LineText != "" {
 				fmt.Fprintf(&b, "\n    %s", m.Location.LineText)
 			}
 		} else {
-			b.WriteString(m.Text)
+			b.WriteString(i18n.Text(m.Text))
 		}
 	}
 	return b.String()

@@ -66,7 +66,7 @@ equal(wb.sheet(1).name, "集計");
 wb.save("out.xlsx");
 ok(wb.path.endsWith("out.xlsx"), "save() records the path");
 wb.close();
-throws(() => wb.sheetNames, /closed/);
+throws(() => wb.sheetNames, /閉じ/);
 
 // Re-open from a handle and read objects with typed values.
 const b = await workbooks.open(fs.file("out.xlsx"));

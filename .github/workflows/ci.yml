@@ -36,8 +36,7 @@ jobs:
           go-version-file: go.mod
       - name: Build Windows binaries
         run: |
-          make windows windows-arm64 VERSION="${GITHUB_REF_NAME}"
-          cd dist && zip -j xljs-windows-amd64.zip xljs.exe xljsw.exe && zip -j xljs-windows-arm64.zip arm64/xljs.exe arm64/xljsw.exe
+          make dist VERSION="${GITHUB_REF_NAME}"
       - uses: actions/upload-artifact@v4
         with:
           name: xljs-windows

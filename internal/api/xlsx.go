@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -40,10 +39,10 @@ func newBook(f *excelize.File, path string) *book {
 func (n *natives) book(v goja.Value) *book {
 	b, ok := v.Export().(*book)
 	if !ok || b == nil {
-		n.throwf("invalid workbook handle")
+		n.throwf("ブックではありません", "invalid workbook handle")
 	}
 	if b.closed {
-		n.throwf("workbook is closed")
+		n.throwf("ブックは閉じられています", "workbook is closed")
 	}
 	return b
 }
@@ -240,7 +239,7 @@ func (n *natives) installXLSX() {
 		path := n.str(c, 0)
 		f, err := excelize.OpenFile(path)
 		if err != nil {
-			n.throwf("%s: %v", path, err)
+			n.throwPath(path, err)
 		}
 		return n.track(newBook(f, path))
 	})
@@ -270,7 +269,7 @@ func (n *natives) installXLSX() {
 		b := n.book(c.Argument(0))
 		name := n.str(c, 1)
 		if idx, _ := b.f.GetSheetIndex(name); idx >= 0 {
-			n.throwf("シート %q は既に存在します", name)
+			n.throwf("シート %q は既に存在します", "sheet %q already exists", name)
 		}
 		if b.fresh {
 			b.fresh = false
@@ -458,11 +457,11 @@ func (n *natives) installXLSX() {
 			path = b.path
 		}
 		if path == "" {
-			n.throw(errors.New("保存先が指定されていません"))
+			n.throwf("保存先が指定されていません", "no destination to save to")
 		}
 		b.prepareSave()
 		if err := b.f.SaveAs(path); err != nil {
-			n.throwf("%s: %v", path, err)
+			n.throwPath(path, err)
 		}
 		b.path = path
 		return goja.Undefined()

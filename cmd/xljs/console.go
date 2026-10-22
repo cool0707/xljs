@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/cool0707/xljs/internal/engine"
+	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/cool0707/xljs/internal/ui"
 	"golang.org/x/term"
 )
@@ -24,7 +25,7 @@ type consoleState struct {
 
 func (c *consoleState) finish() {
 	if c.own && term.IsTerminal(int(os.Stdin.Fd())) {
-		fmt.Fprint(os.Stderr, "\nEnter キーで閉じます...")
+		fmt.Fprint(os.Stderr, "\n"+i18n.S("Enter キーで閉じます...", "Press Enter to close..."))
 		bufio.NewReader(os.Stdin).ReadString('\n')
 	}
 }
@@ -37,11 +38,11 @@ func (c *consoleState) fail(u ui.UI, err error) int {
 	var se *engine.ScriptError
 	switch {
 	case errors.As(err, &be):
-		msg = "構文エラー:\n" + msg
+		msg = i18n.S("構文エラー:\n", "Syntax error:\n") + msg
 	case errors.As(err, &se):
-		// already formatted
+		// already formatted and localized
 	default:
-		msg = "エラー: " + msg
+		msg = i18n.S("エラー: ", "Error: ") + i18n.Error(err)
 	}
 	fmt.Fprintln(os.Stderr, msg)
 	if !c.has {

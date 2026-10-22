@@ -42,8 +42,10 @@ xljs version
 | `--ui=auto` | 既定。Windows ではネイティブダイアログ、それ以外はコンソール |
 | `--ui=native` / `--ui=console` | UI を固定 |
 | `--ui=mock --ui-answers=answers.json` | ダイアログを出さず、ファイルに書いた応答を返す（自動実行・テスト用） |
+| `--lang=auto` / `ja` / `en` | メッセージの言語（既定はシステムの表示言語） |
 
-- `xljs.exe` はコンソール版、`xljsw.exe` は GUI 版（ダブルクリックしても黒い窓が出ない）です。中身は同じで、GUI 版をコマンドプロンプトから起動した場合はそのコンソールに出力します。GUI 版で出力先がないときのエラーはダイアログで表示します。
+- `xljs.exe` はコンソール版、`xljsw.exe` は GUI 版（ダブルクリックしても黒い窓が出ない）です。中身は同じで、GUI 版をコマンドプロンプトから起動した場合はそのコンソールに出力します。GUI 版で出力先がないときのエラーはダイアログで表示し、文字列を選択したり「コピー」ボタンでクリップボードにコピーしたりできます。
+- エラー・警告はシステムの表示言語に合わせて日本語または英語で表示します。`--lang=ja|en`（または環境変数 `XLJS_LANG`）で切り替えられます。JavaScript エンジンや構文チェック、Excel 読み込み、OS のエラーのうちよく出るものは日本語に訳して表示します（`catch` で受け取る `e.message` は元のままです）。
 - 引数なしで起動すると、実行するスクリプトを選ぶダイアログが開きます。exe にスクリプトをドラッグ＆ドロップしても実行できます。
 - コンソール版をダブルクリックで起動した場合は、終了時に Enter 待ちになります。
 - 進捗表示中の Ctrl+C はキャンセル要求（`cancelled` が true になる）、2 回目で強制終了です。
@@ -161,12 +163,13 @@ out.save("集計.xlsx");
 Go 1.26 以降が必要です（cgo 不要）。
 
 ```
-# Windows 版（どの OS からでもクロスビルド可）
-GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/xljs.exe ./cmd/xljs
-GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -H=windowsgui" -o dist/xljsw.exe ./cmd/xljs
+# Windows x64 版（どの OS からでもクロスビルド可。Go では x64 を amd64 と呼びます）
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/x64/xljs.exe ./cmd/xljs
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -H=windowsgui" -o dist/x64/xljsw.exe ./cmd/xljs
 
 # または
-make windows
+make windows        # dist/x64/
+make dist           # dist/xljs-windows-x64.zip と xljs-windows-arm64.zip
 ```
 
 Windows 上なら PowerShell で `go build -o xljs.exe ./cmd/xljs` だけでも構いません。`cmd/xljs/rsrc_windows_*.syso` はビジュアルスタイルと高 DPI 対応のマニフェストです（`xljs.manifest` から [rsrc](https://github.com/akavel/rsrc) で生成）。
