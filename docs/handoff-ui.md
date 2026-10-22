@@ -17,6 +17,36 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
 3. **表表示 `ui.table`** — PowerShell の Out-GridView 相当（並べ替え・絞り込み・コピー・選択して返す）
 4. **デバッガ** — PowerShell ISE のようなエディタ一体型。サイズが大きくなりすぎるなら見送り可
 
+## 0.1 進捗
+
+- **フェーズ 1（基盤）: 実装済み**（ブランチ `claude/xljs-handoff-ui-phase1-rd6ht0`）。デバッガ（フェーズ 4）は見送り。
+  - スレッド分離: `ui.Run`（`internal/ui/thread.go`）。スクリプトは専用 goroutine、UI 呼び出しは main スレッドへ転送して同期で待つ。
+    Native は message-only ウィンドウ（`thread_windows.go`）経由で実行するのでモーダルダイアログ中も処理される。
+    console/mock は Go のキュー（`chanThread`）で同じ構造。`Progress.Update` と `Window.Post` は待たない（順序は保証）。
+    Native では `Progress.Cancelled` を 50ms キャッシュ（往復コスト削減）。ダイアログの親は最後に開いた HTML ウィンドウ。
+  - WebView2: `internal/ui/webview_windows.go`。`UI.OpenWindow(WindowOptions) (Window, error)` を追加（Console はエラー、Mock は
+    ログを出して即クローズ）。ランタイム有無は `WebView2Version()`、無ければ `ui.webview2Missing`（ダウンロード URL 付き）。
+    アセットは `https://app.xljs/*` の WebResourceRequested で `fs.FS` から配信（pack 時は zip、非 pack 時は `meta.AssetFS`）。
+  - メタデータ: `internal/meta`。`@mode app` でスクリプト実行前に `app.main` を開く。JS API は最小限の `app.open()` / `win.closed` / `win.close()`。
+  - pack v2: `internal/pack`（zip＋`XLJSPAK2`、v1 も読める）。`@lang` は `--lang` / `XLJS_LANG` が無いときだけ適用。`--debug`（`XLJS_DEBUG`）で開発者ツール。
+  - テスト: `internal/ui/thread_test.go`（転送先スレッド）、`engine_test.go` の `TestAppMode` / `TestAppWindowKeepsRunning`、
+    `testdata/scripts/app.test.js`、Windows CI では `TestWebViewWindow`（ランタイムがあれば実ウィンドウを開いて閉じる）。
+
+### 1.1 の調査結果（go-webview2）
+
+- `jchv/go-webview2` は WebResourceRequested はあるが、追加オブジェクト（ファイル実パス）などが無い。
+  **`wailsapp/go-webview2` v1.0.23 の `pkg/edge` を採用**: WebMessageReceived、WebResourceRequested、
+  `GetAdditionalObjects`（ランタイム 113.0.1774.30 以上。`ICoreWebView2File.GetPath` で実パス）、純 Go のローダー（DLL 埋め込み不要）。exe 増分は約 0.5MB。
+- このラッパーの癖（回避済み・今後も注意）:
+  - ページからのメッセージを**そのままページへ送り返す**（`MessageReceived` 内の `PostWebMessageAsString`）。ホスト→画面の
+    メッセージには先頭に `\x02` を付けている（`hostPrefix`）ので、画面側ブリッジは `\x02` で始まらないメッセージを無視すること。
+  - `ICoreWebView2Environment.CreateWebResourceResponse(content, ...)` は変数のシャドーイングで本文が空になる。
+    本文は `nil` で作ってから `PutByteContent` で入れる。
+  - エラー時はコールバックを呼んだあと `os.Exit(1)`。環境作成の失敗時は nil 参照で panic するので `recover` している。
+  - 標準 `log` に出力するので `log.SetOutput(io.Discard)` している（xljs は標準 log を使わない）。
+  - NavigationStarting / NewWindowRequested のハンドラが無い。外部 URL を既定ブラウザで開く処理（2.6）は
+    `pkg/edge` を拡張するか自前で COM ハンドラを書く必要がある（フェーズ 3）。
+
 ## 1. 共通基盤
 
 ### 1.1 WebView2

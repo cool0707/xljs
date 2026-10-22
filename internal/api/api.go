@@ -17,6 +17,7 @@ import (
 	"sync"
 
 	"github.com/cool0707/xljs/internal/i18n"
+	"github.com/cool0707/xljs/internal/meta"
 	"github.com/cool0707/xljs/internal/ui"
 	"github.com/dop251/goja"
 )
@@ -30,8 +31,20 @@ type Env struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	Exit    func(code int)
+	// Title is the default title of dialogs and windows.
+	Title string
+	// Meta is the script's metadata block; Assets its files (served to
+	// windows under ui.AssetOrigin). Debug enables the developer tools.
+	Meta   *meta.Meta
+	Assets fs.FS
+	Debug  bool
+	// AddPending keeps the event loop running until a matching Post; Post
+	// runs fn on the script thread and may be called from any goroutine.
+	AddPending func()
+	Post       func(fn func() error)
 
 	cleanup []func()
+	natives *natives
 }
 
 // OnCleanup registers fn to run when the script ends.
@@ -64,6 +77,10 @@ func Install(vm *goja.Runtime, env *Env) error {
 		return preludeErr
 	}
 	n := &natives{vm: vm, env: env, obj: vm.NewObject()}
+	env.natives = n
+	if env.Title == "" {
+		env.Title = strings.TrimSuffix(filepath.Base(env.Script), filepath.Ext(env.Script))
+	}
 	n.installCore()
 	n.installFS()
 	n.installEncoding()
@@ -71,6 +88,7 @@ func Install(vm *goja.Runtime, env *Env) error {
 	n.installXLSX()
 	n.installXLSXStyle()
 	n.installUI()
+	n.installApp()
 
 	fnv, err := vm.RunProgram(preludeProg)
 	if err != nil {
@@ -233,7 +251,7 @@ func (n *natives) installCore() {
 		}
 		return n.vm.ToValue(i18n.T(n.str(c, 0), args...))
 	})
-	n.obj.Set("title", strings.TrimSuffix(filepath.Base(env.Script), filepath.Ext(env.Script)))
+	n.obj.Set("title", env.Title)
 }
 
 // array builds a real JavaScript array.

@@ -988,6 +988,37 @@
   };
   defineGlobal("ui", uiObj);
 
+  // ---------------------------------------------------------------- app (HTML windows)
+
+  /** An HTML window opened by app.open (or the main window of @mode app). */
+  class AppWindow {
+    constructor(n) {
+      define(this, "_n", n);
+      /** Resolves when the window has been closed. */
+      define(this, "closed", n.closed);
+    }
+    close() { this._n.close(); }
+  }
+
+  const appObj = {
+    /** The main window of an `@mode app` script (null otherwise). */
+    main: null,
+    /**
+     * Opens a window. html is relative to the script folder and must be
+     * covered by @html/@assets. The process keeps running while it is open.
+     */
+    open(options = {}) {
+      if (typeof options === "string") options = { html: options };
+      return new AppWindow(native.appOpen(options.html === undefined ? "" : String(options.html),
+        options.title === undefined ? title() : String(options.title),
+        Number(options.width) || 0, Number(options.height) || 0));
+    },
+  };
+  defineGlobal("app", appObj);
+  native.openMain = () => {
+    appObj.main = new AppWindow(native.appOpen(native.appHTML || "", title(), native.appWidth || 0, native.appHeight || 0));
+  };
+
   // ---------------------------------------------------------------- csv
 
   function rowsFromRecords(records, opts) {

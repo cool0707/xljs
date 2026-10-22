@@ -5,6 +5,8 @@ package ui
 import (
 	"runtime"
 	"testing"
+	"testing/fstest"
+	"time"
 	"unsafe"
 )
 
@@ -104,4 +106,60 @@ func TestProgressDialog(t *testing.T) {
 	}
 	p.Close()
 	p.Close()
+}
+
+// TestWebViewWindow opens a WebView2 window through Run (script thread +
+// UI thread), loads a page from the assets and closes the window once the
+// page has reported back.
+func TestWebViewWindow(t *testing.T) {
+	if WebView2Version() == "" {
+		t.Skip("WebView2 runtime is not installed")
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	u, err := NewNative()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assets := fstest.MapFS{
+		"ui/index.html": {Data: []byte(`<!doctype html><meta charset="utf-8"><title>t</title>
+<script src="app.js"></script>`)},
+		"ui/app.js": {Data: []byte(`chrome.webview.postMessage("ready " + location.href + " " + document.title)`)},
+	}
+	got := make(chan string, 1)
+	var msg string
+	Run(u, func(su UI) {
+		closed := make(chan struct{})
+		var w Window
+		w, err = su.OpenWindow(WindowOptions{
+			Title:  "テスト",
+			Width:  400,
+			Height: 300,
+			URL:    AssetOrigin + "ui/index.html",
+			Assets: assets,
+			OnMessage: func(m string) {
+				select {
+				case got <- m:
+				default:
+				}
+			},
+			OnClosed: func() { close(closed) },
+		})
+		if err != nil {
+			return
+		}
+		select {
+		case msg = <-got:
+		case <-time.After(30 * time.Second):
+		}
+		w.Close()
+		w.Close()
+		<-closed
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "ready https://app.xljs/ui/index.html t"; msg != want {
+		t.Fatalf("message = %q, want %q", msg, want)
+	}
 }

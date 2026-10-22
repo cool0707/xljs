@@ -9,7 +9,7 @@
     "font": "游ゴシック"
   },
   "messages": {
-    "cli.usage": "xljs - Excel/CSV スクリプトランナー\n\n使い方:\n  xljs [オプション] <script.js|script.ts> [引数...]\n  xljs pack <script> [-o 出力.exe]   スクリプトを埋め込んだ exe を作成\n  xljs check <script>                構文と import を検査（実行しない）\n  xljs init [フォルダ]               型定義 (xljs.d.ts) と jsconfig.json を作成\n  xljs version                       バージョンを表示\n\nオプション:\n  --ui=auto|native|console|mock      UI の種類（既定: auto）\n  --ui-answers=<file.json>           mock UI の応答ファイル\n  --lang=auto|{0}                  メッセージの言語（既定: システムの言語）\n\n環境変数 XLJS_UI / XLJS_UI_ANSWERS / XLJS_LANG でも指定できます（埋め込み exe 向け）。\n",
+    "cli.usage": "xljs - Excel/CSV スクリプトランナー\n\n使い方:\n  xljs [オプション] <script.js|script.ts> [引数...]\n  xljs pack <script> [-o 出力.exe]   スクリプトを埋め込んだ exe を作成\n  xljs check <script>                構文と import を検査（実行しない）\n  xljs init [フォルダ]               型定義 (xljs.d.ts) と jsconfig.json を作成\n  xljs version                       バージョンを表示\n\nオプション:\n  --ui=auto|native|console|mock      UI の種類（既定: auto）\n  --ui-answers=<file.json>           mock UI の応答ファイル\n  --lang=auto|{0}                  メッセージの言語（既定: システムの言語）\n  --debug                            画面で開発者ツール（F12）を有効にする\n\n環境変数 XLJS_UI / XLJS_UI_ANSWERS / XLJS_LANG / XLJS_DEBUG でも指定できます（埋め込み exe 向け）。\n",
     "cli.usageCheck": "使い方: xljs check <script>",
     "cli.usagePack": "使い方: xljs pack <script> [-o 出力.exe]",
     "cli.interrupted": "中断しました",
@@ -84,7 +84,19 @@
     "os.reason.notDir": "フォルダではありません",
     "os.reason.isDir": "フォルダです",
     "os.reason.notEmpty": "フォルダが空ではありません",
-    "os.reason.noSpace": "ディスクの空き容量が足りません"
+    "os.reason.noSpace": "ディスクの空き容量が足りません",
+    "meta.badMode": "{0}: @mode の値 \"{1}\" は使えません（console, app）",
+    "meta.badSize": "{0}: @size の値 \"{1}\" は 幅x高さ（例: 960x640）で指定してください",
+    "meta.badPath": "{0}: \"{1}\" はスクリプトのフォルダ内の相対パスで指定してください",
+    "meta.unknownKey": "{0}: 警告: 不明なメタデータ {1} は無視します",
+    "meta.unterminated": "{0}: メタデータの終わり（// ==/xljs==）がありません",
+    "pack.sameAsSelf": "出力先が実行中の exe と同じです: {0}",
+    "cli.unknownMetaLang": "警告: @lang の値 \"{0}\" は使えません（使える言語: {1}）",
+    "ui.windowUnavailable": "画面（HTML ウィンドウ）は Windows のネイティブ UI でのみ表示できます（--ui=native）",
+    "ui.webview2Missing": "画面の表示に必要な Microsoft Edge WebView2 ランタイムがインストールされていません。\n次のページからダウンロードしてインストールしてください:\n{0}",
+    "ui.webviewError": "WebView2 のエラー: {0}",
+    "app.badHTML": "HTML のパス \"{0}\" はスクリプトのフォルダからの相対パスで指定してください",
+    "app.htmlNotFound": "HTML ファイル \"{0}\" が見つかりません（@html のファイルか、@assets のフォルダ内に置いてください）"
   },
   "translations": [
     [

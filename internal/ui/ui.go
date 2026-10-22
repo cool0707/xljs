@@ -4,6 +4,7 @@
 package ui
 
 import (
+	"io/fs"
 	"sync/atomic"
 )
 
@@ -41,8 +42,37 @@ type Progress interface {
 	Close()
 }
 
+// AssetOrigin is the URL under which a window serves WindowOptions.Assets.
+const AssetOrigin = "https://app.xljs/"
+
+// WindowOptions configures an HTML window.
+type WindowOptions struct {
+	Title string
+	// Width and Height are the client size in logical pixels (0 = default).
+	Width, Height int
+	// URL is the first page; "" shows an empty page. Pages under
+	// AssetOrigin are served from Assets.
+	URL    string
+	Assets fs.FS
+	// Debug enables the developer tools (F12) and the context menu.
+	Debug bool
+	// OnMessage receives the messages posted by the page. OnClosed is called
+	// once after the window has closed (by the user or Close). Both may be
+	// called on any goroutine and must not block.
+	OnMessage func(msg string)
+	OnClosed  func()
+}
+
+// Window is an open HTML window.
+type Window interface {
+	// Post sends a message to the page.
+	Post(msg string)
+	// Close closes the window. It is safe to call more than once.
+	Close()
+}
+
 // UI is the set of interactions available to scripts. Implementations are
-// called from the script thread only.
+// called from one thread only (see Run).
 type UI interface {
 	Name() string
 	Alert(title, message string)
@@ -63,6 +93,9 @@ type UI interface {
 	ShowInFolder(paths []string) error
 	// OpenPath opens a file, folder or URL with its default application.
 	OpenPath(target string) error
+	// OpenWindow opens an HTML window (WebView2). It fails when the UI
+	// cannot show one (console) or the WebView2 runtime is missing.
+	OpenWindow(o WindowOptions) (Window, error)
 }
 
 // interrupts counts Ctrl+C presses so that progress indicators can report
