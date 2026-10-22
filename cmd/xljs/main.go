@@ -16,6 +16,7 @@ import (
 
 	"github.com/cool0707/xljs/internal/engine"
 	"github.com/cool0707/xljs/internal/i18n"
+	"github.com/cool0707/xljs/internal/meta"
 	"github.com/cool0707/xljs/internal/pack"
 	"github.com/cool0707/xljs/internal/ui"
 	"github.com/cool0707/xljs/types"
@@ -25,8 +26,9 @@ import (
 var version = ""
 
 func init() {
-	// Dialogs (COM, STA) must be created on a single OS thread; keep the
-	// main goroutine on the main thread for the lifetime of the process.
+	// The main thread is the UI thread: dialogs (COM, STA) and windows are
+	// created there, while scripts run on their own thread (see ui.Run).
+	// Keep the main goroutine on it for the lifetime of the process.
 	runtime.LockOSThread()
 }
 
@@ -71,7 +73,17 @@ func run() int {
 		}
 		exe, _ := os.Executable()
 		script := filepath.Join(filepath.Dir(exe), payload.Name)
-		return runScript(con, u, engine.Options{ScriptPath: script, Code: payload.Code, Args: os.Args[1:]})
+		m := payload.Meta
+		if m == nil {
+			m = &meta.Meta{}
+		}
+		applyLang(m, false)
+		assets := payload.Assets
+		if assets == nil {
+			assets = m.AssetFS(filepath.Dir(exe)) // nothing visible
+		}
+		return runScript(con, u, engine.Options{ScriptPath: script, Code: payload.Code, Args: os.Args[1:],
+			Meta: m, Assets: assets, Debug: envBool("XLJS_DEBUG")})
 	}
 
 	// Global options come first; the first other argument is either a
@@ -81,6 +93,7 @@ func run() int {
 	uiMode := fset.String("ui", os.Getenv("XLJS_UI"), "")
 	answers := fset.String("ui-answers", os.Getenv("XLJS_UI_ANSWERS"), "")
 	lang := fset.String("lang", "", "")
+	debug := fset.Bool("debug", envBool("XLJS_DEBUG"), "")
 	showHelp := fset.Bool("help", false, "")
 	fset.BoolVar(showHelp, "h", false, "")
 	showVersion := fset.Bool("version", false, "")
@@ -139,7 +152,40 @@ func run() int {
 			return 2
 		}
 	}
-	return runScript(con, u, engine.Options{ScriptPath: rest[0], Args: rest[1:]})
+	m, err := readMeta(rest[0])
+	if err != nil {
+		return con.fail(u, err)
+	}
+	applyLang(m, *lang != "")
+	return runScript(con, u, engine.Options{ScriptPath: rest[0], Args: rest[1:], Meta: m, Debug: *debug})
+}
+
+func envBool(name string) bool {
+	switch strings.ToLower(os.Getenv(name)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// readMeta parses the metadata block of a script and prints its warnings.
+func readMeta(script string) (*meta.Meta, error) {
+	m, warnings, err := meta.ParseFile(script)
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, w)
+	}
+	return m, err
+}
+
+// applyLang switches to the script's @lang unless the language was chosen
+// explicitly (--lang or XLJS_LANG).
+func applyLang(m *meta.Meta, explicit bool) {
+	if m.Lang == "" || explicit || os.Getenv("XLJS_LANG") != "" {
+		return
+	}
+	if !i18n.SetLanguage(m.Lang) {
+		fmt.Fprintln(os.Stderr, i18n.T("cli.unknownMetaLang", m.Lang, strings.Join(i18n.Available(), ", ")))
+	}
 }
 
 func chooseUI(mode, answers string) (ui.UI, error) {
@@ -159,10 +205,16 @@ func chooseUI(mode, answers string) (ui.UI, error) {
 	return nil, i18n.Err("cli.unknownUI", mode)
 }
 
+// runScript runs the script on its own thread; this (main) thread serves
+// the UI meanwhile.
 func runScript(con *consoleState, u ui.UI, o engine.Options) int {
-	o.UI = u
 	o.Version = getVersion()
-	code, err := engine.Run(o)
+	var code int
+	var err error
+	ui.Run(u, func(su ui.UI) {
+		o.UI = su
+		code, err = engine.Run(o)
+	})
 	if err != nil {
 		return con.fail(u, err)
 	}
@@ -173,6 +225,9 @@ func cmdCheck(con *consoleState, args []string) int {
 	if len(args) != 1 {
 		fmt.Fprintln(os.Stderr, i18n.T("cli.usageCheck"))
 		return 2
+	}
+	if _, err := readMeta(args[0]); err != nil {
+		return con.fail(nil, err)
 	}
 	if _, err := engine.Bundle(args[0]); err != nil {
 		return con.fail(nil, err)
@@ -204,6 +259,10 @@ func cmdPack(con *consoleState, args []string) int {
 		fmt.Fprintln(os.Stderr, i18n.T("cli.usagePack"))
 		return 2
 	}
+	m, err := readMeta(script)
+	if err != nil {
+		return con.fail(nil, err)
+	}
 	code, err := engine.Bundle(script)
 	if err != nil {
 		return con.fail(nil, err)
@@ -216,8 +275,8 @@ func cmdPack(con *consoleState, args []string) int {
 		}
 		*out = filepath.Join(filepath.Dir(script), base+ext)
 	}
-	name := filepath.Base(script)
-	if err := pack.Write(*out, name, code); err != nil {
+	p := &pack.Payload{Name: filepath.Base(script), Code: code, Meta: m, Assets: m.AssetFS(filepath.Dir(script))}
+	if err := pack.Write(*out, p); err != nil {
 		return con.fail(nil, err)
 	}
 	fmt.Println(i18n.T("cli.created", *out))

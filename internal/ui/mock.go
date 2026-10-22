@@ -23,7 +23,8 @@ import (
 //	  "progress": [{"cancelAfter": 3}]
 //	}
 //
-// When a queue is empty the call behaves as if the user cancelled.
+// When a queue is empty the call behaves as if the user cancelled. Windows
+// (OpenWindow) are logged and closed immediately.
 type Mock struct {
 	Log io.Writer
 
@@ -179,4 +180,36 @@ func (m *Mock) ShowInFolder(paths []string) error {
 func (m *Mock) OpenPath(target string) error {
 	m.logf("openPath(%s)", q(target))
 	return nil
+}
+
+// OpenWindow logs the window and closes it right away, as if the user had
+// closed it without doing anything.
+func (m *Mock) OpenWindow(o WindowOptions) (Window, error) {
+	m.logf("window.open(%s, %s, %dx%d)", q(o.Title), q(o.URL), o.Width, o.Height)
+	w := &mockWindow{m: m, o: o}
+	w.Close()
+	return w, nil
+}
+
+type mockWindow struct {
+	m      *Mock
+	o      WindowOptions
+	closed bool
+}
+
+func (w *mockWindow) Post(msg string) {
+	if !w.closed {
+		w.m.logf("window.post(%s)", q(msg))
+	}
+}
+
+func (w *mockWindow) Close() {
+	if w.closed {
+		return
+	}
+	w.closed = true
+	w.m.logf("window.closed(%s)", q(w.o.Title))
+	if w.o.OnClosed != nil {
+		w.o.OnClosed()
+	}
 }

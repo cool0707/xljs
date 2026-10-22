@@ -21,7 +21,17 @@ import (
 
 // Native implements UI with Win32 dialogs. All methods must be called from
 // the thread that created it (the locked main thread).
-type Native struct{}
+type Native struct {
+	wins []*webWindow // open HTML windows, oldest first
+}
+
+// owner returns the window dialogs belong to: the newest open HTML window.
+func (n *Native) owner() uintptr {
+	if len(n.wins) == 0 {
+		return 0
+	}
+	return n.wins[len(n.wins)-1].hwnd
+}
 
 var comOnce sync.Once
 var comErr error
@@ -58,9 +68,9 @@ const (
 	idOK              = 1
 )
 
-func messageBox(title, message string, flags uintptr) uintptr {
+func messageBox(owner uintptr, title, message string, flags uintptr) uintptr {
 	t, m := wstr(title), wstr(message)
-	r, _, _ := procMessageBoxW.Call(0, uintptr(unsafe.Pointer(m)), uintptr(unsafe.Pointer(t)),
+	r, _, _ := procMessageBoxW.Call(owner, uintptr(unsafe.Pointer(m)), uintptr(unsafe.Pointer(t)),
 		flags|mbSetForeground|mbTopmost)
 	runtime.KeepAlive(t)
 	runtime.KeepAlive(m)
@@ -68,18 +78,18 @@ func messageBox(title, message string, flags uintptr) uintptr {
 }
 
 func (n *Native) Alert(title, message string) {
-	messageBox(title, message, mbOK|mbIconInformation)
+	messageBox(n.owner(), title, message, mbOK|mbIconInformation)
 }
 
 func (n *Native) Confirm(title, message string) bool {
-	return messageBox(title, message, mbOKCancel|mbIconQuestion) == idOK
+	return messageBox(n.owner(), title, message, mbOKCancel|mbIconQuestion) == idOK
 }
 
 // ShowError shows the error in a dialog whose text can be selected and
 // copied (with a Copy button), falling back to a message box.
 func (n *Native) ShowError(title, message string) {
 	if !errorDialog(title, message) {
-		messageBox(title, message, mbOK|mbIconError)
+		messageBox(n.owner(), title, message, mbOK|mbIconError)
 	}
 }
 
@@ -210,7 +220,7 @@ func (n *Native) fileDialog(save, folder bool, o PickerOptions) ([]string, error
 		dlg.call(fdSetFileName, uintptr(unsafe.Pointer(s)))
 	}
 
-	hr := dlg.call(fdShow, 0)
+	hr := dlg.call(fdShow, n.owner())
 	runtime.KeepAlive(keep)
 	if uint32(hr) == hrErrorCancelled {
 		return nil, nil
@@ -447,7 +457,7 @@ func (n *Native) Prompt(title, message, def string) (string, bool) {
 	curPrompt = st
 	defer func() { curPrompt = nil }()
 	hinst, _, _ := procGetModuleHandleW.Call(0)
-	procDialogBoxIndirectParamW.Call(hinst, uintptr(unsafe.Pointer(&words[0])), 0, dlgProcPtr, 0)
+	procDialogBoxIndirectParamW.Call(hinst, uintptr(unsafe.Pointer(&words[0])), n.owner(), dlgProcPtr, 0)
 	runtime.KeepAlive(words)
 	return st.result, st.ok
 }
@@ -503,7 +513,7 @@ func (n *Native) Progress(o ProgressOptions) Progress {
 	if !o.Cancellable {
 		flags |= progdlgNoCancel
 	}
-	dlg.call(pdStart, 0, 0, flags, 0)
+	dlg.call(pdStart, n.owner(), 0, flags, 0)
 	dlg.call(pdTimer, pdtimerReset, 0)
 	p.setLines(0, o.Message)
 	return p

@@ -275,3 +275,8 @@ func (p *consoleProgress) line() string {
 
 func (c *Console) ShowInFolder(paths []string) error { return ShellShowInFolder(paths) }
 func (c *Console) OpenPath(target string) error      { return ShellOpen(target) }
+
+// OpenWindow fails: HTML windows need the native UI.
+func (c *Console) OpenWindow(o WindowOptions) (Window, error) {
+	return nil, i18n.Err("ui.windowUnavailable")
+}

@@ -10,12 +10,13 @@ JavaScript/TypeScript のスクリプトで Excel・CSV・JSON を処理する W
 
 | パス | 役割 |
 |---|---|
-| `cmd/xljs` | CLI。グローバルフラグ（`--ui` `--ui-answers` `--lang`）→ サブコマンド（pack/check/init/version/help）→ スクリプト実行。`rsrc_windows_*.syso` はアイコン＋マニフェスト |
+| `cmd/xljs` | CLI。グローバルフラグ（`--ui` `--ui-answers` `--lang` `--debug`）→ サブコマンド（pack/check/init/version/help）→ メタデータを読んで `ui.Run` でスクリプト実行。`rsrc_windows_*.syso` はアイコン＋マニフェスト |
 | `internal/engine` | esbuild でバンドル（TS 変換、async generator 変換、インラインソースマップ）→ `(async () => {...})` で包んで goja で実行。`loop.go` はタイマーと他 goroutine からの post |
 | `internal/api` | Go 側ネイティブ関数（`natives` に `n.set("name", fn)` で登録）と `prelude.js`（公開 API をすべて JS で組み立てる）。Go→JS は `native.xxx` 経由のみ |
-| `internal/ui` | `UI` インターフェースと実装: `Native`（Win32/COM 直叩き、cgo なし）、`Console`、`Mock`（応答 JSON＋ログ。テスト用） |
+| `internal/ui` | `UI` インターフェースと実装: `Native`（Win32/COM 直叩き、cgo なし。HTML ウィンドウは `webview_windows.go`＝`wailsapp/go-webview2` の `pkg/edge`）、`Console`、`Mock`（応答 JSON＋ログ。テスト用）。`thread.go` の `ui.Run` がスクリプトを専用スレッドで動かし、UI 呼び出しを呼び出し元（main スレッド）へ転送する |
+| `internal/meta` | エントリ先頭の `// ==xljs==` メタデータのパースと、アセット（`@html`＋`@assets`）だけを見せる `AssetFS` |
 | `internal/i18n` | メッセージ。`locales/<lang>.json` を go:embed。`en.json` が基準・フォールバック |
-| `internal/pack` | exe 末尾へのスクリプト埋め込み（`[nameLen][name][code][len u64]["XLJSPAK1"]`） |
+| `internal/pack` | exe 末尾へのスクリプト埋め込み。v2 = `[zip(manifest.json, main.js, assets/...)][len u64]["XLJSPAK2"]`、v1（`XLJSPAK1`）も読める |
 | `types/xljs.d.ts` | 公開 API の型定義（`xljs init` で出力）。API を変えたら必ず更新 |
 | `testdata/scripts/*.test.{js,ts}` | モック UI で実行される結合テスト。`<name>.answers.json` がモック応答 |
 | `examples/` | サンプル。`xljs init` の d.ts で tsc の型チェックが通る状態を保つ |
@@ -28,6 +29,7 @@ JavaScript/TypeScript のスクリプトで Excel・CSV・JSON を処理する W
 - **Excel**: 値は number/string/boolean/Date/null。Date はローカルの壁時計時刻として扱う（`time.UTC` に詰めて excelize へ）。書式はマージが既定（`applyStyle`）、範囲端の罫線は書式済みの隣接セルにも反映。
 - **Windows ネイティブ部分**は `//go:build windows`。COM の vtable 呼び出しは `comObject.call(idx, ...)`。`unsafe.Pointer` 変換は go vet が通る書き方にする（uintptr→Pointer 変換は RtlMoveMemory などで回避）。
 - 新規ブックの既定フォントはロケールの `excel.font`（日本語は游ゴシック）。
+- **スレッド**: main スレッド＝UI スレッド（Win32 メッセージループ、ダイアログ、WebView2）、スクリプト＝`ui.Run` が作る専用 goroutine（`LockOSThread`）。`UI` の実装は UI スレッドからだけ呼ばれる。UI → スクリプトは `Env.Post`（＝`loop.post`、事前に `Env.AddPending`）。開いているウィンドウは pending として数え、閉じるまでイベントループ（プロセス）が終わらない。
 - コミットメッセージは英語、ドキュメント・UI 文言は日本語（英語はロケールファイル側）。
 
 ## 開発

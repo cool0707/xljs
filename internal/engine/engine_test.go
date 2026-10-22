@@ -2,10 +2,13 @@ package engine
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/cool0707/xljs/internal/ui"
@@ -70,6 +73,17 @@ func TestScripts(t *testing.T) {
 			}
 			if !strings.Contains(r.stdout, " ok") {
 				t.Errorf("missing completion marker in stdout:\n%s", r.stdout)
+			}
+			if name == "app.test.js" {
+				for _, want := range []string{
+					`window.open("アプリのテスト", "https://app.xljs/ui/index.html", 640x480)`,
+					`window.open("詳細", "https://app.xljs/ui/sub%20page.html", 300x200)`,
+					`window.closed("詳細")`,
+				} {
+					if !strings.Contains(r.stderr, want) {
+						t.Errorf("mock log does not contain %q:\n%s", want, r.stderr)
+					}
+				}
 			}
 			if name == "ui.test.js" {
 				for _, want := range []string{"showItemInFolder([", "a.xlsx", "b.csv", `openPath(`, `"https://example.com/"`} {
@@ -187,5 +201,105 @@ func TestDefaultFontFollowsLanguage(t *testing.T) {
 		if r := runScript(t, writeScript(t, "f.js", src), ""); r.code != 0 {
 			t.Errorf("%s: %v", lang, r.err)
 		}
+	}
+}
+
+func TestAppMode(t *testing.T) {
+	src := "// ==xljs==\n// @mode app\n// @unknown 1\n// ==/xljs==\nconsole.log('ran')\n"
+	p := writeScript(t, "app.js", src)
+
+	// The console UI cannot show windows: the script must not run.
+	var out, errOut bytes.Buffer
+	code, err := Run(Options{ScriptPath: p, UI: ui.NewConsole(), Stdout: &out, Stderr: &errOut})
+	if code != 1 || err == nil || !strings.Contains(err.Error(), "ネイティブ UI") || out.Len() != 0 {
+		t.Fatalf("console: code %d, err %v, stdout %q", code, err, out.String())
+	}
+	if !strings.Contains(errOut.String(), "@unknown") {
+		t.Errorf("no warning for an unknown key: %q", errOut.String())
+	}
+
+	// Bad metadata stops the script before it runs.
+	bad := writeScript(t, "bad.js", "// ==xljs==\n// @mode window\n// ==/xljs==\nconsole.log('ran')\n")
+	if r := runScript(t, bad, ""); r.code != 1 || r.err == nil || !strings.Contains(r.err.Error(), "bad.js:2") {
+		t.Fatalf("bad meta: %+v", r)
+	}
+
+}
+
+// slowUI is a mock whose windows stay open until closed by the script or
+// until after (when non-zero) has passed, as if the user closed them.
+type slowUI struct {
+	*ui.Mock
+	after  time.Duration
+	mu     sync.Mutex
+	events []string
+}
+
+type slowWindow struct {
+	u    *slowUI
+	o    ui.WindowOptions
+	once sync.Once
+}
+
+func (u *slowUI) log(e string) {
+	u.mu.Lock()
+	u.events = append(u.events, e)
+	u.mu.Unlock()
+}
+
+func (u *slowUI) OpenWindow(o ui.WindowOptions) (ui.Window, error) {
+	w := &slowWindow{u: u, o: o}
+	u.log("open " + o.Title)
+	if u.after > 0 {
+		time.AfterFunc(u.after, func() { w.closeAs("user") })
+	}
+	return w, nil
+}
+
+func (w *slowWindow) Post(string) {}
+func (w *slowWindow) Close()      { w.closeAs("script") }
+func (w *slowWindow) closeAs(by string) {
+	w.once.Do(func() {
+		w.u.log("closed by " + by)
+		w.o.OnClosed()
+	})
+}
+
+func TestAppWindowKeepsRunning(t *testing.T) {
+	m, _ := ui.NewMockFromJSON("", io.Discard)
+	app := "// ==xljs==\n// @mode app\n// ==/xljs==\n"
+
+	// The script finishes at once, but the process waits for the window.
+	u := &slowUI{Mock: m, after: 150 * time.Millisecond}
+	var out bytes.Buffer
+	start := time.Now()
+	p := writeScript(t, "a.js", app+"app.main.closed.then(() => console.log('closed')); console.log('end of script')")
+	code, err := Run(Options{ScriptPath: p, UI: u, Stdout: &out, Stderr: io.Discard})
+	if code != 0 || err != nil {
+		t.Fatalf("code %d: %v", code, err)
+	}
+	if time.Since(start) < 150*time.Millisecond || out.String() != "end of script\nclosed\n" {
+		t.Fatalf("returned after %v with output %q", time.Since(start), out.String())
+	}
+
+	// exit() closes windows that are still open.
+	u = &slowUI{Mock: m}
+	p = writeScript(t, "b.js", app+"app.open({ title: 'sub' }); setTimeout(() => exit(5), 10)")
+	code, err = Run(Options{ScriptPath: p, UI: u, Stdout: io.Discard, Stderr: io.Discard})
+	if code != 5 || err != nil {
+		t.Fatalf("exit: %d %v", code, err)
+	}
+	if got := strings.Join(u.events, ","); got != "open b,open sub,closed by script,closed by script" {
+		t.Fatalf("events = %s", got)
+	}
+
+	// Through ui.Run the script runs on its own thread and the UI calls
+	// (including the window callbacks) are served by the caller.
+	u = &slowUI{Mock: m, after: 20 * time.Millisecond}
+	ui.Run(u, func(su ui.UI) {
+		code, err = Run(Options{ScriptPath: writeScript(t, "c.js", app+"await app.main.closed"), UI: su, Stdout: io.Discard, Stderr: io.Discard})
+	})
+	if code != 0 || err != nil {
+		t.Fatalf("ui.Run: %d %v", code, err)
 	}
 }

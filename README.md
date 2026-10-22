@@ -44,6 +44,7 @@ xljs version
 | `--ui=native` / `--ui=console` | UI を固定 |
 | `--ui=mock --ui-answers=answers.json` | ダイアログを出さず、ファイルに書いた応答を返す（自動実行・テスト用） |
 | `--lang=auto` / `ja` / `en` | メッセージの言語（既定はシステムの表示言語） |
+| `--debug` | 画面（HTML ウィンドウ）で開発者ツール（F12）と右クリックメニューを有効にする |
 
 - `xljs.exe` はコンソール版、`xljsw.exe` は GUI 版（ダブルクリックしても黒い窓が出ない）です。中身は同じで、GUI 版をコマンドプロンプトから起動した場合はそのコンソールに出力します。GUI 版で出力先がないときのエラーはダイアログで表示し、文字列を選択したり「コピー」ボタンでクリップボードにコピーしたりできます。
 - エラー・警告はシステムの表示言語に合わせて日本語または英語で表示します。`--lang=ja|en`（または環境変数 `XLJS_LANG`）で切り替えられます。JavaScript エンジンや構文チェック、Excel 読み込み、OS のエラーのうちよく出るものは日本語に訳して表示します（`catch` で受け取る `e.message` は元のままです）。
@@ -59,7 +60,25 @@ xljs pack 集計.js            → 集計.exe
 xljsw pack 集計.js -o 集計.exe  （GUI 版をベースにする場合）
 ```
 
-作成した exe に渡した引数（ドロップしたファイルのパスなど）は `xljs.args` で受け取れます。スクリプトはバンドル済みの状態で埋め込まれるので、`import` しているファイルも一緒に入ります。
+作成した exe に渡した引数（ドロップしたファイルのパスなど）は `xljs.args` で受け取れます。スクリプトはバンドル済みの状態で埋め込まれるので、`import` しているファイルも一緒に入ります。画面用の HTML・CSS・画像などは、メタデータの `@html` と `@assets` に書いたものが一緒に埋め込まれます。
+
+### メタデータ（スクリプト先頭のコメント）
+
+```js
+// ==xljs==
+// @mode    app            // console（既定）| app
+// @html    ui/index.html  // 最初に開く HTML（スクリプトからの相対パス）
+// @assets  ui/            // exe に同梱するフォルダ・ファイル（複数行可）
+// @title   売上集計ツール  // ダイアログ・ウィンドウのタイトル（既定はスクリプト名）
+// @size    960x640        // ウィンドウの大きさ
+// @lang    ja             // メッセージの言語（--lang / XLJS_LANG が優先）
+// ==/xljs==
+```
+
+- エントリのスクリプトの先頭（最初のコード行より前）の `//` コメントだけを読みます。知らないキーは警告を出して無視します。
+- `@mode app` にすると、スクリプトの実行前に `@html` のページを表示するウィンドウ（`app.main`）が開き、ウィンドウを閉じるまでプロセスは終了しません。`app.open({ html, title, width, height })` で別のウィンドウも開けます（`await win.closed` で閉じるのを待てます）。サンプル: `examples/app-hello/`
+- ウィンドウは Microsoft Edge WebView2 で表示します（Windows 10/11 には通常インストール済み）。ランタイムがない場合はダウンロードページを案内して終了します。ページは `https://app.xljs/` から配信され、見えるのは `@html` と `@assets` に書いたファイルだけです（pack した exe と同じ）。
+- 画面とスクリプトのやり取り（関数呼び出し・イベント・状態共有）、簡易フォーム `ui.form`、表表示 `ui.table` は今後追加予定です。
 
 ### エディタの補完
 
@@ -218,7 +237,7 @@ sheet.cell("A1").getStyle();   // 現在の書式を取得
 
 - `console.log/error/table/time` など、`setTimeout` / `setInterval`、`sleep(ms)`
 - `fs.readJSON` などのほか、`csv.read` / `workbooks.open` もパス・ハンドル・`File`・`Blob` を受け付けます
-- `xljs.args` `xljs.script` `xljs.scriptDir` `xljs.version` `xljs.title`（ダイアログのタイトル） `xljs.env(name)` `exit(code)`
+- `xljs.args` `xljs.script` `xljs.scriptDir` `xljs.version` `xljs.title`（ダイアログのタイトル。`@title` で変更可） `xljs.env(name)` `exit(code)`
 - 補っている組み込み: `Array.fromAsync`, `structuredClone`, `TextEncoder` / `TextDecoder`（Shift_JIS 対応）, `atob` / `btoa`, `Blob` / `File`, 数値・日付の `toLocaleString`（日本語形式）, 簡易 `Intl`
 
 ## ビルド
@@ -251,6 +270,7 @@ go test ./...
 
 - `testdata/scripts/*.test.{js,ts}` はモック UI で実行される結合テストです。`*.answers.json` に応答を書きます。
 - UI はインターフェースで分離しているので、ネイティブダイアログ以外のロジックは Linux でもテストできます。
+- スクリプトは専用のスレッドで動き、メインスレッドが UI（ダイアログ・ウィンドウのメッセージループ）を受け持ちます（`ui.Run`）。重い処理の間もウィンドウが固まりません。
 
 | パス | 内容 |
 |---|---|
@@ -258,8 +278,9 @@ go test ./...
 | `internal/engine` | esbuild でバンドル → goja で実行、イベントループ、エラー表示 |
 | `internal/api` | Go 側のネイティブ関数と `prelude.js`（公開 API の JS 実装） |
 | `internal/i18n` | メッセージの多言語化（`locales/*.json` を埋め込み） |
-| `internal/ui` | UI インターフェースと native（Win32）/ console / mock 実装 |
-| `internal/pack` | exe へのスクリプト埋め込み |
+| `internal/ui` | UI インターフェースと native（Win32・WebView2）/ console / mock 実装、UI スレッド |
+| `internal/pack` | exe へのスクリプト・アセット埋め込み（zip） |
+| `internal/meta` | スクリプト先頭のメタデータの読み取りとアセットの範囲 |
 | `types/xljs.d.ts` | 型定義（`xljs init` で出力） |
 
 スクリプトは esbuild で 1 ファイルにバンドルし（TypeScript の変換、goja 未対応構文の変換、ソースマップ付き）、`async` 関数で包んで [goja](https://github.com/dop251/goja) で実行します。エラーの行番号は元のファイルの位置で表示されます。

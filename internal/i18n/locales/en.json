@@ -9,7 +9,7 @@
     "font": ""
   },
   "messages": {
-    "cli.usage": "xljs - Excel/CSV script runner\n\nUsage:\n  xljs [options] <script.js|script.ts> [args...]\n  xljs pack <script> [-o out.exe]    create an exe with the script embedded\n  xljs check <script>                check syntax and imports without running\n  xljs init [dir]                    write type definitions (xljs.d.ts) and jsconfig.json\n  xljs version                       print the version\n\nOptions:\n  --ui=auto|native|console|mock      UI to use (default: auto)\n  --ui-answers=<file.json>           answers file for the mock UI\n  --lang=auto|{0}                  message language (default: system language)\n\nXLJS_UI / XLJS_UI_ANSWERS / XLJS_LANG environment variables work too (for packed exes).\n",
+    "cli.usage": "xljs - Excel/CSV script runner\n\nUsage:\n  xljs [options] <script.js|script.ts> [args...]\n  xljs pack <script> [-o out.exe]    create an exe with the script embedded\n  xljs check <script>                check syntax and imports without running\n  xljs init [dir]                    write type definitions (xljs.d.ts) and jsconfig.json\n  xljs version                       print the version\n\nOptions:\n  --ui=auto|native|console|mock      UI to use (default: auto)\n  --ui-answers=<file.json>           answers file for the mock UI\n  --lang=auto|{0}                  message language (default: system language)\n  --debug                            enable developer tools (F12) in windows\n\nXLJS_UI / XLJS_UI_ANSWERS / XLJS_LANG / XLJS_DEBUG environment variables work too (for packed exes).\n",
     "cli.usageCheck": "usage: xljs check <script>",
     "cli.usagePack": "usage: xljs pack <script> [-o out.exe]",
     "cli.interrupted": "Interrupted",
@@ -84,7 +84,19 @@
     "os.reason.notDir": "not a folder",
     "os.reason.isDir": "is a folder",
     "os.reason.notEmpty": "the folder is not empty",
-    "os.reason.noSpace": "not enough disk space"
+    "os.reason.noSpace": "not enough disk space",
+    "meta.badMode": "{0}: invalid @mode \"{1}\" (console, app)",
+    "meta.badSize": "{0}: invalid @size \"{1}\" (use WIDTHxHEIGHT, e.g. 960x640)",
+    "meta.badPath": "{0}: \"{1}\" must be a relative path inside the script folder",
+    "meta.unknownKey": "{0}: warning: unknown metadata {1} is ignored",
+    "meta.unterminated": "{0}: the metadata block has no closing // ==/xljs== line",
+    "pack.sameAsSelf": "the output is the running executable: {0}",
+    "cli.unknownMetaLang": "warning: unknown @lang value \"{0}\" (available: {1})",
+    "ui.windowUnavailable": "HTML windows need the native UI (Windows, --ui=native)",
+    "ui.webview2Missing": "The Microsoft Edge WebView2 Runtime, which is needed to show this window, is not installed.\nDownload and install it from:\n{0}",
+    "ui.webviewError": "WebView2 error: {0}",
+    "app.badHTML": "the HTML path \"{0}\" must be relative to the script folder",
+    "app.htmlNotFound": "HTML file \"{0}\" not found (it must be the @html file or inside an @assets folder)"
   },
   "translations": []
 }

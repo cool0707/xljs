@@ -172,6 +172,32 @@ declare global {
   }
   const ui: Ui;
 
+  // ------------------------------------------------------------------ app (HTML windows)
+
+  interface AppWindowOptions {
+    /** 表示する HTML（スクリプトのフォルダからの相対パス）。@html のファイルか @assets のフォルダ内に置く。省略すると空のページ */
+    html?: string;
+    /** タイトル。既定は @title → スクリプト名 */
+    title?: string;
+    /** クライアント領域の幅・高さ（論理ピクセル） */
+    width?: number;
+    height?: number;
+  }
+  /** HTML のウィンドウ（WebView2）。開いている間はプロセスが終了しない */
+  interface AppWindow {
+    /** ウィンドウが閉じられると解決する */
+    readonly closed: Promise<void>;
+    /** ウィンドウを閉じる（閉じていれば何もしない） */
+    close(): void;
+  }
+  interface App {
+    /** `@mode app` のメインウィンドウ（スクリプト実行前に自動で開く）。`@mode app` 以外では null */
+    readonly main: AppWindow;
+    /** ウィンドウを開く。ネイティブ UI（Windows）と WebView2 ランタイムが必要 */
+    open(options?: AppWindowOptions | string): AppWindow;
+  }
+  const app: App;
+
   // ------------------------------------------------------------------ files
 
   interface FileSystemHandle {

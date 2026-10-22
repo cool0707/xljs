@@ -4,7 +4,9 @@ package engine
 
 import (
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/cool0707/xljs/internal/api"
 	"github.com/cool0707/xljs/internal/i18n"
+	"github.com/cool0707/xljs/internal/meta"
 	"github.com/cool0707/xljs/internal/ui"
 	"github.com/dop251/goja"
 )
@@ -29,6 +32,14 @@ type Options struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	Version string
+	// Meta is the script's metadata block. When nil it is read from
+	// ScriptPath (warnings go to Stderr).
+	Meta *meta.Meta
+	// Assets are the files served to windows. When nil they are read from
+	// the script folder (limited to Meta.AssetRoots).
+	Assets fs.FS
+	// Debug enables the developer tools in windows.
+	Debug bool
 }
 
 // ScriptError is a JavaScript error that terminated the script.
@@ -51,6 +62,20 @@ func Run(o Options) (int, error) {
 	}
 	if o.UI == nil {
 		o.UI = ui.NewConsole()
+	}
+	if o.Meta == nil {
+		if o.Code != nil {
+			o.Meta = &meta.Meta{}
+		} else {
+			m, warnings, err := meta.ParseFile(o.ScriptPath)
+			if err != nil {
+				return 1, err
+			}
+			for _, w := range warnings {
+				fmt.Fprintln(o.Stderr, w)
+			}
+			o.Meta = m
+		}
 	}
 	code := o.Code
 	if code == nil {
@@ -78,14 +103,23 @@ func Run(o Options) (int, error) {
 	if abs, err := filepath.Abs(script); err == nil {
 		script = abs
 	}
+	if o.Assets == nil {
+		o.Assets = o.Meta.AssetFS(filepath.Dir(script))
+	}
 	env := &api.Env{
-		UI:      o.UI,
-		Args:    o.Args,
-		Script:  script,
-		Version: o.Version,
-		Stdout:  o.Stdout,
-		Stderr:  o.Stderr,
-		Exit:    func(c int) { vm.Interrupt(&exitSignal{c}) },
+		UI:         o.UI,
+		Args:       o.Args,
+		Script:     script,
+		Version:    o.Version,
+		Stdout:     o.Stdout,
+		Stderr:     o.Stderr,
+		Exit:       func(c int) { vm.Interrupt(&exitSignal{c}) },
+		Title:      o.Meta.Title,
+		Meta:       o.Meta,
+		Assets:     o.Assets,
+		Debug:      o.Debug,
+		AddPending: l.addPending,
+		Post:       l.post,
 	}
 	defer env.Cleanup()
 	if err := api.Install(vm, env); err != nil {
@@ -100,6 +134,14 @@ func Run(o Options) (int, error) {
 	prog, err := goja.CompileAST(ast, false)
 	if err != nil {
 		return 1, &ScriptError{Message: i18n.Text(cleanStack(err.Error()))}
+	}
+
+	// An app opens its main window before the script runs; the script ends
+	// when the window is closed (the window keeps the event loop busy).
+	if o.Meta.IsApp() {
+		if err := api.OpenMainWindow(vm, env); err != nil {
+			return 1, &ScriptError{Message: describeError(vm, err)}
+		}
 	}
 
 	var result goja.Value
