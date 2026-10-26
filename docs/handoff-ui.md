@@ -45,6 +45,10 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
     検証（required/pattern/min/max/存在確認/validate）と型変換（ハンドル・Date）はすべて prelude 側。
   - `remember`: `%APPDATA%\xljs\<スクリプト名>.json`（`XLJS_CONFIG_DIR` で変更可）に `{ id か title: { 項目: wire 値 } }`。password と `remember: false` は保存しない。
   - `onSubmit` 中のエラーはウィンドウのログに表示（コンソール/mock では呼び出し元へ）。戻り値の既存パスで「フォルダを開く」。
+  - `buttons: [{ label, onClick, validate?, close? }]`: ページは `{"type":"submit","button":k}`（k は番号。なしは送信ボタン）。
+    `validate: false` は `rawValues`（検証なし）。`close: true` は正常終了で閉じる。`submit: false` で送信ボタンを隠す（Enter も無効）。
+    `ctx.setValue(name, value)` はページへ `picked`。コンソール/mock は `uiForm` の応答の `"$button"`（番号かラベル、null は送信）で、
+    close なしのボタンのあとはフォームを再度尋ねる（mock の応答が尽きたら最後に検証を通った値を返す）。
   - 表: 行は 2000 行ずつ送る。セルは number/string/boolean/null（Date は文字列化）。並べ替え・絞り込みはページ側、
     CSV/Excel 保存はスクリプト側（元の値で書き出す）。`onDoubleClick(e)`（`{ row, index, column, key, value, close() }`）で
     行・セルのダブルクリックを受ける。行は mousedown ごとに描き直すので、ダブルクリックは mousedown の `detail === 2` で判定している。30 万行で並べ替え約 0.1 秒、絞り込み約 0.4 秒（Chromium で確認）。

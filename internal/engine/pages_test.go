@@ -408,3 +408,67 @@ console.log(v.common, v.a, v.pick.名前, "out" in v);
 		t.Fatalf("exit %d, %v, stdout %q", code, err, out.String())
 	}
 }
+
+func TestFormWindowButtons(t *testing.T) {
+	m, _ := ui.NewMockFromJSON("", io.Discard)
+	u := &pageUI{Mock: m, t: t}
+	t.Setenv("XLJS_CONFIG_DIR", t.TempDir())
+	u.pages = []func(p *fakePage){
+		func(p *fakePage) {
+			init := p.expect("init", nil)
+			if got := asJSON(init["buttons"]); got != `["読込","確認","完了"]` || init["noSubmit"] != false {
+				t.Errorf("init = %v", init)
+			}
+			// validate: false runs with the values as entered; ctx.setValue updates the page.
+			p.send(map[string]any{"type": "submit", "button": 0, "values": map[string]any{"n": ""}})
+			p.expect("running", nil)
+			if got := asJSON(p.expect("picked", nil)); got != `{"append":false,"field":"n","type":"picked","value":"7"}` {
+				t.Errorf("picked = %s", got)
+			}
+			p.expect("done", nil)
+			// A checked button shows the errors and runs once they are fixed; the window stays open.
+			p.send(map[string]any{"type": "submit", "button": 1, "values": map[string]any{"n": ""}})
+			if e := asJSON(p.expect("errors", nil)); !strings.Contains(e, `"n":"入力してください"`) {
+				t.Errorf("errors = %s", e)
+			}
+			p.send(map[string]any{"type": "submit", "button": 1, "values": map[string]any{"n": "7"}})
+			p.expect("running", nil)
+			if got := asJSON(p.expect("done", nil)); got != `{"cancelled":false,"ok":true,"output":false,"type":"done"}` {
+				t.Errorf("done = %s", got)
+			}
+			p.send(map[string]any{"type": "submit", "button": 9, "values": map[string]any{"n": "1"}})
+			// close: true closes the window after the run.
+			p.send(map[string]any{"type": "submit", "button": 2, "values": map[string]any{"n": "8"}})
+			p.waitClosed()
+		},
+		func(p *fakePage) {
+			if init := p.expect("init", nil); init["noSubmit"] != true {
+				t.Errorf("init = %v", init)
+			}
+			p.send(map[string]any{"type": "submit", "values": map[string]any{}}) // the hidden submit button: ignored
+			p.send(map[string]any{"type": "submit", "button": 0, "values": map[string]any{}})
+			p.expect("done", nil)
+			p.send(map[string]any{"type": "close"})
+			p.waitClosed()
+		},
+	}
+	src := `
+const v = await ui.form({
+  fields: [{ name: "n", type: "number", required: true }],
+  buttons: [
+    { label: "読込", validate: false, onClick(values, ctx) { console.log("load", values.n); ctx.setValue("n", 7); } },
+    { label: "確認", onClick(values) { console.log("check", values.n); } },
+    { label: "完了", close: true, onClick(values) { console.log("finish", values.n); } },
+  ],
+});
+console.log("v", v.n);
+const w = await ui.form({ submit: false, fields: [], buttons: [{ label: "実行", onClick() { console.log("run"); } }] });
+console.log("w", JSON.stringify(w));
+`
+	var out bytes.Buffer
+	code, err := Run(Options{ScriptPath: writeScript(t, "buttons.js", src), UI: u, Stdout: &out, Stderr: io.Discard})
+	u.wg.Wait()
+	if want := "load null\ncheck 7\nfinish 8\nv 8\nrun\nw {}\n"; code != 0 || err != nil || out.String() != want {
+		t.Fatalf("exit %d, %v, stdout %q, want %q", code, err, out.String(), want)
+	}
+}

@@ -133,6 +133,11 @@ type FormOptions struct {
 	Fields      []FormField `json:"fields"`
 	// Error is a message about the form as a whole (from a previous attempt).
 	Error string `json:"error"`
+	// Submit is the label of the submit button ("" = none) and Buttons
+	// those of the other buttons. With buttons, the values returned name
+	// the one pressed in "$button": its index, or nil for submit.
+	Submit  string   `json:"submit"`
+	Buttons []string `json:"buttons"`
 }
 
 // FormField is one input of a form.

@@ -46,7 +46,36 @@ func (c *Console) Form(o FormOptions) (map[string]any, bool) {
 		}
 		values[f.Name] = v
 	}
+	if len(o.Buttons) > 0 {
+		b, ok := c.askButton(o)
+		if !ok {
+			return nil, false
+		}
+		values["$button"] = b
+	}
 	return values, true
+}
+
+// askButton asks which of the form's buttons to press: the index of a
+// button, or nil for the submit button (listed last, the default).
+func (c *Console) askButton(o FormOptions) (any, bool) {
+	opts := make([]FormOption, 0, len(o.Buttons)+1)
+	for i, b := range o.Buttons {
+		opts = append(opts, FormOption{Value: strconv.Itoa(i), Label: b})
+	}
+	cur := "0"
+	if o.Submit != "" {
+		opts = append(opts, FormOption{Value: "", Label: o.Submit})
+		cur = ""
+	}
+	v, ok := c.askChoice(i18n.T("ui.formButton"), opts, cur)
+	if !ok {
+		return nil, false
+	}
+	if n, err := strconv.Atoi(v.(string)); err == nil {
+		return n, true
+	}
+	return nil, true
 }
 
 func fieldLabel(f FormField) string {

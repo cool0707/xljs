@@ -1562,6 +1562,13 @@
     return { ok: !error && !Object.keys(errors).length, errors, error, values };
   }
 
+  /** Values of the fields as entered, without checking them (buttons with validate: false). */
+  function rawValues(fields, wire) {
+    const values = {};
+    for (const f of fields) if (!(f.type === "table" && !f.table.select)) values[f.name] = fromWire(f, wire[f.name]);
+    return values;
+  }
+
   // Remembered values: %APPDATA%\xljs\<script name>.json, { "<form id or title>": { field: wire value } }.
   function settingsFile() {
     const dir = native.configDir();
@@ -1615,6 +1622,12 @@
       f.table = formTable({ selectable: f.table.select }, rows, f.columns);
       this._i.table(f);
     }
+    /** Sets the value of a field (as its default would be given). */
+    setValue(name, value) {
+      const f = this._i.fields.find((x) => x.name === String(name));
+      if (!f) throw new TypeError(T("form.noField", name));
+      this._i.setValue(f, toWire(f, value));
+    }
     /**
      * Like ui.withProgress, shown in the form. Cancelling ends onSubmit
      * (the form shows that it was aborted) unless onCancel: "break".
@@ -1661,21 +1674,43 @@
     const remembered = options.remember ? loadRemembered(key) : {};
     const wire = {};
     for (const f of fields) wire[f.name] = f.remember && f.name in remembered ? remembered[f.name] : toWire(f, f.default);
+    // Buttons beside the submit button; each runs its onClick like onSubmit.
+    const buttons = Array.from(options.buttons || []).map((b, k) => {
+      if (!b || typeof b !== "object" || typeof b.onClick !== "function") throw new TypeError(T("form.badButton", k + 1));
+      return { label: b.label === undefined ? String(k + 1) : String(b.label), onClick: b.onClick, validate: b.validate !== false, close: !!b.close };
+    });
     const o = {
       title: options.title === undefined ? title() : String(options.title),
       description: options.description ? String(options.description) : "",
       submit: options.submit ? String(options.submit) : "",
-      key, tabs,
+      noSubmit: options.submit === false && buttons.length > 0,
+      key, tabs, buttons,
     };
     return native.supportsWindows ? formWindow(o, fields, wire, options) : formPrompt(o, fields, wire, options);
   }
 
-  // Console and mock: ask until the values pass, then run onSubmit with a progress indicator.
+  /**
+   * The values for a press of the submit button (b = null) or a button:
+   * checked unless the button has validate: false. Returns { values } or
+   * { errors, error }.
+   */
+  async function pressValues(o, b, fields, wire, options) {
+    if (b && !b.validate) return { values: rawValues(fields, wire) };
+    const c = await checkForm(fields, wire, options.validate);
+    if (!c.ok) return { errors: c.errors, error: c.error };
+    if (options.remember) saveRemembered(o.key, fields, wire);
+    return { values: c.values };
+  }
+
+  // Console and mock: ask until the values pass, then run onSubmit (or the
+  // button's onClick) with a progress indicator. After a button without
+  // close: true the form is asked again.
   async function formPrompt(o, fields, wire, options) {
-    let errors = {}, error = "";
+    let errors = {}, error = "", result = null;
     for (;;) {
       const spec = {
         title: o.title, description: o.description, error,
+        submit: o.noSubmit ? "" : o.submit || T("form.ok"), buttons: o.buttons.map((b) => b.label),
         fields: fields.map((f) => Object.assign({
           name: f.name, label: f.label, type: f.type, options: f.options, required: f.required,
           placeholder: f.placeholder, help: f.help, accept: f.accept, value: wire[f.name], error: errors[f.name] || "",
@@ -1683,23 +1718,33 @@
         }, f.table ? Object.assign({ select: f.table.select }, tableText(f.table)) : {})),
       };
       const r = native.uiForm(JSON.stringify(spec));
-      if (r === null) return null;
+      if (r === null) return result;
       const answer = JSON.parse(r);
-      for (const f of fields) if (f.name in answer) wire[f.name] = answer[f.name];
-      const c = await checkForm(fields, wire, options.validate);
-      if (!c.ok) {
-        errors = c.errors;
-        error = c.error;
-        continue;
+      // "$button": the index or label of the button pressed (none: the submit button).
+      let b = o.noSubmit ? o.buttons[0] : null;
+      if ("$button" in answer) {
+        const x = answer.$button;
+        delete answer.$button;
+        if (x !== null && x !== undefined) {
+          b = typeof x === "number" ? o.buttons[x] : o.buttons.find((y) => y.label === String(x));
+          if (!b) throw new TypeError(T("form.noButton", x));
+        }
       }
-      if (options.remember) saveRemembered(o.key, fields, wire);
-      if (typeof options.onSubmit === "function") {
+      for (const f of fields) if (f.name in answer) wire[f.name] = answer[f.name];
+      const c = await pressValues(o, b, fields, wire, options);
+      errors = c.errors || {};
+      error = c.error || "";
+      if (!c.values) continue;
+      if (!b || b.validate || b.close) result = c.values;
+      const handler = b ? b.onClick : options.onSubmit;
+      if (typeof handler === "function") {
         let p = null;
         const ctx = new FormContext({
           fields,
           table(f) {
             native.uiTable(JSON.stringify(Object.assign({ title: f.label, select: "" }, tableText(f.table))));
           },
+          setValue(f, w) { wire[f.name] = w; },
           progress(done, total, message) {
             if (!p) p = new Progress({ title: o.title, total: total || 0 });
             else if (total !== undefined) p.total = total;
@@ -1709,14 +1754,14 @@
           cancelled: () => (p ? p.cancelled : false),
         });
         try {
-          await options.onSubmit(c.values, ctx);
+          await handler(c.values, ctx);
         } catch (e) {
           if (!(e instanceof FormCancel)) throw e;
         } finally {
           if (p) p.close();
         }
       }
-      return c.values;
+      if (!b || b.close) return result;
     }
   }
 
@@ -1749,9 +1794,10 @@
   function formWindow(o, fields, wire, options) {
     const byName = new Map(fields.map((f) => [f.name, f]));
     const onSubmit = typeof options.onSubmit === "function" ? options.onSubmit : null;
+    const hasRun = !!onSubmit || o.buttons.length > 0;
     return new Promise((resolve, reject) => {
       let result = null, failed = null, running = false, outputs = [];
-      const page = openPage("form.html", Object.assign({ title: o.title }, formSize(o, fields, !!onSubmit, options)),
+      const page = openPage("form.html", Object.assign({ title: o.title }, formSize(o, fields, hasRun, options)),
         (m, files) => { handle(m, files).catch(fail); });
       const finish = () => (failed ? reject(failed) : resolve(result));
       function fail(e) {
@@ -1765,6 +1811,7 @@
           case "ready":
             page.send({
               type: "init", description: o.description, submit: o.submit, texts: formTexts(), tabs: o.tabs,
+              noSubmit: o.noSubmit, buttons: o.buttons.map((b) => b.label),
               fields: fields.map((f) => ({
                 name: f.name, label: f.label, type: f.type, options: f.options, required: f.required,
                 placeholder: f.placeholder, help: f.help, accept: f.accept, min: f.min, max: f.max, step: f.step,
@@ -1786,17 +1833,21 @@
             break;
           }
           case "submit": {
+            // button: the index of the button pressed (none: the submit button).
+            const b = typeof m.button === "number" ? o.buttons[m.button] : null;
+            if (b === undefined || (!b && o.noSubmit) || running) return;
             for (const f of fields) if (m.values && f.name in m.values) wire[f.name] = m.values[f.name];
-            const c = await checkForm(fields, wire, options.validate);
+            const c = await pressValues(o, b, fields, wire, options);
             if (page.n.isClosed()) return;
-            if (!c.ok) {
+            if (!c.values) {
               page.send({ type: "errors", errors: c.errors, error: c.error });
               return;
             }
-            if (options.remember) saveRemembered(o.key, fields, wire);
-            result = c.values;
-            if (onSubmit) await run(c.values);
-            else page.n.close();
+            if (!b || b.validate || b.close) result = c.values;
+            const handler = b ? b.onClick : onSubmit;
+            const ok = handler ? await run(handler, c.values) : true;
+            // Without onSubmit the submit button closes the form; a button with close: true does once it succeeds.
+            if (b ? b.close && ok : !handler) page.n.close();
             break;
           }
           case "open":
@@ -1808,14 +1859,15 @@
         }
       }
 
-      async function run(values) {
+      /** Runs onSubmit or a button's onClick; true if it ended without an error or being stopped. */
+      async function run(handler, values) {
         running = true;
         page.n.clearCancel();
         page.send({ type: "running" });
-        const ctx = windowContext(page, fields);
+        const ctx = windowContext(page, fields, wire);
         let done;
         try {
-          outputs = outputsOf(await onSubmit(values, ctx));
+          outputs = outputsOf(await handler(values, ctx));
           done = { type: "done", ok: true, cancelled: ctx.cancelled, output: outputs.length > 0 };
         } catch (e) {
           done = e instanceof FormCancel ? { type: "done", ok: true, cancelled: true, output: false }
@@ -1825,12 +1877,13 @@
         running = false;
         if (page.n.isClosed()) finish();
         else page.send(done);
+        return done.ok && !done.cancelled;
       }
     });
   }
 
   /** onSubmit's ctx for a form window: updates are sent at most every 50 ms. */
-  function windowContext(page, fields) {
+  function windowContext(page, fields, wire) {
     const state = { done: 0, total: 0, message: "" };
     let progressDirty = false, lines = [], level = "info", last = 0, timer = 0;
     const flush = () => {
@@ -1848,6 +1901,11 @@
       table(f) {
         flush();
         page.send(Object.assign({ type: "table", field: f.name, select: f.table.select }, tableWire(f.table)));
+      },
+      setValue(f, w) {
+        flush();
+        wire[f.name] = w;
+        page.send({ type: "picked", field: f.name, value: w, append: false });
       },
       progress(done, total, message) {
         state.done = done;

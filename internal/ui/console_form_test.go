@@ -89,6 +89,23 @@ func TestConsoleFormTablesAndTabs(t *testing.T) {
 	}
 }
 
+func TestConsoleFormButtons(t *testing.T) {
+	i18n.SetLanguage("ja")
+	defer i18n.SetLanguage("auto")
+	var out bytes.Buffer
+	c := &Console{In: strings.NewReader("\n\n\n2\n\n4\n読込\n"), Out: &out}
+	o := FormOptions{Fields: []FormField{{Name: "a", Value: "x"}}, Submit: "OK", Buttons: []string{"読込", "確認"}}
+	for _, want := range []any{nil, 1, 0} {
+		v, ok := c.Form(o)
+		if !ok || v["$button"] != want || v["a"] != "x" {
+			t.Fatalf("values = %v %v, want button %v\n%s", v, ok, want, out.String())
+		}
+	}
+	if !strings.Contains(out.String(), "実行する操作") || !strings.Contains(out.String(), " *3) OK") {
+		t.Errorf("output:\n%s", out.String())
+	}
+}
+
 func TestConsoleTable(t *testing.T) {
 	var out bytes.Buffer
 	c := &Console{In: strings.NewReader("4\n3-2\n1, 3-4\n"), Out: &out}

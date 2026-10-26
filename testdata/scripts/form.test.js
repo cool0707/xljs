@@ -93,7 +93,34 @@ deepEqual(aborted, [1]);
 equal(reachedEnd, false);
 equal(r2.n, 1);
 
+// Buttons: "$button" in an answer names the one pressed (index or label);
+// after a button without close the form is asked again.
+const clicks = [];
+const r3 = await ui.form({
+  title: "ボタン",
+  fields: [{ name: "n", type: "number", required: true }, { name: "memo" }],
+  buttons: [
+    { label: "読込", validate: false, onClick(values, ctx) { clicks.push("load:" + values.n); ctx.setValue("n", 7); ctx.setValue("memo", "loaded"); } },
+    { label: "確認", onClick(values, ctx) { clicks.push("check:" + values.n); ctx.log("checked"); } },
+    { label: "完了", close: true, onClick(values) { clicks.push("finish:" + values.memo); } },
+  ],
+  onSubmit() { clicks.push("submit"); },
+});
+deepEqual(clicks, ["load:null", "check:7", "finish:x"]);
+equal(r3.n, 8);
+
+// submit: false hides the submit button; closing the form returns the values of the last checked press.
+const r4 = await ui.form({
+  title: "ボタンのみ",
+  submit: false,
+  fields: [{ name: "x", default: "a" }],
+  buttons: [{ label: "実行", onClick(values) { clicks.push("run:" + values.x); } }],
+});
+deepEqual(clicks.slice(3), ["run:a"]);
+equal(r4.x, "a");
+
 // Bad definitions.
+await rejects(() => ui.form({ fields: [], buttons: [{ label: "x" }] }), /onClick/);
 await rejects(() => ui.form({ fields: [{ name: "a", type: "colour" }] }), /colour/);
 await rejects(() => ui.form({ fields: [{ name: "a" }, { name: "a" }] }), /重複/);
 await rejects(() => ui.form({ fields: [{ name: "a", type: "select" }] }), /options/);

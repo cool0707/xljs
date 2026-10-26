@@ -173,8 +173,8 @@ declare global {
     /**
      * 入力フォームを表示する。キャンセルされると null。
      * ネイティブ UI ではウィンドウ（WebView2）、コンソールでは対話入力になる。
-     * onSubmit を指定すると、実行後もウィンドウを開いたまま進捗とログを表示し、
-     * ウィンドウが閉じられたときに最後に送信された値を返す。
+     * onSubmit や buttons を指定すると、実行後もウィンドウを開いたまま進捗とログを表示し、
+     * ウィンドウが閉じられたときに最後に送信された（検証を通った）値を返す。
      */
     form<V extends FormValues = FormValues>(options: FormOptions<V>): Promise<V | null>;
     /**
@@ -263,9 +263,21 @@ declare global {
      * コンソール・mock では表を出力する
      */
     table(name: string, rows: readonly unknown[], columns?: (string | TableColumn)[]): void;
+    /** 項目の値を変える（default と同じ形で指定。table は選択する行） */
+    setValue(name: string, value: unknown): void;
     /** ui.withProgress と同じ。進捗をフォーム内に表示し、中止されると onSubmit を終える（onCancel: "break" なら反復が終わるだけ） */
     withProgress<T>(iterable: Iterable<T>, options?: WithProgressOptions<T>): Generator<T, void, undefined>;
     withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T>): AsyncIterableIterator<T>;
+  }
+
+  interface FormButton<V extends FormValues = FormValues> {
+    label: string;
+    /** 押されたときの処理。onSubmit と同じく、出力ファイルを返すと「フォルダを開く」ボタンを出す */
+    onClick(values: V, ctx: FormContext): unknown;
+    /** false なら検証せずに入力のままの値で実行する（読み込み・クリアなど）。既定 true */
+    validate?: boolean;
+    /** true なら onClick が正常に終わったらフォームを閉じる（ui.form はその値を返す） */
+    close?: boolean;
   }
 
   interface FormOptions<V extends FormValues = FormValues> {
@@ -280,8 +292,13 @@ declare global {
      * コンソールではタブごとに見出しを出して順に尋ねる
      */
     tabs?: { label: string; fields: FormField[] }[];
-    /** 送信ボタンの文字（既定 "OK"） */
-    submit?: string;
+    /** 送信ボタンの文字（既定 "OK"）。false で送信ボタンを出さない（buttons があるときだけ） */
+    submit?: string | false;
+    /**
+     * 送信ボタンの左に並べるボタン。押すと onClick を onSubmit と同じように実行する（進捗・ログ・中止。ウィンドウは開いたまま）。
+     * コンソールでは項目のあとにどのボタンを押すか尋ねる
+     */
+    buttons?: FormButton<V>[];
     /**
      * 追加の検証。問題があれば { 項目名: "メッセージ" } か、全体へのメッセージ（文字列）を返す。
      * required / pattern / min / max / ファイルの存在の検証が通ったあとに呼ばれる

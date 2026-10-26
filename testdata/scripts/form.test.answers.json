@@ -7,7 +7,13 @@
     null,
     {},
     {},
-    {}
+    {},
+    {"$button": 0},
+    {"$button": "確認"},
+    {"$button": 2, "memo": "x", "n": ""},
+    {"$button": 2, "n": 8},
+    {},
+    null
   ],
   "progress": [{}, {"cancelAfter": 1}]
 }

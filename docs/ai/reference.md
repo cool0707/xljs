@@ -276,6 +276,20 @@ await ui.form({
 });
 ```
 
+- `buttons: [{ label, onClick(v, ctx) }]` で送信ボタンの左にボタンを追加できる。押すと onClick が onSubmit と同じように動く（ウィンドウは開いたまま）。`validate: false` で検証なし、`close: true` で正常終了後に閉じる。`submit: false` で送信ボタンを出さない。`ctx.setValue(name, value)` で項目の値を変えられる。
+
+```js
+await ui.form({
+  title: "名簿",
+  fields: [{ name: "file", label: "名簿", type: "file", accept: [".xlsx"], required: true }, { name: "count", label: "件数", type: "number" }],
+  buttons: [
+    { label: "件数を確認", onClick(v, ctx) { ctx.setValue("count", workbooks.open(v.file).sheets[0].toObjects().length); } },
+  ],
+  submit: "作成",
+  async onSubmit(v, ctx) { /* ... */ },
+});
+```
+
 ## 表の表示（ui.table）
 
 ```js

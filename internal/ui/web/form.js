@@ -13,6 +13,8 @@ let fields = [];
 let tabButtons = []; // one per tab; fields name their tab by index (-1 = above the tabs)
 let state = "input"; // input | busy (waiting for the script) | running | stopping
 let ran = false;
+let noSubmit = false;
+let extraButtons = []; // the form's buttons (beside the submit button)
 const controls = new Map(); // name -> { field, row, get(), set(value, append), focus() }
 
 host.on((m) => {
@@ -36,6 +38,16 @@ function init(m) {
     $("description").hidden = false;
   }
   $("submit").textContent = m.submit || texts.ok;
+  noSubmit = !!m.noSubmit;
+  $("submit").hidden = noSubmit;
+  for (const b of extraButtons) b.remove();
+  extraButtons = (m.buttons || []).map((label, k) => {
+    const b = el("button", { type: "button", textContent: label });
+    b.onclick = () => submit(k);
+    $("submit").before(b);
+    return b;
+  });
+  if (noSubmit && extraButtons.length) extraButtons[extraButtons.length - 1].classList.add("primary");
   $("cancel").textContent = texts.cancel;
   $("open").textContent = texts.openFolder;
   const box = $("fields");
@@ -349,18 +361,21 @@ function setState(s) {
   const editing = s === "input";
   for (const c of controls.values()) for (const i of c.inputs) i.disabled = !editing;
   $("submit").disabled = !editing;
+  for (const b of extraButtons) b.disabled = !editing;
   $("cancel").disabled = s === "stopping";
   $("cancel").textContent = s === "running" ? texts.abort : s === "stopping" ? texts.aborting : ran ? texts.close : texts.cancel;
 }
 
-function submit() {
+/** Sends the values for the submit button or, with k, the form's k-th button. */
+function submit(k) {
   if (state !== "input") return;
   setState("busy");
-  host.send({ type: "submit", values: values() });
+  host.send(k === undefined ? { type: "submit", values: values() } : { type: "submit", values: values(), button: k });
 }
 
-$("form").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
-$("submit").onclick = submit;
+// Enter submits (not when the submit button is hidden).
+$("form").addEventListener("submit", (e) => { e.preventDefault(); if (!noSubmit) submit(); });
+$("submit").onclick = () => submit();
 $("cancel").onclick = cancel;
 $("open").onclick = () => host.send({ type: "open" });
 document.addEventListener("keydown", (e) => {
