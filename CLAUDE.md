@@ -20,6 +20,7 @@ JavaScript/TypeScript のスクリプトで Excel・CSV・JSON を処理する W
 | `types/xljs.d.ts` | 公開 API の型定義（`xljs init` で出力）。API を変えたら必ず更新 |
 | `testdata/scripts/*.test.{js,ts}` | モック UI で実行される結合テスト。`<name>.answers.json` がモック応答 |
 | `examples/` | サンプル。`xljs init` の d.ts で tsc の型チェックが通る状態を保つ |
+| `docs/ai/` | AI チャットにスクリプトを書かせるためのプロンプト（`prompt.md`、15,000 字以内）と詳しいリファレンス。API を変えたら d.ts と一緒に更新。`TestAIDocs` がコードブロックの構文と長さを検査 |
 
 ## 規約
 

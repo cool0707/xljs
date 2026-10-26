@@ -30,7 +30,7 @@ if (dest) {
 
 ## 使い方
 
-機能ごとのサンプルは [`examples/`](examples/README.md) にあります。
+機能ごとのサンプルは [`examples/`](examples/README.md) にあります。AI チャット（Claude・Gemini・Copilot など）にスクリプトを書いてもらうときは、[`docs/ai/`](docs/ai/README.md) のプロンプトとリファレンスを最初に渡してください。
 
 ```
 xljs [オプション] <script.js|script.ts> [引数...]

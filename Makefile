@@ -25,10 +25,14 @@ windows-arm64:
 	GOOS=windows GOARCH=arm64 $(GO) build -trimpath -ldflags "$(LDFLAGS) -H=windowsgui" -o dist/arm64/xljsw.exe ./cmd/xljs
 
 # Release archives: dist/xljs-windows-x64.zip, dist/xljs-windows-arm64.zip
+# (the executables and docs/ai)
 dist: windows-x64 windows-arm64
 	cd dist && rm -f xljs-windows-*.zip \
 	  && zip -j xljs-windows-x64.zip x64/xljs.exe x64/xljsw.exe \
 	  && zip -j xljs-windows-arm64.zip arm64/xljs.exe arm64/xljsw.exe
+	# Documents for writing scripts with AI chats (docs/ai/*.md)
+	zip dist/xljs-windows-x64.zip docs/ai/*.md
+	zip dist/xljs-windows-arm64.zip docs/ai/*.md
 
 linux:
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/xljs ./cmd/xljs
