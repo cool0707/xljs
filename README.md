@@ -30,6 +30,8 @@ if (dest) {
 
 ## 使い方
 
+機能ごとのサンプルは [`examples/`](examples/README.md) にあります。
+
 ```
 xljs [オプション] <script.js|script.ts> [引数...]
 xljs pack <script> [-o 出力.exe]   スクリプトを埋め込んだ exe を作成
@@ -168,7 +170,7 @@ ui.table(files, {
     else shell.openPath(e.row.handle);
   },
 });
-```サンプル: `examples/table-view.js`
+```サンプル: `examples/table-file-list.js`
 
 フォームと表はネイティブ UI では WebView2 のウィンドウ、コンソール（`--ui=console`）では対話入力と罫線の表で表示します。モック UI（`--ui=mock`）では応答ファイルの `"form": [{ 項目名: 値 }]`（既定値との差分。`null` でキャンセル）と `"table": [[0, 2]]`（選ぶ行の番号）を使います。
 
@@ -352,7 +354,7 @@ sheet.cell("A1").getStyle();   // 現在の書式を取得
 - 色は `"#RRGGBB"`・`"#RGB"`・`red` などの色名で指定します。
 - 既定では既存の書式にマージします。`{ replace: true }` を渡すと書式を置き換えます。
 - 範囲の端に引いた罫線は、隣の（書式が設定済みの）セルの接する辺にも反映するので、線が食い違いません。
-- サンプル: `examples/styled-report.js`
+- サンプル: `examples/xlsx-style-report.js`
 
 ### その他
 
