@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -36,9 +37,28 @@ type result struct {
 	stderr string
 }
 
+// syncBuffer is a buffer that mock windows (logging from their own
+// goroutine) and the script can write to at the same time.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
+
 func runScript(t *testing.T, script string, answers string, args ...string) result {
 	t.Helper()
-	var out, errOut bytes.Buffer
+	var out, errOut syncBuffer
 	m, err := ui.NewMock(answers, &errOut)
 	if err != nil {
 		t.Fatal(err)
@@ -86,6 +106,40 @@ func TestScripts(t *testing.T) {
 					}
 				}
 			}
+			if name == "bridge.test.js" {
+				for _, want := range []string{
+					`window.init({"progress":0,"message":"準備中","when":{"$date":`,
+					`window.$("#title").text("見出し")`,
+					`window.$("#title").addClass("big")`,
+					`window.$("#title").text() -> null`,
+					`window.evaluate("(a) => a + 1") -> null`,
+					`app: invoke add(1, 2) -> 3`,
+					`-> {"year":2026,"file":"a.xlsx","dir":"directory","size":3}`,
+					`app: invoke fail() -> error: RangeError: だめです`,
+					`app: invoke missing() -> error: Error: 画面から呼ばれた関数 "missing" がありません`,
+					`app: invoke notCallable() -> error: Error: 画面から呼ばれた関数 "notCallable"`,
+					`app: invoke dynamic(21) -> 42`,
+					`app: invoke whoami() -> true`,
+					`window.state.progress = 100`,
+					`window.emit("done", {"ok":true})`,
+					`window.invoke("render", [1,2]) -> 2`,
+					"error: Error: ハンドラのエラー",
+				} {
+					if !strings.Contains(r.stderr, want) {
+						t.Errorf("mock log does not contain %q:\n%s", want, r.stderr)
+					}
+				}
+				for _, unwanted := range []string{"expected", "window.state.progress = 0", "window.state.after", "timeout"} {
+					if strings.Contains(r.stderr, unwanted) {
+						t.Errorf("mock log contains %q:\n%s", unwanted, r.stderr)
+					}
+				}
+				for _, want := range []string{"hello 画面\n", "state month 2026-04\n", "render -> 2\n"} {
+					if !strings.Contains(r.stdout, want) {
+						t.Errorf("stdout does not contain %q:\n%s", want, r.stdout)
+					}
+				}
+			}
 			if name == "form.test.js" {
 				for _, want := range []string{
 					"form error: count: 10 以下の値を入力してください",
@@ -130,6 +184,34 @@ func writeScript(t *testing.T, name, src string) string {
 		t.Fatal(err)
 	}
 	return p
+}
+
+func TestEntryExports(t *testing.T) {
+	// Exports of the entry (also re-exported ones) can be called from
+	// windows, so app.handle refuses their names; the bundle stays runnable.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "lib.js"), []byte("export function fromLib() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	src := `export * from "./lib.js";
+export async function f() {}
+const z = 1;
+export { z as "a b", z as default };
+export let later = 0;
+for (const name of ["f", "a b", "default", "later", "fromLib"]) {
+  try { app.handle(name, () => 0); console.log("no error", name); } catch (e) {}
+}
+app.handle("other", () => 0);
+console.log("done");
+`
+	p := filepath.Join(dir, "main.js")
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	r := runScript(t, p, "")
+	if r.code != 0 || r.err != nil || r.stdout != "done\n" {
+		t.Fatalf("exit %d, %v, stdout %q, stderr %q", r.code, r.err, r.stdout, r.stderr)
+	}
 }
 
 func TestErrorStackPointsToSource(t *testing.T) {
@@ -348,5 +430,43 @@ func TestAppWindowKeepsRunning(t *testing.T) {
 	})
 	if code != 0 || err != nil {
 		t.Fatalf("ui.Run: %d %v", code, err)
+	}
+}
+
+func TestAppIcon(t *testing.T) {
+	ico, err := os.ReadFile(filepath.Join("..", "..", "assets", "xljs.ico"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.ico"), ico, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad.ico"), []byte("not an icon"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, icon string) string {
+		p := filepath.Join(dir, name)
+		src := "// ==xljs==\n// @mode app\n// @icon " + icon + "\n// ==/xljs==\nawait app.open({ title: 'sub' }).closed;\n"
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	// The main window and the windows the script opens get the icon.
+	r := runScript(t, write("ok.js", "app.ico"), "")
+	if r.code != 0 || r.err != nil {
+		t.Fatalf("exit %d: %v\n%s", r.code, r.err, r.stderr)
+	}
+	if n := strings.Count(r.stderr, fmt.Sprintf("window.icon(%d bytes)", len(ico))); n != 2 {
+		t.Errorf("icon given to %d windows:\n%s", n, r.stderr)
+	}
+
+	for icon, want := range map[string]string{"missing.ico": "見つかりません", "bad.ico": "アイコンとして読み込めません"} {
+		r := runScript(t, write("e.js", icon), "")
+		if r.code != 1 || r.err == nil || !strings.Contains(r.err.Error(), want) {
+			t.Errorf("%s: exit %d, %v", icon, r.code, r.err)
+		}
 	}
 }

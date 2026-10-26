@@ -14,3 +14,7 @@ main {
 }
 h1 { margin-top: 0; font-size: 1.6em; }
 code { background: #eef; padding: 0 0.3em; border-radius: 3px; }
+form { display: flex; gap: 0.5em; }
+input, button { font: inherit; padding: 0.3em 0.6em; }
+.greeting { font-size: 1.2em; min-height: 1.5em; }
+.note { color: #666; font-size: 0.9em; }

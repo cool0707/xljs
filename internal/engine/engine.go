@@ -148,7 +148,7 @@ func Run(o Options) (int, error) {
 	mainFn, err := vm.RunProgram(prog)
 	if err == nil {
 		if fn, ok := goja.AssertFunction(mainFn); ok {
-			result, err = fn(goja.Undefined())
+			result, err = fn(goja.Undefined(), api.ExportsHook(env))
 		} else {
 			err = i18n.Err("engine.bundleNotFunction")
 		}

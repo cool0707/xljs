@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"cmp"
 	"io"
 	"io/fs"
 	"log"
@@ -34,6 +35,9 @@ var (
 	procSystemParametersInfo = moduser32.NewProc("SystemParametersInfoW")
 	procPostQuitMessage      = moduser32.NewProc("PostQuitMessage")
 	procExtractIconExW       = modshell32.NewProc("ExtractIconExW")
+	procCreateIconFromResEx  = moduser32.NewProc("CreateIconFromResourceEx")
+	procDestroyIcon          = moduser32.NewProc("DestroyIcon")
+	procGetSystemMetrics     = moduser32.NewProc("GetSystemMetrics")
 )
 
 const (
@@ -48,6 +52,8 @@ const (
 	wmSetIcon          = 0x0080
 	iconSmall          = 0
 	iconBig            = 1
+	smCxIcon           = 11
+	smCxSmIcon         = 49
 
 	defaultWidth  = 960
 	defaultHeight = 640
@@ -62,6 +68,8 @@ type webWindow struct {
 	wv     *edge.Chromium
 	core   *edge.ICoreWebView2
 	o      WindowOptions
+	icons  [2]uintptr // big, small (from o.Icon; destroyed with the window)
+	nav    [2]*navHandler
 	ready  bool
 	closed bool
 }
@@ -153,9 +161,13 @@ func (n *Native) OpenWindow(o WindowOptions) (Window, error) {
 	}
 	w.hwnd = hwnd
 	webWindows[hwnd] = w
-	if webIcons[0] != 0 {
-		procSendMessageW.Call(hwnd, wmSetIcon, iconBig, webIcons[0])
-		procSendMessageW.Call(hwnd, wmSetIcon, iconSmall, webIcons[1])
+	if len(o.Icon) > 0 {
+		w.icons = [2]uintptr{loadIcon(o.Icon, smCxIcon), loadIcon(o.Icon, smCxSmIcon)}
+	}
+	for i, which := range []uintptr{iconBig, iconSmall} {
+		if icon := cmp.Or(w.icons[i], webIcons[i]); icon != 0 {
+			procSendMessageW.Call(hwnd, wmSetIcon, which, icon)
+		}
 	}
 	procShowWindow.Call(hwnd, swShow)
 	procUpdateWindow.Call(hwnd)
@@ -168,6 +180,23 @@ func (n *Native) OpenWindow(o WindowOptions) (Window, error) {
 	}
 	n.wins = append(n.wins, w)
 	return w, nil
+}
+
+// loadIcon creates an icon of the system size metric (SM_CXICON or
+// SM_CXSMICON) from an .ico file or a PNG image; 0 when it cannot.
+func loadIcon(data []byte, metric uintptr) uintptr {
+	size, _, _ := procGetSystemMetrics.Call(metric)
+	if size == 0 {
+		size = 32
+	}
+	img, err := iconImage(data, int(size))
+	if err != nil {
+		return 0
+	}
+	const lrDefaultColor = 0
+	h, _, _ := procCreateIconFromResEx.Call(uintptr(unsafe.Pointer(&img[0])), uintptr(len(img)), 1, 0x00030000,
+		size, size, lrDefaultColor)
+	return h
 }
 
 // embed creates the WebView2 control. The wrapper reports errors through
@@ -217,6 +246,8 @@ func (w *webWindow) embed() (err error) {
 		s.PutIsStatusBarEnabled(false)
 	}
 	wv.AddWebResourceRequestedFilter(AssetOrigin+"*", edge.COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)
+	wv.Init(PageScript)
+	w.keepInside()
 	wv.Resize()
 	wv.Focus()
 	if w.o.URL != "" {
@@ -230,7 +261,8 @@ func (w *webWindow) embed() (err error) {
 var iidICoreWebView2File = mustGUID("{F2C19559-6BC1-4583-A757-90021BE9AFEC}")
 
 // attachedFiles returns the paths of the File objects a page passed to
-// chrome.webview.postMessageWithAdditionalObjects (WebView2 113+).
+// chrome.webview.postMessageWithAdditionalObjects (WebView2 113+), in order;
+// "" for an object whose path cannot be read.
 func attachedFiles(args *edge.ICoreWebView2WebMessageReceivedEventArgs) []string {
 	objs, err := args.GetAdditionalObjects()
 	if err != nil || objs == nil {
@@ -241,30 +273,34 @@ func attachedFiles(args *edge.ICoreWebView2WebMessageReceivedEventArgs) []string
 	if err != nil {
 		return nil
 	}
-	var paths []string
+	paths := make([]string, count)
 	for i := uint32(0); i < count; i++ {
-		v, err := objs.GetValueAtIndex(i)
-		if err != nil || v == nil {
-			continue
-		}
-		// GetValueAtIndex returns an IUnknown pointer.
-		obj := (*comObject)(unsafe.Pointer(v))
-		var f *comObject
-		hr := obj.call(0, uintptr(unsafe.Pointer(&iidICoreWebView2File)), uintptr(unsafe.Pointer(&f)))
-		obj.release()
-		if failed(hr) || f == nil {
-			continue
-		}
-		var p *uint16
-		hr = f.call(3, uintptr(unsafe.Pointer(&p))) // ICoreWebView2File::get_Path
-		f.release()
-		if failed(hr) || p == nil {
-			continue
-		}
-		paths = append(paths, windows.UTF16PtrToString(p))
-		windows.CoTaskMemFree(unsafe.Pointer(p))
+		paths[i] = attachedPath(objs, i)
 	}
 	return paths
+}
+
+func attachedPath(objs *edge.ICoreWebView2ObjectCollectionView, i uint32) string {
+	v, err := objs.GetValueAtIndex(i)
+	if err != nil || v == nil {
+		return ""
+	}
+	// GetValueAtIndex returns an IUnknown pointer.
+	obj := (*comObject)(unsafe.Pointer(v))
+	var f *comObject
+	hr := obj.call(0, uintptr(unsafe.Pointer(&iidICoreWebView2File)), uintptr(unsafe.Pointer(&f)))
+	obj.release()
+	if failed(hr) || f == nil {
+		return ""
+	}
+	var p *uint16
+	hr = f.call(3, uintptr(unsafe.Pointer(&p))) // ICoreWebView2File::get_Path
+	f.release()
+	if failed(hr) || p == nil {
+		return ""
+	}
+	defer windows.CoTaskMemFree(unsafe.Pointer(p))
+	return windows.UTF16PtrToString(p)
 }
 
 // serve answers requests for AssetOrigin from o.Assets.
@@ -374,6 +410,11 @@ func (w *webWindow) destroyed() {
 		w.wv.ShuttingDown()
 	}
 	delete(webWindows, w.hwnd)
+	for _, icon := range w.icons {
+		if icon != 0 {
+			procDestroyIcon.Call(icon)
+		}
+	}
 	for i, x := range w.n.wins {
 		if x == w {
 			w.n.wins = append(w.n.wins[:i], w.n.wins[i+1:]...)

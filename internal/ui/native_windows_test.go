@@ -4,6 +4,8 @@ package ui
 
 import (
 	"io/fs"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -227,6 +229,79 @@ func TestBuiltinPages(t *testing.T) {
 	}
 }
 
+// TestPageRuntime checks the injected page runtime (web/xljs.js) and the
+// navigation handlers: the page says ready, shows the state it gets with
+// init and answers eval requests; a popup and a navigation away from the
+// app are blocked.
+func TestPageRuntime(t *testing.T) {
+	if WebView2Version() == "" {
+		t.Skip("WebView2 runtime is not installed")
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	u, err := NewNative()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assets := fstest.MapFS{
+		"index.html": {Data: []byte(`<!doctype html><meta charset="utf-8"><title>t</title><span id="m" data-bind="msg"></span>`)},
+	}
+	requests := []string{
+		`{"xljs":"eval","id":1,"code":"document.getElementById('m').textContent","fn":false,"args":[]}`,
+		`{"xljs":"eval","id":2,"code":"() => { window.open('about:blank'); location.href = 'file:///C:/'; return 1; }","fn":true,"args":[]}`,
+		`{"xljs":"eval","id":3,"code":"location.href","fn":false,"args":[]}`,
+	}
+	var got []string
+	Run(u, func(su UI) {
+		msgs := make(chan string, 10)
+		closed := make(chan struct{})
+		var w Window
+		w, err = su.OpenWindow(WindowOptions{
+			Title:     "runtime",
+			URL:       AssetOrigin + "index.html",
+			Assets:    assets,
+			OnMessage: func(m string, _ []string) { msgs <- m },
+			OnClosed:  func() { close(closed) },
+		})
+		if err != nil {
+			return
+		}
+		timeout := time.After(30 * time.Second)
+	loop:
+		for len(got) < len(requests) {
+			select {
+			case m := <-msgs:
+				switch {
+				case m == `{"xljs":"ready"}`:
+					w.Post(`{"xljs":"init","state":{"msg":"こんにちは"},"handlers":[]}`)
+					w.Post(requests[0])
+				case strings.Contains(m, `"result"`) || strings.Contains(m, `"error"`):
+					got = append(got, m)
+					if len(got) < len(requests) {
+						time.Sleep(300 * time.Millisecond) // let a navigation start
+						w.Post(requests[len(got)])
+					}
+				}
+			case <-timeout:
+				break loop
+			}
+		}
+		w.Close()
+		<-closed
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`{"xljs":"result","id":1,"value":"こんにちは"}`,
+		`{"xljs":"result","id":2,"value":1}`,
+		`{"xljs":"result","id":3,"value":"https://app.xljs/index.html"}`,
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Errorf("messages:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
 // builtinOnly serves BuiltinFS under BuiltinPrefix.
 type builtinOnly struct{}
 
@@ -235,4 +310,25 @@ func (builtinOnly) Open(name string) (fs.File, error) {
 		return BuiltinFS.Open(rest)
 	}
 	return nil, fs.ErrNotExist
+}
+
+func TestLoadIcon(t *testing.T) {
+	ico, err := os.ReadFile(filepath.Join("..", "..", "assets", "xljs.ico"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	png, err := os.ReadFile(filepath.Join("..", "..", "assets", "xljs.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{"ico": ico, "png": png} {
+		for _, metric := range []uintptr{smCxIcon, smCxSmIcon} {
+			h := loadIcon(data, metric)
+			if h == 0 {
+				t.Errorf("%s: no icon for metric %d", name, metric)
+				continue
+			}
+			procDestroyIcon.Call(h)
+		}
+	}
 }

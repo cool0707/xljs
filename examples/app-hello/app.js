@@ -8,7 +8,15 @@
 
 // @mode app では、スクリプトの実行前にメインウィンドウ（ui/index.html）が開きます。
 // ウィンドウを閉じるとスクリプトが終了します。
-// 画面とスクリプトのやり取り（invoke / emit / state など）は今後追加予定です。
+// export した関数は画面から呼べます（data-action="greet" のボタン、または xljs.invoke("greet", ...)）。
+
+/** フォームの値（{ name }）を受け取り、戻り値は data-result="greeting" で state に入る */
+export function greet({ name }) {
+  return `こんにちは、${name || "名無し"}さん！`;
+}
+
+// win.state に入れた値は data-bind の要素に表示される
+app.main.state.started = new Date();
 
 await app.main.closed;
 console.log("ウィンドウが閉じられました");

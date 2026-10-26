@@ -994,15 +994,319 @@
   defineGlobal("ui", uiObj);
 
   // ---------------------------------------------------------------- app (HTML windows)
+  //
+  // Windows and the page runtime (internal/ui/web/xljs.js) exchange JSON
+  // messages with an "xljs" key naming the kind: ready/init, invoke,
+  // result/error, event, state, dom, dom-event, eval and unhandled. Values
+  // travel through wireStringify/wireParse: JSON plus Date, handles, bytes
+  // and Error, and files the page attaches ({"$attach": index}).
+
+  /** JSON.stringify for messages to a page. */
+  function wireStringify(m) {
+    return JSON.stringify(m, function (k, v) {
+      const raw = this[k];
+      if (raw instanceof Date) return isNaN(raw.getTime()) ? null : { $date: raw.toISOString() };
+      if (raw instanceof FileSystemHandle) return raw.kind === "file" ? { $file: raw.path } : { $dir: raw.path };
+      if (raw instanceof File) return raw.path ? { $file: raw.path } : null;
+      if (raw instanceof ArrayBuffer) return { $bytes: bytesToBase64(new Uint8Array(raw)) };
+      if (ArrayBuffer.isView(raw)) return { $bytes: bytesToBase64(new Uint8Array(raw.buffer, raw.byteOffset, raw.byteLength)) };
+      if (raw instanceof Error) return { $error: errorInfo(raw) };
+      if (raw instanceof Map) return Object.fromEntries(raw);
+      if (raw instanceof Set) return Array.from(raw);
+      return v;
+    });
+  }
+
+  /** Revives the special values of a parsed message; files are the attached paths. */
+  function wireRevive(v, files) {
+    if (Array.isArray(v)) return v.map((x) => wireRevive(x, files));
+    if (v === null || typeof v !== "object") return v;
+    const keys = Object.keys(v);
+    if (keys.length === 1) {
+      const x = v[keys[0]];
+      switch (keys[0]) {
+        case "$date": return new Date(x);
+        case "$file": return new FileSystemFileHandle(String(x));
+        case "$dir": return new FileSystemDirectoryHandle(String(x));
+        case "$bytes": return base64ToBytes(x).buffer;
+        case "$error": return errorFrom(x);
+        case "$attach": {
+          // A dropped folder arrives as a File too.
+          const p = files && files[x];
+          if (!p) return null;
+          const st = native.fsStat(p);
+          return st && st.isDirectory ? new FileSystemDirectoryHandle(p) : new FileSystemFileHandle(p);
+        }
+      }
+    }
+    const out = {};
+    for (const k of keys) out[k] = wireRevive(v[k], files);
+    return out;
+  }
+
+  function errorInfo(e) {
+    if (!(e instanceof Error)) return { name: "Error", message: typeof e === "string" ? e : inspect(e) };
+    return { name: String(e.name), message: String(e.message), stack: errorText(e) };
+  }
+
+  /** An Error rebuilt from errorInfo (the page's or the script's). */
+  function errorFrom(info) {
+    info = info || {};
+    const e = new Error(info.message === undefined ? "" : String(info.message));
+    if (info.name) define(e, "name", String(info.name));
+    if (info.stack) define(e, "stack", String(info.stack));
+    return e;
+  }
+
+  /** Shows an error that no one caught (in a handler called by a window) without ending the script. */
+  function reportError(e) {
+    native.uiError(title(), e instanceof Error ? errorText(e) : msg(e));
+  }
+
+  /** Calls fn and reports what it throws or rejects with. */
+  function guarded(fn, self, args) {
+    try {
+      const r = fn.apply(self, args);
+      if (r && typeof r.then === "function") r.then(undefined, reportError);
+    } catch (e) {
+      reportError(e);
+    }
+  }
+
+  // Functions windows can call: the entry's exports and app.handle.
+  let entryExports = null;
+  native.setExports = (obj) => { entryExports = obj; };
+  const appHandlers = new Map();
+  const hasExport = (name) => entryExports !== null && Object.prototype.hasOwnProperty.call(entryExports, name);
+  function appHandler(name) {
+    if (appHandlers.has(name)) return appHandlers.get(name);
+    const fn = hasExport(name) ? entryExports[name] : undefined;
+    return typeof fn === "function" ? fn : null;
+  }
+
+  let wireID = 0;
+
+  /** Elements of a window matching a CSS selector (win.$). */
+  class AppElements {
+    constructor(win, selector) {
+      define(this, "_w", win);
+      define(this, "_sel", selector);
+    }
+    get selector() { return this._sel; }
+    _op(op, args) { this._w._send({ xljs: "dom", sel: this._sel, op, args }); return this; }
+    _read(op, args) { return this._w._request({ xljs: "dom", sel: this._sel, op, args }); }
+    text(value) { return arguments.length ? this._op("text", [value]) : this._read("text", []); }
+    html(value) { return arguments.length ? this._op("html", [value]) : this._read("html", []); }
+    val(value) { return arguments.length ? this._op("val", [value]) : this._read("val", []); }
+    attr(name, value) { return arguments.length > 1 ? this._op("attr", [String(name), value]) : this._read("attr", [String(name)]); }
+    css(name, value) {
+      if (name !== null && typeof name === "object") return this._op("css", [name]);
+      return arguments.length > 1 ? this._op("css", [{ [name]: value }]) : this._read("css", [String(name)]);
+    }
+    addClass(names) { return this._op("addClass", [String(names)]); }
+    removeClass(names) { return this._op("removeClass", [String(names)]); }
+    toggleClass(names, force) { return this._op("toggleClass", arguments.length > 1 ? [String(names), !!force] : [String(names)]); }
+    show() { return this._op("show", []); }
+    hide() { return this._op("hide", []); }
+    /** Calls fn(event) for DOM events on the elements (also ones added later). options: { preventDefault } */
+    on(type, fn, options = {}) {
+      if (typeof fn !== "function") throw new TypeError(T("engine.callbackNotFunction"));
+      const h = { hid: ++wireID, sel: this._sel, type: String(type), fn, preventDefault: !!options.preventDefault };
+      this._w._dom.set(h.hid, h);
+      this._w._send({ xljs: "dom", op: "on", sel: h.sel, type: h.type, hid: h.hid, preventDefault: h.preventDefault });
+      return this;
+    }
+    /** Removes handlers added with on (all of them for type, or for this selector). */
+    off(type, fn) {
+      for (const h of Array.from(this._w._dom.values())) {
+        if (h.sel !== this._sel || (type !== undefined && h.type !== String(type)) || (fn !== undefined && h.fn !== fn)) continue;
+        this._w._dom.delete(h.hid);
+        this._w._send({ xljs: "dom", op: "off", hid: h.hid });
+      }
+      return this;
+    }
+    [inspectSymbol]() { return `AppElements { ${JSON.stringify(this._sel)} }`; }
+  }
 
   /** An HTML window opened by app.open (or the main window of @mode app). */
   class AppWindow {
-    constructor(n) {
-      define(this, "_n", n);
+    constructor(html, winTitle, width, height) {
+      define(this, "_queue", []);        // messages until the page is ready
+      define(this, "_ready", false);
+      define(this, "_closed", false);
+      define(this, "_pending", new Map()); // id -> { resolve, reject }
+      define(this, "_listeners", new Map()); // event -> [fn]
+      define(this, "_dom", new Map());   // hid -> handler
+      define(this, "_store", {});
+      const win = this;
+      define(this, "_state", new Proxy(this._store, {
+        set(t, k, v) {
+          t[k] = v;
+          if (typeof k === "string") win._send({ xljs: "state", key: k, value: v });
+          return true;
+        },
+        deleteProperty(t, k) {
+          delete t[k];
+          if (typeof k === "string") win._send({ xljs: "state", key: k, deleted: true });
+          return true;
+        },
+      }));
+      define(this, "_n", native.appOpen(html, winTitle, width, height, (text, files) => this._receive(text, files)));
       /** Resolves when the window has been closed. */
-      define(this, "closed", n.closed);
+      define(this, "closed", this._n.closed.then(() => {
+        this._closed = true;
+        this._rejectPending(T("app.windowClosed"));
+        this._listeners.clear();
+        this._dom.clear();
+      }));
     }
+
+    /** Shared values: assignments are sent to the page (xljs.state, data-bind). Only top-level keys are synchronized. */
+    get state() { return this._state; }
+    set state(values) { Object.assign(this._state, values); }
+
     close() { this._n.close(); }
+
+    /** Calls the page's function (xljs.handle, or a global function) and resolves with its result. */
+    invoke(name, ...args) { return this._request({ xljs: "invoke", name: String(name), args }); }
+
+    /** Sends an event to the page (xljs.on). */
+    emit(name, ...args) { this._send({ xljs: "event", name: String(name), args }); }
+
+    /** Listens to events from the page (xljs.emit), and to "state" (key, value) when the page changes a value. */
+    on(name, fn) {
+      if (typeof fn !== "function") throw new TypeError(T("engine.callbackNotFunction"));
+      name = String(name);
+      if (!this._listeners.has(name)) this._listeners.set(name, []);
+      this._listeners.get(name).push(fn);
+      return this;
+    }
+
+    off(name, fn) {
+      name = String(name);
+      const list = this._listeners.get(name);
+      if (!list) return this;
+      if (fn === undefined) this._listeners.delete(name);
+      else this._listeners.set(name, list.filter((f) => f !== fn));
+      return this;
+    }
+
+    /** Elements matching selector; writes are sent at once, reads resolve with the first element's value. */
+    $(selector) { return new AppElements(this, String(selector)); }
+
+    /**
+     * Runs fn (its source; no closures) in the page with args and resolves
+     * with its result. A string is evaluated as an expression.
+     */
+    evaluate(fn, ...args) {
+      const isFn = typeof fn === "function";
+      return this._request({ xljs: "eval", code: isFn ? Function.prototype.toString.call(fn) : String(fn), fn: isFn, args });
+    }
+
+    _send(m) {
+      if (this._closed) return;
+      const text = wireStringify(m);
+      if (this._ready) this._n.post(text);
+      else this._queue.push({ m, text });
+    }
+
+    _request(m) {
+      if (this._closed) return Promise.reject(new Error(T("app.windowClosed")));
+      return new Promise((resolve, reject) => {
+        m.id = ++wireID;
+        this._pending.set(m.id, { resolve, reject });
+        this._send(m);
+      });
+    }
+
+    _rejectPending(message) {
+      const pending = Array.from(this._pending.values());
+      this._pending.clear();
+      for (const p of pending) p.reject(new Error(message));
+    }
+
+    _fire(name, args) {
+      for (const fn of (this._listeners.get(name) || []).slice()) guarded(fn, this, args);
+    }
+
+    _onReady() {
+      if (this._ready) {
+        // The page was reloaded: what was sent to the old one is lost.
+        this._rejectPending(T("app.pageReloaded"));
+      }
+      const handlers = Array.from(this._dom.values()).map((h) => ({ hid: h.hid, sel: h.sel, type: h.type, preventDefault: h.preventDefault }));
+      this._n.post(wireStringify({ xljs: "init", state: this._store, handlers }));
+      this._ready = true;
+      // The snapshot above covers the queued state and handler changes.
+      const queue = this._queue.splice(0);
+      for (const q of queue) {
+        if (q.m.xljs === "state" || (q.m.xljs === "dom" && (q.m.op === "on" || q.m.op === "off"))) continue;
+        this._n.post(q.text);
+      }
+    }
+
+    _serve(id, name, args) {
+      const reply = (m) => { m.id = id; this._send(m); };
+      const fail = (e) => reply({ xljs: "error", error: errorInfo(e) });
+      const fn = appHandler(name);
+      if (!fn) {
+        fail(new Error(T("app.noHandler", name)));
+        return;
+      }
+      let r;
+      try {
+        r = fn.apply(this, args);
+      } catch (e) {
+        fail(e);
+        return;
+      }
+      Promise.resolve(r).then((value) => reply({ xljs: "result", value }), fail);
+    }
+
+    _receive(text, files) {
+      let m;
+      try { m = JSON.parse(text); } catch (e) { return; }
+      if (!m || typeof m.xljs !== "string" || this._closed) return;
+      switch (m.xljs) {
+        case "ready":
+          this._onReady();
+          break;
+        case "invoke":
+          this._serve(m.id, String(m.name), Array.isArray(m.args) ? wireRevive(m.args, files) : []);
+          break;
+        case "result":
+        case "error": {
+          const p = this._pending.get(m.id);
+          if (!p) break;
+          this._pending.delete(m.id);
+          if (m.xljs === "result") p.resolve(wireRevive(m.value, files));
+          else if (m.error && m.error.code === "noHandler") p.reject(new Error(T("app.noPageHandler", m.error.message)));
+          else p.reject(errorFrom(m.error));
+          break;
+        }
+        case "event":
+          this._fire(String(m.name), Array.isArray(m.args) ? wireRevive(m.args, files) : []);
+          break;
+        case "state": {
+          const key = String(m.key);
+          const value = m.deleted ? undefined : wireRevive(m.value, files);
+          if (m.deleted) delete this._store[key];
+          else this._store[key] = value;
+          this._fire("state", [key, value]);
+          break;
+        }
+        case "dom-event": {
+          const h = this._dom.get(m.hid);
+          if (h) guarded(h.fn, this, [wireRevive(m.event, files)]);
+          break;
+        }
+        case "unhandled":
+          reportError(errorFrom(m.error));
+          break;
+      }
+    }
+
+    [inspectSymbol]() { return "AppWindow {}"; }
   }
 
   const appObj = {
@@ -1014,14 +1318,28 @@
      */
     open(options = {}) {
       if (typeof options === "string") options = { html: options };
-      return new AppWindow(native.appOpen(options.html === undefined ? "" : String(options.html),
+      return new AppWindow(options.html === undefined ? "" : String(options.html),
         options.title === undefined ? title() : String(options.title),
-        Number(options.width) || 0, Number(options.height) || 0));
+        Number(options.width) || 0, Number(options.height) || 0);
+    },
+    /**
+     * Lets windows call fn by name (xljs.invoke), like an export of the
+     * entry file. null removes it.
+     */
+    handle(name, fn) {
+      name = String(name);
+      if (fn === null || fn === undefined) {
+        appHandlers.delete(name);
+        return;
+      }
+      if (typeof fn !== "function") throw new TypeError(T("engine.callbackNotFunction"));
+      if (hasExport(name)) throw new Error(T("app.handleExported", name));
+      appHandlers.set(name, fn);
     },
   };
   defineGlobal("app", appObj);
   native.openMain = () => {
-    appObj.main = new AppWindow(native.appOpen(native.appHTML || "", title(), native.appWidth || 0, native.appHeight || 0));
+    appObj.main = new AppWindow(native.appHTML || "", title(), native.appWidth || 0, native.appHeight || 0);
   };
 
   // ---------------------------------------------------------------- forms & tables
@@ -1036,7 +1354,7 @@
     const n = native.appOpen("_xljs/" + page, opts.title, opts.width, opts.height, (text, files) => {
       let m;
       try { m = JSON.parse(text); } catch (e) { return; }
-      if (m && typeof m.type === "string") onMessage(m, files);
+      if (m && typeof m.type === "string") onMessage(m, files.filter((f) => f !== ""));
     });
     return { n, send: (m) => n.post(JSON.stringify(m)) };
   }

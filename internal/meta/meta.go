@@ -7,6 +7,7 @@
 //	// @assets  ui/            // folders bundled into the exe (repeatable)
 //	// @title   売上集計ツール
 //	// @size    960x640
+//	// @icon    ui/app.ico     // window icon (.ico or .png), bundled too
 //	// @lang    ja
 //	// ==/xljs==
 //
@@ -40,6 +41,7 @@ type Meta struct {
 	Title  string   `json:"title,omitempty"`
 	Width  int      `json:"width,omitempty"`
 	Height int      `json:"height,omitempty"`
+	Icon   string   `json:"icon,omitempty"`
 	Lang   string   `json:"lang,omitempty"`
 }
 
@@ -135,6 +137,15 @@ func Parse(name string, src []byte) (*Meta, []string, error) {
 			}
 			m.Width, _ = strconv.Atoi(s[1])
 			m.Height, _ = strconv.Atoi(s[2])
+		case "icon":
+			p, err := relPath(val, at())
+			if err != nil {
+				return nil, warnings, err
+			}
+			if ext := strings.ToLower(path.Ext(p)); ext != ".ico" && ext != ".png" {
+				return nil, warnings, i18n.Err("meta.badIcon", at(), val)
+			}
+			m.Icon = p
 		case "lang":
 			m.Lang = val
 		default:

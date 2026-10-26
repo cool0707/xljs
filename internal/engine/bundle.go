@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/cool0707/xljs/internal/i18n"
@@ -12,10 +13,12 @@ import (
 
 // The bundled script is wrapped in an async function so that top-level
 // await works. The program evaluates to that function; the engine calls it
-// (so no extra wrapper frame appears in stack traces).
+// (so no extra wrapper frame appears in stack traces) with a function that
+// receives the entry's exports (see exportsCall).
 const (
-	bundleBanner = `(async () => {"use strict";`
+	bundleBanner = `(async (` + exportsParam + `) => {"use strict";`
 	bundleFooter = `})`
+	exportsParam = `__xljs_exports`
 )
 
 // Bundle resolves imports starting at entry and returns a single script
@@ -58,8 +61,50 @@ func Bundle(entry string) ([]byte, error) {
 	if len(res.OutputFiles) == 0 {
 		return nil, i18n.Err("engine.emptyBundle")
 	}
-	return res.OutputFiles[0].Contents, nil
+	return moveExports(res.OutputFiles[0].Contents), nil
 }
+
+// moveExports replaces the export clause that esbuild puts at the end of
+// the bundle (not valid inside the wrapper function) with a call at the
+// start of the wrapper that hands an object of getters to exportsParam.
+// The getters make exported functions callable from windows while the
+// script is still running (function declarations are hoisted) and keep
+// later assignments visible. The call goes on the banner line so that the
+// source map stays valid. Code without such a clause is returned as is.
+func moveExports(code []byte) []byte {
+	s := string(code)
+	end := strings.LastIndex(s, "\n"+bundleFooter)
+	banner := strings.Index(s, bundleBanner)
+	if end < 0 || banner < 0 {
+		return code
+	}
+	body := s[:end+1]
+	start := strings.LastIndex(body, "\nexport {\n")
+	if start < 0 || !strings.HasSuffix(body, "\n};\n") {
+		return code
+	}
+	clause := body[start+len("\nexport {\n") : len(body)-len("\n};\n")]
+	var getters []string
+	for _, item := range strings.Split(clause, "\n") { // one per line
+		item = strings.TrimSuffix(strings.TrimSpace(item), ",")
+		local, name, found := strings.Cut(item, " as ")
+		if !found {
+			name = local
+		}
+		if !jsIdent.MatchString(local) || !(jsIdent.MatchString(name) || jsString.MatchString(name)) {
+			return code
+		}
+		getters = append(getters, "get "+name+"() { return "+local+"; }")
+	}
+	call := exportsParam + "({ " + strings.Join(getters, ", ") + " });"
+	at := banner + len(bundleBanner)
+	return []byte(s[:at] + call + s[at:start+1] + s[end+1:])
+}
+
+var (
+	jsIdent  = regexp.MustCompile(`^[\p{L}\p{Nl}$_][\p{L}\p{Nl}\p{Mn}\p{Mc}\p{Nd}\p{Pc}$\x{200c}\x{200d}]*$`)
+	jsString = regexp.MustCompile(`^"(?:[^"\\]|\\.)*"$`)
+)
 
 // BundleError reports syntax and resolution errors found while bundling.
 type BundleError struct {

@@ -346,18 +346,106 @@ declare global {
     width?: number;
     height?: number;
   }
+  /**
+   * 画面との間で受け渡せる値: JSON の値に加えて Date、ファイル/フォルダのハンドル、
+   * ArrayBuffer（型付き配列も可）、Error、Map（オブジェクトになる）、Set（配列になる）。
+   * 画面で選択・ドロップしたファイル（File）はスクリプト側で FileSystemFileHandle（フォルダをドロップした場合は FileSystemDirectoryHandle）になる
+   */
+  type WireValue = any;
+
+  /** win.$(selector).on のハンドラが受け取る値（DOM イベントそのものではない） */
+  interface AppDomEvent {
+    /** "click" など */
+    type: string;
+    /** イベントが起きた要素（セレクタに一致した要素）の id・name 属性 */
+    id: string;
+    name: string;
+    /** 要素の値（入力欄は値、チェックボックスは true/false、数値入力は number、それ以外は文字列） */
+    value: WireValue;
+    /** チェックボックス・ラジオボタンの状態 */
+    checked?: boolean;
+    /** 要素の data-* 属性 */
+    dataset: Record<string, string>;
+    /** キーボードイベントのキー（"Enter" など） */
+    key?: string;
+    ctrlKey?: boolean;
+    shiftKey?: boolean;
+    altKey?: boolean;
+    button?: number;
+    /** submit（フォーム）のときのフォームの値 */
+    values?: Record<string, WireValue>;
+    /** drop のときにドロップされたファイル（フォルダは FileSystemDirectoryHandle） */
+    files?: (FileSystemFileHandle | FileSystemDirectoryHandle)[];
+  }
+
+  /** win.$(selector) が返す要素の集まり。書き込みはすぐ送られ（await 不要）、読み取りは先頭の要素の値を Promise で返す */
+  interface AppElements {
+    readonly selector: string;
+    text(): Promise<string | null>;
+    text(value: unknown): this;
+    html(): Promise<string | null>;
+    html(value: string): this;
+    val(): Promise<WireValue>;
+    val(value: WireValue): this;
+    attr(name: string): Promise<string | null>;
+    /** null・false で属性を削除、true で値なしの属性 */
+    attr(name: string, value: string | number | boolean | null): this;
+    /** 計算済みのスタイル */
+    css(name: string): Promise<string>;
+    css(name: string, value: string | number | null): this;
+    css(styles: Record<string, string | number | null>): this;
+    addClass(names: string): this;
+    removeClass(names: string): this;
+    toggleClass(names: string, force?: boolean): this;
+    show(): this;
+    hide(): this;
+    /** 要素の DOM イベントを受け取る（あとから追加された要素も対象）。submit は常に既定の動作を止める */
+    on(type: string, handler: (this: AppWindow, e: AppDomEvent) => unknown, options?: { preventDefault?: boolean }): this;
+    /** on で登録したハンドラを外す（type・handler 省略ですべて） */
+    off(type?: string, handler?: Function): this;
+  }
+
   /** HTML のウィンドウ（WebView2）。開いている間はプロセスが終了しない */
   interface AppWindow {
     /** ウィンドウが閉じられると解決する */
     readonly closed: Promise<void>;
     /** ウィンドウを閉じる（閉じていれば何もしない） */
     close(): void;
+    /**
+     * 画面と共有する値。代入すると画面へ送られ、data-bind / data-model の要素に反映される。
+     * 画面側（xljs.state、data-model）で変わった値もここに入る。同期するのは最上位のキーだけ
+     * （win.state.summary.total = 1 は送られないので win.state.summary = {...} のように代入する）。
+     * win.state = {...} は各キーの代入と同じ
+     */
+    state: Record<string, WireValue>;
+    /** 画面の関数（xljs.handle で登録したもの、なければグローバル関数）を呼んで結果を返す */
+    invoke<T = any>(name: string, ...args: WireValue[]): Promise<T>;
+    /** 画面へイベントを送る（画面側は xljs.on で受け取る） */
+    emit(name: string, ...args: WireValue[]): void;
+    /** 画面からのイベント（xljs.emit）を受け取る */
+    on(name: string, handler: (this: AppWindow, ...args: any[]) => unknown): this;
+    /** 画面側で state が変わったとき（key, value） */
+    on(name: "state", handler: (this: AppWindow, key: string, value: any) => unknown): this;
+    off(name: string, handler?: Function): this;
+    /** セレクタに一致する画面の要素（簡易 DOM 操作） */
+    $(selector: string): AppElements;
+    /**
+     * 関数（のソース）を画面で実行して結果を返す。クロージャの変数は使えないので値は引数で渡す。
+     * 文字列は式として評価する
+     */
+    evaluate<A extends any[], R>(fn: (...args: A) => R, ...args: A): Promise<Awaited<R>>;
+    evaluate<T = any>(expression: string): Promise<T>;
   }
   interface App {
     /** `@mode app` のメインウィンドウ（スクリプト実行前に自動で開く）。`@mode app` 以外では null */
     readonly main: AppWindow;
     /** ウィンドウを開く。ネイティブ UI（Windows）と WebView2 ランタイムが必要 */
     open(options?: AppWindowOptions | string): AppWindow;
+    /**
+     * 画面から xljs.invoke(name, ...) で呼べる関数を登録する（null で削除）。
+     * エントリファイルの export と同じ扱い（this は呼び出し元のウィンドウ）。export と同じ名前はエラー
+     */
+    handle(name: string, fn: ((this: AppWindow, ...args: any[]) => unknown) | null): void;
   }
   const app: App;
 

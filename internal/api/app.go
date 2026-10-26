@@ -59,6 +59,21 @@ func (n *natives) installApp() {
 	}
 	assets := windowAssets{env.Assets}
 	n.obj.Set("supportsWindows", env.UI.SupportsWindows())
+	// The @icon file, read when the first window opens.
+	var icon []byte
+	loadIcon := func() {
+		if env.Meta == nil || env.Meta.Icon == "" || icon != nil {
+			return
+		}
+		data, err := fs.ReadFile(assets, env.Meta.Icon)
+		if err != nil {
+			n.throwT("app.iconNotFound", env.Meta.Icon)
+		}
+		if ui.CheckIcon(data) != nil {
+			n.throwT("app.badIcon", env.Meta.Icon)
+		}
+		icon = data
+	}
 	// appOpen(html, title, width, height, onMessage(msg, files)) ->
 	// {close(), closed: Promise, post(msg), isClosed(), cancelRequested(), clearCancel()}
 	n.set("appOpen", func(c goja.FunctionCall) goja.Value {
@@ -72,6 +87,7 @@ func (n *natives) installApp() {
 				n.throwT("app.htmlNotFound", html)
 			}
 		}
+		loadIcon()
 		onMessage, _ := goja.AssertFunction(c.Argument(4))
 		var isClosed, cancel atomic.Bool
 		closed, resolve, _ := vm.NewPromise()
@@ -84,6 +100,7 @@ func (n *natives) installApp() {
 			URL:    u,
 			Assets: assets,
 			Debug:  env.Debug,
+			Icon:   icon,
 			OnMessage: func(msg string, files []string) {
 				if msg == cancelMessage {
 					cancel.Store(true)
@@ -138,4 +155,10 @@ func OpenMainWindow(vm *goja.Runtime, env *Env) error {
 	}
 	_, err := fn(goja.Undefined())
 	return err
+}
+
+// ExportsHook returns the function that receives the entry's exports (an
+// object of getters, see engine.Bundle): the functions windows can invoke.
+func ExportsHook(env *Env) goja.Value {
+	return env.natives.obj.Get("setExports")
 }
