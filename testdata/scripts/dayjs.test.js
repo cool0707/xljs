@@ -1,7 +1,7 @@
 import { ok, equal, deepEqual } from "./_assert.js";
 
-// Day.js is built in, with the Japanese locale and the bundled plugins,
-// and defines no other globals.
+// Day.js is built in, with the bundled plugins and the locale of the
+// message language (the tests run in Japanese), and defines no other globals.
 equal(typeof dayjs, "function");
 equal(typeof globalThis.dayjs_plugin_isBetween, "undefined");
 equal(typeof globalThis.dayjs_locale_ja, "undefined");

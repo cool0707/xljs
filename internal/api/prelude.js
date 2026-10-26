@@ -2536,15 +2536,14 @@
   // ---------------------------------------------------------------- dayjs
 
   /**
-   * Day.js with all bundled plugins, the Japanese locale (always, like
-   * toLocaleString: a script's output must not depend on the PC's display
-   * language; dayjs.locale("en") switches), console output like Dates, and
-   * dayjs.fromExcel(serial).
+   * Day.js with all bundled plugins, the locale of the message language
+   * (English when Day.js has no bundled locale for it; dayjs.locale(name)
+   * switches), console output like Dates, and dayjs.fromExcel(serial).
    */
   function setupDayjs(bundle) {
     const d = bundle.dayjs;
     for (const p of bundle.plugins) d.extend(p);
-    d.locale("ja");
+    d.locale(bundle.locales.includes(native.lang) ? native.lang : "en");
     define(d.prototype, inspectSymbol, function () {
       return `dayjs(${this.isValid() ? formatDateLocal(this.toDate(), true) : "Invalid Date"})`;
     });

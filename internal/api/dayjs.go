@@ -7,12 +7,13 @@ import (
 	"strings"
 )
 
-// Day.js (https://day.js.org, MIT) with the Japanese locale and the plugins
-// in dayjs/plugin, unmodified from the npm package (version in
-// dayjs/README.md). To update, copy dayjs.min.js, locale/ja.js and the same
+// Day.js (https://day.js.org, MIT) with the locales in dayjs/locale (one per
+// language in internal/i18n/locales besides English, which is built in) and
+// the plugins in dayjs/plugin, unmodified from the npm package (version in
+// dayjs/README.md). To update, copy dayjs.min.js and the same locale and
 // plugin files from a newer package.
 //
-//go:embed dayjs/dayjs.min.js dayjs/locale/ja.js dayjs/plugin/*.js
+//go:embed dayjs/dayjs.min.js dayjs/locale/*.js dayjs/plugin/*.js
 var dayjsFS embed.FS
 
 // dayjsPlaceholder in prelude.js is replaced by dayjsBundle().
@@ -35,20 +36,23 @@ func dayjsBundle() string {
 		b.WriteString("\n});\n")
 	}
 	module("dayjs", "dayjs/dayjs.min.js")
-	module("dayjs/locale/ja", "dayjs/locale/ja.js")
-	entries, err := dayjsFS.ReadDir("dayjs/plugin")
-	if err != nil {
-		panic(err)
+	// Loading a locale file registers it with dayjs.
+	locales := dayjsNames("dayjs/locale")
+	for _, l := range locales {
+		module("dayjs/locale/"+l, path.Join("dayjs/locale", l+".js"))
 	}
-	var plugins []string
-	for _, e := range entries {
-		plugins = append(plugins, strings.TrimSuffix(e.Name(), ".js"))
-	}
-	sort.Strings(plugins)
+	plugins := dayjsNames("dayjs/plugin")
 	for _, p := range plugins {
 		module("dayjs/plugin/"+p, path.Join("dayjs/plugin", p+".js"))
 	}
-	b.WriteString("return { dayjs: mods.dayjs, plugins: [")
+	b.WriteString("return { dayjs: mods.dayjs, locales: [")
+	for i, l := range locales {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(quoteJS(l))
+	}
+	b.WriteString("], plugins: [")
 	for i, p := range plugins {
 		if i > 0 {
 			b.WriteString(", ")
@@ -57,6 +61,20 @@ func dayjsBundle() string {
 	}
 	b.WriteString("] }; })()")
 	return b.String()
+}
+
+// dayjsNames lists the .js files in dir without the extension, sorted.
+func dayjsNames(dir string) []string {
+	entries, err := dayjsFS.ReadDir(dir)
+	if err != nil {
+		panic(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, strings.TrimSuffix(e.Name(), ".js"))
+	}
+	sort.Strings(names)
+	return names
 }
 
 func quoteJS(s string) string { return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"` }

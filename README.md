@@ -384,7 +384,7 @@ sheet.cell("A1").getStyle();   // 現在の書式を取得
 
 ### 日付（Day.js）
 
-[Day.js](https://day.js.org/) を組み込んでいます（グローバルの `dayjs`。`import` は不要）。日本語ロケールと主なプラグイン（customParseFormat, isBetween, isSameOrAfter / isSameOrBefore, minMax, quarterOfYear, weekOfYear, isoWeek, dayOfYear, duration, relativeTime, advancedFormat, isLeapYear, isToday など）を読み込み済みです。
+[Day.js](https://day.js.org/) を組み込んでいます（グローバルの `dayjs`。`import` は不要）。エラー・警告と同じ言語（システムの表示言語、`--lang` で変更可）のロケールと主なプラグイン（customParseFormat, isBetween, isSameOrAfter / isSameOrBefore, minMax, quarterOfYear, weekOfYear, isoWeek, dayOfYear, duration, relativeTime, advancedFormat, isLeapYear, isToday など）を読み込み済みです。
 
 ```js
 const d = dayjs(r.日付);                       // Date・"2026/4/1"・"2026-04-01"（文字列はローカル時刻）
@@ -396,7 +396,7 @@ dayjs.fromExcel(45383);                        // Excel の日付シリアル値
 sheet.cell("A1").value = dayjs();              // dayjs の値はセル・CSV・JSON・表にそのまま渡せる（Date として扱う）
 ```
 
-- ロケールは PC の表示言語によらず日本語です（`dayjs.locale("en")` で英語）。
+- ロケールはエラー・警告と同じ言語です（日本語以外は英語。`dayjs.locale("ja")` / `dayjs.locale("en")` で切り替え）。
 - Day.js は MIT ライセンスです（`internal/api/dayjs/LICENSE`）。
 
 ### その他
