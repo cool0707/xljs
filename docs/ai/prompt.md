@@ -28,7 +28,8 @@
 - `ui.withProgress` のループでキャンセルされると、スクリプトはその場で終わる。`if (ui.cancelled)` の確認は不要。
 - スクリプトで書いた数式（`cell.formula = ...`）の値は、Excel で開くまで計算されない（読み直すと `null`）。集計値は JavaScript で計算して `value` に入れる。
 - 空欄のセルは `null`（`toObjects` では空欄のキーが `null`）。
-- 日付は `Date`（ローカル時刻）。`toISOString()` は UTC になるので、表示や比較の文字列にはしない。年月は `d.getFullYear()`、`d.getMonth() + 1`。
+- **日付の計算・書式・文字列の解釈は組み込みの `dayjs` を使う**（`Date` を直接いじらない）。`new Date("2026-04-01")` は UTC 扱い、`getMonth()` は 0 始まり、`toISOString()` は UTC、など `Date` は罠が多い。Excel・CSV から読んだ日付は `Date` なので `dayjs(r.日付)` で包む。
+- 日付の書式がない Excel のセルは `45383` のようなシリアル値（数値）で返る。`dayjs.fromExcel(45383)` で日付にする（`new Date(45383)` は 1970 年になる）。
 - `walk` / `list` は隠しファイル・システムファイルと Excel の一時ファイル（`~$*.xlsx`）を最初から除くので、`exclude` で除外しなくてよい。
 - 1 ファイルの読み込み失敗で全体を止めない。`try { ... } catch (e) { errors.push(...) }` で続行し、最後に知らせる。
 - Excel で開いているファイルには保存できない（エラーになる）。上書き保存より、別名の新しいファイルに保存するほうが安全。
@@ -173,8 +174,21 @@ const summary = Object.entries(groups).map(([name, list]) => ({
   合計: list.reduce((s, r) => s + (Number(r.金額) || 0), 0),
 }));
 summary.sort((a, b) => b.合計 - a.合計);
-const ym = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; // Date → "2026-04"
 (1234567).toLocaleString();                                        // "1,234,567"
+```
+
+## 日付（dayjs。読み込み不要）
+
+```js
+dayjs(r.日付).format("YYYY-MM")                  // Date → "2026-04"（月別の集計キー）
+dayjs().format("YYYYMMDD")                       // 今日（ファイル名用 "20260401"）
+dayjs("2026/4/1"); dayjs("2026-04-01")           // 文字列 → ローカルの 0 時
+dayjs("01/04/2026", "DD/MM/YYYY")                // 形式を指定して読む
+dayjs(d).add(1, "month").endOf("month")          // 翌月末。add/subtract/startOf/endOf は新しい値を返す
+dayjs(a).diff(b, "day")                          // 日数の差
+dayjs(d).isBetween(from, to, "day", "[]")       // 期間内か（両端含む）
+dayjs(d).format("YYYY年M月D日(ddd)")             // "2026年4月1日(水)"
+ws.cell("A1").value = dayjs();                   // dayjs のままセル・CSV・JSON に書ける（Date になる）
 ```
 
 ## エクスプローラー・アプリで開く

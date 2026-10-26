@@ -291,19 +291,36 @@ ui.table(rows, {
 
 表は並べ替え・絞り込み・コピー・CSV / Excel への保存が画面上でできる。
 
-## 日付・数値のよく使う書き方
+## 日付（dayjs）
+
+[Day.js](https://day.js.org/) を組み込んである（`import` 不要。グローバルの `dayjs`）。日本語ロケールと次のプラグインを読み込み済み: customParseFormat, isBetween, isSameOrAfter, isSameOrBefore, minMax, quarterOfYear, weekOfYear, isoWeek, dayOfYear, duration, relativeTime, advancedFormat, isLeapYear, isToday, isTomorrow, isYesterday, weekday, localeData。
+
+`Date` を直接計算しない（`new Date("2026-04-01")` が UTC になる、月が 0 始まり、`setMonth` で月末がずれる、など）。Excel・CSV から読んだ `Date` も `dayjs(値)` で包んで扱う。
 
 ```js
-const pad = (n) => String(n).padStart(2, "0");
-const ymd = (d) => `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())}`; // "2026/04/01"
-const ym = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;                       // "2026-04"
-const today = new Date();
-const stamp = `${today.getFullYear()}${pad(today.getMonth() + 1)}${pad(today.getDate())}`; // ファイル名用 "20260401"
-new Date(2026, 3, 1);                     // 2026年4月1日（月は 0 始まり）
-const toDate = (v) => v instanceof Date ? v : v ? new Date(String(v).replace(/-/g, "/")) : null; // 文字列の日付も Date に
-(1234567).toLocaleString();               // "1,234,567"
-Math.round(x * 100) / 100;                // 小数第 2 位で四捨五入
+const d = dayjs(r.日付);                         // Date・"2026/4/1"・"2026-04-01 09:30" など（文字列はローカル時刻）
+dayjs("20260401", "YYYYMMDD");                   // 形式を指定して読む
+dayjs("2026/02/30", "YYYY/MM/DD", true).isValid(); // false（厳密に読む）
+d.format("YYYY/MM/DD");                          // "2026/04/01"
+d.format("YYYY年M月D日(ddd)");                  // "2026年4月1日(水)"
+d.format("YYYY-MM");                             // 月別集計のキー
+dayjs().format("YYYYMMDD_HHmmss");               // ファイル名用のタイムスタンプ
+d.add(1, "month"); d.subtract(7, "day");         // 新しい値を返す（d は変わらない）
+d.startOf("month"); d.endOf("month");            // 月初・月末（endOf は 23:59:59.999）
+d.year(); d.month() + 1; d.date(); d.day();      // 年・月（0 始まり）・日・曜日（0 = 日曜）
+d.quarter(); d.isoWeek(); d.daysInMonth();       // 四半期・ISO 週番号・月の日数
+dayjs(b).diff(a, "day");                         // 日数の差（b - a）。"month" "year" も
+d.isBefore(x); d.isAfter(x); d.isSame(x, "month");
+d.isBetween(from, to, "day", "[]");              // 期間内（両端含む）
+dayjs.max(list); dayjs.min(list);                // 最新・最古（dayjs の配列）
+dayjs.duration(90, "minutes").format("H:mm");    // "1:30"
+dayjs.fromExcel(45383);                          // Excel のシリアル値 → 2024/4/1（xljs 拡張）
+d.toDate();                                      // Date に戻す
 ```
+
+- dayjs の値はそのまま `cell.value`・`sheet.write`・`csv.write`・`fs.writeJSON`・`ui.table`・フォームの `default` に渡せる（`Date` として扱う）。
+- 和暦（令和など）の解釈・表示はできない。
+- 数値: `(1234567).toLocaleString()` → `"1,234,567"`、`Math.round(x * 100) / 100` で小数第 2 位に丸める。
 
 ## アプリモード（HTML の画面）
 
@@ -447,12 +464,12 @@ const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [
 if (!h) exit();
 const rows = workbooks.open(h).sheets[0].toObjects().filter((r) => r.日付 instanceof Date);
 
-const pad = (n) => String(n).padStart(2, "0");
-const months = [...new Set(rows.map((r) => `${r.日付.getFullYear()}-${pad(r.日付.getMonth() + 1)}`))].sort();
+const ym = (d) => dayjs(d).format("YYYY-MM");
+const months = [...new Set(rows.map((r) => ym(r.日付)))].sort();
 const table = Object.entries(Object.groupBy(rows, (r) => r.担当 ?? "(未設定)")).map(([who, list]) => {
   const line = { 担当: who };
   for (const m of months) line[m] = 0;
-  for (const r of list) line[`${r.日付.getFullYear()}-${pad(r.日付.getMonth() + 1)}`] += Number(r.金額) || 0;
+  for (const r of list) line[ym(r.日付)] += Number(r.金額) || 0;
   line.合計 = list.reduce((s, r) => s + (Number(r.金額) || 0), 0);
   return line;
 });

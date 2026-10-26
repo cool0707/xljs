@@ -382,6 +382,23 @@ sheet.cell("A1").getStyle();   // 現在の書式を取得
 - 範囲の端に引いた罫線は、隣の（書式が設定済みの）セルの接する辺にも反映するので、線が食い違いません。
 - サンプル: `examples/xlsx-style-report.js`
 
+### 日付（Day.js）
+
+[Day.js](https://day.js.org/) を組み込んでいます（グローバルの `dayjs`。`import` は不要）。日本語ロケールと主なプラグイン（customParseFormat, isBetween, isSameOrAfter / isSameOrBefore, minMax, quarterOfYear, weekOfYear, isoWeek, dayOfYear, duration, relativeTime, advancedFormat, isLeapYear, isToday など）を読み込み済みです。
+
+```js
+const d = dayjs(r.日付);                       // Date・"2026/4/1"・"2026-04-01"（文字列はローカル時刻）
+d.format("YYYY年M月D日(ddd)");                // "2026年4月1日(水)"
+d.add(1, "month").endOf("month");              // 翌月末
+dayjs(b).diff(a, "day");                       // 日数の差
+dayjs("20260401", "YYYYMMDD");                 // 形式を指定して読む
+dayjs.fromExcel(45383);                        // Excel の日付シリアル値 → 2024/4/1（xljs 拡張）
+sheet.cell("A1").value = dayjs();              // dayjs の値はセル・CSV・JSON・表にそのまま渡せる（Date として扱う）
+```
+
+- ロケールは PC の表示言語によらず日本語です（`dayjs.locale("en")` で英語）。
+- Day.js は MIT ライセンスです（`internal/api/dayjs/LICENSE`）。
+
 ### その他
 
 - `console.log/error/table/time` など、`setTimeout` / `setInterval`、`sleep(ms)`

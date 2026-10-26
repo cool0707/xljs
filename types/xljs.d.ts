@@ -949,6 +949,105 @@ declare global {
   }
   const workbooks: Workbooks;
 
+  // ------------------------------------------------------------------ dayjs
+
+  /**
+   * Day.js（https://day.js.org/）。組み込み済みで、日本語ロケールとプラグイン
+   * （customParseFormat, isBetween, isSameOrAfter, isSameOrBefore, minMax, quarterOfYear,
+   * weekOfYear, isoWeek, dayOfYear, duration, relativeTime, advancedFormat, isLeapYear,
+   * isToday, isTomorrow, isYesterday, weekday, localeData）を読み込み済み。
+   * "2026-04-01" や "2026/4/1" はローカル時刻の 0 時として読む。
+   * Dayjs のオブジェクトは Date と同じようにセル・CSV・JSON・表・フォームに渡せる。
+   */
+  type DayjsInput = Dayjs | Date | string | number | null | undefined;
+  type DayjsUnit = "millisecond" | "second" | "minute" | "hour" | "day" | "week" | "month" | "quarter" | "year" | "date" |
+    "ms" | "s" | "m" | "h" | "d" | "w" | "M" | "Q" | "y" | "isoWeek" |
+    "milliseconds" | "seconds" | "minutes" | "hours" | "days" | "weeks" | "months" | "quarters" | "years";
+  interface Dayjs {
+    /** "YYYY-MM-DD"、"YYYY年M月D日(ddd)"、"HH:mm:ss" など */
+    format(template?: string): string;
+    isValid(): boolean;
+    toDate(): Date;
+    /** UTC の ISO 形式（JSON.stringify と同じ） */
+    toISOString(): string;
+    toJSON(): string;
+    valueOf(): number;
+    unix(): number;
+    clone(): Dayjs;
+    year(): number; year(value: number): Dayjs;
+    /** 月（0〜11） */
+    month(): number; month(value: number): Dayjs;
+    /** 日（1〜31） */
+    date(): number; date(value: number): Dayjs;
+    /** 曜日（0 = 日曜） */
+    day(): number; day(value: number): Dayjs;
+    hour(): number; hour(value: number): Dayjs;
+    minute(): number; minute(value: number): Dayjs;
+    second(): number; second(value: number): Dayjs;
+    millisecond(): number; millisecond(value: number): Dayjs;
+    get(unit: DayjsUnit): number;
+    set(unit: DayjsUnit, value: number): Dayjs;
+    add(value: number, unit?: DayjsUnit): Dayjs;
+    subtract(value: number, unit?: DayjsUnit): Dayjs;
+    startOf(unit: DayjsUnit): Dayjs;
+    endOf(unit: DayjsUnit): Dayjs;
+    /** 差（this - other）。float: true で小数 */
+    diff(other?: DayjsInput, unit?: DayjsUnit, float?: boolean): number;
+    daysInMonth(): number;
+    isBefore(other?: DayjsInput, unit?: DayjsUnit): boolean;
+    isAfter(other?: DayjsInput, unit?: DayjsUnit): boolean;
+    isSame(other?: DayjsInput, unit?: DayjsUnit): boolean;
+    isSameOrBefore(other?: DayjsInput, unit?: DayjsUnit): boolean;
+    isSameOrAfter(other?: DayjsInput, unit?: DayjsUnit): boolean;
+    /** inclusivity: "()"（既定）"[]" "[)" "(]" */
+    isBetween(a: DayjsInput, b: DayjsInput, unit?: DayjsUnit | null, inclusivity?: "()" | "[]" | "[)" | "(]"): boolean;
+    quarter(): number; quarter(value: number): Dayjs;
+    week(): number; week(value: number): Dayjs;
+    isoWeek(): number; isoWeek(value: number): Dayjs;
+    isoWeekday(): number; isoWeekday(value: number): Dayjs;
+    isoWeekYear(): number;
+    dayOfYear(): number; dayOfYear(value: number): Dayjs;
+    weekday(): number; weekday(value: number): Dayjs;
+    isLeapYear(): boolean;
+    isToday(): boolean;
+    isTomorrow(): boolean;
+    isYesterday(): boolean;
+    /** "3日前" など */
+    from(other: DayjsInput, withoutSuffix?: boolean): string;
+    to(other: DayjsInput, withoutSuffix?: boolean): string;
+    fromNow(withoutSuffix?: boolean): string;
+    toNow(withoutSuffix?: boolean): string;
+    locale(): string; locale(name: string): Dayjs;
+  }
+  interface DayjsDuration {
+    format(template?: string): string;
+    asMilliseconds(): number; asSeconds(): number; asMinutes(): number; asHours(): number; asDays(): number; asMonths(): number; asYears(): number;
+    milliseconds(): number; seconds(): number; minutes(): number; hours(): number; days(): number; months(): number; years(): number;
+    add(value: number | DayjsDuration, unit?: DayjsUnit): DayjsDuration;
+    subtract(value: number | DayjsDuration, unit?: DayjsUnit): DayjsDuration;
+    humanize(withSuffix?: boolean): string;
+    toISOString(): string;
+  }
+  interface DayjsStatic {
+    /** 引数なしで現在時刻。format を渡すとその形式で読む（strict: true で厳密に） */
+    (date?: DayjsInput, format?: string | string[], strict?: boolean): Dayjs;
+    (date: DayjsInput, format: string | string[], locale: string, strict?: boolean): Dayjs;
+    isDayjs(value: unknown): value is Dayjs;
+    unix(seconds: number): Dayjs;
+    max(...dates: Dayjs[]): Dayjs | null;
+    max(dates: Dayjs[]): Dayjs | null;
+    min(...dates: Dayjs[]): Dayjs | null;
+    min(dates: Dayjs[]): Dayjs | null;
+    duration(value: number, unit?: DayjsUnit): DayjsDuration;
+    duration(value: Partial<Record<"milliseconds" | "seconds" | "minutes" | "hours" | "days" | "weeks" | "months" | "years", number>>): DayjsDuration;
+    /** 既定 "ja"。"en" で英語 */
+    locale(name?: string): string;
+    extend(plugin: unknown, option?: unknown): DayjsStatic;
+    /** Excel の日付のシリアル値（日付の書式がないセルの数値）を日時にする（xljs 拡張） */
+    fromExcel(serial: number): Dayjs;
+  }
+  const dayjs: DayjsStatic;
+
   interface ObjectConstructor {
     groupBy<K extends PropertyKey, T>(items: Iterable<T>, keySelector: (item: T, index: number) => K): Partial<Record<K, T[]>>;
   }

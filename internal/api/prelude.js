@@ -18,6 +18,11 @@
   // ---------------------------------------------------------------- util
 
   const pad2 = (n) => String(n).padStart(2, "0");
+  // Day.js (set up at the end). Its objects are accepted wherever a Date is.
+  let dayjsLib = null;
+  const isDayjs = (v) => dayjsLib !== null && dayjsLib.isDayjs(v);
+  /** v, with a Day.js object turned into a Date. */
+  const plainDate = (v) => (isDayjs(v) ? v.toDate() : v);
   function formatDateLocal(d, withMs) {
     if (isNaN(d.getTime())) return "Invalid Date";
     let s = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
@@ -696,7 +701,7 @@
   function jsonStringify(value, opts = {}, space) {
     const local = opts.dates !== "iso";
     return JSON.stringify(value, local ? function (k, v) {
-      const raw = this[k];
+      const raw = plainDate(this[k]);
       return raw instanceof Date ? localISO(raw) : v;
     } : null, space);
   }
@@ -1458,6 +1463,7 @@
   const ymd = (d) => `${String(d.getFullYear()).padStart(4, "0")}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 
   function toWire(f, v) {
+    v = plainDate(v);
     if (f.type === "checkbox") return !!v;
     if (f.type === "table") {
       // Selected rows: the rows themselves or their indices.
@@ -1940,6 +1946,7 @@
 
   /** A cell for the page: number, string, boolean or null. */
   function cellWire(v) {
+    v = plainDate(v);
     if (v === null || v === undefined) return null;
     if (typeof v === "number") return isFinite(v) ? v : String(v);
     if (typeof v === "string" || typeof v === "boolean") return v;
@@ -2141,6 +2148,7 @@
     return s;
   }
   function cellToString(v) {
+    v = plainDate(v);
     if (v === null || v === undefined) return "";
     if (v instanceof Date) {
       if (isNaN(v)) return "";
@@ -2277,7 +2285,7 @@
       return out;
     }
     set values(rows) {
-      native.xlsxWriteRows(this._sheet._book._h, this._sheet._name, this._address.split(":")[0], rows);
+      native.xlsxWriteRows(this._sheet._book._h, this._sheet._name, this._address.split(":")[0], rows.map((r) => Array.from(r, plainDate)));
     }
     [inspectSymbol]() { return `Range ${this._sheet._name}!${this._address}`; }
   }
@@ -2292,7 +2300,7 @@
     get column() { return native.xlsxParseRef(this._address)[0]; }
     /** Typed value: number, string, boolean, Date or null. */
     get value() { return native.xlsxGet(this._sheet._book._h, this._sheet._name, this._address); }
-    set value(v) { native.xlsxSet(this._sheet._book._h, this._sheet._name, this._address, v); }
+    set value(v) { native.xlsxSet(this._sheet._book._h, this._sheet._name, this._address, plainDate(v)); }
     /** Displayed text (number format applied). */
     get text() { return native.xlsxGetText(this._sheet._book._h, this._sheet._name, this._address); }
     /** Formula with leading "=", or null. */
@@ -2327,8 +2335,8 @@
     cell(a, b) { return new Cell(this, refOf(a, b)); }
     getValue(a, b) { return native.xlsxGet(this._book._h, this._name, refOf(a, b)); }
     setValue(a, b, c) {
-      if (typeof a === "number") native.xlsxSet(this._book._h, this._name, refOf(a, b), c);
-      else native.xlsxSet(this._book._h, this._name, String(a), b);
+      if (typeof a === "number") native.xlsxSet(this._book._h, this._name, refOf(a, b), plainDate(c));
+      else native.xlsxSet(this._book._h, this._name, String(a), plainDate(b));
       return this;
     }
     /** All used rows as arrays of typed values. opts: { text: true } returns displayed strings. */
@@ -2377,7 +2385,7 @@
         data = rows;
         if (opts.columns && opts.header !== false) { data = [opts.columns].concat(data); hasHeader = true; cols = opts.columns; }
       }
-      native.xlsxWriteRows(this._book._h, this._name, start, data);
+      native.xlsxWriteRows(this._book._h, this._name, start, data.map((r) => Array.from(r, plainDate)));
       this._formatWritten(start, data, cols, hasHeader, opts);
       return this;
     }
@@ -2524,4 +2532,32 @@
     cellName: (row, column) => native.xlsxCellName(column, row),
   };
   defineGlobal("workbooks", workbooksObj);
+
+  // ---------------------------------------------------------------- dayjs
+
+  /**
+   * Day.js with all bundled plugins, the Japanese locale (always, like
+   * toLocaleString: a script's output must not depend on the PC's display
+   * language; dayjs.locale("en") switches), console output like Dates, and
+   * dayjs.fromExcel(serial).
+   */
+  function setupDayjs(bundle) {
+    const d = bundle.dayjs;
+    for (const p of bundle.plugins) d.extend(p);
+    d.locale("ja");
+    define(d.prototype, inspectSymbol, function () {
+      return `dayjs(${this.isValid() ? formatDateLocal(this.toDate(), true) : "Invalid Date"})`;
+    });
+    /** Excel's date serial number (1 = 1900/1/1, with its 1900 leap day bug) to a local date. */
+    d.fromExcel = (serial) => {
+      const n = Number(serial);
+      if (!isFinite(n)) return d(NaN);
+      const days = Math.floor(n), ms = Math.round((n - days) * 86400000);
+      const base = days >= 60 ? new Date(1899, 11, 30) : new Date(1899, 11, 31);
+      return d(base).add(days, "day").add(ms, "ms");
+    };
+    return d;
+  }
+  dayjsLib = setupDayjs(/*@dayjs@*/null);
+  defineGlobal("dayjs", dayjsLib);
 });
