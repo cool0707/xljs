@@ -75,8 +75,12 @@ func (n *natives) installFS() {
 		if err != nil {
 			n.throw(err)
 		}
+		hidden := c.Argument(1).ToBoolean()
 		out := make([]goja.Value, 0, len(entries))
 		for _, e := range entries {
+			if !hidden && isHidden(e) {
+				continue
+			}
 			out = append(out, n.object(map[string]any{"name": e.Name(), "isDirectory": e.IsDir()}))
 		}
 		return n.array(out)
@@ -87,7 +91,8 @@ func (n *natives) installFS() {
 		exclude := n.strings(c.Argument(2))
 		dirs := c.Argument(3).ToBoolean()
 		files := !c.Argument(4).ToBoolean() // 5th arg: skipFiles
-		res, err := walk(root, include, exclude, dirs, files)
+		hidden := c.Argument(5).ToBoolean()
+		res, err := walk(root, include, exclude, dirs, files, hidden)
 		if err != nil {
 			n.throw(err)
 		}
@@ -96,7 +101,7 @@ func (n *natives) installFS() {
 	n.set("fsGlob", func(c goja.FunctionCall) goja.Value {
 		root := n.str(c, 0)
 		pattern := filepath.ToSlash(n.str(c, 1))
-		res, err := walk(root, []string{pattern}, nil, false, true)
+		res, err := walk(root, []string{pattern}, nil, false, true, false)
 		if err != nil {
 			n.throw(err)
 		}
@@ -282,7 +287,18 @@ func matchAny(patterns []string, rel string) bool {
 	return false
 }
 
-func walk(root string, include, exclude []string, dirs, files bool) ([]map[string]any, error) {
+// isHidden reports whether a directory entry is left out of listings by
+// default: hidden or system files (on Windows), names starting with "."
+// and Office lock files ("~$Book1.xlsx", hidden only where the file
+// system keeps the attribute).
+func isHidden(d fs.DirEntry) bool {
+	name := d.Name()
+	return strings.HasPrefix(name, ".") || strings.HasPrefix(name, "~$") || hasHiddenAttribute(d)
+}
+
+// walk lists the entries under root. Hidden entries (isHidden) and the
+// contents of hidden directories are skipped unless hidden is set.
+func walk(root string, include, exclude []string, dirs, files, hidden bool) ([]map[string]any, error) {
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
@@ -307,6 +323,12 @@ func walk(root string, include, exclude []string, dirs, files bool) ([]map[strin
 			return nil
 		}
 		if p == abs {
+			return nil
+		}
+		if !hidden && isHidden(d) {
+			if d.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		rel, _ := filepath.Rel(abs, p)

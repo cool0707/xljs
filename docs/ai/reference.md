@@ -66,8 +66,9 @@
 | `dir.list()` | 直下の項目のハンドルの配列 |
 | `dir.file(name)` / `dir.dir(name)` | 直下のファイル / フォルダのハンドル（存在確認なし） |
 
-`walk` のオプション: `{ glob: "*.xlsx" | ["*.csv", "*.txt"], exclude: ["~$*", "old"], directories: false }`。
+`walk` のオプション: `{ glob: "*.xlsx" | ["*.csv", "*.txt"], exclude: ["old"], directories: false, hidden: false }`。
 `/` を含まないパターンはどの階層のファイル名にも一致し、含むときは起点からの相対パスに一致する（`"2026/**/*.xlsx"`）。大文字小文字は区別しない。除外パターンに一致したフォルダは中身ごと除外。
+`walk` と `list` は、隠しファイル・システムファイル、`.` で始まる名前、Excel の一時ファイル（`~$*.xlsx`）を最初から除く（含めるときは `{ hidden: true }`）。
 
 ### fs
 
@@ -79,7 +80,7 @@
 | `fs.readBytes(p)` / `fs.writeBytes(p, data)` | バイナリ（`ArrayBuffer`） |
 | `fs.readJSON(p, { dates })` / `fs.writeJSON(p, value, { space, encoding })` | JSON |
 | `fs.readJSONL(p)` / `fs.writeJSONL(p, rows, { append })` | JSON Lines |
-| `fs.list(p)` | 直下の名前（文字列）の配列 |
+| `fs.list(p)` | 直下の名前（文字列）の配列（隠しファイルも含めるなら `fs.list(p, { hidden: true })`） |
 | `fs.walk(p, options)` / `fs.glob(pattern, { cwd })` | 走査 |
 | `fs.mkdir(p)` | フォルダ作成（途中のフォルダも作る） |
 | `fs.copy(from, to)` / `fs.rename(from, to)` / `fs.move(from, to)` | コピー・名前変更・移動 |
@@ -261,7 +262,7 @@ await ui.form({
   title: "集計",
   fields: [{ name: "src", label: "フォルダ", type: "folder", required: true }],
   async onSubmit(v, ctx) {
-    const files = v.src.walk({ glob: "*.xlsx", exclude: ["~$*"] }).toArray();
+    const files = v.src.walk("*.xlsx").toArray();
     for (const h of ctx.withProgress(files)) {
       ctx.log(h.relativePath);      // ログ欄に表示（ctx.error で赤字）
     }

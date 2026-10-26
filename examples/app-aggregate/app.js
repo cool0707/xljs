@@ -47,7 +47,7 @@ export function dropped(handles) {
 /** @param {FileSystemDirectoryHandle} dir */
 function useFolder(dir) {
   folder = dir;
-  files = dir.walk({ glob: "*.xlsx", exclude: ["~$*"] }).toArray();
+  files = dir.walk("*.xlsx").toArray();
   win.state = {
     folder: dir.path,
     count: files.length,

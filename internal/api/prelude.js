@@ -585,7 +585,7 @@
     const include = opts.glob !== undefined ? opts.glob : opts.include;
     const list = native.fsWalk(root, include === undefined ? [] : [].concat(include),
       opts.exclude === undefined ? [] : [].concat(opts.exclude),
-      !!opts.directories, opts.files === false);
+      !!opts.directories, opts.files === false, !!opts.hidden);
     return new WalkResult(list.map((e) => e.isDirectory
       ? new FileSystemDirectoryHandle(e.path, e.rel)
       : new FileSystemFileHandle(e.path, e.rel)));
@@ -625,8 +625,8 @@
       if (rel === ".." || rel.startsWith(".." + native.pathSep) || native.pathIsAbsolute(rel)) return null;
       return rel === "." ? [] : rel.split(native.pathSep);
     }
-    _list() {
-      return native.fsReadDir(this._path).map((e) => e.isDirectory
+    _list(opts = {}) {
+      return native.fsReadDir(this._path, !!opts.hidden).map((e) => e.isDirectory
         ? new FileSystemDirectoryHandle(native.pathJoin(this._path, e.name))
         : new FileSystemFileHandle(native.pathJoin(this._path, e.name)));
     }
@@ -635,10 +635,10 @@
     values() { return makeAsyncIterable(this._list(), (h) => h); }
     [asyncIteratorSymbol]() { return this.entries(); }
     // xljs extensions
-    /** Recursively lists entries. opts: { glob, exclude, directories, files } */
+    /** Recursively lists entries. opts: { glob, exclude, directories, files, hidden } */
     walk(opts) { return walkEntries(this._path, opts); }
-    /** Lists the direct children synchronously. */
-    list() { return this._list(); }
+    /** Lists the direct children synchronously. opts: { hidden } */
+    list(opts) { return this._list(opts); }
     /** Handle for a file in this directory (no existence check). */
     file(name) { return new FileSystemFileHandle(native.pathJoin(this._path, name)); }
     /** Handle for a sub directory (no existence check). */
@@ -734,9 +734,9 @@
       const text = Array.from(rows || []).map((r) => jsonStringify(r, opts)).join("\n") + "\n";
       native.fsWriteText(toPath(dest), text, opts.encoding || "utf8", !!opts.append);
     },
-    list: (p = ".") => native.fsReadDir(toPath(p)).map((e) => e.name),
+    list: (p = ".", opts = {}) => native.fsReadDir(toPath(p), !!opts.hidden).map((e) => e.name),
     walk: (p, opts) => walkEntries(toPath(p), opts),
-    glob: (pattern, opts = {}) => walkEntries(opts.cwd ? toPath(opts.cwd) : native.fsCwd(), { glob: pattern, exclude: opts.exclude }).toArray(),
+    glob: (pattern, opts = {}) => walkEntries(opts.cwd ? toPath(opts.cwd) : native.fsCwd(), { glob: pattern, exclude: opts.exclude, hidden: opts.hidden }).toArray(),
     mkdir: (p) => native.fsMkdir(toPath(p)),
     remove: (p, opts = {}) => native.fsRemove(toPath(p), !!opts.recursive),
     rename: (from, to) => native.fsRename(toPath(from), toPath(to)),

@@ -26,7 +26,7 @@
 - Excel から読んだ数値が文字列のことがある。合計は `Number(r.金額) || 0` で数値にする。
 - 空欄のセルは `null`（`toObjects` では空欄のキーが `null`）。
 - 日付は `Date`（ローカル時刻）。`toISOString()` は UTC になるので、表示や比較の文字列にはしない。年月は `d.getFullYear()`、`d.getMonth() + 1`。
-- フォルダを走査するときは Excel の一時ファイル `~$*.xlsx` を除外する（`exclude: ["~$*"]`）。
+- `walk` / `list` は隠しファイル・システムファイルと Excel の一時ファイル（`~$*.xlsx`）を最初から除くので、`exclude` で除外しなくてよい。
 - 1 ファイルの読み込み失敗で全体を止めない。`try { ... } catch (e) { errors.push(...) }` で続行し、最後に知らせる。
 - Excel で開いているファイルには保存できない（エラーになる）。上書き保存より、別名の新しいファイルに保存するほうが安全。
 - `.xls`（古い形式）は読めない。xlsx / xlsm だけ。CSV に保存し直してもらう。
@@ -63,7 +63,7 @@ if (!dest) exit();
 ## フォルダの走査・ファイル操作
 
 ```js
-const list = dir.walk({ glob: "*.xlsx", exclude: ["~$*"] }).toArray(); // サブフォルダも含む
+const list = dir.walk("*.xlsx").toArray(); // サブフォルダも含む
 const csvs = dir.walk({ glob: ["*.csv", "*.txt"] }).toArray();
 const direct = dir.list();                        // 直下の項目のハンドル（h.kind は "file" / "directory"）
 const h = dir.file("設定.json");                   // 直下のファイルのハンドル
@@ -195,7 +195,7 @@ shell.openPath(dest);           // 既定のアプリ（Excel など）で開く
 const dir = await showDirectoryPicker({ title: "Excel ファイルのあるフォルダを選択" });
 if (!dir) exit();
 
-const files = dir.walk({ glob: "*.xlsx", exclude: ["~$*"] }).toArray();
+const files = dir.walk("*.xlsx").toArray();
 if (files.length === 0) {
   alert("Excel ファイルが見つかりませんでした");
   exit();

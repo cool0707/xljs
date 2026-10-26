@@ -17,7 +17,7 @@ const values = await ui.form({
     if (v.out && !v.out.name.toLowerCase().endsWith(".xlsx")) return { out: "拡張子は .xlsx にしてください" };
   },
   async onSubmit(v, ctx) {
-    const files = v.src.walk({ glob: "*.xlsx", exclude: ["~$*"] }).toArray();
+    const files = v.src.walk("*.xlsx").toArray();
     ctx.log(`${files.length} ファイルが見つかりました`);
     /** @type {any[]} */
     const rows = [];

@@ -522,6 +522,15 @@ declare global {
     directories?: boolean;
     /** ファイルを返す（既定 true） */
     files?: boolean;
+    /**
+     * 隠しファイル・システムファイル（Windows の属性）、"." で始まる名前、Office のロックファイル（~$*）も返す（既定 false）。
+     * false では隠しフォルダの中も走査しない
+     */
+    hidden?: boolean;
+  }
+  interface ListOptions {
+    /** 隠しファイル・システムファイル、"." で始まる名前、~$* も返す（既定 false） */
+    hidden?: boolean;
   }
 
   interface WalkResult<T extends FileSystemHandle = FileSystemHandle> extends Iterable<T>, AsyncIterable<T> {
@@ -544,8 +553,8 @@ declare global {
     // xljs extensions
     /** サブフォルダを含めて走査する */
     walk(options?: WalkOptions | string | string[]): WalkResult<FileSystemFileHandle>;
-    /** 直下の項目を同期的に列挙する */
-    list(): (FileSystemFileHandle | FileSystemDirectoryHandle)[];
+    /** 直下の項目を同期的に列挙する（既定では隠しファイル・システムファイルを除く） */
+    list(options?: ListOptions): (FileSystemFileHandle | FileSystemDirectoryHandle)[];
     /** 直下のファイルのハンドル（存在確認なし） */
     file(name: string): FileSystemFileHandle;
     /** 直下のフォルダのハンドル（存在確認なし） */
@@ -605,11 +614,11 @@ declare global {
     readJSONL<T = any>(src: PathLike | Blob, options?: JsonReadOptions): T[];
     /** 配列を JSON Lines で書き出す */
     writeJSONL(dest: PathLike, rows: Iterable<unknown>, options?: JsonWriteOptions): void;
-    /** 直下の名前一覧 */
-    list(path?: PathLike): string[];
+    /** 直下の名前一覧（既定では隠しファイル・システムファイルを除く） */
+    list(path?: PathLike, options?: ListOptions): string[];
     walk(path: PathLike, options?: WalkOptions | string | string[]): WalkResult<FileSystemFileHandle>;
     /** カレントフォルダ（または cwd）からの glob */
-    glob(pattern: string, options?: { cwd?: PathLike; exclude?: string | string[] }): FileSystemFileHandle[];
+    glob(pattern: string, options?: { cwd?: PathLike; exclude?: string | string[]; hidden?: boolean }): FileSystemFileHandle[];
     mkdir(path: PathLike): void;
     remove(path: PathLike, options?: { recursive?: boolean }): void;
     rename(from: PathLike, to: PathLike): void;

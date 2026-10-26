@@ -3,7 +3,7 @@
 const dir = await showDirectoryPicker({ title: "集計するフォルダを選択" });
 if (!dir) exit();
 
-const files = dir.walk({ glob: "*.xlsx", exclude: ["~$*"] }).toArray();
+const files = dir.walk("*.xlsx").toArray();
 if (files.length === 0) {
   alert("Excel ファイルが見つかりませんでした");
   exit();
