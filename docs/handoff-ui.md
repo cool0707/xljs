@@ -84,6 +84,11 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
     `xljs.js` は Playwright（Chromium）に `chrome.webview` の代役を入れて確認した（リポジトリには含めていない）。
     サンプル `examples/app-aggregate/` は mock と pack 後の実行で確認。
   - 未確認: Windows 実機での動作全般（COM ハンドラ、ファイルの実パス、見た目）。
+  - フォームの表とタブ: `type: "table"`（`rows` `columns` `selectable` `height`）。wire 値は選択行の番号の配列で、prelude が元の行に戻す
+    （selectable なしは値に含めない、remember しない）。ページは `form.js` の `tableControl`（全行描画・列見出しで並べ替え・クリックで選択）で、
+    大量行は想定していない（それは ui.table）。`ctx.table(name, rows, columns?)` → ページへ `{"type":"table"}`（コンソール・mock は `uiTable` で出力）。
+    `tabs: [{ label, fields }]` の項目は `tab`（番号、上の共通項目は -1）付きで平らに並べ、init の `tabs` でタブバーとパネルを作る。
+    エラーのある項目のタブに印を付けて切り替える。コンソールは `FormField.Tab` が変わるところで見出しを出す。
   - `@icon`（.ico / .png）: `AssetRoots` に含めて pack で同梱。`appOpen` が最初のウィンドウで読み込み・検査（`ui.CheckIcon`）し、
     すべてのウィンドウ（組み込みのフォーム・表も）の `WindowOptions.Icon` に渡す。Native は `ui.iconImage` で
     SM_CXICON / SM_CXSMICON に合う画像を選んで `CreateIconFromResourceEx` → `WM_SETICON`、WM_DESTROY で `DestroyIcon`。

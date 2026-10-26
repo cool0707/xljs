@@ -26,7 +26,17 @@ func (c *Console) Form(o FormOptions) (map[string]any, bool) {
 		fmt.Fprintln(c.Out, "! "+o.Error)
 	}
 	values := map[string]any{}
+	tab := ""
 	for _, f := range o.Fields {
+		if f.Tab != tab {
+			tab = f.Tab
+			fmt.Fprintf(c.Out, "== %s ==\n", tab)
+		}
+		if f.Type == "table" && f.Select == SelectNone {
+			fmt.Fprintln(c.Out, fieldLabel(f))
+			fmt.Fprint(c.Out, renderTable(f.Columns, f.Rows))
+			continue
+		}
 		if f.Error != "" {
 			fmt.Fprintf(c.Out, "! %s: %s\n", fieldLabel(f), f.Error)
 		}
@@ -93,6 +103,8 @@ func (c *Console) askField(f FormField) (any, bool) {
 		return false, true
 	case "select", "radio":
 		return c.askChoice(label, f.Options, cur)
+	case "table":
+		return c.askRows(label, f)
 	case "password":
 		return c.askPassword(label, cur)
 	case "files":
@@ -120,6 +132,52 @@ func (c *Console) askField(f FormField) (any, bool) {
 		line = strings.Trim(strings.TrimSpace(line), `"`)
 	}
 	return line, true
+}
+
+// askRows shows a table field and asks for the numbers of the rows to
+// select; the value is their 0-based indices.
+func (c *Console) askRows(label string, f FormField) (any, bool) {
+	fmt.Fprintln(c.Out, label)
+	fmt.Fprint(c.Out, renderTable(f.Columns, f.Rows))
+	var cur []any
+	var nums []string
+	if list, ok := f.Value.([]any); ok {
+		for _, v := range list {
+			if n, ok := v.(float64); ok {
+				cur = append(cur, int(n))
+				nums = append(nums, strconv.Itoa(int(n)+1))
+			}
+		}
+	}
+	prompt := i18n.T("ui.tablePick")
+	if len(nums) > 0 {
+		prompt = i18n.T("ui.tableKeep", strings.Join(nums, ","))
+	}
+	for {
+		line, ok := c.Prompt("", prompt, "")
+		if !ok {
+			return nil, false
+		}
+		switch line = strings.TrimSpace(line); line {
+		case "":
+			return cur, true
+		case "-":
+			return []any{}, true
+		}
+		sel, ok := parseSelection(line, len(f.Rows))
+		if !ok {
+			fmt.Fprintln(c.Out, "! "+i18n.T("ui.badChoice", len(f.Rows)))
+			continue
+		}
+		if f.Select == SelectSingle && len(sel) > 1 {
+			sel = sel[:1]
+		}
+		out := make([]any, len(sel))
+		for i, n := range sel {
+			out[i] = n
+		}
+		return out, true
+	}
 }
 
 func acceptFilters(accept []string) []FileFilter {

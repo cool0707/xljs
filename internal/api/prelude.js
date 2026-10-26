@@ -1381,9 +1381,29 @@
   }
 
   const FIELD_TYPES = ["text", "password", "number", "date", "month", "time", "select", "radio", "checkbox",
-    "textarea", "file", "files", "folder", "saveFile"];
+    "textarea", "file", "files", "folder", "saveFile", "table"];
 
-  function normField(f, i) {
+  /** The table of a "table" field: { data, cols, select } (see ui.table). */
+  function formTable(f, rows, columns) {
+    const data = Array.from(rows || []);
+    const sel = f.selectable === true ? "multiple" : f.selectable ? String(f.selectable) : "";
+    if (sel && sel !== "single" && sel !== "multiple") throw new TypeError(T("table.badSelectable", sel));
+    return { data, cols: tableColumns(data, columns), select: sel };
+  }
+
+  /** Rows and columns of a form table for the page. */
+  const tableWire = (t) => ({
+    columns: t.cols.map((c) => c.label),
+    rows: t.data.map((r) => t.cols.map((c) => cellWire(c.get(r)))),
+  });
+
+  /** Rows and columns of a form table as text (console and mock). */
+  const tableText = (t) => {
+    const w = tableWire(t);
+    return { columns: w.columns, rows: w.rows.map((r) => r.map((v) => (v === null ? "" : String(v)))) };
+  };
+
+  function normField(f, i, tab) {
     if (!f || typeof f !== "object" || f.name === undefined || f.name === null || f.name === "") {
       throw new TypeError(T("form.fieldName", i + 1));
     }
@@ -1397,18 +1417,19 @@
     const accept = (typeof f.accept === "string" ? [f.accept] : Array.from(f.accept || []))
       .map((a) => String(a).replace(/^\*/, "")).map((a) => (a.startsWith(".") ? a : "." + a).toLowerCase());
     const num = (v) => (v === undefined || v === null || v === "" ? null : Number(v));
+    const table = type === "table" ? formTable(f, f.rows, f.columns) : null;
     return {
-      name, type, options, accept,
+      name, type, options, accept, table, tab, columns: f.columns,
       label: f.label === undefined ? name : String(f.label),
       required: !!f.required,
       placeholder: f.placeholder ? String(f.placeholder) : "",
       help: f.help ? String(f.help) : "",
       min: num(f.min), max: num(f.max), step: f.step === undefined ? null : f.step,
-      rows: Number(f.rows) || 0,
+      rows: type === "table" ? Number(f.height) || 0 : Number(f.rows) || 0,
       pattern: f.pattern === undefined || f.pattern === null || f.pattern === "" ? null
         : f.pattern instanceof RegExp ? f.pattern : new RegExp("^(?:" + f.pattern + ")$"),
       patternMessage: f.patternMessage ? String(f.patternMessage) : "",
-      remember: f.remember !== false && type !== "password",
+      remember: f.remember !== false && type !== "password" && type !== "table",
       default: f.default,
     };
   }
@@ -1417,6 +1438,13 @@
 
   function toWire(f, v) {
     if (f.type === "checkbox") return !!v;
+    if (f.type === "table") {
+      // Selected rows: the rows themselves or their indices.
+      const n = f.table.data.length;
+      const idx = [v].flat().map((x) => (typeof x === "number" ? x : f.table.data.indexOf(x)))
+        .filter((x) => Number.isInteger(x) && x >= 0 && x < n);
+      return f.table.select === "single" ? idx.slice(0, 1) : Array.from(new Set(idx));
+    }
     if (f.type === "files") return [v].flat().filter((x) => x !== null && x !== undefined && x !== "").map((x) => toPath(x));
     if (v === null || v === undefined) return f.type === "select" ? f.options[0].value : "";
     switch (f.type) {
@@ -1435,6 +1463,7 @@
   function wireEmpty(f, w) {
     if (f.type === "checkbox") return w !== true && w !== "true";
     if (f.type === "files") return wireList(w).length === 0;
+    if (f.type === "table") return !Array.isArray(w) || w.length === 0;
     return wireStr(w).trim() === "";
   }
 
@@ -1442,6 +1471,11 @@
     switch (f.type) {
       case "checkbox": return w === true || w === "true";
       case "files": return wireList(w).map((p) => new FileSystemFileHandle(p));
+      case "table": {
+        const rows = (Array.isArray(w) ? w : []).filter((i) => Number.isInteger(i) && i >= 0 && i < f.table.data.length)
+          .map((i) => f.table.data[i]);
+        return f.table.select === "single" ? (rows.length ? rows[0] : null) : rows;
+      }
       case "file": case "saveFile": { const p = wireStr(w).trim(); return p ? new FileSystemFileHandle(p) : null; }
       case "folder": { const p = wireStr(w).trim(); return p ? new FileSystemDirectoryHandle(p) : null; }
       case "number": { const s = wireStr(w).trim(); return s === "" ? null : Number(s); }
@@ -1461,10 +1495,11 @@
     const errors = {}, values = {};
     for (const f of fields) {
       const w = wire[f.name];
+      if (f.type === "table" && !f.table.select) continue; // shown only
       const v = fromWire(f, w);
       values[f.name] = v;
       if (wireEmpty(f, w)) {
-        if (f.required) errors[f.name] = T("form.required");
+        if (f.required) errors[f.name] = T(f.type === "table" ? "form.selectRow" : "form.required");
         continue;
       }
       let e = "";
@@ -1545,6 +1580,14 @@
     }
     log(...args) { this._i.log(formatArgs(args), "info"); }
     error(...args) { this._i.log(formatArgs(args), "error"); }
+    /** Replaces the rows (and optionally the columns) of a table field; the selection is cleared. */
+    table(name, rows, columns) {
+      const f = this._i.fields.find((x) => x.name === String(name) && x.type === "table");
+      if (!f) throw new TypeError(T("form.noTable", name));
+      if (columns !== undefined) f.columns = columns;
+      f.table = formTable({ selectable: f.table.select }, rows, f.columns);
+      this._i.table(f);
+    }
     /** Like ui.withProgress, shown in the form. Stops early when cancelled. */
     withProgress(iterable, options = {}) {
       return withProgress(iterable, options, (o) => {
@@ -1563,13 +1606,19 @@
       ok: T("form.ok"), cancel: T("form.cancel"), close: T("form.close"), browse: T("form.browse"),
       clear: T("form.clear"), dropHere: T("form.dropHere"), dropFolder: T("form.dropFolder"), abort: T("form.abort"), aborting: T("form.aborting"),
       running: T("form.running"), done: T("form.done"), aborted: T("form.aborted"), failed: T("form.failed"),
-      openFolder: T("form.openFolder"),
+      openFolder: T("form.openFolder"), noRows: T("table.empty"),
     };
   }
 
   async function showForm(options) {
     if (!options || typeof options !== "object") throw new TypeError(T("form.expectedOptions"));
-    const fields = Array.from(options.fields || []).map(normField);
+    // Fields above the tabs, then each tab's fields (tab: its index, or -1).
+    const fields = Array.from(options.fields || []).map((f, i) => normField(f, i, -1));
+    const tabs = Array.from(options.tabs || []).map((t, k) => {
+      if (!t || typeof t !== "object") throw new TypeError(T("form.badTab", k + 1));
+      for (const f of Array.from(t.fields || [])) fields.push(normField(f, fields.length, k));
+      return t.label === undefined ? String(k + 1) : String(t.label);
+    });
     const seen = new Set();
     for (const f of fields) {
       if (seen.has(f.name)) throw new TypeError(T("form.duplicateName", f.name));
@@ -1583,7 +1632,7 @@
       title: options.title === undefined ? title() : String(options.title),
       description: options.description ? String(options.description) : "",
       submit: options.submit ? String(options.submit) : "",
-      key,
+      key, tabs,
     };
     return native.supportsWindows ? formWindow(o, fields, wire, options) : formPrompt(o, fields, wire, options);
   }
@@ -1594,10 +1643,11 @@
     for (;;) {
       const spec = {
         title: o.title, description: o.description, error,
-        fields: fields.map((f) => ({
+        fields: fields.map((f) => Object.assign({
           name: f.name, label: f.label, type: f.type, options: f.options, required: f.required,
           placeholder: f.placeholder, help: f.help, accept: f.accept, value: wire[f.name], error: errors[f.name] || "",
-        })),
+          tab: f.tab >= 0 ? o.tabs[f.tab] : "",
+        }, f.table ? Object.assign({ select: f.table.select }, tableText(f.table)) : {})),
       };
       const r = native.uiForm(JSON.stringify(spec));
       if (r === null) return null;
@@ -1613,6 +1663,10 @@
       if (typeof options.onSubmit === "function") {
         let p = null;
         const ctx = new FormContext({
+          fields,
+          table(f) {
+            native.uiTable(JSON.stringify(Object.assign({ title: f.label, select: "" }, tableText(f.table))));
+          },
           progress(done, total, message) {
             if (!p) p = new Progress({ title: o.title, total: total || 0 });
             else if (total !== undefined) p.total = total;
@@ -1634,17 +1688,27 @@
   function formSize(o, fields, hasRun, options) {
     let h = 100;
     if (o.description) h += 14 + 21 * Math.min(8, o.description.split("\n").reduce((n, l) => n + 1 + Math.floor(l.length / 40), 0));
+    // Fields above the tabs, plus the tallest tab.
+    const heights = o.tabs.map(() => 0);
+    let common = 0;
     for (const f of fields) {
-      h += 10 + (f.type === "textarea" ? 10 + 21 * (f.rows || 4) : f.type === "files" ? 10 + 21 * Math.max(3, f.rows || 3)
-        : f.type === "checkbox" || f.type === "radio" ? 28 : 32);
-      if (f.help) h += 20;
+      let fh = 10 + (f.type === "textarea" ? 10 + 21 * (f.rows || 4) : f.type === "files" ? 10 + 21 * Math.max(3, f.rows || 3)
+        : f.type === "table" ? 34 + 27 * tableLines(f)
+          : f.type === "checkbox" || f.type === "radio" ? 28 : 32);
+      if (f.help) fh += 20;
+      if (f.tab >= 0) heights[f.tab] += fh;
+      else common += fh;
     }
+    h += common + (o.tabs.length ? 48 + Math.max(...heights) : 0);
     if (hasRun) h += 240;
     return {
       width: Number(options.width) || 600,
       height: Number(options.height) || Math.min(Math.max(h, 220), 760),
     };
   }
+
+  /** Visible rows of a table field: height, or up to 8 (at least 3). */
+  const tableLines = (f) => f.rows || Math.min(8, Math.max(3, f.table.data.length));
 
   // Native UI: the form page. Resolves with the last submitted values once the window is closed.
   function formWindow(o, fields, wire, options) {
@@ -1665,11 +1729,12 @@
         switch (m.type) {
           case "ready":
             page.send({
-              type: "init", description: o.description, submit: o.submit, texts: formTexts(),
+              type: "init", description: o.description, submit: o.submit, texts: formTexts(), tabs: o.tabs,
               fields: fields.map((f) => ({
                 name: f.name, label: f.label, type: f.type, options: f.options, required: f.required,
                 placeholder: f.placeholder, help: f.help, accept: f.accept, min: f.min, max: f.max, step: f.step,
-                rows: f.rows, value: wire[f.name],
+                rows: f.type === "table" ? tableLines(f) : f.rows, value: wire[f.name], tab: f.tab,
+                table: f.table ? Object.assign({ select: f.table.select }, tableWire(f.table)) : undefined,
               })),
             });
             break;
@@ -1712,7 +1777,7 @@
         running = true;
         page.n.clearCancel();
         page.send({ type: "running" });
-        const ctx = windowContext(page);
+        const ctx = windowContext(page, fields);
         let done;
         try {
           outputs = outputsOf(await onSubmit(values, ctx));
@@ -1729,7 +1794,7 @@
   }
 
   /** onSubmit's ctx for a form window: updates are sent at most every 50 ms. */
-  function windowContext(page) {
+  function windowContext(page, fields) {
     const state = { done: 0, total: 0, message: "" };
     let progressDirty = false, lines = [], level = "info", last = 0, timer = 0;
     const flush = () => {
@@ -1743,6 +1808,11 @@
       else if (!timer) timer = setTimeout(flush, 50);
     };
     return new FormContext({
+      fields,
+      table(f) {
+        flush();
+        page.send(Object.assign({ type: "table", field: f.name, select: f.table.select }, tableWire(f.table)));
+      },
       progress(done, total, message) {
         state.done = done;
         if (total !== undefined) state.total = total;

@@ -154,6 +154,13 @@ func TestScripts(t *testing.T) {
 					}
 				}
 			}
+			if name == "formtable.test.js" {
+				for _, want := range []string{"form error: pick: 行を選択してください", `table("結果", 3 rows, ["顧客名" "合計"])`} {
+					if !strings.Contains(r.stderr, want) {
+						t.Errorf("mock log does not contain %q:\n%s", want, r.stderr)
+					}
+				}
+			}
 			if name == "table.test.js" {
 				for _, want := range []string{
 					`table("集計結果", 3 rows, ["顧客名" "件数" "合計" "日付" "備考"])`,

@@ -189,14 +189,15 @@ declare global {
   // ------------------------------------------------------------------ ui.form
 
   type FormFieldType = "text" | "password" | "number" | "date" | "month" | "time" | "select" | "radio" |
-    "checkbox" | "textarea" | "file" | "files" | "folder" | "saveFile";
+    "checkbox" | "textarea" | "file" | "files" | "folder" | "saveFile" | "table";
 
   /**
    * フォームの項目。値の型は type による:
    * text / password / textarea / select / radio は string、number は number | null、
    * date は Date | null（ローカル日付）、month は "YYYY-MM" | null、time は "HH:MM" | null、
    * checkbox は boolean、file / saveFile は FileSystemFileHandle | null、
-   * files は FileSystemFileHandle[]、folder は FileSystemDirectoryHandle | null
+   * files は FileSystemFileHandle[]、folder は FileSystemDirectoryHandle | null、
+   * table は選択した行（元のオブジェクト）の配列（selectable: "single" なら行か null。selectable なしなら値なし）
    */
   interface FormField {
     /** 値のキー */
@@ -205,9 +206,9 @@ declare global {
     label?: string;
     /** 既定 "text" */
     type?: FormFieldType;
-    /** 初期値。ファイル系はパスかハンドル、date は Date か "YYYY-MM-DD" */
+    /** 初期値。ファイル系はパスかハンドル、date は Date か "YYYY-MM-DD"、table は選択する行（行そのものか番号、配列可） */
     default?: unknown;
-    /** 入力必須（checkbox はチェック必須） */
+    /** 入力必須（checkbox はチェック必須、table は 1 行以上の選択が必須） */
     required?: boolean;
     /** select / radio の選択肢 */
     options?: (string | { value: string; label?: string })[];
@@ -219,8 +220,14 @@ declare global {
     min?: number;
     max?: number;
     step?: number | "any";
-    /** textarea / files の行数 */
-    rows?: number;
+    /** textarea / files の行数。table では表示する行（ui.table の rows と同じ） */
+    rows?: number | readonly unknown[];
+    /** table の列（ui.table の columns と同じ。既定はオブジェクトのキー） */
+    columns?: (string | TableColumn)[];
+    /** table で行を選べるようにする（クリックで選択。true は "multiple"） */
+    selectable?: boolean | "single" | "multiple";
+    /** table の表示する高さ（行数。既定は 8 行まで） */
+    height?: number;
     /** ファイル系の拡張子（".xlsx" など）。ピッカーとドロップに使う */
     accept?: string | string[];
     /** 入力全体が一致すべき正規表現（文字列なら全体一致） */
@@ -246,6 +253,11 @@ declare global {
     log(...args: unknown[]): void;
     /** ログ欄にエラーとして追加する */
     error(...args: unknown[]): void;
+    /**
+     * table の項目の行（と列）を入れ替える（選択は解除）。結果の一覧の表示などに使う。
+     * コンソール・mock では表を出力する
+     */
+    table(name: string, rows: readonly unknown[], columns?: (string | TableColumn)[]): void;
     /** ui.withProgress と同じ。進捗をフォーム内に表示し、中止されると反復が終わる */
     withProgress<T>(iterable: Iterable<T>, options?: WithProgressOptions<T>): Generator<T, void, undefined>;
     withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T>): AsyncIterableIterator<T>;
@@ -256,7 +268,13 @@ declare global {
     title?: string;
     /** 項目の上に出す説明 */
     description?: string;
-    fields: FormField[];
+    /** 項目（tabs があればタブの上に常に表示する項目） */
+    fields?: FormField[];
+    /**
+     * タブ。各タブの項目はタブを切り替えて表示する（値は fields と同じく 1 つのオブジェクトにまとまるので、名前は全体で重複不可）。
+     * コンソールではタブごとに見出しを出して順に尋ねる
+     */
+    tabs?: { label: string; fields: FormField[] }[];
     /** 送信ボタンの文字（既定 "OK"） */
     submit?: string;
     /**
