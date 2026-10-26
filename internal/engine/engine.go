@@ -45,6 +45,9 @@ type Options struct {
 	// debugAutoRun (tests) runs the script in the debugger window without
 	// waiting for the user and closes the window at the end.
 	debugAutoRun bool
+	// debugTrace (tests) receives what happens between Go and the
+	// debugger page.
+	debugTrace func(string)
 }
 
 // ScriptError is a JavaScript error that terminated the script.

@@ -45,6 +45,7 @@ type debugSession struct {
 	settled bool
 	failure *string
 
+	trace   func(string)
 	started bool
 	done    bool
 	code    int
@@ -90,6 +91,11 @@ func runDebug(o Options, code []byte) (int, error) {
 	s.remote = api.NewRemote(vm, env)
 	l.after = s.check
 
+	trace := func(string) {}
+	if o.debugTrace != nil {
+		trace = o.debugTrace
+	}
+
 	// The debugger window keeps the loop running until it is closed.
 	l.addPending()
 	page := DebugPage
@@ -105,6 +111,10 @@ func runDebug(o Options, code []byte) (int, error) {
 		Debug:    true,
 		DevTools: !o.debugAutoRun,
 		OnMessage: func(msg string, _ []string) {
+			if after, ok := strings.CutPrefix(msg, "trace:"); ok {
+				trace("page: " + after)
+				return
+			}
 			if msg == debugClose {
 				l.addPending()
 				l.post(func() error {
@@ -131,7 +141,11 @@ func runDebug(o Options, code []byte) (int, error) {
 		return 1, err
 	}
 	s.w = w
-	s.remote.Send = w.Post
+	s.remote.Send = func(ev string) {
+		trace("event " + short(ev))
+		w.Post(ev)
+	}
+	s.trace = trace
 	if err := l.run(); err != nil {
 		return 1, err
 	}
@@ -141,6 +155,7 @@ func runDebug(o Options, code []byte) (int, error) {
 // handle answers a request of the page (debug.js).
 func (s *debugSession) handle(body []byte) []byte {
 	var r debugRequest
+	s.trace("request " + short(string(body)))
 	if err := json.Unmarshal(body, &r); err != nil {
 		return errorResponse(err.Error())
 	}
@@ -179,6 +194,14 @@ func (s *debugSession) handle(body []byte) []byte {
 	return []byte(`{"value":{"$u":0}}`)
 }
 
+// short cuts s for the trace.
+func short(s string) string {
+	if r := []rune(s); len(r) > 100 {
+		return string(r[:100]) + "…"
+	}
+	return s
+}
+
 func errorResponse(msg string) []byte {
 	b, _ := json.Marshal(map[string]any{"error": map[string]any{"$err": map[string]string{"name": "Error", "message": msg}}})
 	return b
@@ -209,6 +232,7 @@ func (s *debugSession) finish(code int, err error) {
 		return
 	}
 	s.done, s.code, s.err = true, code, err
+	s.trace(fmt.Sprintf("finish %d %v", code, err))
 	s.env.Cleanup()
 	msg := ""
 	if err != nil {
@@ -225,6 +249,7 @@ func (s *debugSession) closed() {
 		return
 	}
 	s.done, s.code = true, 130
+	s.trace("closed while running")
 	fmt.Fprintln(s.env.Stderr, i18n.T("debug.aborted"))
 	s.env.Cleanup()
 }

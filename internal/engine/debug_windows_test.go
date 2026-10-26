@@ -3,9 +3,12 @@
 package engine
 
 import (
+	"fmt"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/cool0707/xljs/internal/ui"
 )
@@ -42,9 +45,31 @@ setTimeout(f, 1);`, "", "RangeError: だめ", 1},
 			var out, errOut syncBuffer
 			var code int
 			var err error
+			// What passed between Go and the page, for when it fails or hangs.
+			start := time.Now()
+			var mu sync.Mutex
+			var trace []string
+			note := func(s string) {
+				mu.Lock()
+				trace = append(trace, fmt.Sprintf("%5dms %s", time.Since(start).Milliseconds(), s))
+				mu.Unlock()
+			}
+			watchdog := time.AfterFunc(90*time.Second, func() {
+				mu.Lock()
+				defer mu.Unlock()
+				panic("TestDebuggerWindow/" + c.name + " hangs; trace:\n" + strings.Join(trace, "\n"))
+			})
+			defer watchdog.Stop()
+			defer func() {
+				if t.Failed() {
+					mu.Lock()
+					t.Log("trace:\n" + strings.Join(trace, "\n"))
+					mu.Unlock()
+				}
+			}()
 			ui.Run(u, func(su ui.UI) {
 				code, err = Run(Options{ScriptPath: p, UI: su, Stdout: &out, Stderr: &errOut, Version: "test",
-					Debug: true, DebugScript: true, debugAutoRun: true})
+					Debug: true, DebugScript: true, debugAutoRun: true, debugTrace: note})
 			})
 			if code != c.code {
 				t.Errorf("exit code %d, want %d (err %v)\nstderr:\n%s", code, c.code, err, errOut.String())

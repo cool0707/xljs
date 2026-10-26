@@ -5,8 +5,12 @@
 (() => {
   const wv = window.chrome && window.chrome.webview;
   const $ = (id) => document.getElementById(id);
+  // ?autorun (tests): run at once, trace the requests and close at the end.
+  const autorun = new URLSearchParams(location.search).has("autorun");
   const transport = {
     call(text) {
+      // Tests: say what is about to block (messages do not wait).
+      if (autorun) wv.postMessage("trace:" + text.slice(0, 100));
       const x = new XMLHttpRequest();
       x.open("POST", "/_xljs/rpc", false);
       x.setRequestHeader("Content-Type", "application/json; charset=utf-8");
@@ -22,8 +26,6 @@
     },
   };
 
-  // ?autorun (tests): run at once and close at the end.
-  const autorun = new URLSearchParams(location.search).has("autorun");
   let session;
   // Labels, fetched while the bridge is up ({0} stays a placeholder).
   const L = {};

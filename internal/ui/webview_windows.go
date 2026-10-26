@@ -374,7 +374,8 @@ func (w *webWindow) handle(req *edge.ICoreWebView2WebResourceRequest, args *edge
 	}
 	args.AddRef()
 	w.o.Handle(body, func(resp []byte) {
-		defer deferral.Release()
+		// The wrapper's Release calls AddRef (go-webview2 v1.0.23).
+		defer deferral.Vtbl.Release.Call(uintptr(unsafe.Pointer(deferral)))
 		defer args.Release()
 		if w.wv != nil && !w.closed {
 			r, err := w.wv.Environment().CreateWebResourceResponse(nil, 200, "OK",
