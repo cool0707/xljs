@@ -56,6 +56,9 @@ type WindowOptions struct {
 	Assets fs.FS
 	// Debug enables the developer tools (F12) and the context menu.
 	Debug bool
+	// Icon is an .ico file or a PNG image for the title bar and taskbar
+	// (nil = the exe's icon). See CheckIcon.
+	Icon []byte
 	// OnMessage receives the messages posted by the page, with the paths of
 	// the files the page attached (chrome.webview.postMessageWithAdditionalObjects).
 	// OnClosed is called once after the window has closed (by the user or

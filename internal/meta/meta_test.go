@@ -23,6 +23,7 @@ func TestParse(t *testing.T) {
 		"// @title   売上集計ツール // comment\n" +
 		"// @size    960x640\n" +
 		"// @lang    ja\n" +
+		"// @icon    img/App.ICO\n" +
 		"// @author  someone\n" +
 		"// free text\n" +
 		"// ==/xljs==\n" +
@@ -33,11 +34,11 @@ func TestParse(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := &Meta{Mode: "app", HTML: "ui/index.html", Assets: []string{"ui", "img", "data/list.csv"},
-		Title: "売上集計ツール", Width: 960, Height: 640, Lang: "ja"}
+		Title: "売上集計ツール", Width: 960, Height: 640, Lang: "ja", Icon: "img/App.ICO"}
 	if !reflect.DeepEqual(m, want) {
 		t.Fatalf("got %+v\nwant %+v", m, want)
 	}
-	if len(warns) != 1 || !strings.Contains(warns[0], "@author") || !strings.Contains(warns[0], "a.js:12") {
+	if len(warns) != 1 || !strings.Contains(warns[0], "@author") || !strings.Contains(warns[0], "a.js:13") {
 		t.Fatalf("warnings = %q", warns)
 	}
 	if !m.IsApp() {
@@ -63,6 +64,8 @@ func TestParseErrors(t *testing.T) {
 		{"// ==xljs==\n// @html ../x.html\n// ==/xljs==\n", "../x.html"},
 		{"// ==xljs==\n// @assets C:/x\n// ==/xljs==\n", "C:/x"},
 		{"// ==xljs==\n// @mode app\n", "==/xljs=="},
+		{"// ==xljs==\n// @icon ui/app.bmp\n// ==/xljs==\n", "@icon"},
+		{"// ==xljs==\n// @icon ../app.ico\n// ==/xljs==\n", "../app.ico"},
 	} {
 		_, _, err := Parse("a.js", []byte(c.src))
 		if err == nil || !strings.Contains(err.Error(), c.want) {
@@ -78,7 +81,7 @@ func TestAssetFS(t *testing.T) {
 		os.MkdirAll(filepath.Dir(p), 0o755)
 		os.WriteFile(p, []byte(f), 0o644)
 	}
-	m := &Meta{HTML: "page.html", Assets: []string{"ui"}}
+	m := &Meta{HTML: "page.html", Assets: []string{"ui"}, Icon: "ui/app.ico"}
 	if got := m.AssetRoots(); !reflect.DeepEqual(got, []string{"ui", "page.html"}) {
 		t.Fatalf("roots = %q", got)
 	}
@@ -92,6 +95,9 @@ func TestAssetFS(t *testing.T) {
 		if _, err := fs.ReadFile(fsys, f); err == nil {
 			t.Errorf("%s should not be visible", f)
 		}
+	}
+	if got := (&Meta{Icon: "app.ico"}).AssetRoots(); !reflect.DeepEqual(got, []string{"app.ico"}) {
+		t.Errorf("icon roots = %q", got)
 	}
 	if (&Meta{HTML: "ui/index.html", Assets: []string{"ui"}}).AssetRoots()[0] != "ui" {
 		t.Error("html inside an asset folder should not be listed twice")

@@ -84,6 +84,10 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
     `xljs.js` は Playwright（Chromium）に `chrome.webview` の代役を入れて確認した（リポジトリには含めていない）。
     サンプル `examples/app-aggregate/` は mock と pack 後の実行で確認。
   - 未確認: Windows 実機での動作全般（COM ハンドラ、ファイルの実パス、見た目）。
+  - `@icon`（.ico / .png）: `AssetRoots` に含めて pack で同梱。`appOpen` が最初のウィンドウで読み込み・検査（`ui.CheckIcon`）し、
+    すべてのウィンドウ（組み込みのフォーム・表も）の `WindowOptions.Icon` に渡す。Native は `ui.iconImage` で
+    SM_CXICON / SM_CXSMICON に合う画像を選んで `CreateIconFromResourceEx` → `WM_SETICON`、WM_DESTROY で `DestroyIcon`。
+    exe のリソースのアイコンは変えない。ドロップしたフォルダは `{"$attach"}` の復元時に `FileSystemDirectoryHandle` にする。
 
 ### 1.1 の調査結果（go-webview2）
 

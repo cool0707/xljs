@@ -2,6 +2,7 @@ package engine
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -429,5 +430,43 @@ func TestAppWindowKeepsRunning(t *testing.T) {
 	})
 	if code != 0 || err != nil {
 		t.Fatalf("ui.Run: %d %v", code, err)
+	}
+}
+
+func TestAppIcon(t *testing.T) {
+	ico, err := os.ReadFile(filepath.Join("..", "..", "assets", "xljs.ico"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.ico"), ico, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bad.ico"), []byte("not an icon"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, icon string) string {
+		p := filepath.Join(dir, name)
+		src := "// ==xljs==\n// @mode app\n// @icon " + icon + "\n// ==/xljs==\nawait app.open({ title: 'sub' }).closed;\n"
+		if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	// The main window and the windows the script opens get the icon.
+	r := runScript(t, write("ok.js", "app.ico"), "")
+	if r.code != 0 || r.err != nil {
+		t.Fatalf("exit %d: %v\n%s", r.code, r.err, r.stderr)
+	}
+	if n := strings.Count(r.stderr, fmt.Sprintf("window.icon(%d bytes)", len(ico))); n != 2 {
+		t.Errorf("icon given to %d windows:\n%s", n, r.stderr)
+	}
+
+	for icon, want := range map[string]string{"missing.ico": "見つかりません", "bad.ico": "アイコンとして読み込めません"} {
+		r := runScript(t, write("e.js", icon), "")
+		if r.code != 1 || r.err == nil || !strings.Contains(r.err.Error(), want) {
+			t.Errorf("%s: exit %d, %v", icon, r.code, r.err)
+		}
 	}
 }

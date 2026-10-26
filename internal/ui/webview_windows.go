@@ -3,6 +3,7 @@
 package ui
 
 import (
+	"cmp"
 	"io"
 	"io/fs"
 	"log"
@@ -34,6 +35,9 @@ var (
 	procSystemParametersInfo = moduser32.NewProc("SystemParametersInfoW")
 	procPostQuitMessage      = moduser32.NewProc("PostQuitMessage")
 	procExtractIconExW       = modshell32.NewProc("ExtractIconExW")
+	procCreateIconFromResEx  = moduser32.NewProc("CreateIconFromResourceEx")
+	procDestroyIcon          = moduser32.NewProc("DestroyIcon")
+	procGetSystemMetrics     = moduser32.NewProc("GetSystemMetrics")
 )
 
 const (
@@ -48,6 +52,8 @@ const (
 	wmSetIcon          = 0x0080
 	iconSmall          = 0
 	iconBig            = 1
+	smCxIcon           = 11
+	smCxSmIcon         = 49
 
 	defaultWidth  = 960
 	defaultHeight = 640
@@ -62,6 +68,7 @@ type webWindow struct {
 	wv     *edge.Chromium
 	core   *edge.ICoreWebView2
 	o      WindowOptions
+	icons  [2]uintptr // big, small (from o.Icon; destroyed with the window)
 	nav    [2]*navHandler
 	ready  bool
 	closed bool
@@ -154,9 +161,13 @@ func (n *Native) OpenWindow(o WindowOptions) (Window, error) {
 	}
 	w.hwnd = hwnd
 	webWindows[hwnd] = w
-	if webIcons[0] != 0 {
-		procSendMessageW.Call(hwnd, wmSetIcon, iconBig, webIcons[0])
-		procSendMessageW.Call(hwnd, wmSetIcon, iconSmall, webIcons[1])
+	if len(o.Icon) > 0 {
+		w.icons = [2]uintptr{loadIcon(o.Icon, smCxIcon), loadIcon(o.Icon, smCxSmIcon)}
+	}
+	for i, which := range []uintptr{iconBig, iconSmall} {
+		if icon := cmp.Or(w.icons[i], webIcons[i]); icon != 0 {
+			procSendMessageW.Call(hwnd, wmSetIcon, which, icon)
+		}
 	}
 	procShowWindow.Call(hwnd, swShow)
 	procUpdateWindow.Call(hwnd)
@@ -169,6 +180,23 @@ func (n *Native) OpenWindow(o WindowOptions) (Window, error) {
 	}
 	n.wins = append(n.wins, w)
 	return w, nil
+}
+
+// loadIcon creates an icon of the system size metric (SM_CXICON or
+// SM_CXSMICON) from an .ico file or a PNG image; 0 when it cannot.
+func loadIcon(data []byte, metric uintptr) uintptr {
+	size, _, _ := procGetSystemMetrics.Call(metric)
+	if size == 0 {
+		size = 32
+	}
+	img, err := iconImage(data, int(size))
+	if err != nil {
+		return 0
+	}
+	const lrDefaultColor = 0
+	h, _, _ := procCreateIconFromResEx.Call(uintptr(unsafe.Pointer(&img[0])), uintptr(len(img)), 1, 0x00030000,
+		size, size, lrDefaultColor)
+	return h
 }
 
 // embed creates the WebView2 control. The wrapper reports errors through
@@ -382,6 +410,11 @@ func (w *webWindow) destroyed() {
 		w.wv.ShuttingDown()
 	}
 	delete(webWindows, w.hwnd)
+	for _, icon := range w.icons {
+		if icon != 0 {
+			procDestroyIcon.Call(icon)
+		}
+	}
 	for i, x := range w.n.wins {
 		if x == w {
 			w.n.wins = append(w.n.wins[:i], w.n.wins[i+1:]...)

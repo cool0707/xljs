@@ -4,6 +4,8 @@ package ui
 
 import (
 	"io/fs"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -308,4 +310,25 @@ func (builtinOnly) Open(name string) (fs.File, error) {
 		return BuiltinFS.Open(rest)
 	}
 	return nil, fs.ErrNotExist
+}
+
+func TestLoadIcon(t *testing.T) {
+	ico, err := os.ReadFile(filepath.Join("..", "..", "assets", "xljs.ico"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	png, err := os.ReadFile(filepath.Join("..", "..", "assets", "xljs.png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string][]byte{"ico": ico, "png": png} {
+		for _, metric := range []uintptr{smCxIcon, smCxSmIcon} {
+			h := loadIcon(data, metric)
+			if h == 0 {
+				t.Errorf("%s: no icon for metric %d", name, metric)
+				continue
+			}
+			procDestroyIcon.Call(h)
+		}
+	}
 }

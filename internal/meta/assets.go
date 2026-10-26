@@ -7,14 +7,16 @@ import (
 )
 
 // AssetRoots lists the files and folders a script ships with: the @assets
-// entries plus the @html page.
+// entries plus the @html page and the @icon file.
 func (m *Meta) AssetRoots() []string {
 	if m == nil {
 		return nil
 	}
 	roots := append([]string(nil), m.Assets...)
-	if m.HTML != "" && !covered(roots, m.HTML) {
-		roots = append(roots, m.HTML)
+	for _, f := range []string{m.HTML, m.Icon} {
+		if f != "" && !covered(roots, f) {
+			roots = append(roots, f)
+		}
 	}
 	return roots
 }

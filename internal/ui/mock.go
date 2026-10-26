@@ -234,6 +234,9 @@ func (m *Mock) Table(o TableOptions) ([]int, bool) {
 // closed it without doing anything.
 func (m *Mock) OpenWindow(o WindowOptions) (Window, error) {
 	m.logf("window.open(%s, %s, %dx%d)", q(o.Title), q(o.URL), o.Width, o.Height)
+	if len(o.Icon) > 0 {
+		m.logf("window.icon(%d bytes)", len(o.Icon))
+	}
 	var steps []AppStep
 	if m.next("app", &steps) {
 		return newAppWindow(m, o, steps), nil
