@@ -18,5 +18,12 @@ if (picked.length === 0) exit();
 
 const counts = picked.map((r) => ({ 名前: r.名前, 行数: r.handle.readText().split(/\r?\n/).filter(Boolean).length }));
 
-// 表示のみの表はすぐに戻る。閉じるまで待つなら .closed を await する
-await ui.table(counts, "行数").closed;
+// 表示のみの表はすぐに戻る。閉じるまで待つなら .closed を await する。
+// 行をダブルクリックするとファイルを開き、「行数」の列なら件数を表示する
+await ui.table(counts, {
+  title: "行数",
+  onDoubleClick(e) {
+    if (e.column === "行数") alert(`${e.row.名前}: ${e.value} 行`);
+    else shell.openPath(picked[e.index].handle);
+  },
+}).closed;

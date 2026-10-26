@@ -113,7 +113,7 @@ func Run(o Options) (int, error) {
 		Version:    o.Version,
 		Stdout:     o.Stdout,
 		Stderr:     o.Stderr,
-		Exit:       func(c int) { vm.Interrupt(&exitSignal{c}) },
+		Exit:       l.requestExit,
 		Title:      o.Meta.Title,
 		Meta:       o.Meta,
 		Assets:     o.Assets,
@@ -155,6 +155,12 @@ func Run(o Options) (int, error) {
 	}
 	if err == nil {
 		err = l.run()
+	}
+	// exit() inside a promise job that Go started (a window closing, a
+	// message) does not surface as an error, so check for it explicitly.
+	if l.exit != nil {
+		vm.ClearInterrupt()
+		return l.exit.code, nil
 	}
 	if err != nil {
 		var ie *goja.InterruptedError

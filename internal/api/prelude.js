@@ -1486,7 +1486,7 @@
 
   const isRecord = (r) => r !== null && typeof r === "object" && !(r instanceof Date) && !Array.isArray(r);
 
-  /** Columns as [{ label, width, get(row) }]. */
+  /** Columns as [{ key, label, width, get(row) }] (key is null for a list of plain values). */
   function tableColumns(rows, columns) {
     const sample = rows.find((r) => r !== null && r !== undefined);
     const arrays = Array.isArray(sample);
@@ -1496,17 +1496,17 @@
         let key = spec.key === undefined ? i : spec.key;
         const label = String(spec.label === undefined ? key : spec.label);
         if (arrays && typeof key !== "number") key = /^\d+$/.test(String(key)) && spec.label !== undefined ? Number(key) : i;
-        return { label, width: Number(spec.width) || 0, get: (r) => (r === null || r === undefined ? undefined : r[key]) };
+        return { key, label, width: Number(spec.width) || 0, get: (r) => (r === null || r === undefined ? undefined : r[key]) };
       });
     }
     if (arrays) {
       const n = rows.reduce((m, r) => (Array.isArray(r) ? Math.max(m, r.length) : m), 0);
-      return Array.from({ length: n }, (_, i) => ({ label: native.xlsxColumnName(i + 1), width: 0, get: (r) => (r ? r[i] : undefined) }));
+      return Array.from({ length: n }, (_, i) => ({ key: i, label: native.xlsxColumnName(i + 1), width: 0, get: (r) => (r ? r[i] : undefined) }));
     }
     if (sample === undefined || isRecord(sample)) {
-      return keysOf(rows.filter(isRecord)).map((k) => ({ label: k, width: 0, get: (r) => (isRecord(r) ? r[k] : undefined) }));
+      return keysOf(rows.filter(isRecord)).map((k) => ({ key: k, label: k, width: 0, get: (r) => (isRecord(r) ? r[k] : undefined) }));
     }
-    return [{ label: T("table.value"), width: 0, get: (r) => r }];
+    return [{ key: null, label: T("table.value"), width: 0, get: (r) => r }];
   }
 
   /** A cell for the page: number, string, boolean or null. */
@@ -1555,6 +1555,9 @@
     const cols = tableColumns(data, options.columns);
     const sel = options.selectable === true ? "multiple" : options.selectable ? String(options.selectable) : "";
     if (sel && sel !== "single" && sel !== "multiple") throw new TypeError(T("table.badSelectable", sel));
+    if (options.onDoubleClick !== undefined && typeof options.onDoubleClick !== "function") {
+      throw new TypeError(T("table.badHandler", "onDoubleClick"));
+    }
     const t = options.title === undefined ? title() : String(options.title);
     if (native.supportsWindows) return tableWindow(data, cols, sel, t, options);
     const text = (v) => { const w = cellWire(v); return w === null ? "" : String(w); };
@@ -1573,7 +1576,7 @@
     async function handle(m) {
       switch (m.type) {
         case "ready": {
-          page.send({ type: "init", select: sel, total: data.length, texts: tableTexts(), columns: cols.map((c) => ({ label: c.label, width: c.width })) });
+          page.send({ type: "init", select: sel, total: data.length, texts: tableTexts(), dblclick: !!options.onDoubleClick, columns: cols.map((c) => ({ label: c.label, width: c.width })) });
           const chunk = 2000;
           for (let i = 0; i < data.length; i += chunk) {
             page.send({ type: "rows", rows: data.slice(i, i + chunk).map((r) => cols.map((c) => cellWire(c.get(r)))) });
@@ -1588,6 +1591,17 @@
         case "close":
           page.n.close();
           break;
+        case "dblclick": {
+          const i = Number(m.index);
+          if (!options.onDoubleClick || !(i >= 0 && i < data.length)) break;
+          const row = data[i], col = cols[m.column];
+          await options.onDoubleClick({
+            row, index: i,
+            column: col ? col.label : null, key: col ? col.key : null, value: col ? col.get(row) : undefined,
+            close: () => page.n.close(),
+          });
+          break;
+        }
         case "save":
           await saveTable(m.format === "xlsx" ? "xlsx" : "csv", Array.isArray(m.indices) ? m.indices : null);
           break;

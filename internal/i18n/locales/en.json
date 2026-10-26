@@ -141,7 +141,8 @@
     "table.saveCsv": "Save as CSV",
     "table.saveXlsx": "Save as Excel",
     "table.saved": "Saved: {0}",
-    "table.empty": "No rows"
+    "table.empty": "No rows",
+    "table.badHandler": "ui.table: {0} must be a function"
   },
   "translations": []
 }

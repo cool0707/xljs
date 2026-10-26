@@ -1,4 +1,4 @@
-:root { --row-h: 26px; }
+:root { --row-h: 26px; --head-h: 32px; }
 .toolbar {
   display: flex;
   gap: 8px;
@@ -7,8 +7,9 @@
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
-#filter { width: 280px; flex: 0 1 280px; }
-#count { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+#filter { width: 280px; flex: 0 1 280px; min-width: 120px; }
+#count { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-variant-numeric: tabular-nums; }
+.toolbar button { flex: none; white-space: nowrap; }
 .spacer { flex: 1; }
 #grid {
   flex: 1;
@@ -31,8 +32,9 @@
   z-index: 1;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
-  font-weight: 600;
 }
+#head.trow { height: var(--head-h); }
+#head .cell { line-height: var(--head-h); font-size: inherit; font-weight: normal; }
 #body { position: relative; }
 #rows { position: absolute; top: 0; left: 0; min-width: 100%; }
 .cell {
@@ -63,4 +65,4 @@
 #empty { padding: 24px; color: var(--muted); text-align: center; }
 .measure { position: absolute; top: 0; left: 0; visibility: hidden; white-space: nowrap; }
 .measure .cell { display: inline-block; overflow: visible; }
-.measure.head .cell { font-weight: 600; padding-right: 18px; }
+.measure.head .cell { padding-right: 18px; }

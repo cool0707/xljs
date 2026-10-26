@@ -20,6 +20,7 @@ type loop struct {
 	posted  []func() error
 	pending int
 	wake    chan struct{}
+	exit    *exitSignal // set by exit(); the loop stops
 }
 
 type timer struct {
@@ -97,6 +98,17 @@ func (l *loop) addPending() {
 	l.mu.Unlock()
 }
 
+// requestExit ends the script with code: it interrupts the running
+// JavaScript and stops the loop. Promise jobs run by goja outside of a call
+// (after a callback posted from Go resolves a promise) swallow the
+// interrupt, so the loop also checks l.exit itself.
+func (l *loop) requestExit(code int) {
+	if l.exit == nil {
+		l.exit = &exitSignal{code}
+	}
+	l.vm.Interrupt(l.exit)
+}
+
 // run processes timers and posted callbacks until nothing is left.
 func (l *loop) run() error {
 	for {
@@ -106,7 +118,7 @@ func (l *loop) run() error {
 		pending := l.pending
 		l.mu.Unlock()
 		for _, fn := range posted {
-			if err := fn(); err != nil {
+			if err := fn(); err != nil || l.exit != nil {
 				return err
 			}
 		}
@@ -140,7 +152,7 @@ func (l *loop) run() error {
 		} else {
 			delete(l.timers, next.id)
 		}
-		if _, err := next.fn(goja.Undefined(), next.args...); err != nil {
+		if _, err := next.fn(goja.Undefined(), next.args...); err != nil || l.exit != nil {
 			return err
 		}
 	}

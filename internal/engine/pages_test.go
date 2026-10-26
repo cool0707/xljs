@@ -223,11 +223,15 @@ func TestFormAndTableWindows(t *testing.T) {
 			p.send(map[string]any{"type": "ok", "indices": []int{0, 2, 7}})
 			p.waitClosed()
 		},
-		// 6. Display-only table closed by the user.
+		// 6. Display-only table with a double-click handler that closes it.
 		func(p *fakePage) {
-			p.expect("init", nil)
+			if init := p.expect("init", nil); init["dblclick"] != true {
+				t.Errorf("init = %v", init)
+			}
 			p.expect("rows", nil)
-			p.send(map[string]any{"type": "close"})
+			p.send(map[string]any{"type": "dblclick", "index": 1, "column": 1})
+			p.send(map[string]any{"type": "dblclick", "index": 2, "column": -1})
+			p.send(map[string]any{"type": "dblclick", "index": 9, "column": 0})
 			p.waitClosed()
 		},
 	}
@@ -261,7 +265,10 @@ console.log("5", picked.map((r) => r.名前).join());
 console.log("csv", JSON.stringify(fs.readText("out.csv")));
 console.log("xlsx", workbooks.open("out.xlsx").sheets[0].toArrays().length);
 
-const view = ui.table(rows);
+const view = ui.table(rows, { onDoubleClick(e) {
+  console.log("dbl", e.index, e.row.名前, e.column, e.key, e.value);
+  if (e.column === null) e.close();
+}});
 await view.closed;
 console.log("6 closed");
 `
@@ -283,7 +290,7 @@ console.log("6 closed");
 		t.Fatalf("exit %d: %v\nstdout:\n%s\nstderr:\n%s\nlog:\n%s", code, err, out.String(), errOut.String(), log.String())
 	}
 	want := "1 data 2 商品別 6 a.xlsx\n2 3\n3 true\n5 a,c\n" +
-		"csv \"名前,数,日\\r\\nc,,2026/04/01 12:30:00\\r\\na,1,2026/04/01\\r\\n\"" + "\nxlsx 4\n6 closed\n"
+		"csv \"名前,数,日\\r\\nc,,2026/04/01 12:30:00\\r\\na,1,2026/04/01\\r\\n\"" + "\nxlsx 4\ndbl 1 b 数 数 2\ndbl 2 c null null undefined\n6 closed\n"
 	if out.String() != want {
 		t.Errorf("stdout = %q\nwant     %q", out.String(), want)
 	}

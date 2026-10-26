@@ -300,6 +300,27 @@ declare global {
     columns?: (string | TableColumn)[];
     width?: number;
     height?: number;
+    /**
+     * 行（セル）をダブルクリックしたときに呼ばれる。ファイルを開く・メッセージを出すなどに使う。
+     * 指定すると selectable: "single" でもダブルクリックで OK にはならない。
+     * ネイティブ UI のウィンドウでのみ呼ばれる（コンソール・mock では呼ばれない）
+     */
+    onDoubleClick?(e: TableDoubleClickEvent): unknown;
+  }
+
+  interface TableDoubleClickEvent {
+    /** ダブルクリックした行（元のオブジェクト） */
+    readonly row: any;
+    /** 行の位置（rows の添字） */
+    readonly index: number;
+    /** ダブルクリックした列の見出し（行番号の欄なら null） */
+    readonly column: string | null;
+    /** その列のキー（オブジェクトのキーまたは配列の位置） */
+    readonly key: string | number | null;
+    /** セルの値 */
+    readonly value: unknown;
+    /** 表のウィンドウを閉じる */
+    close(): void;
   }
 
   interface TableSelectOptions extends TableOptions {
