@@ -219,7 +219,7 @@ app.handle("dynamic", (x) => x * 2);       // export 以外の名前で登録
 ```
 
 - 画面→スクリプトの呼び出しは常に非同期（`await xljs.invoke(...)`）。スクリプト→画面は、読み取り（`invoke` `evaluate` `$().text()` など）は `await`、書き込み（`state` `emit` `$().text(v)` など）は送りっぱなしで、送った順に反映されます。ページの読み込み前に送ったものは読み込み後に届きます。
-- 受け渡せる値は JSON の値と `Date`、ファイル/フォルダのハンドル、`ArrayBuffer`、`Error` です。画面で選んだ・ドロップしたファイル（`File`）はスクリプトで `FileSystemFileHandle` になります（WebView2 113 以降）。
+- 受け渡せる値は JSON の値と `Date`、ファイル/フォルダのハンドル、`ArrayBuffer`、`Error` です。画面で選んだ・ドロップしたファイル（`File`）はスクリプトで `FileSystemFileHandle`、ドロップしたフォルダは `FileSystemDirectoryHandle` になります（WebView2 113 以降）。
 - `win.state` / `xljs.state` は最上位のキーだけ同期します（`win.state.summary = {...}` のように代入し直す）。相手側で値が変わると `on("state", (key, value) => ...)` が呼ばれます。
 - `data-action` の関数がエラーになると、エラーのダイアログを表示します（スクリプトは続行）。`xljs.invoke` のエラーは Promise の reject で、`catch` しなければ同じくダイアログになります。スクリプトの `win.on` / `$().on` のハンドラのエラーも同様です。
 - `win.$(sel).on(type, (e) => ...)` の `e` は DOM イベントではなく値（`type` `id` `name` `value` `checked` `dataset` `key`、submit ならフォームの値 `values`）。`{ preventDefault: true }` で既定の動作を止めます。

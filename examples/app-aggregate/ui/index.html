@@ -12,7 +12,7 @@
     <!-- data-action="関数名" のボタンはスクリプトの export した関数を呼ぶ -->
     <section class="drop" id="drop">
       <button data-action="pickFolder">フォルダを選択…</button>
-      <span class="hint">または Excel ファイルをここにドロップ</span>
+      <span class="hint">またはフォルダか Excel ファイルをここにドロップ</span>
       <div class="folder" data-bind="folder"></div>
     </section>
 
@@ -65,7 +65,7 @@
       if (name) xljs.state.message = `${name} に保存しました`;
     });
 
-    // ドロップしたファイルはスクリプトでハンドル（実パス付き）になる
+    // ドロップしたファイル・フォルダはスクリプトでハンドル（実パス付き）になる
     const drop = document.getElementById("drop");
     drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
     drop.addEventListener("dragleave", () => drop.classList.remove("over"));

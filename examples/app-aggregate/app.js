@@ -37,10 +37,11 @@ export async function pickFolder() {
   if (dir) useFolder(dir);
 }
 
-/** 画面にドロップされたファイルのフォルダを使う */
+/** 画面にドロップされたフォルダ（ファイルならそのフォルダ）を使う */
 export function dropped(handles) {
   const first = handles.find((h) => h);
-  if (first) useFolder(new FileSystemDirectoryHandle(path.dirname(first.path)));
+  if (!first) return;
+  useFolder(first.kind === "directory" ? first : new FileSystemDirectoryHandle(path.dirname(first.path)));
 }
 
 /** @param {FileSystemDirectoryHandle} dir */

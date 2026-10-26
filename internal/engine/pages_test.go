@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -301,5 +302,37 @@ console.log("6 closed");
 		if !strings.HasPrefix(u, ui.AssetOrigin+ui.BuiltinPrefix) {
 			t.Errorf("window url %s", u)
 		}
+	}
+}
+
+// attachUI opens windows that call the script's "dropped" with two
+// attached paths, as when a folder and a file are dropped on a page.
+type attachUI struct {
+	*ui.Mock
+	files []string
+}
+
+func (u attachUI) OpenWindow(o ui.WindowOptions) (ui.Window, error) {
+	w := &slowWindow{u: &slowUI{Mock: u.Mock}, o: o}
+	go func() {
+		o.OnMessage(`{"xljs":"ready"}`, nil)
+		o.OnMessage(`{"xljs":"invoke","id":1,"name":"dropped","args":[[{"$attach":0},{"$attach":1},{"$attach":2}]]}`, u.files)
+	}()
+	return w, nil
+}
+
+func TestDroppedFolder(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "a.xlsx")
+	if err := os.WriteFile(file, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := ui.NewMockFromJSON("", io.Discard)
+	src := "// ==xljs==\n// @mode app\n// ==/xljs==\n" +
+		"export function dropped(hs) { console.log(hs.map((h) => h && h.kind).join()); app.main.close(); }\n"
+	var out bytes.Buffer
+	code, err := Run(Options{ScriptPath: writeScript(t, "drop.js", src), UI: attachUI{m, []string{dir, file, ""}}, Stdout: &out, Stderr: io.Discard})
+	if code != 0 || err != nil || out.String() != "directory,file,\n" {
+		t.Fatalf("exit %d, %v, stdout %q", code, err, out.String())
 	}
 }

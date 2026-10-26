@@ -349,7 +349,7 @@ declare global {
   /**
    * 画面との間で受け渡せる値: JSON の値に加えて Date、ファイル/フォルダのハンドル、
    * ArrayBuffer（型付き配列も可）、Error、Map（オブジェクトになる）、Set（配列になる）。
-   * 画面で選択・ドロップしたファイル（File）はスクリプト側で FileSystemFileHandle になる
+   * 画面で選択・ドロップしたファイル（File）はスクリプト側で FileSystemFileHandle（フォルダをドロップした場合は FileSystemDirectoryHandle）になる
    */
   type WireValue = any;
 
@@ -374,8 +374,8 @@ declare global {
     button?: number;
     /** submit（フォーム）のときのフォームの値 */
     values?: Record<string, WireValue>;
-    /** drop のときにドロップされたファイル */
-    files?: FileSystemFileHandle[];
+    /** drop のときにドロップされたファイル（フォルダは FileSystemDirectoryHandle） */
+    files?: (FileSystemFileHandle | FileSystemDirectoryHandle)[];
   }
 
   /** win.$(selector) が返す要素の集まり。書き込みはすぐ送られ（await 不要）、読み取りは先頭の要素の値を Promise で返す */

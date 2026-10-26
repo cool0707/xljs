@@ -1031,8 +1031,11 @@
         case "$bytes": return base64ToBytes(x).buffer;
         case "$error": return errorFrom(x);
         case "$attach": {
+          // A dropped folder arrives as a File too.
           const p = files && files[x];
-          return p ? new FileSystemFileHandle(p) : null;
+          if (!p) return null;
+          const st = native.fsStat(p);
+          return st && st.isDirectory ? new FileSystemDirectoryHandle(p) : new FileSystemFileHandle(p);
         }
       }
     }
