@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>debug</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="debug.css">
+</head>
+<body>
+<main>
+  <h1 id="name"></h1>
+  <p id="hint"></p>
+  <label class="check"><input type="checkbox" id="break-first"> <span id="break-first-label"></span></label>
+  <pre id="error" class="error-text" hidden></pre>
+</main>
+<footer>
+  <span id="status" class="status"></span>
+  <button type="button" id="run" class="primary" disabled></button>
+</footer>
+<!-- The prelude and the bundled script only define functions; debug-page.js runs them. -->
+<script src="debug/prelude.js"></script>
+<script src="debug/bundle.js"></script>
+<script src="debug.js"></script>
+<script src="debug-page.js"></script>
+</body>
+</html>

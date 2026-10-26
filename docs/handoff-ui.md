@@ -19,7 +19,7 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
 
 ## 0.1 進捗
 
-- **フェーズ 1（基盤）: 実装済み**（ブランチ `claude/xljs-handoff-ui-phase1-rd6ht0`）。デバッガ（フェーズ 4）は見送り。
+- **フェーズ 1（基盤）: 実装済み**（ブランチ `claude/xljs-handoff-ui-phase1-rd6ht0`）。デバッガ（フェーズ 4）は後に V8 + DevTools 方式で実装（§5）。
   - スレッド分離: `ui.Run`（`internal/ui/thread.go`）。スクリプトは専用 goroutine、UI 呼び出しは main スレッドへ転送して同期で待つ。
     Native は message-only ウィンドウ（`thread_windows.go`）経由で実行するのでモーダルダイアログ中も処理される。
     console/mock は Go のキュー（`chanThread`）で同じ構造。`Progress.Update` と `Window.Post` は待たない（順序は保証）。
@@ -286,6 +286,18 @@ const picked = await ui.table(rows, { selectable: "multiple", title: "処理す�
 
 ## 5. デバッガ（最後・見送り可）
 
+**実装済み（V8 + DevTools 方式）**: goja のフォークはやめ、`--debug` のときだけ prelude とスクリプトを
+デバッグウィンドウ（WebView2）で実行して、開発者ツールをデバッガとして使う。natives は Go の goja 側に残し、
+`api.Remote`（`internal/api/remote.go`）が同期 XHR（`ui.RPCPath` → `WindowOptions.Handle`、WebView2 では
+WebResourceRequested の deferral）で中継する。Go からページへはイベント（ページ側関数の呼び出し・Promise の settle）。
+セッションと終了判定は `internal/engine/debug.go`、ページ側は `internal/ui/web/debug.js`（ランタイム）と
+`debug-page.js`（画面・トランスポート）。エラーはバンドルのソースマップで元ファイルの位置に戻して表示する。
+`--debug=window` で従来の「goja で実行＋画面の開発者ツールだけ有効」も残している。
+- 制約: native 呼び出しごとに往復があるので遅い／V8 と goja の差（ブラウザの API が見える）／エディタ一体型ではない。
+- テスト: Linux は `fakeDebugUI`（goja がページ役）で全結合テストをこの経路でも実行（`TestScriptsInDebugger` ほか）。
+  Windows CI は `TestWebViewRPC`（同期 XHR＋deferral）と `TestDebuggerWindow`（実ウィンドウで自動実行）。
+- 以下は検討時のメモ（goja フォーク案・エディタ一体型）。
+
 - 公式 goja にはデバッガ API がない。フォークの先行例 `mostafa/goja`（debugger ブランチ）と CLI
   `goja_debugger` はブレークポイント・step・式評価に対応していたが 2023-01 で開発終了。
   → goja をフォークして命令実行ごとのフック（行判定・停止・スコープ取得）を自前で入れる必要がある。
@@ -320,7 +332,7 @@ const picked = await ui.table(rows, { selectable: "multiple", title: "処理す�
 2. **`ui.table` と `ui.form`**: 完了条件: mock とコンソールで動作、Windows で実ウィンドウ確認、サンプル追加。
 3. **アプリモード**: 相互呼び出し → データバインド → 簡易 DOM → evaluate、ファイル実パス受け渡し、
    pack v2 でアセット同梱。完了条件: サンプルアプリ（フォルダ選択→集計→進捗表示→結果表示）が pack 後も動く。
-4. **デバッガ**: goja フォークの調査・判断 → フック → エディタ画面。
+4. **デバッガ**: V8 + DevTools 方式で実装済み（§5）。エディタ一体型は未着手。
 
 ## 8. 未決事項・リスク
 
@@ -328,4 +340,4 @@ const picked = await ui.table(rows, { selectable: "multiple", title: "処理す�
 - ファイル実パス取得に必要な WebView2 のバージョンと、古いランタイムでの代替（ピッカー経由のみ）。
 - スレッド分離後のダイアログの親ウィンドウ・フォーカス・Ctrl+C の扱い。
 - フォームの前回値保存の場所と、パスなど機密になり得る値の扱い（保存対象を選べるようにするか）。
-- デバッガ用 goja フォークの保守コスト（上流追従）。
+- デバッガ用 goja フォークの保守コスト（上流追従）→ V8 + DevTools 方式にしたため不要。

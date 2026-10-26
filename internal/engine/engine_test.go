@@ -58,6 +58,13 @@ func (s *syncBuffer) String() string {
 
 func runScript(t *testing.T, script string, answers string, args ...string) result {
 	t.Helper()
+	return runScriptIn(t, false, script, answers, args...)
+}
+
+// runScriptIn runs script with the mock UI; with debugger, in the
+// debugger window (played by fakeDebugUI).
+func runScriptIn(t *testing.T, debugger bool, script string, answers string, args ...string) result {
+	t.Helper()
 	var out, errOut syncBuffer
 	m, err := ui.NewMock(answers, &errOut)
 	if err != nil {
@@ -65,13 +72,30 @@ func runScript(t *testing.T, script string, answers string, args ...string) resu
 	}
 	t.Chdir(t.TempDir())
 	t.Setenv("XLJS_CONFIG_DIR", t.TempDir())
-	code, err := Run(Options{ScriptPath: script, Args: args, UI: m, Stdout: &out, Stderr: &errOut, Version: "test"})
+	o := Options{ScriptPath: script, Args: args, UI: m, Stdout: &out, Stderr: &errOut, Version: "test"}
+	var f *fakeDebugUI
+	if debugger {
+		f = &fakeDebugUI{UI: m, t: t}
+		o.UI = f
+		o.Debug, o.DebugScript = true, true
+	}
+	code, err := Run(o)
+	if f != nil {
+		f.check()
+	}
 	return result{code, err, out.String(), errOut.String()}
 }
 
 // TestScripts runs every testdata/scripts/*.test.{js,ts} with the mock UI
 // in an empty temporary directory. Each script asserts its own behaviour.
-func TestScripts(t *testing.T) {
+func TestScripts(t *testing.T) { testScripts(t, false) }
+
+// TestScriptsInDebugger runs the same scripts the way xljs --debug does:
+// the prelude and the script in the debugger page, the natives behind the
+// bridge.
+func TestScriptsInDebugger(t *testing.T) { testScripts(t, true) }
+
+func testScripts(t *testing.T, debugger bool) {
 	dir := scriptsDir(t)
 	var scripts []string
 	for _, pat := range []string{"*.test.js", "*.test.ts"} {
@@ -88,7 +112,7 @@ func TestScripts(t *testing.T) {
 			if _, err := os.Stat(answers); err != nil {
 				answers = ""
 			}
-			r := runScript(t, s, answers)
+			r := runScriptIn(t, debugger, s, answers)
 			if r.err != nil || r.code != 0 {
 				t.Fatalf("exit %d: %v\nstdout:\n%s\nstderr:\n%s", r.code, r.err, r.stdout, r.stderr)
 			}

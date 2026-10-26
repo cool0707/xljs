@@ -24,13 +24,21 @@ const (
 // Bundle resolves imports starting at entry and returns a single script
 // (with an inline source map) that the engine can run. TypeScript and
 // syntax that goja does not understand are transformed by esbuild.
-func Bundle(entry string) ([]byte, error) {
+func Bundle(entry string) ([]byte, error) { return bundle(entry, false) }
+
+// bundle is Bundle; withSources puts the original files into the source
+// map (for the debugger, which has no other way to show them).
+func bundle(entry string, withSources bool) ([]byte, error) {
 	abs, err := filepath.Abs(entry)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := os.Stat(abs); err != nil {
 		return nil, err
+	}
+	sources := api.SourcesContentExclude
+	if withSources {
+		sources = api.SourcesContentInclude
 	}
 	res := api.Build(api.BuildOptions{
 		EntryPoints:       []string{abs},
@@ -44,7 +52,7 @@ func Bundle(entry string) ([]byte, error) {
 		Target:            api.ESNext,
 		Supported:         map[string]bool{"async-generator": false},
 		Sourcemap:         api.SourceMapInline,
-		SourcesContent:    api.SourcesContentExclude,
+		SourcesContent:    sources,
 		Charset:           api.CharsetUTF8,
 		LogLevel:          api.LogLevelSilent,
 		ResolveExtensions: []string{".ts", ".mts", ".js", ".mjs", ".cjs", ".json"},

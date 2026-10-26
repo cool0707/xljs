@@ -76,6 +76,25 @@ func Install(vm *goja.Runtime, env *Env) error {
 	if preludeErr != nil {
 		return preludeErr
 	}
+	n := installNatives(vm, env)
+	fnv, err := vm.RunProgram(preludeProg)
+	if err != nil {
+		return err
+	}
+	fn, ok := goja.AssertFunction(fnv)
+	if !ok {
+		return errors.New("prelude did not evaluate to a function")
+	}
+	_, err = fn(goja.Undefined(), n.obj)
+	return err
+}
+
+// PreludeSource is the prelude (see Install): a function expression that
+// receives the natives object.
+func PreludeSource() string { return preludeSrc }
+
+// installNatives defines the Go natives (without the prelude).
+func installNatives(vm *goja.Runtime, env *Env) *natives {
 	n := &natives{vm: vm, env: env, obj: vm.NewObject()}
 	env.natives = n
 	if env.Title == "" {
@@ -89,17 +108,7 @@ func Install(vm *goja.Runtime, env *Env) error {
 	n.installXLSXStyle()
 	n.installUI()
 	n.installApp()
-
-	fnv, err := vm.RunProgram(preludeProg)
-	if err != nil {
-		return err
-	}
-	fn, ok := goja.AssertFunction(fnv)
-	if !ok {
-		return errors.New("prelude did not evaluate to a function")
-	}
-	_, err = fn(goja.Undefined(), n.obj)
-	return err
+	return n
 }
 
 type natives struct {

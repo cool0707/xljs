@@ -11,7 +11,7 @@ JavaScript/TypeScript のスクリプトで Excel・CSV・JSON を処理する W
 | パス | 役割 |
 |---|---|
 | `cmd/xljs` | CLI。グローバルフラグ（`--ui` `--ui-answers` `--lang` `--debug`）→ サブコマンド（pack/check/init/version/help）→ メタデータを読んで `ui.Run` でスクリプト実行。`rsrc_windows_*.syso` はアイコン＋マニフェスト |
-| `internal/engine` | esbuild でバンドル（TS 変換、async generator 変換、インラインソースマップ）→ `(async () => {...})` で包んで goja で実行。`loop.go` はタイマーと他 goroutine からの post |
+| `internal/engine` | esbuild でバンドル（TS 変換、async generator 変換、インラインソースマップ）→ `(async () => {...})` で包んで goja で実行。`loop.go` はタイマーと他 goroutine からの post。`debug.go` は `--debug` のデバッグセッション（後述） |
 | `internal/api` | Go 側ネイティブ関数（`natives` に `n.set("name", fn)` で登録）と `prelude.js`（公開 API をすべて JS で組み立てる）。Go→JS は `native.xxx` 経由のみ |
 | `internal/ui` | `UI` インターフェースと実装: `Native`（Win32/COM 直叩き、cgo なし。HTML ウィンドウは `webview_windows.go`＝`wailsapp/go-webview2` の `pkg/edge`）、`Console`、`Mock`（応答 JSON＋ログ。テスト用）。`thread.go` の `ui.Run` がスクリプトを専用スレッドで動かし、UI 呼び出しを呼び出し元（main スレッド）へ転送する。`web/` は `ui.form` / `ui.table` の組み込みページ（`https://app.xljs/_xljs/` で配信）と、全ページに注入する画面側ランタイム `xljs.js`（アプリモードの `xljs` オブジェクト。スクリプト側は prelude の `AppWindow`） |
 | `internal/meta` | エントリ先頭の `// ==xljs==` メタデータのパースと、アセット（`@html`＋`@assets`）だけを見せる `AssetFS` |
@@ -30,6 +30,7 @@ JavaScript/TypeScript のスクリプトで Excel・CSV・JSON を処理する W
 - **Windows ネイティブ部分**は `//go:build windows`。COM の vtable 呼び出しは `comObject.call(idx, ...)`。`unsafe.Pointer` 変換は go vet が通る書き方にする（uintptr→Pointer 変換は RtlMoveMemory などで回避）。
 - 新規ブックの既定フォントはロケールの `excel.font`（日本語は游ゴシック）。
 - **スレッド**: main スレッド＝UI スレッド（Win32 メッセージループ、ダイアログ、WebView2）、スクリプト＝`ui.Run` が作る専用 goroutine（`LockOSThread`）。`UI` の実装は UI スレッドからだけ呼ばれる。UI → スクリプトは `Env.Post`（＝`loop.post`、事前に `Env.AddPending`）。開いているウィンドウは pending として数え、閉じるまでイベントループ（プロセス）が終わらない。
+- **デバッガ（`--debug`）**: prelude とスクリプトをデバッグウィンドウ（`web/debug.html`、WebView2 の V8）で実行し、開発者ツールでデバッグする。natives は Go 側の goja に残り、`api.Remote` が JSON のワイヤ形式（`remote.go` 冒頭）で中継する。ページ→Go は同期 XHR（`ui.RPCPath`、`WindowOptions.Handle`、WebView2 では deferral）、Go→ページはイベント（ページ側関数の呼び出し、Promise の settle）。終了判定は Go 側（ページの idle 報告で処理済みイベント数が一致し、デバッグウィンドウ以外に pending がない）。`--debug=window` は従来どおり goja で実行して画面の開発者ツールだけ有効。natives を足すときは値がワイヤ形式で表せること（関数・Promise・Go オブジェクトは参照になる）。Linux では `debug_test.go` の `fakeDebugUI` が goja でページ役をし、`TestScriptsInDebugger` が全結合テストをこの経路でも流す。
 - コミットメッセージは英語、ドキュメント・UI 文言は日本語（英語はロケールファイル側）。
 
 ## 開発
@@ -39,6 +40,7 @@ go test ./...                       # Linux でも全ロジックをテスト可
 GOOS=windows go vet ./...           # Windows 専用コードのコンパイル確認
 make windows / make dist            # dist/x64/{xljs,xljsw}.exe と配布 zip（x64/arm64）
 xljs --ui=mock --ui-answers=a.json --lang=ja script.js   # ダイアログなしで実行
+xljs --debug script.ts                                    # デバッグウィンドウ＋開発者ツール（Windows）
 ```
 
 - Go 1.26（go.mod）。cgo 不要。`-H=windowsgui` で GUI 版（xljsw.exe）。
