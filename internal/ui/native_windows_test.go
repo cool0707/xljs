@@ -168,6 +168,77 @@ func TestWebViewWindow(t *testing.T) {
 	}
 }
 
+// TestWebViewRPC makes the debugger's synchronous request: the page waits
+// in a synchronous XMLHttpRequest while the answer is prepared on another
+// goroutine, which meanwhile uses the UI thread (opens a second window).
+func TestWebViewRPC(t *testing.T) {
+	if WebView2Version() == "" {
+		t.Skip("WebView2 runtime is not installed")
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	u, err := NewNative()
+	if err != nil {
+		t.Fatal(err)
+	}
+	assets := fstest.MapFS{
+		"index.html": {Data: []byte(`<!doctype html><meta charset="utf-8"><title>t</title><script>
+const x = new XMLHttpRequest();
+x.open("POST", "/` + RPCPath + `", false);
+x.send(JSON.stringify({ text: "ping 日本語" }));
+chrome.webview.postMessage(x.status + " " + x.getResponseHeader("Content-Type") + " " + x.responseText);
+</script>`)},
+	}
+	got := make(chan string, 1)
+	var msg, body string
+	Run(u, func(su UI) {
+		closed := make(chan struct{})
+		var w Window
+		w, err = su.OpenWindow(WindowOptions{
+			Title:  "RPC",
+			Width:  400,
+			Height: 300,
+			URL:    AssetOrigin + "index.html",
+			Assets: assets,
+			Handle: func(b []byte, reply func([]byte)) {
+				body = string(b)
+				go func() {
+					other, err := su.OpenWindow(WindowOptions{Title: "other", Width: 200, Height: 100})
+					if err == nil {
+						other.Close()
+					}
+					reply([]byte(`{"value":"pong 日本語"}`))
+				}()
+			},
+			OnMessage: func(m string, _ []string) {
+				select {
+				case got <- m:
+				default:
+				}
+			},
+			OnClosed: func() { close(closed) },
+		})
+		if err != nil {
+			return
+		}
+		select {
+		case msg = <-got:
+		case <-time.After(30 * time.Second):
+		}
+		w.Close()
+		<-closed
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"text":"ping 日本語"}`; body != want {
+		t.Errorf("request body = %q, want %q", body, want)
+	}
+	if want := `200 application/json; charset=utf-8 {"value":"pong 日本語"}`; msg != want {
+		t.Fatalf("message = %q, want %q", msg, want)
+	}
+}
+
 // TestBuiltinPages loads the form and table pages in WebView2: each page
 // says "ready", renders the "init" message and answers "shown".
 func TestBuiltinPages(t *testing.T) {

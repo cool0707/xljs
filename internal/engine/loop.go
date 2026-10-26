@@ -21,6 +21,8 @@ type loop struct {
 	pending int
 	wake    chan struct{}
 	exit    *exitSignal // set by exit(); the loop stops
+	// after, when set, runs after each posted callback (see debug.go).
+	after func() error
 }
 
 type timer struct {
@@ -92,6 +94,13 @@ func (l *loop) post(fn func() error) {
 	}
 }
 
+// idle reports whether nothing but n pending operations is left.
+func (l *loop) idle(n int) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.pending == n && len(l.posted) == 0
+}
+
 func (l *loop) addPending() {
 	l.mu.Lock()
 	l.pending++
@@ -120,6 +129,11 @@ func (l *loop) run() error {
 		for _, fn := range posted {
 			if err := fn(); err != nil || l.exit != nil {
 				return err
+			}
+			if l.after != nil {
+				if err := l.after(); err != nil {
+					return err
+				}
 			}
 		}
 		if len(posted) > 0 {

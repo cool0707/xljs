@@ -54,8 +54,10 @@ type WindowOptions struct {
 	// AssetOrigin are served from Assets.
 	URL    string
 	Assets fs.FS
-	// Debug enables the developer tools (F12) and the context menu.
-	Debug bool
+	// Debug enables the developer tools (F12) and the context menu;
+	// DevTools also opens them with the window.
+	Debug    bool
+	DevTools bool
 	// Icon is an .ico file or a PNG image for the title bar and taskbar
 	// (nil = the exe's icon). See CheckIcon.
 	Icon []byte
@@ -65,7 +67,16 @@ type WindowOptions struct {
 	// Close). Both may be called on any goroutine and must not block.
 	OnMessage func(msg string, files []string)
 	OnClosed  func()
+	// Handle, when set, answers the page's POST requests to RPCPath (the
+	// debugger's synchronous calls, see internal/ui/web/debug-page.js). It
+	// is called on the UI thread with the request body and must not block;
+	// reply sends the response (JSON). Through Run, reply may be called from
+	// any goroutine (the UI itself needs it on the UI thread).
+	Handle func(body []byte, reply func(response []byte))
 }
+
+// RPCPath is the URL path (under AssetOrigin) of WindowOptions.Handle.
+const RPCPath = BuiltinPrefix + "rpc"
 
 // Window is an open HTML window.
 type Window interface {

@@ -255,6 +255,9 @@ func (w *webWindow) embed() (err error) {
 	} else {
 		wv.NavigateToString("<!doctype html><title></title>")
 	}
+	if w.o.Debug && w.o.DevTools {
+		wv.OpenDevToolsWindow()
+	}
 	return nil
 }
 
@@ -318,6 +321,10 @@ func (w *webWindow) serve(req *edge.ICoreWebView2WebResourceRequest, args *edge.
 	if u, err := url.PathUnescape(name); err == nil {
 		name = u
 	}
+	if name == RPCPath && w.o.Handle != nil {
+		w.handle(req, args)
+		return
+	}
 	if name == "" || strings.HasSuffix(name, "/") {
 		name += "index.html"
 	}
@@ -342,6 +349,44 @@ func (w *webWindow) serve(req *edge.ICoreWebView2WebResourceRequest, args *edge.
 		resp.PutByteContent(body)
 	}
 	args.PutResponse(resp)
+}
+
+// handle answers a request to RPCPath with o.Handle. The response comes
+// later (on the UI thread), so the request is deferred meanwhile.
+func (w *webWindow) handle(req *edge.ICoreWebView2WebResourceRequest, args *edge.ICoreWebView2WebResourceRequestedEventArgs) {
+	var body []byte
+	if st, err := req.GetContent(); err == nil && st != nil {
+		// Some streams report the end with S_OK and nothing read (which
+		// io.ReadAll would retry forever).
+		buf := make([]byte, 64<<10)
+		for {
+			n, err := st.Read(buf)
+			body = append(body, buf[:n]...)
+			if n == 0 || err != nil {
+				break
+			}
+		}
+		st.Release()
+	}
+	deferral, err := args.GetDeferral()
+	if err != nil {
+		return
+	}
+	args.AddRef()
+	w.o.Handle(body, func(resp []byte) {
+		defer deferral.Release()
+		defer args.Release()
+		if w.wv != nil && !w.closed {
+			r, err := w.wv.Environment().CreateWebResourceResponse(nil, 200, "OK",
+				"Content-Type: application/json; charset=utf-8\r\nCache-Control: no-cache")
+			if err == nil {
+				r.PutByteContent(resp)
+				args.PutResponse(r)
+				r.Release()
+			}
+		}
+		deferral.Complete()
+	})
 }
 
 var contentTypes = map[string]string{

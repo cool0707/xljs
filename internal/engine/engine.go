@@ -38,8 +38,13 @@ type Options struct {
 	// Assets are the files served to windows. When nil they are read from
 	// the script folder (limited to Meta.AssetRoots).
 	Assets fs.FS
-	// Debug enables the developer tools in windows.
-	Debug bool
+	// Debug enables the developer tools in windows. DebugScript runs the
+	// script in the debugger window instead of goja (see runDebug).
+	Debug       bool
+	DebugScript bool
+	// debugAutoRun (tests) runs the script in the debugger window without
+	// waiting for the user and closes the window at the end.
+	debugAutoRun bool
 }
 
 // ScriptError is a JavaScript error that terminated the script.
@@ -80,10 +85,13 @@ func Run(o Options) (int, error) {
 	code := o.Code
 	if code == nil {
 		var err error
-		code, err = Bundle(o.ScriptPath)
+		code, err = bundle(o.ScriptPath, o.DebugScript)
 		if err != nil {
 			return 1, err
 		}
+	}
+	if o.DebugScript {
+		return runDebug(o, code)
 	}
 
 	vm := goja.New()
@@ -99,10 +107,7 @@ func Run(o Options) (int, error) {
 		}
 	})
 
-	script := o.ScriptPath
-	if abs, err := filepath.Abs(script); err == nil {
-		script = abs
-	}
+	script := absPath(o.ScriptPath)
 	if o.Assets == nil {
 		o.Assets = o.Meta.AssetFS(filepath.Dir(script))
 	}
@@ -185,6 +190,13 @@ func Run(o Options) (int, error) {
 		return 1, &ScriptError{Message: i18n.T("engine.unhandledRejection", describeValue(p.Result()))}
 	}
 	return 0, nil
+}
+
+func absPath(p string) string {
+	if abs, err := filepath.Abs(p); err == nil {
+		return abs
+	}
+	return p
 }
 
 func describeError(vm *goja.Runtime, err error) string {

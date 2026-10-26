@@ -82,8 +82,11 @@ func run() int {
 		if assets == nil {
 			assets = m.AssetFS(filepath.Dir(exe)) // nothing visible
 		}
-		return runScript(con, u, engine.Options{ScriptPath: script, Code: payload.Code, Args: os.Args[1:],
-			Meta: m, Assets: assets, Debug: envBool("XLJS_DEBUG")})
+		o := engine.Options{ScriptPath: script, Code: payload.Code, Args: os.Args[1:], Meta: m, Assets: assets}
+		if err := setDebug(&o, os.Getenv("XLJS_DEBUG"), u); err != nil {
+			return con.fail(nil, err)
+		}
+		return runScript(con, u, o)
 	}
 
 	// Global options come first; the first other argument is either a
@@ -93,7 +96,8 @@ func run() int {
 	uiMode := fset.String("ui", os.Getenv("XLJS_UI"), "")
 	answers := fset.String("ui-answers", os.Getenv("XLJS_UI_ANSWERS"), "")
 	lang := fset.String("lang", "", "")
-	debug := fset.Bool("debug", envBool("XLJS_DEBUG"), "")
+	debug := &debugFlag{value: os.Getenv("XLJS_DEBUG")}
+	fset.Var(debug, "debug", "")
 	showHelp := fset.Bool("help", false, "")
 	fset.BoolVar(showHelp, "h", false, "")
 	showVersion := fset.Bool("version", false, "")
@@ -157,15 +161,39 @@ func run() int {
 		return con.fail(u, err)
 	}
 	applyLang(m, *lang != "")
-	return runScript(con, u, engine.Options{ScriptPath: rest[0], Args: rest[1:], Meta: m, Debug: *debug})
+	o := engine.Options{ScriptPath: rest[0], Args: rest[1:], Meta: m}
+	if err := setDebug(&o, debug.value, u); err != nil {
+		return con.fail(u, err)
+	}
+	return runScript(con, u, o)
 }
 
-func envBool(name string) bool {
-	switch strings.ToLower(os.Getenv(name)) {
-	case "1", "true", "yes", "on":
-		return true
+// debugFlag is --debug, --debug=script or --debug=window (see setDebug).
+type debugFlag struct{ value string }
+
+func (f *debugFlag) String() string     { return f.value }
+func (f *debugFlag) Set(s string) error { f.value = s; return nil }
+func (f *debugFlag) IsBoolFlag() bool   { return true }
+
+// setDebug applies the --debug (XLJS_DEBUG) value: "script" (also true, 1,
+// on) runs the script in the debugger window, which needs the native UI;
+// "window" only enables the developer tools of the script's windows.
+func setDebug(o *engine.Options, value string, u ui.UI) error {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", "0", "false", "no", "off":
+	case "1", "true", "yes", "on", "script":
+		o.Debug = true
+		if u.Name() == "native" {
+			o.DebugScript = true
+		} else {
+			fmt.Fprintln(os.Stderr, i18n.T("cli.debugNeedsWindows"))
+		}
+	case "window":
+		o.Debug = true
+	default:
+		return i18n.Err("cli.unknownDebug", value)
 	}
-	return false
+	return nil
 }
 
 // readMeta parses the metadata block of a script and prints its warnings.
