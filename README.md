@@ -94,8 +94,8 @@ xljs --debug 集計.ts
 
 - `console.log` の出力は通常の出力先と開発者ツールのコンソールの両方に出ます。
 - 終了後もウィンドウは残り、結果（終了コード・エラー）を表示します。［閉じる］で xljs が終了します。実行中にウィンドウを閉じるとスクリプトを中止します。
-- 仕組み: デバッグ時だけ、prelude とスクリプトを goja ではなく WebView2（V8）で動かし、ファイル・Excel・ダイアログなどの Go 側の処理は同期の呼び出しで中継します。そのため Go 側の処理 1 回ごとに往復が入り、セルを 1 つずつ大量に読み書きするスクリプトは通常より遅くなります。
-- V8 は goja より機能が多いので、デバッグでは動くのに通常実行では動かないことがあります（`document` や `fetch` などブラウザの機能が見えてしまう、など）。最後は通常実行で確認してください。`Blob`・`File`・`TextEncoder`・`TextDecoder`・`Intl` は通常実行と同じ xljs のものに置き換えています。
+- 仕組み: デバッグ時だけ、prelude とスクリプトを goja ではなく WebView2（V8）のワーカーで動かし、ファイル・Excel・ダイアログなどの Go 側の処理はメッセージで中継します（ワーカーは `Atomics.wait` で応答を待つので、スクリプトからは同期の呼び出しに見えます）。そのため Go 側の処理 1 回ごとに往復が入り、セルを 1 つずつ大量に読み書きするスクリプトは通常より遅くなります。
+- V8 は goja より機能が多いので、デバッグでは動くのに通常実行では動かないことがあります（`fetch` などワーカーで使えるブラウザの機能が見えてしまう、など）。最後は通常実行で確認してください。`Blob`・`File`・`TextEncoder`・`TextDecoder`・`Intl` は通常実行と同じ xljs のものに置き換えています。
 - ネイティブ UI（Windows・WebView2）が必要です。コンソール UI やモック UI では `--debug=window` と同じ動作になります。埋め込み exe は環境変数 `XLJS_DEBUG=1`（または `window`）で同じことができます（元のソースは埋め込まれていないので、バンドル後のコードでのデバッグになります）。
 
 ### エディタの補完
@@ -424,7 +424,7 @@ go test ./...
 | `internal/meta` | スクリプト先頭のメタデータの読み取りとアセットの範囲 |
 | `types/xljs.d.ts` | 型定義（`xljs init` で出力） |
 
-スクリプトは esbuild で 1 ファイルにバンドルし（TypeScript の変換、goja 未対応構文の変換、ソースマップ付き）、`async` 関数で包んで [goja](https://github.com/dop251/goja) で実行します。エラーの行番号は元のファイルの位置で表示されます。`--debug` のときだけはデバッグウィンドウ（WebView2）の中で実行し、ネイティブ関数を Go 側から同期の呼び出しで提供します（`internal/api/remote.go`、`internal/engine/debug.go`、`internal/ui/web/debug.js`）。
+スクリプトは esbuild で 1 ファイルにバンドルし（TypeScript の変換、goja 未対応構文の変換、ソースマップ付き）、`async` 関数で包んで [goja](https://github.com/dop251/goja) で実行します。エラーの行番号は元のファイルの位置で表示されます。`--debug` のときだけはデバッグウィンドウ（WebView2）のワーカーで実行し、ネイティブ関数を Go 側からメッセージで提供します（`internal/api/remote.go`、`internal/engine/debug.go`、`internal/ui/web/debug*.js`）。
 
 ## ライセンス
 

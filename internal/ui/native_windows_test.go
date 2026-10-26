@@ -3,13 +3,11 @@
 package ui
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -170,12 +168,11 @@ func TestWebViewWindow(t *testing.T) {
 	}
 }
 
-// TestWebViewRPC answers the page's requests to RPCPath with Handle:
-// asynchronous (fetch) and synchronous XMLHttpRequest (the debugger's
-// calls), answered at once or later from another goroutine that meanwhile
-// uses the UI thread (opens a second window). Each case logs a timeline,
-// so that a failure shows which step did not happen.
-func TestWebViewRPC(t *testing.T) {
+// TestWebViewIsolated checks what the debugger window relies on: with
+// Isolated the page is cross-origin isolated, and a worker made from a
+// blob waits with Atomics.wait on a growable SharedArrayBuffer until the
+// page wakes it.
+func TestWebViewIsolated(t *testing.T) {
 	if WebView2Version() == "" {
 		t.Skip("WebView2 runtime is not installed")
 	}
@@ -185,123 +182,65 @@ func TestWebViewRPC(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const fetchPage = `fetch("/` + RPCPath + `", { method: "POST", body: JSON.stringify({ text: "ping 日本語" }) })
-  .then((r) => r.text().then((text) => chrome.webview.postMessage(r.status + " " + r.headers.get("Content-Type") + " " + text)))
-  .catch((e) => chrome.webview.postMessage("error " + e));`
-	const syncPage = `const x = new XMLHttpRequest();
-x.open("POST", "/` + RPCPath + `", false);
-x.send(JSON.stringify({ text: "ping 日本語" }));
-chrome.webview.postMessage(x.status + " " + x.getResponseHeader("Content-Type") + " " + x.responseText);`
-	cases := []struct {
-		name, script string
-		later        bool
-	}{
-		{"fetch", fetchPage, false},
-		{"fetch-later", fetchPage, true},
-		{"sync", syncPage, false},
-		{"sync-later", syncPage, true},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			start := time.Now()
-			var mu sync.Mutex
-			var timeline []string
-			note := func(s string) {
-				mu.Lock()
-				timeline = append(timeline, fmt.Sprintf("%5dms %s", time.Since(start).Milliseconds(), s))
-				mu.Unlock()
-			}
-			defer func() {
-				if t.Failed() {
-					mu.Lock()
-					t.Log("timeline:\n" + strings.Join(timeline, "\n"))
-					mu.Unlock()
-				}
-			}()
-			watchdog := time.AfterFunc(90*time.Second, func() {
-				mu.Lock()
-				defer mu.Unlock()
-				panic("TestWebViewRPC/" + c.name + " hangs; timeline:\n" + strings.Join(timeline, "\n"))
-			})
-			defer watchdog.Stop()
-			assets := fstest.MapFS{
-				"index.html": {Data: []byte(`<!doctype html><meta charset="utf-8"><title>t</title><script>
-chrome.webview.postMessage("start");
-` + c.script + `
+	assets := fstest.MapFS{
+		"index.html": {Data: []byte(`<!doctype html><meta charset="utf-8"><title>t</title><script>
+try {
+  const sab = new SharedArrayBuffer(8, { maxByteLength: 64 });
+  const src = "onmessage = (e) => { const a = new Int32Array(e.data); postMessage('waiting'); Atomics.wait(a, 0, 0); postMessage('woke ' + a[1]); };";
+  const w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+  w.onmessage = (e) => {
+    if (e.data === "waiting") {
+      sab.grow(16);
+      const a = new Int32Array(sab);
+      a[1] = 42;
+      Atomics.store(a, 0, 1);
+      Atomics.notify(a, 0);
+    } else {
+      chrome.webview.postMessage(crossOriginIsolated + " " + sab.byteLength + " " + e.data);
+    }
+  };
+  w.onerror = (e) => chrome.webview.postMessage("worker error " + e.message);
+  w.postMessage(sab);
+} catch (e) {
+  chrome.webview.postMessage("error " + e);
+}
 </script>`)},
-			}
-			got := make(chan string, 1)
-			var msg, body string
-			Run(u, func(su UI) {
-				closed := make(chan struct{})
-				var w Window
-				w, err = su.OpenWindow(WindowOptions{
-					Title:  "RPC " + c.name,
-					Width:  400,
-					Height: 300,
-					URL:    AssetOrigin + "index.html",
-					Assets: assets,
-					Handle: func(b []byte, reply func([]byte)) {
-						note("handle " + string(b))
-						mu.Lock()
-						body = string(b)
-						mu.Unlock()
-						answer := func() {
-							note("reply")
-							reply([]byte(`{"value":"pong 日本語"}`))
-						}
-						if !c.later {
-							answer()
-							return
-						}
-						go func() {
-							other, err := su.OpenWindow(WindowOptions{Title: "other", Width: 200, Height: 100})
-							note(fmt.Sprintf("other window opened (err %v)", err))
-							if err == nil {
-								other.Close()
-								note("other window closed")
-							}
-							answer()
-						}()
-					},
-					OnMessage: func(m string, _ []string) {
-						note("message " + m)
-						if m == "start" {
-							return
-						}
-						select {
-						case got <- m:
-						default:
-						}
-					},
-					OnClosed: func() {
-						note("closed")
-						close(closed)
-					},
-				})
-				if err != nil {
-					return
-				}
+	}
+	got := make(chan string, 1)
+	var msg string
+	Run(u, func(su UI) {
+		closed := make(chan struct{})
+		var w Window
+		w, err = su.OpenWindow(WindowOptions{
+			Title:    "isolated",
+			Width:    400,
+			Height:   300,
+			URL:      AssetOrigin + "index.html",
+			Assets:   assets,
+			Isolated: true,
+			OnMessage: func(m string, _ []string) {
 				select {
-				case msg = <-got:
-				case <-time.After(20 * time.Second):
-					note("timed out")
+				case got <- m:
+				default:
 				}
-				w.Close()
-				<-closed
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			mu.Lock()
-			defer mu.Unlock()
-			if want := `{"text":"ping 日本語"}`; body != want {
-				t.Errorf("request body = %q, want %q", body, want)
-			}
-			if want := `200 application/json; charset=utf-8 {"value":"pong 日本語"}`; msg != want {
-				t.Errorf("message = %q, want %q", msg, want)
-			}
+			},
+			OnClosed: func() { close(closed) },
 		})
+		if err != nil {
+			return
+		}
+		select {
+		case msg = <-got:
+		case <-time.After(30 * time.Second):
+		}
+		w.Close()
+		<-closed
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "true 16 woke 42"; msg != want {
+		t.Fatalf("message = %q, want %q", msg, want)
 	}
 }
 

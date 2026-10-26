@@ -17,10 +17,7 @@
   <span id="status" class="status"></span>
   <button type="button" id="run" class="primary" disabled></button>
 </footer>
-<!-- The prelude and the bundled script only define functions; debug-page.js runs them. -->
-<script src="debug/prelude.js"></script>
-<script src="debug/bundle.js"></script>
-<script src="debug.js"></script>
+<!-- The script runs in a worker (debug-worker.js); this page relays its calls. -->
 <script src="debug-page.js"></script>
 </body>
 </html>

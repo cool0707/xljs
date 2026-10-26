@@ -35,7 +35,7 @@ const s = b.addSheet("集計");
 s.cell("A1").value = new Date(2026, 3, 1);
 await sleep(10);
 console.log(s.cell("A1").value.getMonth(), xljs.ui, typeof document);
-exit(4);`, "3 native object\n", "", 4},
+exit(4);`, "3 native undefined\n", "", 4},
 		{"error", `function f() { throw new RangeError("だめ"); }
 setTimeout(f, 1);`, "", "RangeError: だめ", 1},
 	}

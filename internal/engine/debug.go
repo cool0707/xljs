@@ -23,11 +23,17 @@ import (
 // DebugPage is the URL of the debugger window (internal/ui/web/debug.html).
 const DebugPage = ui.AssetOrigin + ui.BuiltinPrefix + "debug.html"
 
-// debugClose is the message of the debugger window's close button.
-const debugClose = "close"
+// Messages of the debugger window: its close button, and its calls
+// (debugCall + request) and their answers (debugAnswer + response). Events
+// are JSON objects (they start with "{").
+const (
+	debugClose  = "close"
+	debugCall   = "call:"
+	debugAnswer = "R"
+)
 
 // debugSession runs a script in the debugger window (xljs --debug): the
-// prelude and the script run in the page, where the developer tools of
+// prelude and the script run in the page (its worker), where the developer tools of
 // WebView2 debug them, and call the natives here through api.Remote. This
 // side keeps the event loop, so that windows, progress and the end of the
 // run behave as they do with goja.
@@ -110,9 +116,15 @@ func runDebug(o Options, code []byte) (int, error) {
 		Assets:   debugAssets(code),
 		Debug:    true,
 		DevTools: !o.debugAutoRun,
+		Isolated: true,
 		OnMessage: func(msg string, _ []string) {
-			if after, ok := strings.CutPrefix(msg, "trace:"); ok {
-				trace("page: " + after)
+			if req, ok := strings.CutPrefix(msg, debugCall); ok {
+				// A call of the page, which waits for the answer.
+				l.addPending()
+				l.post(func() error {
+					s.w.Post(debugAnswer + string(s.handle([]byte(req))))
+					return nil
+				})
 				return
 			}
 			if msg == debugClose {
@@ -126,13 +138,6 @@ func runDebug(o Options, code []byte) (int, error) {
 		OnClosed: func() {
 			l.post(func() error {
 				s.closed()
-				return nil
-			})
-		},
-		Handle: func(body []byte, reply func([]byte)) {
-			l.addPending()
-			l.post(func() error {
-				reply(s.handle(body))
 				return nil
 			})
 		},
@@ -261,7 +266,9 @@ const (
 
 var (
 	bundleFrame = regexp.MustCompile(`[^\s(]*` + regexp.QuoteMeta(ui.BuiltinPrefix+"debug/bundle.js") + `:(\d+):(\d+)`)
-	pageFrame   = regexp.MustCompile(`(?m)^\s*at .*` + regexp.QuoteMeta(ui.BuiltinPrefix) + `(?:debug\.js|debug-page\.js|debug/prelude\.js).*$\n?`)
+	// The worker evaluates the bundle: its top level shows as "eval".
+	evalFrame = regexp.MustCompile(`at eval \(([^()\s]+)\)`)
+	pageFrame = regexp.MustCompile(`(?m)^\s*at .*` + regexp.QuoteMeta(ui.BuiltinPrefix) + `(?:debug\.js|debug-page\.js|debug-worker\.js|debug/prelude\.js).*$\n?`)
 )
 
 // pageError makes an error of the page look like one from goja: frames of
@@ -282,6 +289,7 @@ func (s *debugSession) pageError(msg string) string {
 		}
 		return frame
 	})
+	msg = evalFrame.ReplaceAllString(msg, "at $1")
 	return i18n.Text(cleanStack(pageFrame.ReplaceAllString(msg, "")))
 }
 

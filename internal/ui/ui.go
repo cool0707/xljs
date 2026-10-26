@@ -58,6 +58,10 @@ type WindowOptions struct {
 	// DevTools also opens them with the window.
 	Debug    bool
 	DevTools bool
+	// Isolated serves the pages cross-origin isolated (COOP and COEP
+	// headers), so that they can use SharedArrayBuffer and Atomics.wait
+	// (the debugger window, see internal/ui/web/debug-page.js).
+	Isolated bool
 	// Icon is an .ico file or a PNG image for the title bar and taskbar
 	// (nil = the exe's icon). See CheckIcon.
 	Icon []byte
@@ -67,21 +71,12 @@ type WindowOptions struct {
 	// Close). Both may be called on any goroutine and must not block.
 	OnMessage func(msg string, files []string)
 	OnClosed  func()
-	// Handle, when set, answers the page's POST requests to RPCPath (the
-	// debugger's synchronous calls, see internal/ui/web/debug-page.js). It
-	// is called on the UI thread with the request body and must not block;
-	// reply sends the response (JSON). Through Run, reply may be called from
-	// any goroutine (the UI itself needs it on the UI thread).
-	Handle func(body []byte, reply func(response []byte))
 }
 
 // WebView2DataEnv names the environment variable that overrides the
 // WebView2 user data folder (default %LOCALAPPDATA%\xljs\WebView2). Test
 // binaries running at the same time (go test ./...) each set their own.
 const WebView2DataEnv = "XLJS_WEBVIEW2_DATA"
-
-// RPCPath is the URL path (under AssetOrigin) of WindowOptions.Handle.
-const RPCPath = BuiltinPrefix + "rpc"
 
 // Window is an open HTML window.
 type Window interface {

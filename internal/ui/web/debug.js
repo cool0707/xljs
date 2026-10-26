@@ -1,13 +1,14 @@
 // xljs debugger runtime (xljs --debug): runs the prelude and the script in
-// this page, so that the developer tools of WebView2 can debug them, while
-// the natives stay in Go behind a synchronous bridge (internal/api/remote.go
-// describes the wire format; internal/engine/debug.go the session).
+// WebView2 (a worker of the debugger window, see debug-worker.js), so that
+// its developer tools can debug them, while the natives stay in Go behind a
+// synchronous bridge (internal/api/remote.go describes the wire format;
+// internal/engine/debug.go the session).
 //
 // xljsDebug.start(transport, hooks) prepares a run:
 //   transport.call(text) -> text   synchronous request to Go
 //   transport.listen(fn)           fn(text) for each event from Go
 //   hooks.status(state, detail)    "ready", "running", "done"
-//   hooks.console                  the page's console (or undefined)
+//   hooks.console                  the console of the developer tools (or undefined)
 // and returns { run(breakFirst), fatal(error), t(key), rejected(), handled() }. The prelude and the bundled script are
 // globalThis.__xljsPrelude and globalThis.__xljsMain.
 (() => {
