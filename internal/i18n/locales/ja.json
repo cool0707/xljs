@@ -130,6 +130,7 @@
     "form.browse": "参照…",
     "form.clear": "クリア",
     "form.dropHere": "ここにファイルをドロップできます",
+    "form.dropFolder": "ここにフォルダをドロップできます",
     "form.abort": "中止",
     "form.aborting": "中止しています…",
     "form.running": "実行中…",

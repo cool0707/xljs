@@ -158,6 +158,22 @@ func TestFormAndTableWindows(t *testing.T) {
 			if got := asJSON(p.expect("picked", nil)); !strings.Contains(got, `"append":true`) || !strings.Contains(got, "a.xlsx") || strings.Contains(got, "b.txt") {
 				t.Errorf("dropped = %s", got)
 			}
+			// A folder dropped on a save field keeps the file name; a file
+			// replaces it (when its type is accepted); a folder on a folder
+			// field is that folder.
+			p.send(map[string]any{"type": "drop", "field": "out", "value": "集計.xlsx"}, filepath.Join(dir, "data"))
+			if got := p.expect("picked", nil); got["value"] != filepath.Join(dir, "data", "集計.xlsx") {
+				t.Errorf("folder on save field = %s", asJSON(got))
+			}
+			p.send(map[string]any{"type": "drop", "field": "out", "value": ""}, filepath.Join(dir, "data", "b.txt"))
+			p.send(map[string]any{"type": "drop", "field": "out", "value": ""}, filepath.Join(dir, "data", "a.xlsx"))
+			if got := p.expect("picked", nil); got["value"] != filepath.Join(dir, "data", "a.xlsx") {
+				t.Errorf("file on save field = %s", asJSON(got))
+			}
+			p.send(map[string]any{"type": "drop", "field": "src"}, filepath.Join(dir, "data"))
+			if got := p.expect("picked", nil); got["value"] != filepath.Join(dir, "data") {
+				t.Errorf("folder on folder field = %s", asJSON(got))
+			}
 			p.send(map[string]any{"type": "submit", "values": map[string]any{
 				"src": "data", "n": "2", "mode": "商品別", "day": "2026-05-06", "inputs": []string{"data/a.xlsx"}}})
 			p.waitClosed()
@@ -244,6 +260,7 @@ const v = await ui.form({ title: "窓", fields: [
   { name: "mode", type: "select", options: ["顧客別", "商品別"] },
   { name: "day", type: "date", default: new Date(2026, 3, 1) },
   { name: "inputs", type: "files", accept: ".xlsx" },
+  { name: "out", type: "saveFile", accept: ".xlsx", default: "集計.xlsx" },
 ]});
 console.log("1", v.src.name, v.n, v.mode, v.day.getDate(), v.inputs.map((h) => h.name).join());
 

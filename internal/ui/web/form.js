@@ -101,10 +101,11 @@ function buildControl(f, id) {
     case "file": case "folder": case "saveFile": {
       const i = input("text", f, id);
       i.spellcheck = false;
+      if (!f.placeholder && host.canAttach) i.placeholder = f.type === "folder" ? texts.dropFolder : texts.dropHere;
       const b = el("button", { type: "button", className: "small", textContent: texts.browse });
       b.onclick = () => pick(f, i.value);
       const node = el("div", { className: "row" }, i, b);
-      if (f.type !== "saveFile") dropTarget(node, f);
+      dropTarget(node, f, () => i.value.trim());
       return { node, inputs: [i, b], get: () => i.value.trim(), set: (v) => { i.value = v ?? ""; }, focus: () => i.focus() };
     }
     case "files": {
@@ -143,7 +144,8 @@ function pick(f, current) {
   host.send({ type: "pick", field: f.name, value: current });
 }
 
-function dropTarget(node, f) {
+/** Lets files be dropped on node; current() is the field's value (a save field keeps its file name). */
+function dropTarget(node, f, current) {
   if (!host.canAttach) return;
   node.classList.add("drop");
   let depth = 0;
@@ -155,7 +157,7 @@ function dropTarget(node, f) {
     depth = 0;
     node.classList.remove("over");
     const files = e.dataTransfer && e.dataTransfer.files;
-    if (state === "input" && files && files.length) host.send({ type: "drop", field: f.name }, files);
+    if (state === "input" && files && files.length) host.send({ type: "drop", field: f.name, value: current ? current() : "" }, files);
   });
 }
 

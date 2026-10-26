@@ -130,6 +130,7 @@
     "form.browse": "Browse…",
     "form.clear": "Clear",
     "form.dropHere": "Drop files here",
+    "form.dropFolder": "Drop a folder here",
     "form.abort": "Stop",
     "form.aborting": "Stopping…",
     "form.running": "Running…",

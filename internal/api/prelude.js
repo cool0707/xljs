@@ -1561,7 +1561,7 @@
   function formTexts() {
     return {
       ok: T("form.ok"), cancel: T("form.cancel"), close: T("form.close"), browse: T("form.browse"),
-      clear: T("form.clear"), dropHere: T("form.dropHere"), abort: T("form.abort"), aborting: T("form.aborting"),
+      clear: T("form.clear"), dropHere: T("form.dropHere"), dropFolder: T("form.dropFolder"), abort: T("form.abort"), aborting: T("form.aborting"),
       running: T("form.running"), done: T("form.done"), aborted: T("form.aborted"), failed: T("form.failed"),
       openFolder: T("form.openFolder"),
     };
@@ -1681,7 +1681,7 @@
           }
           case "drop": {
             const f = byName.get(m.field);
-            const v = f ? droppedPath(f, files || []) : null;
+            const v = f ? droppedPath(f, files || [], typeof m.value === "string" ? m.value : "") : null;
             if (v !== null) page.send({ type: "picked", field: f.name, value: v, append: f.type === "files" });
             break;
           }
@@ -1786,8 +1786,12 @@
     return null;
   }
 
-  /** Value of a file or folder field for dropped paths (null to ignore the drop). */
-  function droppedPath(f, files) {
+  /**
+   * Value of a file or folder field for dropped paths (null to ignore the
+   * drop). A save field takes a dropped file, or a dropped folder with the
+   * file name it has (current).
+   */
+  function droppedPath(f, files, current) {
     const ok = (p) => !f.accept.length || f.accept.includes(native.pathExtname(p).toLowerCase());
     switch (f.type) {
       case "folder": {
@@ -1796,6 +1800,13 @@
       }
       case "file": { const p = files.find((x) => fsObj.isFile(x) && ok(x)); return p || null; }
       case "files": { const ps = files.filter((x) => fsObj.isFile(x) && ok(x)); return ps.length ? ps : null; }
+      case "saveFile": {
+        const p = files[0];
+        if (!p) return null;
+        if (!fsObj.isDirectory(p)) return ok(p) ? p : null;
+        const name = current ? native.pathBasename(current, "") : "";
+        return name ? native.pathJoin(p, name) : null;
+      }
     }
     return null;
   }
