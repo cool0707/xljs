@@ -18,7 +18,20 @@ import (
 func TestMain(m *testing.M) {
 	// Script tests assert Japanese messages regardless of the CI locale.
 	i18n.SetLanguage("ja")
-	os.Exit(m.Run())
+	os.Exit(runWithOwnWebView2Data(m))
+}
+
+// runWithOwnWebView2Data runs the tests with a WebView2 user data folder
+// of their own: other test binaries (the ui package) use WebView2 at the
+// same time.
+func runWithOwnWebView2Data(m *testing.M) int {
+	dir, err := os.MkdirTemp("", "xljs-webview2-")
+	if err != nil {
+		return m.Run()
+	}
+	defer os.RemoveAll(dir)
+	os.Setenv(ui.WebView2DataEnv, dir)
+	return m.Run()
 }
 
 func scriptsDir(t *testing.T) string {

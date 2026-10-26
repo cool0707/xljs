@@ -207,7 +207,10 @@ func loadIcon(data []byte, metric uintptr) uintptr {
 func (w *webWindow) embed() (err error) {
 	wv := edge.NewChromium()
 	wv.Debug = w.o.Debug
-	if dir, e := os.UserCacheDir(); e == nil {
+	if dir := os.Getenv(WebView2DataEnv); dir != "" {
+		// Tests: a folder per process (see WebView2DataEnv).
+		wv.DataPath = dir
+	} else if dir, e := os.UserCacheDir(); e == nil {
 		wv.DataPath = filepath.Join(dir, "xljs", "WebView2")
 	}
 	wv.SetErrorCallback(func(e error) {

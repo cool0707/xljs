@@ -75,6 +75,11 @@ type WindowOptions struct {
 	Handle func(body []byte, reply func(response []byte))
 }
 
+// WebView2DataEnv names the environment variable that overrides the
+// WebView2 user data folder (default %LOCALAPPDATA%\xljs\WebView2). Test
+// binaries running at the same time (go test ./...) each set their own.
+const WebView2DataEnv = "XLJS_WEBVIEW2_DATA"
+
 // RPCPath is the URL path (under AssetOrigin) of WindowOptions.Handle.
 const RPCPath = BuiltinPrefix + "rpc"
 
