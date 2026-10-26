@@ -155,7 +155,19 @@ const picked = await ui.table(files, { title: "処理するファイル", select
 // 選んだ行（元のオブジェクト）の配列。キャンセルは []。1 行だけなら selectable: "single"
 ```
 
-`columns` は省略するとオブジェクトのキー（配列の行は A, B, C…）。`{ key, label, width }` でも指定できます。サンプル: `examples/table-view.js`
+`columns` は省略するとオブジェクトのキー（配列の行は A, B, C…）。`{ key, label, width }` でも指定できます。
+
+行やセルのダブルクリックには `onDoubleClick` で処理を登録できます（ネイティブ UI のみ）。
+
+```js
+ui.table(files, {
+  title: "ファイル一覧",
+  onDoubleClick(e) {            // e: { row, index, column, key, value, close() }
+    if (e.column === "更新日時") alert(`${e.row.名前} の更新日時: ${e.value}`);
+    else shell.openPath(e.row.handle);
+  },
+});
+```サンプル: `examples/table-view.js`
 
 フォームと表はネイティブ UI では WebView2 のウィンドウ、コンソール（`--ui=console`）では対話入力と罫線の表で表示します。モック UI（`--ui=mock`）では応答ファイルの `"form": [{ 項目名: 値 }]`（既定値との差分。`null` でキャンセル）と `"table": [[0, 2]]`（選ぶ行の番号）を使います。
 

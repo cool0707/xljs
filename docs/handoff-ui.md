@@ -46,7 +46,8 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
   - `remember`: `%APPDATA%\xljs\<スクリプト名>.json`（`XLJS_CONFIG_DIR` で変更可）に `{ id か title: { 項目: wire 値 } }`。password と `remember: false` は保存しない。
   - `onSubmit` 中のエラーはウィンドウのログに表示（コンソール/mock では呼び出し元へ）。戻り値の既存パスで「フォルダを開く」。
   - 表: 行は 2000 行ずつ送る。セルは number/string/boolean/null（Date は文字列化）。並べ替え・絞り込みはページ側、
-    CSV/Excel 保存はスクリプト側（元の値で書き出す）。30 万行で並べ替え約 0.1 秒、絞り込み約 0.4 秒（Chromium で確認）。
+    CSV/Excel 保存はスクリプト側（元の値で書き出す）。`onDoubleClick(e)`（`{ row, index, column, key, value, close() }`）で
+    行・セルのダブルクリックを受ける。行は mousedown ごとに描き直すので、ダブルクリックは mousedown の `detail === 2` で判定している。30 万行で並べ替え約 0.1 秒、絞り込み約 0.4 秒（Chromium で確認）。
   - テスト: `testdata/scripts/{form,table}.test.js`（mock）、`internal/engine/pages_test.go`（偽ページでウィンドウ側のプロトコル）、
     `internal/ui/console_form_test.go`、Windows CI の `TestBuiltinPages`（実 WebView2 で ready → init → shown）。
     ページ JS は Linux の Playwright（Chromium）に `chrome.webview` の代役を入れて確認した（リポジトリには含めていない）。

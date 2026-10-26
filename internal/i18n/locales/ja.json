@@ -141,7 +141,8 @@
     "table.saveCsv": "CSV に保存",
     "table.saveXlsx": "Excel に保存",
     "table.saved": "保存しました: {0}",
-    "table.empty": "表示する行がありません"
+    "table.empty": "表示する行がありません",
+    "table.badHandler": "ui.table: {0} には関数を指定してください"
   },
   "translations": [
     [

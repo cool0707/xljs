@@ -27,4 +27,6 @@ equal(one.length, 1);
 equal(one[0], rows[1]);
 deepEqual(await ui.table(rows, { selectable: true }), [], "cancel");
 throws(() => ui.table(rows, { selectable: "many" }), /single/);
+throws(() => ui.table(rows, { onDoubleClick: "open" }), /関数/);
+ui.table(rows, { title: "ダブルクリック", onDoubleClick() {} }); // console/mock: never called
 console.log("table ok");

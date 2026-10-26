@@ -10,6 +10,7 @@ let widths = [];    // px per column, after the row-number gutter
 let rows = [];      // arrays of cells; the index is the row's index in the script
 let total = 0;      // number of rows the script will send
 let select = "";    // "" | "single" | "multiple"
+let dblclick = false; // the script handles double clicks (onDoubleClick)
 let view = [];      // row indices shown, filtered and sorted
 let sortCol = -1, sortDir = 0;
 let filterTokens = [];
@@ -35,6 +36,7 @@ function init(m) {
   columns = m.columns || [];
   total = m.total || 0;
   select = m.select || "";
+  dblclick = !!m.dblclick;
   $("filter").placeholder = texts.filter;
   $("copy").textContent = texts.copy;
   $("save-csv").textContent = texts.saveCsv;
@@ -293,14 +295,26 @@ function scrollIntoView(pos) {
   else if (top + h > grid.scrollTop + viewH) grid.scrollTop = top + h - viewH;
 }
 
+// Rows are re-rendered on every mousedown, so the browser's dblclick event
+// would not reach them; the click count of mousedown is used instead.
 rowsEl.addEventListener("mousedown", (e) => {
   const p = rowAt(e.target);
   if (p < 0 || e.button !== 0) return;
+  // Column index among the data cells; -1 for the row number.
+  const cell = e.target.closest(".cell");
+  const column = cell ? Array.prototype.indexOf.call(cell.parentNode.children, cell) - 1 : -1;
   grid.focus();
+  if (e.detail === 2 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    if (dblclick) {
+      status("");
+      host.send({ type: "dblclick", index: view[p], column });
+    } else if (select === "single") {
+      ok();
+    }
+    return;
+  }
   selectTo(p, e.shiftKey, e.ctrlKey || e.metaKey);
-});
-rowsEl.addEventListener("dblclick", (e) => {
-  if (select === "single" && rowAt(e.target) >= 0) ok();
 });
 
 grid.addEventListener("keydown", (e) => {
