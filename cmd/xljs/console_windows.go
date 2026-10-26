@@ -23,7 +23,7 @@ func validHandle(h windows.Handle) bool {
 }
 
 // setupConsole works out whether output can be seen. A GUI-subsystem build
-// (xljsw.exe) started from a terminal attaches to that terminal.
+// (xljs.exe) started from a terminal attaches to that terminal.
 func setupConsole() *consoleState {
 	st := &consoleState{}
 	if hwnd, _, _ := procGetConsoleWindow.Call(); hwnd != 0 {

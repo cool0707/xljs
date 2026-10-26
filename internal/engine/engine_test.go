@@ -382,6 +382,18 @@ func TestDefaultFontFollowsLanguage(t *testing.T) {
 	}
 }
 
+func TestDayjsLocaleFollowsLanguage(t *testing.T) {
+	defer i18n.SetLanguage("ja")
+	for lang, want := range map[string]string{"ja": "ja 2026年4月1日(水)", "en": "en Wed, April 1, 2026"} {
+		i18n.SetLanguage(lang)
+		src := `const s = dayjs.locale() + " " + dayjs("2026-04-01").format(dayjs.locale() === "ja" ? "YYYY年M月D日(ddd)" : "ddd, MMMM D, YYYY")
+if (s !== "` + want + `") throw new Error(s)`
+		if r := runScript(t, writeScript(t, "d.js", src), ""); r.code != 0 {
+			t.Errorf("%s: %v", lang, r.err)
+		}
+	}
+}
+
 func TestAppMode(t *testing.T) {
 	src := "// ==xljs==\n// @mode app\n// @unknown 1\n// ==/xljs==\nconsole.log('ran')\n"
 	p := writeScript(t, "app.js", src)

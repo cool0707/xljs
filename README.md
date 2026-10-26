@@ -49,7 +49,7 @@ xljs version
 | `--debug` | デバッグウィンドウでスクリプトを実行する（ブレークポイント・ステップ実行。下記「デバッグ」） |
 | `--debug=window` | スクリプトは通常どおり実行し、画面（HTML ウィンドウ）の開発者ツール（F12）と右クリックメニューだけを有効にする |
 
-- `xljs.exe` はコンソール版、`xljsw.exe` は GUI 版（ダブルクリックしても黒い窓が出ない）です。中身は同じで、GUI 版をコマンドプロンプトから起動した場合はそのコンソールに出力します。GUI 版で出力先がないときのエラーはダイアログで表示し、文字列を選択したり「コピー」ボタンでクリップボードにコピーしたりできます。
+- `xljs.exe` は GUI 版（ダブルクリックしても黒い窓が出ない）、`xljsc.exe` はコンソール版です。中身は同じで、GUI 版をコマンドプロンプトから起動した場合はそのコンソールに出力します（ただしコマンドプロンプトは終了を待たないので、コマンドラインで使うときや出力をリダイレクトするときはコンソール版の `xljsc` が向いています）。GUI 版で出力先がないときのエラーはダイアログで表示し、文字列を選択したり「コピー」ボタンでクリップボードにコピーしたりできます。
 - エラー・警告はシステムの表示言語に合わせて日本語または英語で表示します。`--lang=ja|en`（または環境変数 `XLJS_LANG`）で切り替えられます。JavaScript エンジンや構文チェック、Excel 読み込み、OS のエラーのうちよく出るものは日本語に訳して表示します（`catch` で受け取る `e.message` は元のままです）。
 - メッセージは言語ごとのファイル `internal/i18n/locales/<言語>.json` にまとまっています（`en.json` が基準）。言語を追加するときはファイルを 1 つ足してビルドするだけです（手順は同じフォルダの README.md）。
 - 引数なしで起動すると、実行するスクリプトを選ぶダイアログが開きます。exe にスクリプトをドラッグ＆ドロップしても実行できます。
@@ -60,7 +60,7 @@ xljs version
 
 ```
 xljs pack 集計.js            → 集計.exe
-xljsw pack 集計.js -o 集計.exe  （GUI 版をベースにする場合）
+xljsc pack 集計.js -o 集計.exe （コンソール版をベースにする場合）
 ```
 
 作成した exe に渡した引数（ドロップしたファイルのパスなど）は `xljs.args` で受け取れます。スクリプトはバンドル済みの状態で埋め込まれるので、`import` しているファイルも一緒に入ります。画面用の HTML・CSS・画像などは、メタデータの `@html` と `@assets` に書いたものが一緒に埋め込まれます。
@@ -384,7 +384,7 @@ sheet.cell("A1").getStyle();   // 現在の書式を取得
 
 ### 日付（Day.js）
 
-[Day.js](https://day.js.org/) を組み込んでいます（グローバルの `dayjs`。`import` は不要）。日本語ロケールと主なプラグイン（customParseFormat, isBetween, isSameOrAfter / isSameOrBefore, minMax, quarterOfYear, weekOfYear, isoWeek, dayOfYear, duration, relativeTime, advancedFormat, isLeapYear, isToday など）を読み込み済みです。
+[Day.js](https://day.js.org/) を組み込んでいます（グローバルの `dayjs`。`import` は不要）。エラー・警告と同じ言語（システムの表示言語、`--lang` で変更可）のロケールと主なプラグイン（customParseFormat, isBetween, isSameOrAfter / isSameOrBefore, minMax, quarterOfYear, weekOfYear, isoWeek, dayOfYear, duration, relativeTime, advancedFormat, isLeapYear, isToday など）を読み込み済みです。
 
 ```js
 const d = dayjs(r.日付);                       // Date・"2026/4/1"・"2026-04-01"（文字列はローカル時刻）
@@ -396,7 +396,7 @@ dayjs.fromExcel(45383);                        // Excel の日付シリアル値
 sheet.cell("A1").value = dayjs();              // dayjs の値はセル・CSV・JSON・表にそのまま渡せる（Date として扱う）
 ```
 
-- ロケールは PC の表示言語によらず日本語です（`dayjs.locale("en")` で英語）。
+- ロケールはエラー・警告と同じ言語です（日本語以外は英語。`dayjs.locale("ja")` / `dayjs.locale("en")` で切り替え）。
 - Day.js は MIT ライセンスです（`internal/api/dayjs/LICENSE`）。
 
 ### その他
@@ -412,15 +412,15 @@ Go 1.26 以降が必要です（cgo 不要）。
 
 ```
 # Windows x64 版（どの OS からでもクロスビルド可。Go では x64 を amd64 と呼びます）
-GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/x64/xljs.exe ./cmd/xljs
-GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -H=windowsgui" -o dist/x64/xljsw.exe ./cmd/xljs
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w -H=windowsgui" -o dist/x64/xljs.exe ./cmd/xljs
+GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o dist/x64/xljsc.exe ./cmd/xljs
 
 # または
 make windows        # dist/x64/
 make dist           # dist/xljs-windows-x64.zip と xljs-windows-arm64.zip
 ```
 
-Windows 上なら PowerShell で `go build -o xljs.exe ./cmd/xljs` だけでも構いません。`cmd/xljs/rsrc_windows_*.syso` はアイコン（`assets/xljs.ico`、16〜256px）と、ビジュアルスタイル・高 DPI 対応のマニフェストのリソースです。作り直すときは次のようにします。
+Windows 上なら PowerShell で `go build -o xljsc.exe ./cmd/xljs`（GUI 版は `-ldflags -H=windowsgui` を付けて `xljs.exe`）だけでも構いません。`cmd/xljs/rsrc_windows_*.syso` はアイコン（`assets/xljs.ico`、16〜256px）と、ビジュアルスタイル・高 DPI 対応のマニフェストのリソースです。作り直すときは次のようにします。
 
 ```
 python3 tools/make_icon.py ロゴ.png          # assets/xljs.png と assets/xljs.ico を生成（背景を透過）

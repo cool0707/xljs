@@ -15,7 +15,7 @@
 
 ### 実行方法（利用者向けの説明に使う）
 
-- `xljs.exe`（コンソール版）または `xljsw.exe`（黒い画面なし）にスクリプトファイルをドラッグ＆ドロップする。コマンドなら `xljs 集計.js`。
+- `xljs.exe` にスクリプトファイルをドラッグ＆ドロップする。コマンドなら `xljsc 集計.js`（`xljsc.exe` はコンソール版）。
 - `xljs pack 集計.js` で `集計.exe` ができる。その exe にファイルをドロップすると、パスが `xljs.args` に入る。
 - 先頭にメタデータを書くとタイトルを変えられる:
 
@@ -293,7 +293,7 @@ ui.table(rows, {
 
 ## 日付（dayjs）
 
-[Day.js](https://day.js.org/) を組み込んである（`import` 不要。グローバルの `dayjs`）。日本語ロケールと次のプラグインを読み込み済み: customParseFormat, isBetween, isSameOrAfter, isSameOrBefore, minMax, quarterOfYear, weekOfYear, isoWeek, dayOfYear, duration, relativeTime, advancedFormat, isLeapYear, isToday, isTomorrow, isYesterday, weekday, localeData。
+[Day.js](https://day.js.org/) を組み込んである（`import` 不要。グローバルの `dayjs`）。PC の表示言語のロケール（日本語環境なら日本語。`dayjs.locale("ja")` で固定できる）と次のプラグインを読み込み済み: customParseFormat, isBetween, isSameOrAfter, isSameOrBefore, minMax, quarterOfYear, weekOfYear, isoWeek, dayOfYear, duration, relativeTime, advancedFormat, isLeapYear, isToday, isTomorrow, isYesterday, weekday, localeData。
 
 `Date` を直接計算しない（`new Date("2026-04-01")` が UTC になる、月が 0 始まり、`setMonth` で月末がずれる、など）。Excel・CSV から読んだ `Date` も `dayjs(値)` で包んで扱う。
 
