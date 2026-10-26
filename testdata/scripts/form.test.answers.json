@@ -1,0 +1,12 @@
+{
+  "form": [
+    {"src": "missing", "mode": "商品別", "count": "50", "day": "2026-02-30", "month": "2026-4", "code": "abc", "inputs": "data/a.xlsx;data/none.xlsx"},
+    {"src": "data", "count": 5, "day": "2026-04-01", "month": "2026-04", "code": "ABC", "inputs": ["data/a.xlsx", "data/b.xlsx"], "secret": "pw"},
+    {"tax": true},
+    {},
+    null,
+    {},
+    {}
+  ],
+  "progress": [{}]
+}

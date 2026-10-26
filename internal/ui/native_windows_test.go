@@ -3,7 +3,9 @@
 package ui
 
 import (
+	"io/fs"
 	"runtime"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -137,7 +139,7 @@ func TestWebViewWindow(t *testing.T) {
 			Height: 300,
 			URL:    AssetOrigin + "ui/index.html",
 			Assets: assets,
-			OnMessage: func(m string) {
+			OnMessage: func(m string, _ []string) {
 				select {
 				case got <- m:
 				default:
@@ -162,4 +164,75 @@ func TestWebViewWindow(t *testing.T) {
 	if want := "ready https://app.xljs/ui/index.html t"; msg != want {
 		t.Fatalf("message = %q, want %q", msg, want)
 	}
+}
+
+// TestBuiltinPages loads the form and table pages in WebView2: each page
+// says "ready", renders the "init" message and answers "shown".
+func TestBuiltinPages(t *testing.T) {
+	if WebView2Version() == "" {
+		t.Skip("WebView2 runtime is not installed")
+	}
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	u, err := NewNative()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inits := map[string]string{
+		"form.html": `{"type":"init","texts":{"ok":"OK"},"fields":[{"name":"a","label":"A","type":"text","value":"x","options":[],"accept":[]},` +
+			`{"name":"b","label":"B","type":"files","value":[],"options":[],"accept":[".xlsx"]}]}`,
+		"table.html": `{"type":"init","total":1,"select":"single","texts":{},"columns":[{"label":"A","width":0}]}`,
+	}
+	for page, init := range inits {
+		var got []string
+		Run(u, func(su UI) {
+			msgs := make(chan string, 10)
+			closed := make(chan struct{})
+			var w Window
+			w, err = su.OpenWindow(WindowOptions{
+				Title:     page,
+				URL:       AssetOrigin + BuiltinPrefix + page,
+				Assets:    builtinOnly{},
+				OnMessage: func(m string, _ []string) { msgs <- m },
+				OnClosed:  func() { close(closed) },
+			})
+			if err != nil {
+				return
+			}
+			timeout := time.After(30 * time.Second)
+		loop:
+			for {
+				select {
+				case m := <-msgs:
+					got = append(got, m)
+					if strings.Contains(m, `"ready"`) {
+						w.Post(init)
+					}
+					if strings.Contains(m, `"shown"`) {
+						break loop
+					}
+				case <-timeout:
+					break loop
+				}
+			}
+			w.Close()
+			<-closed
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if want := `{"type":"ready"},{"type":"shown"}`; strings.Join(got, ",") != want {
+			t.Errorf("%s: messages %q, want %s", page, got, want)
+		}
+	}
+}
+
+// builtinOnly serves BuiltinFS under BuiltinPrefix.
+type builtinOnly struct{}
+
+func (builtinOnly) Open(name string) (fs.File, error) {
+	if rest, ok := strings.CutPrefix(name, BuiltinPrefix); ok {
+		return BuiltinFS.Open(rest)
+	}
+	return nil, fs.ErrNotExist
 }

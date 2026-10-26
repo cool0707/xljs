@@ -78,7 +78,7 @@ xljsw pack 集計.js -o 集計.exe  （GUI 版をベースにする場合）
 - エントリのスクリプトの先頭（最初のコード行より前）の `//` コメントだけを読みます。知らないキーは警告を出して無視します。
 - `@mode app` にすると、スクリプトの実行前に `@html` のページを表示するウィンドウ（`app.main`）が開き、ウィンドウを閉じるまでプロセスは終了しません。`app.open({ html, title, width, height })` で別のウィンドウも開けます（`await win.closed` で閉じるのを待てます）。サンプル: `examples/app-hello/`
 - ウィンドウは Microsoft Edge WebView2 で表示します（Windows 10/11 には通常インストール済み）。ランタイムがない場合はダウンロードページを案内して終了します。ページは `https://app.xljs/` から配信され、見えるのは `@html` と `@assets` に書いたファイルだけです（pack した exe と同じ）。
-- 画面とスクリプトのやり取り（関数呼び出し・イベント・状態共有）、簡易フォーム `ui.form`、表表示 `ui.table` は今後追加予定です。
+- 画面とスクリプトのやり取り（関数呼び出し・イベント・状態共有）は今後追加予定です。
 
 ### エディタの補完
 
@@ -118,6 +118,46 @@ for await (const h of ui.withProgress(dir.values())) { /* 総数不明ならマ�
 ```
 
 Windows では標準の進捗ダイアログ（IProgressDialog）、コンソールでは標準エラー出力にバーを表示します。
+
+### 入力フォーム（`ui.form`）
+
+HTML を書かずに、項目の定義だけで入力フォームを出せます。キャンセルは `null`。
+
+```js
+const v = await ui.form({
+  title: "売上集計",
+  description: "フォルダ内の Excel を集計します",
+  fields: [
+    { name: "src",  label: "集計フォルダ", type: "folder", required: true },
+    { name: "out",  label: "出力先", type: "saveFile", accept: [".xlsx"], default: "集計.xlsx" },
+    { name: "mode", label: "集計単位", type: "select", options: ["顧客別", "商品別"] },
+    { name: "tax",  label: "税込で集計", type: "checkbox" },
+  ],
+  submit: "実行",
+  remember: true,            // 前回の値を %APPDATA%\xljs\<スクリプト名>.json に保存して次回の初期値にする
+});
+if (!v) exit();              // v.src は FileSystemDirectoryHandle、v.out は FileSystemFileHandle
+```
+
+- 項目の型: `text` `password` `number`（`min` `max` `step`）`date`（`Date`）`month` `time` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile`。ファイル系は「参照…」ボタンとドラッグ＆ドロップで入力でき、値はハンドルになります。
+- 検証: `required`、`pattern`（＋`patternMessage`）、`min` / `max`、ファイル・フォルダの存在。追加の検証は `validate(values)` で `{ 項目名: "メッセージ" }` か全体へのメッセージを返します。
+- `onSubmit(values, ctx)` を書くと、実行後もウィンドウが開いたままになり、進捗（`ctx.progress(done, total, message)` / `ctx.withProgress(iterable)`）、ログ（`ctx.log` / `ctx.error`）、中止ボタン（`ctx.cancelled`）を表示します。出力ファイルを返すと完了後に「フォルダを開く」ボタンが出ます。サンプル: `examples/form-aggregate.js`
+- `remember` ではパスワードは保存しません。保存したくない項目には `remember: false` を付けます。保存先のフォルダは環境変数 `XLJS_CONFIG_DIR` で変えられます。
+
+### 表表示（`ui.table`）
+
+PowerShell の `Out-GridView` のように、配列を表で表示します。列見出しのクリックで並べ替え、上の欄で絞り込み（空白区切りで AND）、列の境界のドラッグで幅を変更、Ctrl+C でコピー（タブ区切り）、CSV / Excel に保存できます。数十万行でも表示できます。
+
+```js
+ui.table(rows, { title: "集計結果", columns: ["顧客名", "件数", "合計"] });   // 表示のみ。すぐに戻る
+await ui.table(rows).closed;                                                   // 閉じるまで待つ
+const picked = await ui.table(files, { title: "処理するファイル", selectable: "multiple" });
+// 選んだ行（元のオブジェクト）の配列。キャンセルは []。1 行だけなら selectable: "single"
+```
+
+`columns` は省略するとオブジェクトのキー（配列の行は A, B, C…）。`{ key, label, width }` でも指定できます。サンプル: `examples/table-view.js`
+
+フォームと表はネイティブ UI では WebView2 のウィンドウ、コンソール（`--ui=console`）では対話入力と罫線の表で表示します。モック UI（`--ui=mock`）では応答ファイルの `"form": [{ 項目名: 値 }]`（既定値との差分。`null` でキャンセル）と `"table": [[0, 2]]`（選ぶ行の番号）を使います。
 
 ### ファイル・フォルダ
 

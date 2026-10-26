@@ -173,6 +173,18 @@ func (p *threaded) OpenWindow(o WindowOptions) (Window, error) {
 	return &threadedWindow{w: w, t: p.t}, nil
 }
 
+func (p *threaded) SupportsWindows() bool { return p.u.SupportsWindows() }
+
+func (p *threaded) Form(o FormOptions) (v map[string]any, ok bool) {
+	call(p.t, func() { v, ok = p.u.Form(o) })
+	return
+}
+
+func (p *threaded) Table(o TableOptions) (sel []int, ok bool) {
+	call(p.t, func() { sel, ok = p.u.Table(o) })
+	return
+}
+
 // threadedProgress forwards progress calls. Updates do not wait; the
 // cancellation state is polled at most every cancelPoll.
 type threadedProgress struct {

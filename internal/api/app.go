@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync/atomic"
 
 	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/cool0707/xljs/internal/ui"
@@ -25,6 +26,29 @@ func pageURL(html string) (string, string, error) {
 	return ui.AssetOrigin + u.EscapedPath(), p, nil
 }
 
+// windowAssets serves the built-in pages (ui.BuiltinFS) under
+// ui.BuiltinPrefix and the script's assets everywhere else.
+type windowAssets struct{ app fs.FS }
+
+func (a windowAssets) Open(name string) (fs.File, error) {
+	dir := strings.TrimSuffix(ui.BuiltinPrefix, "/")
+	if name == dir {
+		return ui.BuiltinFS.Open(".")
+	}
+	if rest, ok := strings.CutPrefix(name, ui.BuiltinPrefix); ok {
+		return ui.BuiltinFS.Open(rest)
+	}
+	if a.app == nil {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
+	}
+	return a.app.Open(name)
+}
+
+// cancelMessage is the message a page sends to ask a running task to stop.
+// It is noted as soon as it arrives, so that a script busy in a loop can
+// see it (cancelRequested) before the message itself is delivered.
+const cancelMessage = `{"type":"cancel"}`
+
 func (n *natives) installApp() {
 	vm, env := n.vm, n.env
 	if env.Meta != nil {
@@ -33,7 +57,10 @@ func (n *natives) installApp() {
 		n.obj.Set("appWidth", env.Meta.Width)
 		n.obj.Set("appHeight", env.Meta.Height)
 	}
-	// appOpen(html, title, width, height) -> {close(), closed: Promise}
+	assets := windowAssets{env.Assets}
+	n.obj.Set("supportsWindows", env.UI.SupportsWindows())
+	// appOpen(html, title, width, height, onMessage(msg, files)) ->
+	// {close(), closed: Promise, post(msg), isClosed(), cancelRequested(), clearCancel()}
 	n.set("appOpen", func(c goja.FunctionCall) goja.Value {
 		html := n.str(c, 0)
 		u, name, err := pageURL(html)
@@ -41,10 +68,12 @@ func (n *natives) installApp() {
 			n.throw(err)
 		}
 		if name != "" {
-			if _, err := fs.Stat(env.Assets, name); err != nil {
+			if _, err := fs.Stat(assets, name); err != nil {
 				n.throwT("app.htmlNotFound", html)
 			}
 		}
+		onMessage, _ := goja.AssertFunction(c.Argument(4))
+		var isClosed, cancel atomic.Bool
 		closed, resolve, _ := vm.NewPromise()
 		// The open window keeps the event loop (and the process) alive.
 		env.AddPending()
@@ -53,9 +82,23 @@ func (n *natives) installApp() {
 			Width:  int(c.Argument(2).ToInteger()),
 			Height: int(c.Argument(3).ToInteger()),
 			URL:    u,
-			Assets: env.Assets,
+			Assets: assets,
 			Debug:  env.Debug,
+			OnMessage: func(msg string, files []string) {
+				if msg == cancelMessage {
+					cancel.Store(true)
+				}
+				if onMessage == nil {
+					return
+				}
+				env.AddPending()
+				env.Post(func() error {
+					_, err := onMessage(goja.Undefined(), vm.ToValue(msg), n.strArray(files))
+					return err
+				})
+			},
 			OnClosed: func() {
+				isClosed.Store(true)
 				env.Post(func() error {
 					resolve(goja.Undefined())
 					return nil
@@ -73,6 +116,16 @@ func (n *natives) installApp() {
 			return goja.Undefined()
 		})
 		obj.Set("closed", closed)
+		obj.Set("post", func(c goja.FunctionCall) goja.Value {
+			w.Post(n.str(c, 0))
+			return goja.Undefined()
+		})
+		obj.Set("isClosed", func(goja.FunctionCall) goja.Value { return vm.ToValue(isClosed.Load()) })
+		obj.Set("cancelRequested", func(goja.FunctionCall) goja.Value { return vm.ToValue(cancel.Load()) })
+		obj.Set("clearCancel", func(goja.FunctionCall) goja.Value {
+			cancel.Store(false)
+			return goja.Undefined()
+		})
 		return obj
 	})
 }

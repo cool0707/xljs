@@ -901,8 +901,11 @@
     }
   }
 
-  function* withProgressSync(iterable, opts, label, total) {
-    const p = new Progress(Object.assign({}, opts, { total }));
+  const newProgress = (opts) => new Progress(opts);
+
+  // make(opts) returns the indicator: { cancelled, update(done, message), close() }.
+  function* withProgressSync(iterable, opts, label, total, make = newProgress) {
+    const p = make(Object.assign({}, opts, { total }));
     let i = 0;
     try {
       for (const item of iterable) {
@@ -917,9 +920,9 @@
     }
   }
 
-  function withProgressAsync(iterable, opts, label, total) {
+  function withProgressAsync(iterable, opts, label, total, make = newProgress) {
     const iter = iterable[asyncIteratorSymbol]();
-    const p = new Progress(Object.assign({}, opts, { total }));
+    const p = make(Object.assign({}, opts, { total }));
     let i = 0, finished = false;
     const finish = () => { if (!finished) { finished = true; p.close(); } };
     const it = {
@@ -958,7 +961,7 @@
    * Wraps an iterable and shows progress while it is consumed. Stops early
    * (without error) when the user cancels; check ui.cancelled afterwards.
    */
-  function withProgress(iterable, options = {}) {
+  function withProgress(iterable, options = {}, make = newProgress) {
     if (typeof options === "string") options = { title: options };
     const label = typeof options.label === "function" ? options.label : defaultLabel;
     let total = options.total;
@@ -967,8 +970,8 @@
       else if (typeof iterable.size === "number") total = iterable.size;
       else total = 0;
     }
-    if (iterable && typeof iterable[Symbol.iterator] === "function") return withProgressSync(iterable, options, label, total);
-    if (iterable && typeof iterable[asyncIteratorSymbol] === "function") return withProgressAsync(iterable, options, label, total);
+    if (iterable && typeof iterable[Symbol.iterator] === "function") return withProgressSync(iterable, options, label, total, make);
+    if (iterable && typeof iterable[asyncIteratorSymbol] === "function") return withProgressAsync(iterable, options, label, total, make);
     throw new TypeError(T("ui.expectedIterable"));
   }
 
@@ -980,7 +983,9 @@
     showSaveFilePicker,
     showDirectoryPicker,
     progress: (options) => new Progress(options),
-    withProgress,
+    withProgress: (iterable, options) => withProgress(iterable, options),
+    form: (options) => showForm(options),
+    table: (rows, options) => showTable(rows, options),
     /** Whether the most recent progress was cancelled by the user. */
     get cancelled() { return lastCancelled; },
     error: (message) => native.uiError(title(), msg(message)),
@@ -1018,6 +1023,605 @@
   native.openMain = () => {
     appObj.main = new AppWindow(native.appOpen(native.appHTML || "", title(), native.appWidth || 0, native.appHeight || 0));
   };
+
+  // ---------------------------------------------------------------- forms & tables
+  //
+  // With the native UI both are built-in pages (internal/ui/web) that talk to
+  // the script through JSON messages; other UIs answer native.uiForm and
+  // native.uiTable. Form values travel in "wire" form: strings, except
+  // checkbox (boolean) and files (array of paths).
+
+  /** Opens a built-in page; onMessage(msg, files) gets its parsed messages. */
+  function openPage(page, opts, onMessage) {
+    const n = native.appOpen("_xljs/" + page, opts.title, opts.width, opts.height, (text, files) => {
+      let m;
+      try { m = JSON.parse(text); } catch (e) { return; }
+      if (m && typeof m.type === "string") onMessage(m, files);
+    });
+    return { n, send: (m) => n.post(JSON.stringify(m)) };
+  }
+
+  /** Message of a caught error for display: "Name: message" and the script's stack frames. */
+  function errorText(e) {
+    if (!(e instanceof Error)) return native.displayText(typeof e === "string" ? e : inspect(e));
+    const frames = String(e.stack || "").split("\n")
+      .filter((l) => /^\s+at /.test(l) && !/xljs:prelude|\(native\)/.test(l))
+      .map((l) => l.replace(/\(\d+\)\)$/, ")").replace(/(:\d+:\d+)\(\d+\)/, "$1"));
+    return native.displayText([`${e.name}: ${e.message}`, ...frames].join("\n"));
+  }
+
+  /** Existing paths among the values returned by onSubmit (paths, handles, Files, arrays). */
+  function outputsOf(r) {
+    const out = [];
+    for (const x of [r].flat(Infinity)) {
+      if (x === null || x === undefined) continue;
+      let p;
+      try { p = toPath(x); } catch (e) { continue; }
+      if (native.fsStat(p)) out.push(native.pathResolve(p));
+    }
+    return out;
+  }
+
+  const FIELD_TYPES = ["text", "password", "number", "date", "month", "time", "select", "radio", "checkbox",
+    "textarea", "file", "files", "folder", "saveFile"];
+
+  function normField(f, i) {
+    if (!f || typeof f !== "object" || f.name === undefined || f.name === null || f.name === "") {
+      throw new TypeError(T("form.fieldName", i + 1));
+    }
+    const name = String(f.name);
+    const type = f.type === undefined ? "text" : String(f.type);
+    if (!FIELD_TYPES.includes(type)) throw new TypeError(T("form.fieldType", name, type));
+    const options = Array.from(f.options || []).map((o) => (o !== null && typeof o === "object"
+      ? { value: String(o.value), label: String(o.label === undefined ? o.value : o.label) }
+      : { value: String(o), label: String(o) }));
+    if ((type === "select" || type === "radio") && !options.length) throw new TypeError(T("form.noOptions", name));
+    const accept = (typeof f.accept === "string" ? [f.accept] : Array.from(f.accept || []))
+      .map((a) => String(a).replace(/^\*/, "")).map((a) => (a.startsWith(".") ? a : "." + a).toLowerCase());
+    const num = (v) => (v === undefined || v === null || v === "" ? null : Number(v));
+    return {
+      name, type, options, accept,
+      label: f.label === undefined ? name : String(f.label),
+      required: !!f.required,
+      placeholder: f.placeholder ? String(f.placeholder) : "",
+      help: f.help ? String(f.help) : "",
+      min: num(f.min), max: num(f.max), step: f.step === undefined ? null : f.step,
+      rows: Number(f.rows) || 0,
+      pattern: f.pattern === undefined || f.pattern === null || f.pattern === "" ? null
+        : f.pattern instanceof RegExp ? f.pattern : new RegExp("^(?:" + f.pattern + ")$"),
+      patternMessage: f.patternMessage ? String(f.patternMessage) : "",
+      remember: f.remember !== false && type !== "password",
+      default: f.default,
+    };
+  }
+
+  const ymd = (d) => `${String(d.getFullYear()).padStart(4, "0")}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+  function toWire(f, v) {
+    if (f.type === "checkbox") return !!v;
+    if (f.type === "files") return [v].flat().filter((x) => x !== null && x !== undefined && x !== "").map((x) => toPath(x));
+    if (v === null || v === undefined) return f.type === "select" ? f.options[0].value : "";
+    switch (f.type) {
+      case "file": case "folder": case "saveFile": return toPath(v);
+      case "date": return v instanceof Date ? (isNaN(v) ? "" : ymd(v)) : String(v);
+      case "month": return v instanceof Date ? (isNaN(v) ? "" : ymd(v).slice(0, 7)) : String(v);
+      case "time": return v instanceof Date ? (isNaN(v) ? "" : `${pad2(v.getHours())}:${pad2(v.getMinutes())}`) : String(v);
+    }
+    return String(v);
+  }
+
+  const wireStr = (w) => (w === null || w === undefined ? "" : String(w));
+  const wireList = (w) => (Array.isArray(w) ? w.map(wireStr) : wireStr(w).split(/[;\r\n]+/))
+    .map((s) => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean);
+
+  function wireEmpty(f, w) {
+    if (f.type === "checkbox") return w !== true && w !== "true";
+    if (f.type === "files") return wireList(w).length === 0;
+    return wireStr(w).trim() === "";
+  }
+
+  function fromWire(f, w) {
+    switch (f.type) {
+      case "checkbox": return w === true || w === "true";
+      case "files": return wireList(w).map((p) => new FileSystemFileHandle(p));
+      case "file": case "saveFile": { const p = wireStr(w).trim(); return p ? new FileSystemFileHandle(p) : null; }
+      case "folder": { const p = wireStr(w).trim(); return p ? new FileSystemDirectoryHandle(p) : null; }
+      case "number": { const s = wireStr(w).trim(); return s === "" ? null : Number(s); }
+      case "date": {
+        const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(wireStr(w).trim().replace(/\//g, "-"));
+        if (!m) return null;
+        const d = new Date(+m[1], +m[2] - 1, +m[3]);
+        return d.getMonth() === +m[2] - 1 ? d : null;
+      }
+      case "month": case "time": { const s = wireStr(w).trim(); return s === "" ? null : s; }
+    }
+    return wireStr(w);
+  }
+
+  /** Checks the wire values; returns { ok, errors: { name: message }, error, values }. */
+  async function checkForm(fields, wire, validate) {
+    const errors = {}, values = {};
+    for (const f of fields) {
+      const w = wire[f.name];
+      const v = fromWire(f, w);
+      values[f.name] = v;
+      if (wireEmpty(f, w)) {
+        if (f.required) errors[f.name] = T("form.required");
+        continue;
+      }
+      let e = "";
+      switch (f.type) {
+        case "number":
+          if (!isFinite(v)) e = T("form.notNumber");
+          else if (f.min !== null && v < f.min) e = T("form.min", f.min);
+          else if (f.max !== null && v > f.max) e = T("form.max", f.max);
+          break;
+        case "date": if (v === null) e = T("form.notDate"); break;
+        case "month": if (!/^\d{4}-\d{2}$/.test(v)) e = T("form.notMonth"); break;
+        case "time": if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(v)) e = T("form.notTime"); break;
+        case "select": case "radio": if (!f.options.some((o) => o.value === v)) e = T("form.badOption"); break;
+        case "file": if (!fsObj.isFile(v)) e = T("form.fileNotFound", v.path); break;
+        case "files": { const bad = v.find((h) => !fsObj.isFile(h)); if (bad) e = T("form.fileNotFound", bad.path); break; }
+        case "folder": if (!fsObj.isDirectory(v)) e = T("form.folderNotFound", v.path); break;
+      }
+      if (!e && f.pattern && typeof v === "string" && !f.pattern.test(v)) e = f.patternMessage || T("form.pattern");
+      if (e) errors[f.name] = e;
+    }
+    let error = "";
+    if (!Object.keys(errors).length && typeof validate === "function") {
+      const r = await validate(values);
+      if (typeof r === "string") error = r;
+      else if (r && typeof r === "object") {
+        for (const [k, m] of Object.entries(r)) {
+          if (!m) continue;
+          if (fields.some((f) => f.name === k)) errors[k] = String(m);
+          else error = error ? error + "\n" + m : String(m);
+        }
+      }
+    }
+    return { ok: !error && !Object.keys(errors).length, errors, error, values };
+  }
+
+  // Remembered values: %APPDATA%\xljs\<script name>.json, { "<form id or title>": { field: wire value } }.
+  function settingsFile() {
+    const dir = native.configDir();
+    return dir ? native.pathJoin(dir, native.pathBasename(native.script, native.pathExtname(native.script)) + ".json") : "";
+  }
+  function readSettings(p) {
+    try {
+      const all = p && native.fsStat(p) ? JSON.parse(native.fsReadText(p, "utf8")) : null;
+      return all && typeof all === "object" && !Array.isArray(all) ? all : {};
+    } catch (e) {
+      return {};
+    }
+  }
+  function loadRemembered(key) {
+    const v = readSettings(settingsFile())[key];
+    return v && typeof v === "object" ? v : {};
+  }
+  function saveRemembered(key, fields, wire) {
+    const p = settingsFile();
+    if (!p) return;
+    const all = readSettings(p);
+    all[key] = {};
+    for (const f of fields) if (f.remember) all[key][f.name] = wire[f.name];
+    try {
+      native.fsMkdir(native.pathDirname(p));
+      native.fsWriteText(p, JSON.stringify(all, null, 2) + "\n", "utf8", false);
+    } catch (e) {
+      // Remembering is a convenience; the form still works without it.
+    }
+  }
+
+  /** The ctx argument of onSubmit. */
+  class FormContext {
+    constructor(impl) { define(this, "_i", impl); }
+    /** Whether the user asked to stop (or closed the window). */
+    get cancelled() { return this._i.cancelled(); }
+    /** progress(done, total?, message?) or progress(done, message) */
+    progress(done, total, message) {
+      if (typeof total === "string") { message = total; total = undefined; }
+      this._i.progress(Math.max(0, Math.floor(Number(done) || 0)),
+        total === undefined || total === null ? undefined : Math.max(0, Math.floor(Number(total) || 0)),
+        message === undefined ? undefined : String(message));
+    }
+    log(...args) { this._i.log(formatArgs(args), "info"); }
+    error(...args) { this._i.log(formatArgs(args), "error"); }
+    /** Like ui.withProgress, shown in the form. Stops early when cancelled. */
+    withProgress(iterable, options = {}) {
+      return withProgress(iterable, options, (o) => {
+        const ctx = this;
+        return {
+          get cancelled() { return ctx.cancelled; },
+          update(done, message) { ctx.progress(done, o.total, message); },
+          close() {},
+        };
+      });
+    }
+  }
+
+  function formTexts() {
+    return {
+      ok: T("form.ok"), cancel: T("form.cancel"), close: T("form.close"), browse: T("form.browse"),
+      clear: T("form.clear"), dropHere: T("form.dropHere"), abort: T("form.abort"), aborting: T("form.aborting"),
+      running: T("form.running"), done: T("form.done"), aborted: T("form.aborted"), failed: T("form.failed"),
+      openFolder: T("form.openFolder"),
+    };
+  }
+
+  async function showForm(options) {
+    if (!options || typeof options !== "object") throw new TypeError(T("form.expectedOptions"));
+    const fields = Array.from(options.fields || []).map(normField);
+    const seen = new Set();
+    for (const f of fields) {
+      if (seen.has(f.name)) throw new TypeError(T("form.duplicateName", f.name));
+      seen.add(f.name);
+    }
+    const key = String(options.id || options.title || "form");
+    const remembered = options.remember ? loadRemembered(key) : {};
+    const wire = {};
+    for (const f of fields) wire[f.name] = f.remember && f.name in remembered ? remembered[f.name] : toWire(f, f.default);
+    const o = {
+      title: options.title === undefined ? title() : String(options.title),
+      description: options.description ? String(options.description) : "",
+      submit: options.submit ? String(options.submit) : "",
+      key,
+    };
+    return native.supportsWindows ? formWindow(o, fields, wire, options) : formPrompt(o, fields, wire, options);
+  }
+
+  // Console and mock: ask until the values pass, then run onSubmit with a progress indicator.
+  async function formPrompt(o, fields, wire, options) {
+    let errors = {}, error = "";
+    for (;;) {
+      const spec = {
+        title: o.title, description: o.description, error,
+        fields: fields.map((f) => ({
+          name: f.name, label: f.label, type: f.type, options: f.options, required: f.required,
+          placeholder: f.placeholder, help: f.help, accept: f.accept, value: wire[f.name], error: errors[f.name] || "",
+        })),
+      };
+      const r = native.uiForm(JSON.stringify(spec));
+      if (r === null) return null;
+      const answer = JSON.parse(r);
+      for (const f of fields) if (f.name in answer) wire[f.name] = answer[f.name];
+      const c = await checkForm(fields, wire, options.validate);
+      if (!c.ok) {
+        errors = c.errors;
+        error = c.error;
+        continue;
+      }
+      if (options.remember) saveRemembered(o.key, fields, wire);
+      if (typeof options.onSubmit === "function") {
+        let p = null;
+        const ctx = new FormContext({
+          progress(done, total, message) {
+            if (!p) p = new Progress({ title: o.title, total: total || 0 });
+            else if (total !== undefined) p.total = total;
+            p.update(done, message);
+          },
+          log: (text, level) => (level === "error" ? err : out)(text),
+          cancelled: () => (p ? p.cancelled : false),
+        });
+        try {
+          await options.onSubmit(c.values, ctx);
+        } finally {
+          if (p) p.close();
+        }
+      }
+      return c.values;
+    }
+  }
+
+  function formSize(o, fields, hasRun, options) {
+    let h = 100;
+    if (o.description) h += 14 + 21 * Math.min(8, o.description.split("\n").reduce((n, l) => n + 1 + Math.floor(l.length / 40), 0));
+    for (const f of fields) {
+      h += 10 + (f.type === "textarea" ? 10 + 21 * (f.rows || 4) : f.type === "files" ? 10 + 21 * Math.max(3, f.rows || 3)
+        : f.type === "checkbox" || f.type === "radio" ? 28 : 32);
+      if (f.help) h += 20;
+    }
+    if (hasRun) h += 240;
+    return {
+      width: Number(options.width) || 600,
+      height: Number(options.height) || Math.min(Math.max(h, 220), 760),
+    };
+  }
+
+  // Native UI: the form page. Resolves with the last submitted values once the window is closed.
+  function formWindow(o, fields, wire, options) {
+    const byName = new Map(fields.map((f) => [f.name, f]));
+    const onSubmit = typeof options.onSubmit === "function" ? options.onSubmit : null;
+    return new Promise((resolve, reject) => {
+      let result = null, failed = null, running = false, outputs = [];
+      const page = openPage("form.html", Object.assign({ title: o.title }, formSize(o, fields, !!onSubmit, options)),
+        (m, files) => { handle(m, files).catch(fail); });
+      const finish = () => (failed ? reject(failed) : resolve(result));
+      function fail(e) {
+        if (!failed) failed = e;
+        page.n.close();
+      }
+      page.n.closed.then(() => { if (!running) finish(); });
+
+      async function handle(m, files) {
+        switch (m.type) {
+          case "ready":
+            page.send({
+              type: "init", description: o.description, submit: o.submit, texts: formTexts(),
+              fields: fields.map((f) => ({
+                name: f.name, label: f.label, type: f.type, options: f.options, required: f.required,
+                placeholder: f.placeholder, help: f.help, accept: f.accept, min: f.min, max: f.max, step: f.step,
+                rows: f.rows, value: wire[f.name],
+              })),
+            });
+            break;
+          case "pick": {
+            const f = byName.get(m.field);
+            const v = f ? await pickPath(f, m.value) : null;
+            if (v !== null) page.send({ type: "picked", field: f.name, value: v, append: f.type === "files" });
+            break;
+          }
+          case "drop": {
+            const f = byName.get(m.field);
+            const v = f ? droppedPath(f, files || []) : null;
+            if (v !== null) page.send({ type: "picked", field: f.name, value: v, append: f.type === "files" });
+            break;
+          }
+          case "submit": {
+            for (const f of fields) if (m.values && f.name in m.values) wire[f.name] = m.values[f.name];
+            const c = await checkForm(fields, wire, options.validate);
+            if (page.n.isClosed()) return;
+            if (!c.ok) {
+              page.send({ type: "errors", errors: c.errors, error: c.error });
+              return;
+            }
+            if (options.remember) saveRemembered(o.key, fields, wire);
+            result = c.values;
+            if (onSubmit) await run(c.values);
+            else page.n.close();
+            break;
+          }
+          case "open":
+            if (outputs.length) shellObj.showItemInFolder(outputs);
+            break;
+          case "close":
+            page.n.close();
+            break;
+        }
+      }
+
+      async function run(values) {
+        running = true;
+        page.n.clearCancel();
+        page.send({ type: "running" });
+        const ctx = windowContext(page);
+        let done;
+        try {
+          outputs = outputsOf(await onSubmit(values, ctx));
+          done = { type: "done", ok: true, cancelled: ctx.cancelled, output: outputs.length > 0 };
+        } catch (e) {
+          done = { type: "done", ok: false, error: errorText(e) };
+        }
+        ctx._i.flush();
+        running = false;
+        if (page.n.isClosed()) finish();
+        else page.send(done);
+      }
+    });
+  }
+
+  /** onSubmit's ctx for a form window: updates are sent at most every 50 ms. */
+  function windowContext(page) {
+    const state = { done: 0, total: 0, message: "" };
+    let progressDirty = false, lines = [], level = "info", last = 0, timer = 0;
+    const flush = () => {
+      if (timer) { clearTimeout(timer); timer = 0; }
+      if (lines.length) { page.send({ type: "log", lines, level }); lines = []; }
+      if (progressDirty) { page.send(Object.assign({ type: "progress" }, state)); progressDirty = false; }
+      last = Date.now();
+    };
+    const soon = () => {
+      if (Date.now() - last >= 50) flush();
+      else if (!timer) timer = setTimeout(flush, 50);
+    };
+    return new FormContext({
+      progress(done, total, message) {
+        state.done = done;
+        if (total !== undefined) state.total = total;
+        if (message !== undefined) state.message = message;
+        progressDirty = true;
+        soon();
+      },
+      log(text, lvl) {
+        if (lines.length && lvl !== level) flush();
+        level = lvl;
+        lines.push(text);
+        soon();
+      },
+      cancelled: () => page.n.cancelRequested() || page.n.isClosed(),
+      flush,
+    });
+  }
+
+  function existingDir(p) {
+    if (!p) return undefined;
+    const st = native.fsStat(p);
+    if (st && st.isDirectory) return p;
+    const d = native.pathDirname(native.pathResolve(p));
+    return native.fsStat(d) ? d : undefined;
+  }
+
+  /** Shows the picker for a file or folder field; returns the path(s) or null. */
+  async function pickPath(f, current) {
+    const cur = Array.isArray(current) ? current[current.length - 1] : current ? String(current) : "";
+    const types = f.accept.length ? [{ description: f.accept.map((a) => "*" + a).join(";"), accept: f.accept }] : undefined;
+    const startIn = existingDir(cur);
+    switch (f.type) {
+      case "file": { const [h] = await showOpenFilePicker({ types, startIn }); return h ? h.path : null; }
+      case "files": { const hs = await showOpenFilePicker({ types, startIn, multiple: true }); return hs.length ? hs.map((h) => h.path) : null; }
+      case "folder": { const h = await showDirectoryPicker({ startIn: cur && fsObj.isDirectory(cur) ? cur : startIn }); return h ? h.path : null; }
+      case "saveFile": {
+        const h = await showSaveFilePicker({ types, startIn, suggestedName: cur ? native.pathBasename(cur, "") : "" });
+        return h ? h.path : null;
+      }
+    }
+    return null;
+  }
+
+  /** Value of a file or folder field for dropped paths (null to ignore the drop). */
+  function droppedPath(f, files) {
+    const ok = (p) => !f.accept.length || f.accept.includes(native.pathExtname(p).toLowerCase());
+    switch (f.type) {
+      case "folder": {
+        if (!files.length) return null;
+        return fsObj.isDirectory(files[0]) ? files[0] : native.pathDirname(files[0]);
+      }
+      case "file": { const p = files.find((x) => fsObj.isFile(x) && ok(x)); return p || null; }
+      case "files": { const ps = files.filter((x) => fsObj.isFile(x) && ok(x)); return ps.length ? ps : null; }
+    }
+    return null;
+  }
+
+  // ---- tables
+
+  const isRecord = (r) => r !== null && typeof r === "object" && !(r instanceof Date) && !Array.isArray(r);
+
+  /** Columns as [{ label, width, get(row) }]. */
+  function tableColumns(rows, columns) {
+    const sample = rows.find((r) => r !== null && r !== undefined);
+    const arrays = Array.isArray(sample);
+    if (columns) {
+      return Array.from(columns).map((c, i) => {
+        const spec = c !== null && typeof c === "object" ? c : { key: c };
+        let key = spec.key === undefined ? i : spec.key;
+        const label = String(spec.label === undefined ? key : spec.label);
+        if (arrays && typeof key !== "number") key = /^\d+$/.test(String(key)) && spec.label !== undefined ? Number(key) : i;
+        return { label, width: Number(spec.width) || 0, get: (r) => (r === null || r === undefined ? undefined : r[key]) };
+      });
+    }
+    if (arrays) {
+      const n = rows.reduce((m, r) => (Array.isArray(r) ? Math.max(m, r.length) : m), 0);
+      return Array.from({ length: n }, (_, i) => ({ label: native.xlsxColumnName(i + 1), width: 0, get: (r) => (r ? r[i] : undefined) }));
+    }
+    if (sample === undefined || isRecord(sample)) {
+      return keysOf(rows.filter(isRecord)).map((k) => ({ label: k, width: 0, get: (r) => (isRecord(r) ? r[k] : undefined) }));
+    }
+    return [{ label: T("table.value"), width: 0, get: (r) => r }];
+  }
+
+  /** A cell for the page: number, string, boolean or null. */
+  function cellWire(v) {
+    if (v === null || v === undefined) return null;
+    if (typeof v === "number") return isFinite(v) ? v : String(v);
+    if (typeof v === "string" || typeof v === "boolean") return v;
+    if (v instanceof Date) {
+      if (isNaN(v)) return "";
+      return v.getHours() || v.getMinutes() || v.getSeconds() || v.getMilliseconds() ? formatDateLocal(v) : ymd(v);
+    }
+    if (v instanceof FileSystemHandle) return v.path;
+    return inspect(v, { depth: 0 });
+  }
+
+  /** A cell for CSV/Excel: keeps numbers, dates and booleans. */
+  function cellSave(v) {
+    if (v === undefined) return null;
+    if (v === null || typeof v === "number" || typeof v === "string" || typeof v === "boolean" || v instanceof Date) return v;
+    if (v instanceof FileSystemHandle) return v.path;
+    return inspect(v, { depth: 0 });
+  }
+
+  /** What ui.table returns when nothing is selected: the window, closed and close(). */
+  class TableView {
+    constructor(closed, close) {
+      define(this, "closed", closed);
+      define(this, "_close", close);
+    }
+    close() { this._close(); }
+  }
+
+  function tableTexts() {
+    return {
+      filter: T("table.filter"), count: T("table.count"), countFiltered: T("table.countFiltered"),
+      loading: T("table.loading"), selected: T("table.selected"), copy: T("table.copy"), copied: T("table.copied"),
+      saveCsv: T("table.saveCsv"), saveXlsx: T("table.saveXlsx"), saved: T("table.saved"), ok: T("form.ok"),
+      cancel: T("form.cancel"), close: T("form.close"), empty: T("table.empty"),
+    };
+  }
+
+  function showTable(rows, options = {}) {
+    if (typeof options === "string") options = { title: options };
+    options = options || {};
+    const data = Array.from(rows || []);
+    const cols = tableColumns(data, options.columns);
+    const sel = options.selectable === true ? "multiple" : options.selectable ? String(options.selectable) : "";
+    if (sel && sel !== "single" && sel !== "multiple") throw new TypeError(T("table.badSelectable", sel));
+    const t = options.title === undefined ? title() : String(options.title);
+    if (native.supportsWindows) return tableWindow(data, cols, sel, t, options);
+    const text = (v) => { const w = cellWire(v); return w === null ? "" : String(w); };
+    const picked = native.uiTable(JSON.stringify({
+      title: t, select: sel, columns: cols.map((c) => c.label), rows: data.map((r) => cols.map((c) => text(c.get(r)))),
+    }));
+    if (!sel) return new TableView(Promise.resolve(), () => {});
+    return Promise.resolve((picked || []).filter((i) => i >= 0 && i < data.length).map((i) => data[i]));
+  }
+
+  function tableWindow(data, cols, sel, t, options) {
+    let picked = [];
+    const page = openPage("table.html", { title: t, width: Number(options.width) || 960, height: Number(options.height) || 600 },
+      (m) => { handle(m).catch((e) => page.send({ type: "error", message: errorText(e) })); });
+
+    async function handle(m) {
+      switch (m.type) {
+        case "ready": {
+          page.send({ type: "init", select: sel, total: data.length, texts: tableTexts(), columns: cols.map((c) => ({ label: c.label, width: c.width })) });
+          const chunk = 2000;
+          for (let i = 0; i < data.length; i += chunk) {
+            page.send({ type: "rows", rows: data.slice(i, i + chunk).map((r) => cols.map((c) => cellWire(c.get(r)))) });
+          }
+          break;
+        }
+        case "ok":
+          if (sel) picked = Array.from(m.indices || []).filter((i) => i >= 0 && i < data.length).map((i) => data[i]);
+          if (sel === "single") picked = picked.slice(0, 1);
+          page.n.close();
+          break;
+        case "close":
+          page.n.close();
+          break;
+        case "save":
+          await saveTable(m.format === "xlsx" ? "xlsx" : "csv", Array.isArray(m.indices) ? m.indices : null);
+          break;
+      }
+    }
+
+    async function saveTable(format, indices) {
+      const ext = "." + format;
+      const h = await showSaveFilePicker({
+        suggestedName: t.replace(/[\\/:*?"<>|]/g, "_") + ext,
+        types: [{ description: format === "xlsx" ? "Excel" : "CSV", accept: [ext] }],
+      });
+      if (!h) return;
+      const list = indices ? indices.filter((i) => i >= 0 && i < data.length).map((i) => data[i]) : data;
+      const labels = cols.map((c) => c.label);
+      const matrix = list.map((r) => cols.map((c) => cellSave(c.get(r))));
+      if (format === "xlsx") {
+        const book = workbooksObj.create();
+        try {
+          const name = t.replace(/[[\]:*?/\\]/g, "_").slice(0, 31) || "Sheet1";
+          book.addSheet(name).write(matrix, { columns: labels, table: true });
+          book.save(h);
+        } finally {
+          book.close();
+        }
+      } else {
+        csvObj.write(h, matrix, { columns: labels });
+      }
+      page.send({ type: "saved", path: h.path });
+    }
+
+    if (!sel) return new TableView(page.n.closed, () => page.n.close());
+    return page.n.closed.then(() => picked);
+  }
 
   // ---------------------------------------------------------------- csv
 

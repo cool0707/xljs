@@ -44,6 +44,7 @@ func runScript(t *testing.T, script string, answers string, args ...string) resu
 		t.Fatal(err)
 	}
 	t.Chdir(t.TempDir())
+	t.Setenv("XLJS_CONFIG_DIR", t.TempDir())
 	code, err := Run(Options{ScriptPath: script, Args: args, UI: m, Stdout: &out, Stderr: &errOut, Version: "test"})
 	return result{code, err, out.String(), errOut.String()}
 }
@@ -79,6 +80,32 @@ func TestScripts(t *testing.T) {
 					`window.open("アプリのテスト", "https://app.xljs/ui/index.html", 640x480)`,
 					`window.open("詳細", "https://app.xljs/ui/sub%20page.html", 300x200)`,
 					`window.closed("詳細")`,
+				} {
+					if !strings.Contains(r.stderr, want) {
+						t.Errorf("mock log does not contain %q:\n%s", want, r.stderr)
+					}
+				}
+			}
+			if name == "form.test.js" {
+				for _, want := range []string{
+					"form error: count: 10 以下の値を入力してください",
+					"form error: day: 日付（YYYY-MM-DD）を入力してください",
+					"form error: code: 英大文字 3 文字",
+					"form error: inputs: ファイルが見つかりません",
+					"form error: tax: 商品別は税込のみ",
+					`progress("実行", total=3) start`,
+				} {
+					if !strings.Contains(r.stderr, want) {
+						t.Errorf("mock log does not contain %q:\n%s", want, r.stderr)
+					}
+				}
+			}
+			if name == "table.test.js" {
+				for _, want := range []string{
+					`table("集計結果", 3 rows, ["顧客名" "件数" "合計" "日付" "備考"])`,
+					`table("列指定", 3 rows, ["顧客名" "金額"])`,
+					`table("配列", 2 rows, ["A" "B"])`,
+					`table("値", 2 rows, ["値"])`,
 				} {
 					if !strings.Contains(r.stderr, want) {
 						t.Errorf("mock log does not contain %q:\n%s", want, r.stderr)

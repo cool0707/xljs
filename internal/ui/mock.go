@@ -20,11 +20,15 @@ import (
 //	  "showOpenFilePicker": [["a.xlsx", "b.xlsx"], []],
 //	  "showSaveFilePicker": ["out.xlsx", null],
 //	  "showDirectoryPicker": ["data", null],
-//	  "progress": [{"cancelAfter": 3}]
+//	  "progress": [{"cancelAfter": 3}],
+//	  "form": [{"src": "data", "tax": true}, null],
+//	  "table": [[0, 2], null]
 //	}
 //
-// When a queue is empty the call behaves as if the user cancelled. Windows
-// (OpenWindow) are logged and closed immediately.
+// When a queue is empty the call behaves as if the user cancelled. A form
+// answer lists the values that differ from the current ones; a table
+// answer lists the indices of the chosen rows. Windows (OpenWindow) are
+// logged and closed immediately.
 type Mock struct {
 	Log io.Writer
 
@@ -180,6 +184,45 @@ func (m *Mock) ShowInFolder(paths []string) error {
 func (m *Mock) OpenPath(target string) error {
 	m.logf("openPath(%s)", q(target))
 	return nil
+}
+
+// SupportsWindows is false: forms and tables are answered from the queue.
+func (m *Mock) SupportsWindows() bool { return false }
+
+func (m *Mock) Form(o FormOptions) (map[string]any, bool) {
+	if o.Error != "" {
+		m.logf("form error: %s", o.Error)
+	}
+	for _, f := range o.Fields {
+		if f.Error != "" {
+			m.logf("form error: %s: %s", f.Name, f.Error)
+		}
+	}
+	v := map[string]any{}
+	if !m.next("form", &v) {
+		m.logf("form(%s) -> null", q(o.Title))
+		return nil, false
+	}
+	b, _ := json.Marshal(v)
+	m.logf("form(%s) -> %s", q(o.Title), b)
+	return v, true
+}
+
+func (m *Mock) Table(o TableOptions) ([]int, bool) {
+	m.logf("table(%s, %d rows, %q)", q(o.Title), len(o.Rows), o.Columns)
+	if o.Select == SelectNone {
+		return nil, true
+	}
+	var v []int
+	if !m.next("table", &v) {
+		m.logf("table -> cancel")
+		return nil, false
+	}
+	if o.Select == SelectSingle && len(v) > 1 {
+		v = v[:1]
+	}
+	m.logf("table -> %v", v)
+	return v, true
 }
 
 // OpenWindow logs the window and closes it right away, as if the user had
