@@ -6,7 +6,8 @@
     {},
     null,
     {},
+    {},
     {}
   ],
-  "progress": [{}]
+  "progress": [{}, {"cancelAfter": 1}]
 }

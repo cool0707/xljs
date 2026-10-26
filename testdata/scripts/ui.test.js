@@ -40,9 +40,11 @@ equal(p.cancelled, false);
 p.close();
 p.close(); // idempotent
 
-// withProgress over an array stops when cancelled (cancelAfter: 2 updates).
+// With onCancel: "break", withProgress over an array just stops when
+// cancelled (cancelAfter: 2 updates). By default the script ends
+// (TestProgressCancelEndsScript).
 const seen = [];
-for (const x of ui.withProgress([1, 2, 3, 4, 5], { title: "sync" })) seen.push(x);
+for (const x of ui.withProgress([1, 2, 3, 4, 5], { title: "sync", onCancel: "break" })) seen.push(x);
 deepEqual(seen, [1, 2]);
 equal(ui.cancelled, true);
 

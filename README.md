@@ -117,7 +117,7 @@ xljs init
 | `await showSaveFilePicker({ suggestedName, types, startIn })` | `FileSystemFileHandle \| null` |
 | `await showDirectoryPicker({ startIn, title })` | `FileSystemDirectoryHandle \| null` |
 
-`types` は `[{ description: "Excel", accept: { "<MIME>": [".xlsx"] } }]` のほか、`accept: [".xlsx", ".xlsm"]` とも書けます。`startIn` には `"desktop"` `"documents"` `"downloads"`、パス、ハンドルを指定できます。
+`types` は `[{ description: "Excel", accept: { "<MIME>": [".xlsx"] } }]` のほか、`accept: [".xlsx", ".xlsm"]` とも書けます。`showSaveFilePicker` で `types` を省略すると `suggestedName` の拡張子が種類になり、拡張子を消して入力しても付け足します（`集計` → `集計.xlsx`）。`startIn` には `"desktop"` `"documents"` `"downloads"`、パス、ハンドルを指定できます。
 
 ### 進捗表示
 
@@ -130,8 +130,10 @@ for (const [i, f] of files.entries()) {
 }
 p.close();
 
-// まとめて書く場合（キャンセルされるとループが終わる。ui.cancelled で判定）
+// まとめて書く場合。キャンセルされるとスクリプトが終了する（終了コード 1）ので、途中までの結果で先へ進まない
 for (const f of ui.withProgress(files, { title: "処理中" })) { /* ... */ }
+// キャンセル後も続けたいときは onCancel: "break"（ループが終わるだけ。ui.cancelled で判定）
+for (const f of ui.withProgress(files, { title: "処理中", onCancel: "break" })) { /* ... */ }
 for await (const h of ui.withProgress(dir.values())) { /* 総数不明ならマーキー表示 */ }
 ```
 
@@ -162,7 +164,7 @@ if (!v) exit();              // v.src は FileSystemDirectoryHandle、v.out は 
 - `tabs: [{ label, fields }]` を指定するとタブで項目を切り替えて表示します（`fields` はタブの上に常に表示）。値はタブに関係なく 1 つのオブジェクトにまとまります。エラーのある項目のタブには印が付き、そのタブに切り替わります。Ctrl+Tab でも切り替えられます。サンプル: `examples/form-tabs-table.js`
 - ウィンドウのアイコンはメタデータの `@icon` で変えられます（`@mode app` でなくても有効。表も同じ）。
 - 検証: `required`、`pattern`（＋`patternMessage`）、`min` / `max`、ファイル・フォルダの存在。追加の検証は `validate(values)` で `{ 項目名: "メッセージ" }` か全体へのメッセージを返します。
-- `onSubmit(values, ctx)` を書くと、実行後もウィンドウが開いたままになり、進捗（`ctx.progress(done, total, message)` / `ctx.withProgress(iterable)`）、ログ（`ctx.log` / `ctx.error`）、中止ボタン（`ctx.cancelled`）を表示します。出力ファイルを返すと完了後に「フォルダを開く」ボタンが出ます。サンプル: `examples/form-aggregate.js`
+- `onSubmit(values, ctx)` を書くと、実行後もウィンドウが開いたままになり、進捗（`ctx.progress(done, total, message)` / `ctx.withProgress(iterable)`。中止ボタンで `ctx.withProgress` のループから onSubmit が終わる）、ログ（`ctx.log` / `ctx.error`）、中止ボタン（`ctx.cancelled`）を表示します。出力ファイルを返すと完了後に「フォルダを開く」ボタンが出ます。サンプル: `examples/form-aggregate.js`
 - `remember` ではパスワードは保存しません。保存したくない項目には `remember: false` を付けます。保存先のフォルダは環境変数 `XLJS_CONFIG_DIR` で変えられます。
 
 ### 表表示（`ui.table`）
@@ -278,19 +280,24 @@ for (const f of d.walk({ glob: "*.xlsx", exclude: ["old"] })) {
 - `fs`: `exists` `stat` `readText` `writeText` `appendText` `readBytes` `writeBytes` `readJSON` `writeJSON` `list` `walk` `glob` `mkdir` `remove` `rename` `copy` `cwd` `chdir`
 - `path`: `join` `resolve` `dirname` `basename` `extname` `relative` `normalize` `isAbsolute`
 - パスを受け取る API には文字列・ハンドル・`File`（ディスク上のもの）のどれでも渡せます。
+- 相対パスはカレントフォルダが基準です。エクスプローラーから起動した場合（ダブルクリック、exe やスクリプトへのドロップ）はスクリプト（埋め込み exe なら exe）のあるフォルダがカレントフォルダになります。コマンドプロンプトから起動した場合はそのままです。
+- `writeText` / `appendText` の既定は UTF-8 で、`.csv` / `.tsv` のファイルだけは BOM 付き（Excel で文字化けしない）にします。
 - 文字コード: `"auto"`（BOM → UTF-8 → CP932 の順に判定）, `"utf8"`, `"utf8bom"`, `"cp932"`（= `"shift_jis"`）, `"euc-jp"`, `"utf16le"` など。CP932 で表せない文字は `?` になります。
 
 ### CSV
 
 ```js
-const rows = csv.read(h);                         // 見出し行をキーにしたオブジェクトの配列
-const raw = csv.read("a.tsv", { header: false }); // 2 次元配列（.tsv はタブ区切り）
-const typed = csv.read(h, { cast: true });        // 数値・真偽値に変換、空欄は null
+const rows = csv.read(h);                         // 見出し行をキーにしたオブジェクトの配列。数値・日付・真偽値は変換、空欄は null
+const grid = csv.read("a.tsv", { header: false });// 2 次元配列（.tsv はタブ区切り）
+const text = csv.read(h, { cast: false });        // 変換せず、すべて文字列のまま
 
 csv.write("out.csv", rows);                       // 既定は BOM 付き UTF-8・CRLF
 csv.write("out.csv", rows, { encoding: "cp932", columns: ["日付", "金額"] });
 csv.parse(text) / csv.stringify(rows)
 ```
+
+- 値の変換（既定）: `1234`・`-2.5`・`"1,234"` は数値、`2026/4/1`・`2026-04-01 09:30` は `Date`、`TRUE`/`FALSE` は真偽値、空欄は `null`。Excel で開いたときに近い結果ですが、`00123` のように先頭が 0 のコード、16 桁以上の数字、`123-4567` などは文字列のままです。
+- 見出しの前後の空白は取り除きます（`"金額 "` も `r.金額` で読めます）。
 
 ### JSON
 
@@ -322,7 +329,7 @@ shell.openExternal("https://example.com/");   // ブラウザで開く
 
 ```js
 const book = workbooks.open(h);              // パス・ハンドル・File・Blob
-const sheet = book.sheets["売上"] ?? book.sheets[0];
+const sheet = book.sheets["売上"] ?? book.sheets[0]; // 名前は大文字小文字・前後の空白・全角半角の違いも許す
 const rows = sheet.toObjects();              // [{ 日付: Date, 金額: 1200, ... }]
 const grid = sheet.toArrays({ text: true }); // 表示形式を適用した文字列
 

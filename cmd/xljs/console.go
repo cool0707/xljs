@@ -23,6 +23,11 @@ type consoleState struct {
 	own bool
 }
 
+// fromExplorer reports whether the process was not started from a
+// terminal: it got a console of its own (xljs.exe double-clicked) or none
+// at all (xljsw.exe).
+func (c *consoleState) fromExplorer() bool { return c.own || !c.has }
+
 func (c *consoleState) finish() {
 	if c.own && term.IsTerminal(int(os.Stdin.Fd())) {
 		fmt.Fprint(os.Stderr, "\n"+i18n.T("cli.pressEnterToClose"))

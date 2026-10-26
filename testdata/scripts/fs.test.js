@@ -98,6 +98,16 @@ fs.writeText("bom.txt", "a", "utf8bom");
 fs.appendText("bom.txt", "b", "utf8bom"); // BOM only once
 equal(fs.readBytes("bom.txt").byteLength, 5);
 equal(fs.readText("bom.txt"), "ab");
+// .csv / .tsv get a BOM by default (Excel reads them as UTF-8); other files do not.
+fs.writeText("hand.csv", "名前\r\n");
+fs.appendText("hand.csv", "山田\r\n");
+fs.dir(".").file("hand.tsv").writeText("x");
+equal(new Uint8Array(fs.readBytes("hand.csv"))[0], 0xef);
+equal(new Uint8Array(fs.readBytes("hand.tsv"))[0], 0xef);
+equal(fs.readText("hand.csv"), "名前\r\n山田\r\n");
+equal(fs.readBytes("data/note.txt").byteLength, 1);
+fs.writeText("plain.csv", "a", "utf8");
+equal(fs.readBytes("plain.csv").byteLength, 1);
 equal(await (await fs.file("sjis.txt").getFile()).text("auto"), "表示テスト");
 
 // fs helpers.

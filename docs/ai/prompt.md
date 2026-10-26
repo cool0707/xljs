@@ -22,8 +22,11 @@
 - `const fs = require("fs")` → 不要。`fs` は最初から使える xljs の API（Node とは別物）。
 - `process.exit()` → `exit()`。`process.argv` → `xljs.args`。
 - ピッカーは `await` が必要: `const [h] = await showOpenFilePicker();`（キャンセルで `h` は `undefined`）。
-- `book.sheets["明細"]` は無ければ `undefined`。`book.sheets[0]` は先頭のシート。`?.` と `??` で備える。
-- Excel から読んだ数値が文字列のことがある。合計は `Number(r.金額) || 0` で数値にする。
+- `book.sheets["明細"]` は無ければ `undefined`（大文字小文字・前後の空白・全角半角の違いは許される）。`book.sheets[0]` は先頭のシート。`?.` と `??` で備える。
+- Excel のセルに文字列として入っている数値は文字列で返る。合計は `Number(r.金額) || 0` で数値にする。全角数字（`"１２３"`）は `Number` で `NaN` になるので、必要なら `s.normalize("NFKC")` で半角にしてから変換する。
+- CSV は読むときに数値・日付（`Date`）・空欄（`null`）へ自動で変換される（`"00123"` のような先頭 0 のコードは文字列のまま）。すべて文字列で欲しいときだけ `csv.read(h, { cast: false })`。
+- `ui.withProgress` のループでキャンセルされると、スクリプトはその場で終わる。`if (ui.cancelled)` の確認は不要。
+- スクリプトで書いた数式（`cell.formula = ...`）の値は、Excel で開くまで計算されない（読み直すと `null`）。集計値は JavaScript で計算して `value` に入れる。
 - 空欄のセルは `null`（`toObjects` では空欄のキーが `null`）。
 - 日付は `Date`（ローカル時刻）。`toISOString()` は UTC になるので、表示や比較の文字列にはしない。年月は `d.getFullYear()`、`d.getMonth() + 1`。
 - `walk` / `list` は隠しファイル・システムファイルと Excel の一時ファイル（`~$*.xlsx`）を最初から除くので、`exclude` で除外しなくてよい。
@@ -69,7 +72,7 @@ const direct = dir.list();                        // 直下の項目のハンド
 const h = dir.file("設定.json");                   // 直下のファイルのハンドル
 fs.exists(p); fs.mkdir(p); fs.copy(a, b); fs.rename(a, b); fs.remove(p);
 const text = fs.readText(h);                      // 文字コード自動判定（UTF-8 / Shift_JIS）
-fs.writeText(p, text);                            // UTF-8。fs.writeText(p, text, "cp932") で Shift_JIS
+fs.writeText(p, text);                            // UTF-8（.csv / .tsv は BOM 付き）。fs.writeText(p, text, "cp932") で Shift_JIS
 const st = fs.stat(h);                            // { size, mtimeMs, isFile, isDirectory }
 path.join(path.dirname(h), "出力.xlsx");         // path: join dirname basename extname
 path.basename(h.name, path.extname(h.name));      // 拡張子なしのファイル名
@@ -115,8 +118,8 @@ out.save(dest);                                   // 保存（既存ブックは
 ## CSV・JSON
 
 ```js
-const rows = csv.read(h);                         // 見出しをキーにしたオブジェクトの配列。Shift_JIS / UTF-8 自動判定
-const rows2 = csv.read(h, { cast: true });        // 数値・真偽値に変換、空欄は null
+const rows = csv.read(h);                         // 見出しをキーにしたオブジェクトの配列。Shift_JIS / UTF-8 自動判定。数値・日付は変換、空欄は null
+const raw = csv.read(h, { cast: false });         // 変換せずすべて文字列
 const grid = csv.read(h, { header: false });      // 2 次元配列
 csv.write(dest, rows);                            // BOM 付き UTF-8（Excel で文字化けしない）
 csv.write(dest, rows, { encoding: "cp932", columns: ["日付", "金額"] }); // Shift_JIS、列を指定
@@ -124,13 +127,12 @@ const data = fs.readJSON(h);
 fs.writeJSON(dest, data);                         // 2 スペースでインデント
 ```
 
-## 進捗表示（キャンセル可）
+## 進捗表示（キャンセルされるとスクリプトが終わる）
 
 ```js
 for (const h of ui.withProgress(list, { title: "集計中" })) {
   // 1 ファイルずつの処理
 }
-if (ui.cancelled) { alert("中止しました"); exit(1); }
 ```
 
 ## 入力フォーム（複数の入力をまとめて聞く）
@@ -213,7 +215,6 @@ for (const h of ui.withProgress(files, { title: "読み込み中" })) {
     errors.push(`${h.relativePath}: ${e.message}`);
   }
 }
-if (ui.cancelled) exit(1);
 
 const dest = await showSaveFilePicker({ suggestedName: "明細まとめ.xlsx", startIn: dir, types: [{ description: "Excel", accept: [".xlsx"] }] });
 if (!dest) exit();

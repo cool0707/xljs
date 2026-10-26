@@ -258,6 +258,31 @@ console.log("done");
 	}
 }
 
+func TestProgressCancelEndsScript(t *testing.T) {
+	// Cancelling ui.withProgress ends the script (exit code 1, no error),
+	// so a cancelled run never goes on to save partial results.
+	dir := t.TempDir()
+	answers := filepath.Join(dir, "answers.json")
+	if err := os.WriteFile(answers, []byte(`{"progress": [{"cancelAfter": 1}, {"cancelAfter": 1}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for name, src := range map[string]string{
+		"sync":  "for (const x of ui.withProgress([1, 2, 3])) console.log(x);\nconsole.log(\"saved\");\n",
+		"async": "async function* g() { yield 1; yield 2; yield 3; }\nfor await (const x of ui.withProgress(g())) console.log(x);\nconsole.log(\"saved\");\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := filepath.Join(dir, name+".js")
+			if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			r := runScript(t, p, answers)
+			if r.code != 1 || r.err != nil || strings.Contains(r.stdout, "saved") {
+				t.Fatalf("exit %d, %v, stdout %q, stderr %q", r.code, r.err, r.stdout, r.stderr)
+			}
+		})
+	}
+}
+
 func TestErrorStackPointsToSource(t *testing.T) {
 	r := runScript(t, filepath.Join(scriptsDir(t), "_errors.js"), "")
 	if r.code != 1 || r.err == nil {

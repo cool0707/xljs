@@ -12,6 +12,7 @@ if (files.length === 0) {
 /** @type {any[]} */
 const rows = [];
 const errors = [];
+// キャンセルされるとスクリプトはここで終わる（途中までの結果は保存しない）
 for (const h of ui.withProgress(files, { title: "集計中" })) {
   try {
     const book = workbooks.open(h);
@@ -21,10 +22,6 @@ for (const h of ui.withProgress(files, { title: "集計中" })) {
   } catch (e) {
     errors.push(`${h.relativePath}: ${e.message}`);
   }
-}
-if (ui.cancelled) {
-  alert("キャンセルしました");
-  exit(1);
 }
 
 const byCustomer = Object.groupBy(rows, (r) => r.顧客名 ?? "(未設定)");

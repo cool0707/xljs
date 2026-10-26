@@ -78,6 +78,21 @@ equal(r.n, 3);
 // Errors in onSubmit reach the caller (no window to show them in).
 await rejects(() => ui.form({ fields: [], onSubmit() { throw new Error("boom"); } }), /boom/);
 
+// Aborting ctx.withProgress ends onSubmit (the rest does not run) without an error.
+const aborted = [];
+let reachedEnd = false;
+const r2 = await ui.form({
+  title: "中止",
+  fields: [{ name: "n", type: "number", default: 1 }],
+  onSubmit(values, ctx) {
+    for (const i of ctx.withProgress([1, 2, 3])) aborted.push(i);
+    reachedEnd = true;
+  },
+});
+deepEqual(aborted, [1]);
+equal(reachedEnd, false);
+equal(r2.n, 1);
+
 // Bad definitions.
 await rejects(() => ui.form({ fields: [{ name: "a", type: "colour" }] }), /colour/);
 await rejects(() => ui.form({ fields: [{ name: "a" }, { name: "a" }] }), /重複/);

@@ -10,7 +10,7 @@
 - `import` は同じフォルダの自作ファイル（`import { f } from "./lib.js"`）と JSON（`import master from "./master.json"`）だけ。
 - 使えるグローバル: `console`、`setTimeout`/`setInterval`、`sleep(ms)`、`exit(code)`、`structuredClone`、`TextEncoder`/`TextDecoder`（Shift_JIS 対応）、`atob`/`btoa`、`Blob`/`File`、`Intl`（簡易）、数値・日付の `toLocaleString()`（日本語形式）。
 - ファイル系の API は同期（`await` 不要）。`await` が必要なのはダイアログ（`showOpenFilePicker` など）、`ui.form`、`ui.table`（選択するとき）、`sleep`、`h.getFile()` など Promise を返すものだけ。
-- パスを受け取る引数には、文字列のパス・ハンドル・`File` のどれでも渡せる。相対パスはカレントフォルダ（通常はスクリプトのあるフォルダ）基準。
+- パスを受け取る引数には、文字列のパス・ハンドル・`File` のどれでも渡せる。相対パスはカレントフォルダ基準。エクスプローラーから起動した（ダブルクリック・ドロップ）ときはスクリプトのあるフォルダ（exe ならその exe のフォルダ）がカレントフォルダになる。
 - エラーが起きると、行番号付きのエラーダイアログを表示して終了する。
 
 ### 実行方法（利用者向けの説明に使う）
@@ -49,7 +49,7 @@
 
 - `types`: `[{ description: "Excel", accept: [".xlsx", ".xlsm"] }]`
 - `startIn`: `"desktop"` `"documents"` `"downloads"`、パス、ハンドル（そのファイルのフォルダから開く）
-- `showSaveFilePicker` は保存先を決めるだけで、ファイルはまだ作られない。
+- `showSaveFilePicker` は保存先を決めるだけで、ファイルはまだ作られない。`types` を省略すると `suggestedName` の拡張子が付く（利用者が `集計` と入力しても `集計.xlsx`）。
 
 ## ファイル・フォルダ
 
@@ -61,7 +61,7 @@
 | `h.relativePath` | `walk()` の起点からの相対パス（`"2026/4月.xlsx"`） |
 | `h.exists()` | 存在するか |
 | `h.stat()` | `{ size, mtimeMs, isFile, isDirectory }`（無ければ `null`）。更新日時は `new Date(h.stat().mtimeMs)` |
-| `h.readText(enc?)` / `h.writeText(text, enc?)` / `h.appendText(text, enc?)` | テキストの読み書き |
+| `h.readText(enc?)` / `h.writeText(text, enc?)` / `h.appendText(text, enc?)` | テキストの読み書き（書き込みは UTF-8、`.csv` / `.tsv` は BOM 付き） |
 | `dir.walk(options)` | サブフォルダも含めて走査。`.toArray()` で配列、`for...of` でも回せる |
 | `dir.list()` | 直下の項目のハンドルの配列 |
 | `dir.file(name)` / `dir.dir(name)` | 直下のファイル / フォルダのハンドル（存在確認なし） |
@@ -111,7 +111,7 @@
 |---|---|
 | `workbooks.open(p)` | 開く |
 | `workbooks.create({ font? })` | 新しいブック。最初の `addSheet` が既定のシートを置き換える |
-| `book.sheets[0]` / `book.sheets["名前"]` / `book.sheet(名前か番号)` | シート（無ければ `undefined` / `null`） |
+| `book.sheets[0]` / `book.sheets["名前"]` / `book.sheet(名前か番号)` | シート（無ければ `undefined` / `null`）。名前の大文字小文字・前後の空白・全角半角の違いは許す |
 | `book.sheetNames` | シート名の配列 |
 | `book.addSheet(name)` / `book.removeSheet(name)` | 追加・削除 |
 | `book.save()` / `book.save(p)` | 上書き保存 / 別名保存 |
@@ -134,7 +134,7 @@
 | `sheet.name` | シート名（代入で変更） |
 
 - 結合セルの値は左上のセルにだけ入っている。
-- 数式セルの `value` は Excel が最後に保存した計算結果。
+- 数式セルの `value` は Excel が最後に保存した計算結果。スクリプトで書いた数式は Excel で開くまで計算されない（`value` は `null`。`cell.calc()` で一部の関数は計算できる）。
 
 ### シートへの書き込み
 
@@ -187,7 +187,8 @@ sheet.setRowHeight(1, 30);        // 行の高さ（ポイント）
 | `csv.write(p, rows, options)` | 書く。既定は BOM 付き UTF-8・CRLF（Excel で文字化けしない） |
 | `csv.parse(text, options)` / `csv.stringify(rows, options)` | 文字列との変換 |
 
-- 読むオプション: `header: false`（2 次元配列）、`cast: true`（数値・真偽値に変換、空欄は `null`。ないと全部文字列）、`encoding`（既定 `"auto"`）、`delimiter`（`.tsv` はタブが既定）、`columns`、`trim`、`skipEmptyLines`。
+- 値は既定で変換する: 数値（`"1,234"` も）、日付（`2026/4/1`、`2026-04-01 09:30` → `Date`）、`TRUE`/`FALSE`、空欄は `null`。先頭が 0 のコード（`"00123"`）、16 桁以上の数字、`"123-4567"` などは文字列のまま。見出しの前後の空白は取り除く。
+- 読むオプション: `header: false`（2 次元配列）、`cast: false`（変換せずすべて文字列）、`encoding`（既定 `"auto"`）、`delimiter`（`.tsv` はタブが既定）、`columns`、`trim`、`skipEmptyLines`。
 - 書くオプション: `encoding: "cp932"`（Shift_JIS。古いシステム向け）、`columns`、`header: false`、`delimiter: "\t"`、`append: true`、`quoteAll: true`。
 - `Date` は `"2026/04/01"` の形式で書き出す。
 
@@ -204,9 +205,12 @@ fs.writeJSONL(dest, rows);                         // 1 行 1 レコード
 ## 進捗表示
 
 ```js
-// まとめて書く（キャンセルされるとループが途中で終わり、ui.cancelled が true になる）
+// まとめて書く（キャンセルされるとスクリプトがその場で終わる）
 for (const h of ui.withProgress(files, { title: "処理中" })) { /* ... */ }
-if (ui.cancelled) exit(1);
+
+// キャンセル後も続けたいとき（ループが終わるだけ）
+for (const h of ui.withProgress(files, { title: "処理中", onCancel: "break" })) { /* ... */ }
+if (ui.cancelled) alert("途中で中止しました");
 
 // 細かく制御する
 const p = ui.progress({ title: "処理中", total: files.length });
@@ -263,10 +267,9 @@ await ui.form({
   fields: [{ name: "src", label: "フォルダ", type: "folder", required: true }],
   async onSubmit(v, ctx) {
     const files = v.src.walk("*.xlsx").toArray();
-    for (const h of ctx.withProgress(files)) {
+    for (const h of ctx.withProgress(files)) {  // 中止ボタンが押されると onSubmit はここで終わる
       ctx.log(h.relativePath);      // ログ欄に表示（ctx.error で赤字）
     }
-    if (ctx.cancelled) return;      // 中止ボタン
     // ... 保存
     // return dest;
   },
@@ -338,7 +341,7 @@ if (handles.length === 0) exit();
 
 const book = workbooks.create();
 for (const h of handles) {
-  const rows = csv.read(h, { cast: true });
+  const rows = csv.read(h);
   const name = path.basename(h.name, path.extname(h.name)).replace(/[\\\/?*\[\]:]/g, "_").slice(0, 31);
   book.addSheet(name).write(rows, { table: true });
 }

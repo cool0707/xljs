@@ -534,6 +534,16 @@
     async abort() { this._closed = true; }
   }
 
+  /**
+   * The encoding for writing text: UTF-8, but with a BOM for .csv / .tsv so
+   * that Excel does not garble a CSV written with fs.writeText (the BOM is
+   * only written when the file is created).
+   */
+  function textEncodingFor(p, encoding) {
+    if (encoding) return encoding;
+    return /\.(csv|tsv)$/i.test(String(p)) ? "utf8bom" : "utf8";
+  }
+
   class FileSystemFileHandle extends FileSystemHandle {
     constructor(path, relativePath) { super("file", path, relativePath); }
     async getFile() {
@@ -549,8 +559,8 @@
     stat() { return native.fsStat(this._path); }
     readText(encoding = "auto") { return native.fsReadText(this._path, encoding); }
     readBytes() { return native.fsReadBytes(this._path); }
-    writeText(text, encoding = "utf8") { native.fsWriteText(this._path, String(text), encoding, false); return this; }
-    appendText(text, encoding = "utf8") { native.fsWriteText(this._path, String(text), encoding, true); return this; }
+    writeText(text, encoding) { native.fsWriteText(this._path, String(text), textEncodingFor(this._path, encoding), false); return this; }
+    appendText(text, encoding) { native.fsWriteText(this._path, String(text), textEncodingFor(this._path, encoding), true); return this; }
     writeBytes(data) { native.fsWriteBytes(this._path, toUint8(data), false); return this; }
   }
 
@@ -710,8 +720,8 @@
     isFile: (p) => { const s = native.fsStat(toPath(p)); return !!s && s.isFile; },
     isDirectory: (p) => { const s = native.fsStat(toPath(p)); return !!s && s.isDirectory; },
     readText: (p, encoding = "auto") => native.fsReadText(toPath(p), encoding),
-    writeText: (p, text, encoding = "utf8") => native.fsWriteText(toPath(p), String(text), encoding, false),
-    appendText: (p, text, encoding = "utf8") => native.fsWriteText(toPath(p), String(text), encoding, true),
+    writeText: (p, text, encoding) => native.fsWriteText(toPath(p), String(text), textEncodingFor(toPath(p), encoding), false),
+    appendText: (p, text, encoding) => native.fsWriteText(toPath(p), String(text), textEncodingFor(toPath(p), encoding), true),
     readBytes: (p) => native.fsReadBytes(toPath(p)),
     writeBytes: (p, data) => native.fsWriteBytes(toPath(p), toUint8(data), false),
     /** Reads a JSON file (path, handle, File or Blob). opts: { encoding = "auto", dates = false } */
@@ -822,6 +832,10 @@
   }
   /** Returns null when cancelled. */
   async function showSaveFilePicker(options = {}) {
+    // Without types, the extension of suggestedName becomes the file type
+    // (and the default extension), so "集計" is saved as "集計.xlsx".
+    const ext = native.pathExtname(String(options.suggestedName || ""));
+    if (!options.types && /^\.[\w]+$/.test(ext)) options = Object.assign({}, options, { types: [{ description: ext.slice(1).toUpperCase(), accept: [ext] }] });
     const p = native.uiSave(pickerOptions(options));
     return p === null ? null : new FileSystemFileHandle(p);
   }
@@ -904,12 +918,16 @@
   const newProgress = (opts) => new Progress(opts);
 
   // make(opts) returns the indicator: { cancelled, update(done, message), close() }.
-  function* withProgressSync(iterable, opts, label, total, make = newProgress) {
+  function* withProgressSync(iterable, opts, label, total, make = newProgress, stop = () => {}) {
     const p = make(Object.assign({}, opts, { total }));
     let i = 0;
     try {
       for (const item of iterable) {
-        if (p.cancelled) return;
+        if (p.cancelled) {
+          p.close();
+          stop();
+          return;
+        }
         p.update(i, label(item, i));
         yield item;
         i++;
@@ -920,7 +938,7 @@
     }
   }
 
-  function withProgressAsync(iterable, opts, label, total, make = newProgress) {
+  function withProgressAsync(iterable, opts, label, total, make = newProgress, stop = () => {}) {
     const iter = iterable[asyncIteratorSymbol]();
     const p = make(Object.assign({}, opts, { total }));
     let i = 0, finished = false;
@@ -931,6 +949,7 @@
         if (p.cancelled) {
           finish();
           if (iter.return) await iter.return();
+          stop();
           return { done: true, value: undefined };
         }
         let r;
@@ -958,10 +977,11 @@
   }
 
   /**
-   * Wraps an iterable and shows progress while it is consumed. Stops early
-   * (without error) when the user cancels; check ui.cancelled afterwards.
+   * Wraps an iterable and shows progress while it is consumed. When the
+   * user cancels, stop() ends the script (or the form's run); with
+   * onCancel: "break" the loop just ends (check ui.cancelled afterwards).
    */
-  function withProgress(iterable, options = {}, make = newProgress) {
+  function withProgress(iterable, options = {}, make = newProgress, stop = () => native.exit(1)) {
     if (typeof options === "string") options = { title: options };
     const label = typeof options.label === "function" ? options.label : defaultLabel;
     let total = options.total;
@@ -970,8 +990,9 @@
       else if (typeof iterable.size === "number") total = iterable.size;
       else total = 0;
     }
-    if (iterable && typeof iterable[Symbol.iterator] === "function") return withProgressSync(iterable, options, label, total, make);
-    if (iterable && typeof iterable[asyncIteratorSymbol] === "function") return withProgressAsync(iterable, options, label, total, make);
+    if (options.onCancel === "break") stop = () => {};
+    if (iterable && typeof iterable[Symbol.iterator] === "function") return withProgressSync(iterable, options, label, total, make, stop);
+    if (iterable && typeof iterable[asyncIteratorSymbol] === "function") return withProgressAsync(iterable, options, label, total, make, stop);
     throw new TypeError(T("ui.expectedIterable"));
   }
 
@@ -1588,7 +1609,10 @@
       f.table = formTable({ selectable: f.table.select }, rows, f.columns);
       this._i.table(f);
     }
-    /** Like ui.withProgress, shown in the form. Stops early when cancelled. */
+    /**
+     * Like ui.withProgress, shown in the form. Cancelling ends onSubmit
+     * (the form shows that it was aborted) unless onCancel: "break".
+     */
     withProgress(iterable, options = {}) {
       return withProgress(iterable, options, (o) => {
         const ctx = this;
@@ -1597,9 +1621,12 @@
           update(done, message) { ctx.progress(done, o.total, message); },
           close() {},
         };
-      });
+      }, () => { throw new FormCancel(); });
     }
   }
+
+  /** Thrown by ctx.withProgress when the run is aborted; ends onSubmit quietly. */
+  class FormCancel {}
 
   function formTexts() {
     return {
@@ -1677,6 +1704,8 @@
         });
         try {
           await options.onSubmit(c.values, ctx);
+        } catch (e) {
+          if (!(e instanceof FormCancel)) throw e;
         } finally {
           if (p) p.close();
         }
@@ -1783,7 +1812,8 @@
           outputs = outputsOf(await onSubmit(values, ctx));
           done = { type: "done", ok: true, cancelled: ctx.cancelled, output: outputs.length > 0 };
         } catch (e) {
-          done = { type: "done", ok: false, error: errorText(e) };
+          done = e instanceof FormCancel ? { type: "done", ok: true, cancelled: true, output: false }
+            : { type: "done", ok: false, error: errorText(e) };
         }
         ctx._i.flush();
         running = false;
@@ -2038,18 +2068,35 @@
 
   // ---------------------------------------------------------------- csv
 
+  /**
+   * The sheet name that name refers to: the exact name, or else the only
+   * name equal to it ignoring case (as Excel does), surrounding spaces and
+   * full/half width ("明細 ", "ＤＡＴＡ" for "DATA"). null when none.
+   */
+  function sheetNameLike(names, name) {
+    if (names.includes(name)) return name;
+    const norm = (x) => x.normalize("NFKC").trim().toLowerCase();
+    const want = norm(name);
+    const found = names.filter((n) => norm(n) === want);
+    return found.length === 1 ? found[0] : null;
+  }
+
   function rowsFromRecords(records, opts) {
     const header = opts.header === undefined ? true : opts.header;
     let recs = records;
     if (opts.skipEmptyLines !== false) recs = recs.filter((r) => !(r.length === 0 || (r.length === 1 && r[0] === "")));
     if (opts.trim) recs = recs.map((r) => r.map((s) => s.trim()));
-    const cast = opts.cast ? castValue : (x) => x;
+    // Values are typed by default (like Excel opening a CSV, but keeping
+    // codes such as "00123" as text); cast: false keeps every value a string.
+    const raw = opts.cast === false;
+    const cast = raw ? (x) => x : castValue;
     if (!header) {
       if (opts.columns) return recs.map((r) => objectFrom(opts.columns, r, cast));
-      return opts.cast ? recs.map((r) => r.map(cast)) : recs;
+      return raw ? recs : recs.map((r) => r.map(cast));
     }
     if (recs.length === 0) return [];
-    const keys = uniqueKeys(recs[0].map((h) => (opts.trim ? h.trim() : h)));
+    // Header names are trimmed: "金額 " would otherwise not be r.金額.
+    const keys = uniqueKeys(recs[0].map((h) => h.trim()));
     return recs.slice(1).map((r) => objectFrom(keys, r, cast));
   }
   function uniqueKeys(names) {
@@ -2071,12 +2118,26 @@
     keys.forEach((k, i) => { o[k] = i < values.length ? cast(values[i]) : (cast === castValue ? null : ""); });
     return o;
   }
+  /**
+   * Types a CSV value: numbers (not codes with a leading zero, nor more than
+   * 15 digits, which a number cannot hold exactly), dates "2026/4/1" or
+   * "2026-04-01" with an optional time, booleans; "" becomes null.
+   */
   function castValue(s) {
     if (typeof s !== "string") return s;
-    if (s === "") return null;
-    if (/^-?(0|[1-9]\d*)(\.\d+)?$/.test(s) || /^-?(0|[1-9]\d{0,2}(,\d{3})+)(\.\d+)?$/.test(s)) return Number(s.replace(/,/g, ""));
-    if (s === "true" || s === "TRUE") return true;
-    if (s === "false" || s === "FALSE") return false;
+    const t = s.trim();
+    if (t === "") return null;
+    if ((/^-?(0|[1-9]\d*)(\.\d+)?$/.test(t) || /^-?(0|[1-9]\d{0,2}(,\d{3})+)(\.\d+)?$/.test(t)) && t.replace(/\D/g, "").length <= 15) {
+      return Number(t.replace(/,/g, ""));
+    }
+    if (t === "true" || t === "TRUE") return true;
+    if (t === "false" || t === "FALSE") return false;
+    const m = /^(\d{4})([\/-])(\d{1,2})\2(\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/.exec(t);
+    if (m) {
+      const [y, mo, d, h, mi, sec] = [m[1], m[3], m[4], m[5] || 0, m[6] || 0, m[7] || 0].map(Number);
+      const date = new Date(y, mo - 1, d, h, mi, sec);
+      if (date.getFullYear() === y && date.getMonth() === mo - 1 && date.getDate() === d && h < 24 && mi < 60 && sec < 60) return date;
+    }
     return s;
   }
   function cellToString(v) {
@@ -2117,7 +2178,7 @@
     return ",";
   }
   const csvObj = {
-    /** Parses CSV text. opts: { header=true, delimiter=",", columns, cast, trim, skipEmptyLines=true, comment } */
+    /** Parses CSV text. opts: { header=true, delimiter=",", columns, cast=true, trim, skipEmptyLines=true, comment } */
     parse(text, opts = {}) {
       return rowsFromRecords(native.csvParse(String(text), opts.delimiter || ",", opts.comment || ""), opts);
     },
@@ -2405,19 +2466,24 @@
     get path() { return native.xlsxPath(this._h); }
     get sheetNames() { return native.xlsxSheetNames(this._h); }
     /** Array of worksheets; sheets also accessible by name: book.sheets["売上"]. */
+    /** Sheets by position, and by name (book.sheets["明細"], matched like sheet(name)). */
     get sheets() {
       const names = native.xlsxSheetNames(this._h);
       const arr = names.map((n) => new Worksheet(this, n));
       names.forEach((n, i) => { if (!(n in arr)) define(arr, n, arr[i]); });
-      return arr;
+      return new Proxy(arr, {
+        get: (target, key, receiver) => {
+          if (typeof key !== "string" || key in target) return Reflect.get(target, key, receiver);
+          const n = sheetNameLike(names, key);
+          return n === null ? undefined : target[names.indexOf(n)];
+        },
+      });
     }
     /** sheet("名前") or sheet(0); null when missing. */
     sheet(nameOrIndex) {
-      if (typeof nameOrIndex === "number") {
-        const n = native.xlsxSheetNames(this._h)[nameOrIndex];
-        return n === undefined ? null : new Worksheet(this, n);
-      }
-      return native.xlsxHasSheet(this._h, String(nameOrIndex)) ? new Worksheet(this, String(nameOrIndex)) : null;
+      const names = native.xlsxSheetNames(this._h);
+      const n = typeof nameOrIndex === "number" ? names[nameOrIndex] : sheetNameLike(names, String(nameOrIndex));
+      return n === undefined || n === null ? null : new Worksheet(this, n);
     }
     addSheet(name) {
       native.xlsxAddSheet(this._h, String(name));

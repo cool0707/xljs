@@ -83,6 +83,7 @@ func run() int {
 			assets = m.AssetFS(filepath.Dir(exe)) // nothing visible
 		}
 		o := engine.Options{ScriptPath: script, Code: payload.Code, Args: os.Args[1:], Meta: m, Assets: assets}
+		useScriptDir(con, &o)
 		if err := setDebug(&o, os.Getenv("XLJS_DEBUG"), u); err != nil {
 			return con.fail(nil, err)
 		}
@@ -162,10 +163,36 @@ func run() int {
 	}
 	applyLang(m, *lang != "")
 	o := engine.Options{ScriptPath: rest[0], Args: rest[1:], Meta: m}
+	useScriptDir(con, &o)
 	if err := setDebug(&o, debug.value, u); err != nil {
 		return con.fail(u, err)
 	}
 	return runScript(con, u, o)
+}
+
+// useScriptDir makes the script's folder the working folder when xljs was
+// started from Explorer (double-clicked, or a file dropped onto the exe or
+// the script), where the working folder is whatever Explorer chose (often
+// System32 or the user folder), so that relative paths in the script mean
+// "next to the script". Arguments naming existing files are made absolute
+// first. From a terminal the working folder is left as it is.
+func useScriptDir(con *consoleState, o *engine.Options) {
+	if !con.fromExplorer() {
+		return
+	}
+	for i, a := range o.Args {
+		if _, err := os.Stat(a); err == nil {
+			if abs, err := filepath.Abs(a); err == nil {
+				o.Args[i] = abs
+			}
+		}
+	}
+	abs, err := filepath.Abs(o.ScriptPath)
+	if err != nil {
+		return
+	}
+	o.ScriptPath = abs
+	os.Chdir(filepath.Dir(abs))
 }
 
 // debugFlag is --debug, --debug=script or --debug=window (see setDebug).

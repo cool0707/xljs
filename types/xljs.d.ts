@@ -119,7 +119,7 @@ declare global {
 
   /** ファイルを選択する。キャンセル時は空配列 */
   function showOpenFilePicker(options?: OpenFilePickerOptions): Promise<FileSystemFileHandle[]>;
-  /** 保存先を選択する。キャンセル時は null */
+  /** 保存先を選択する。キャンセル時は null。types を省略すると suggestedName の拡張子を種類と既定の拡張子にする */
   function showSaveFilePicker(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle | null>;
   /** フォルダを選択する。キャンセル時は null */
   function showDirectoryPicker(options?: DirectoryPickerOptions): Promise<FileSystemDirectoryHandle | null>;
@@ -151,6 +151,11 @@ declare global {
   interface WithProgressOptions<T> extends ProgressOptions {
     /** 各要素の表示ラベル。既定はハンドルなら relativePath */
     label?: (item: T, index: number) => string;
+    /**
+     * キャンセルされたとき: "exit"（既定）はスクリプトを終了する（終了コード 1。フォームの ctx.withProgress では onSubmit を終える）。
+     * "break" は反復を終えるだけ（続きの処理で ui.cancelled / ctx.cancelled を見る）
+     */
+    onCancel?: "exit" | "break";
   }
 
   interface Ui {
@@ -162,7 +167,7 @@ declare global {
     showDirectoryPicker: typeof showDirectoryPicker;
     /** 進捗表示を開く */
     progress(options?: ProgressOptions | string): Progress;
-    /** 反復しながら進捗を表示する。キャンセルされると反復が途中で終わる */
+    /** 反復しながら進捗を表示する。キャンセルされるとスクリプトを終了する（onCancel: "break" なら反復が終わるだけ） */
     withProgress<T>(iterable: Iterable<T>, options?: WithProgressOptions<T> | string): Generator<T, void, undefined>;
     withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T> | string): AsyncIterableIterator<T>;
     /**
@@ -258,7 +263,7 @@ declare global {
      * コンソール・mock では表を出力する
      */
     table(name: string, rows: readonly unknown[], columns?: (string | TableColumn)[]): void;
-    /** ui.withProgress と同じ。進捗をフォーム内に表示し、中止されると反復が終わる */
+    /** ui.withProgress と同じ。進捗をフォーム内に表示し、中止されると onSubmit を終える（onCancel: "break" なら反復が終わるだけ） */
     withProgress<T>(iterable: Iterable<T>, options?: WithProgressOptions<T>): Generator<T, void, undefined>;
     withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T>): AsyncIterableIterator<T>;
   }
@@ -507,6 +512,7 @@ declare global {
     /** 既定 "auto"（BOM / UTF-8 / CP932 を自動判定） */
     readText(encoding?: Encoding): string;
     readBytes(): ArrayBuffer;
+    /** 既定 "utf8"（.csv / .tsv は Excel 向けに "utf8bom"） */
     writeText(text: string, encoding?: Encoding): this;
     appendText(text: string, encoding?: Encoding): this;
     writeBytes(data: ArrayBuffer | ArrayBufferView): this;
@@ -602,6 +608,7 @@ declare global {
     isDirectory(path: PathLike): boolean;
     stat(path: PathLike): FileStat | null;
     readText(path: PathLike, encoding?: Encoding): string;
+    /** 既定 "utf8"（.csv / .tsv は Excel 向けに "utf8bom"） */
     writeText(path: PathLike, text: string, encoding?: Encoding): void;
     appendText(path: PathLike, text: string, encoding?: Encoding): void;
     readBytes(path: PathLike): ArrayBuffer;
@@ -681,7 +688,10 @@ declare global {
     delimiter?: string;
     /** header: false のときの列名 */
     columns?: string[];
-    /** 数値・真偽値に変換し、空欄を null にする */
+    /**
+     * 値の変換（既定 true）: 数値（"1,234" も可。先頭が 0 のコードや 16 桁以上は文字列のまま）、
+     * 日付（2026/4/1、2026-04-01 09:30 → Date）、TRUE/FALSE、空欄は null。false ですべて文字列
+     */
     cast?: boolean;
     trim?: boolean;
     skipEmptyLines?: boolean;
@@ -709,10 +719,10 @@ declare global {
   }
   interface Csv {
     parse(text: string, options?: CsvParseOptions & { header?: true }): Row[];
-    parse(text: string, options: CsvParseOptions & { header: false }): string[][];
+    parse(text: string, options: CsvParseOptions & { header: false }): CellValue[][];
     stringify(rows: Row[] | unknown[][], options?: CsvStringifyOptions): string;
     read(src: PathLike | Blob, options?: CsvReadOptions & { header?: true }): Row[];
-    read(src: PathLike | Blob, options: CsvReadOptions & { header: false }): string[][];
+    read(src: PathLike | Blob, options: CsvReadOptions & { header: false }): CellValue[][];
     write(dest: PathLike, rows: Row[] | unknown[][], options?: CsvWriteOptions): void;
   }
   const csv: Csv;
@@ -912,7 +922,7 @@ declare global {
   interface Workbook {
     readonly path: string | null;
     readonly sheetNames: string[];
-    /** シート一覧。book.sheets["売上"] のように名前でも参照できる */
+    /** シート一覧。book.sheets["売上"] のように名前でも参照できる（大文字小文字・前後の空白・全角半角の違いは、該当が 1 つなら許す） */
     readonly sheets: Worksheet[] & { [name: string]: Worksheet | undefined };
     sheet(nameOrIndex: string | number): Worksheet | null;
     addSheet(name: string): Worksheet;

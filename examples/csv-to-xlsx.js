@@ -8,7 +8,7 @@ if (handles.length === 0) exit();
 
 const book = workbooks.create();
 for (const h of handles) {
-  const rows = csv.read(h, { cast: true }); // 数値は数値として書き込む
+  const rows = csv.read(h); // 数値・日付は自動で変換される（"00123" のようなコードは文字列のまま）
   const name = path.basename(h.name, path.extname(h.name)).slice(0, 31);
   book.addSheet(name).write(rows);
   console.log(`${h.name}: ${rows.length} 行`);
