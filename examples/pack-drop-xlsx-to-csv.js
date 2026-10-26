@@ -1,6 +1,6 @@
 // exe にドロップした（または引数で渡した）Excel ファイルの先頭シートを
 // Shift_JIS の CSV に変換して同じフォルダに保存する。
-// `xljs pack xlsx-to-csv.js` で exe にしておくとドラッグ＆ドロップで使える。
+// `xljs pack pack-drop-xlsx-to-csv.js` で exe にしておくとドラッグ＆ドロップで使える。
 let targets = xljs.args.map((p) => fs.file(p));
 if (targets.length === 0) {
   targets = await showOpenFilePicker({ multiple: true, types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }] });

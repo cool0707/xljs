@@ -158,6 +158,22 @@ func TestFormAndTableWindows(t *testing.T) {
 			if got := asJSON(p.expect("picked", nil)); !strings.Contains(got, `"append":true`) || !strings.Contains(got, "a.xlsx") || strings.Contains(got, "b.txt") {
 				t.Errorf("dropped = %s", got)
 			}
+			// A folder dropped on a save field keeps the file name; a file
+			// replaces it (when its type is accepted); a folder on a folder
+			// field is that folder.
+			p.send(map[string]any{"type": "drop", "field": "out", "value": "集計.xlsx"}, filepath.Join(dir, "data"))
+			if got := p.expect("picked", nil); got["value"] != filepath.Join(dir, "data", "集計.xlsx") {
+				t.Errorf("folder on save field = %s", asJSON(got))
+			}
+			p.send(map[string]any{"type": "drop", "field": "out", "value": ""}, filepath.Join(dir, "data", "b.txt"))
+			p.send(map[string]any{"type": "drop", "field": "out", "value": ""}, filepath.Join(dir, "data", "a.xlsx"))
+			if got := p.expect("picked", nil); got["value"] != filepath.Join(dir, "data", "a.xlsx") {
+				t.Errorf("file on save field = %s", asJSON(got))
+			}
+			p.send(map[string]any{"type": "drop", "field": "src"}, filepath.Join(dir, "data"))
+			if got := p.expect("picked", nil); got["value"] != filepath.Join(dir, "data") {
+				t.Errorf("folder on folder field = %s", asJSON(got))
+			}
 			p.send(map[string]any{"type": "submit", "values": map[string]any{
 				"src": "data", "n": "2", "mode": "商品別", "day": "2026-05-06", "inputs": []string{"data/a.xlsx"}}})
 			p.waitClosed()
@@ -244,6 +260,7 @@ const v = await ui.form({ title: "窓", fields: [
   { name: "mode", type: "select", options: ["顧客別", "商品別"] },
   { name: "day", type: "date", default: new Date(2026, 3, 1) },
   { name: "inputs", type: "files", accept: ".xlsx" },
+  { name: "out", type: "saveFile", accept: ".xlsx", default: "集計.xlsx" },
 ]});
 console.log("1", v.src.name, v.n, v.mode, v.day.getDate(), v.inputs.map((h) => h.name).join());
 
@@ -333,6 +350,61 @@ func TestDroppedFolder(t *testing.T) {
 	var out bytes.Buffer
 	code, err := Run(Options{ScriptPath: writeScript(t, "drop.js", src), UI: attachUI{m, []string{dir, file, ""}}, Stdout: &out, Stderr: io.Discard})
 	if code != 0 || err != nil || out.String() != "directory,file,\n" {
+		t.Fatalf("exit %d, %v, stdout %q", code, err, out.String())
+	}
+}
+
+func TestFormWindowTablesAndTabs(t *testing.T) {
+	m, _ := ui.NewMockFromJSON("", io.Discard)
+	u := &pageUI{Mock: m, t: t}
+	t.Setenv("XLJS_CONFIG_DIR", t.TempDir())
+	u.pages = []func(p *fakePage){
+		func(p *fakePage) {
+			init := p.expect("init", nil)
+			if got := asJSON(init["tabs"]); got != `["基本","詳細"]` {
+				t.Errorf("tabs = %s", got)
+			}
+			fields := asJSON(init["fields"])
+			for _, want := range []string{
+				`"name":"common","options":[],"placeholder":"","required":false,"rows":0,"step":null,"tab":-1`,
+				`"name":"a",`, `"tab":0`,
+				`"table":{"columns":["名前","数"],"rows":[["a",1],["b",null]],"select":"single"},"type":"table","value":[1]`,
+				`"name":"out","options":[],"placeholder":"","required":false,"rows":3,"step":null,"tab":1,"table":{"columns":[],"rows":[],"select":""}`,
+			} {
+				if !strings.Contains(fields, want) {
+					t.Errorf("fields do not contain %s:\n%s", want, fields)
+				}
+			}
+			p.send(map[string]any{"type": "submit", "values": map[string]any{"common": "c", "a": "x", "pick": []int{}, "out": []int{}}})
+			if e := asJSON(p.expect("errors", nil)); !strings.Contains(e, `"pick":"行を選択してください"`) {
+				t.Errorf("errors = %s", e)
+			}
+			p.send(map[string]any{"type": "submit", "values": map[string]any{"common": "c", "a": "x", "pick": []int{0}, "out": []int{}}})
+			p.expect("running", nil)
+			if got := asJSON(p.expect("table", nil)); got != `{"columns":["結果"],"field":"out","rows":[["a"]],"select":"","type":"table"}` {
+				t.Errorf("table = %s", got)
+			}
+			p.expect("done", nil)
+			p.send(map[string]any{"type": "close"})
+			p.waitClosed()
+		},
+	}
+	src := `
+const rows = [{ 名前: "a", 数: 1 }, { 名前: "b" }];
+const v = await ui.form({
+  fields: [{ name: "common" }],
+  tabs: [
+    { label: "基本", fields: [{ name: "a" }, { name: "pick", type: "table", rows, selectable: "single", required: true, default: 1 }] },
+    { label: "詳細", fields: [{ name: "out", type: "table", rows: [] }] },
+  ],
+  onSubmit(values, ctx) { ctx.table("out", [{ 結果: values.pick.名前 }]); },
+});
+console.log(v.common, v.a, v.pick.名前, "out" in v);
+`
+	var out bytes.Buffer
+	code, err := Run(Options{ScriptPath: writeScript(t, "tabs.js", src), UI: u, Stdout: &out, Stderr: io.Discard})
+	u.wg.Wait()
+	if code != 0 || err != nil || out.String() != "c x a false\n" {
 		t.Fatalf("exit %d, %v, stdout %q", code, err, out.String())
 	}
 }

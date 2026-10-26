@@ -154,6 +154,13 @@ func TestScripts(t *testing.T) {
 					}
 				}
 			}
+			if name == "formtable.test.js" {
+				for _, want := range []string{"form error: pick: 行を選択してください", `table("結果", 3 rows, ["顧客名" "合計"])`} {
+					if !strings.Contains(r.stderr, want) {
+						t.Errorf("mock log does not contain %q:\n%s", want, r.stderr)
+					}
+				}
+			}
 			if name == "table.test.js" {
 				for _, want := range []string{
 					`table("集計結果", 3 rows, ["顧客名" "件数" "合計" "日付" "備考"])`,
@@ -468,5 +475,45 @@ func TestAppIcon(t *testing.T) {
 		if r.code != 1 || r.err == nil || !strings.Contains(r.err.Error(), want) {
 			t.Errorf("%s: exit %d, %v", icon, r.code, r.err)
 		}
+	}
+}
+
+// iconUI shows forms and tables as windows and records the icon size of
+// each window.
+type iconUI struct {
+	windowUI
+	icons []int
+}
+
+func (u *iconUI) OpenWindow(o ui.WindowOptions) (ui.Window, error) {
+	u.icons = append(u.icons, len(o.Icon))
+	return u.windowUI.OpenWindow(o)
+}
+
+func TestFormIcon(t *testing.T) {
+	// @icon also applies to forms and tables of a script without @mode app.
+	ico, err := os.ReadFile(filepath.Join("..", "..", "assets", "xljs.ico"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "app.ico"), ico, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "form.js")
+	src := "// ==xljs==\n// @icon app.ico\n// ==/xljs==\n" +
+		"await ui.form({ fields: [{ name: 'a' }] });\nawait ui.table([1]).closed;\n"
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := ui.NewMockFromJSON("", io.Discard)
+	u := &iconUI{windowUI: windowUI{&slowUI{Mock: m, after: 20 * time.Millisecond}}}
+	t.Setenv("XLJS_CONFIG_DIR", t.TempDir())
+	code, err := Run(Options{ScriptPath: p, UI: u, Stdout: io.Discard, Stderr: io.Discard})
+	if code != 0 || err != nil {
+		t.Fatalf("exit %d: %v", code, err)
+	}
+	if fmt.Sprint(u.icons) != fmt.Sprintf("[%d %d]", len(ico), len(ico)) {
+		t.Fatalf("icons = %v", u.icons)
 	}
 }

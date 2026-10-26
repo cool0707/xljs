@@ -55,6 +55,40 @@ func TestConsoleForm(t *testing.T) {
 	}
 }
 
+func TestConsoleFormTablesAndTabs(t *testing.T) {
+	i18n.SetLanguage("ja")
+	defer i18n.SetLanguage("auto")
+	var out bytes.Buffer
+	in := strings.Join([]string{
+		"",    // a: keep
+		"5",   // pick: out of range
+		"2-3", // pick
+		"",    // one: keep row 1
+		"-",   // none: clear
+	}, "\n")
+	c := &Console{In: strings.NewReader(in), Out: &out}
+	rows := [][]string{{"A社", "2"}, {"B社", "1"}, {"C社", "5"}}
+	v, ok := c.Form(FormOptions{Fields: []FormField{
+		{Name: "a", Label: "共通", Type: "text", Value: "x"},
+		{Name: "info", Label: "一覧", Type: "table", Columns: []string{"名前"}, Rows: [][]string{{"表示だけ"}}, Tab: "基本"},
+		{Name: "pick", Label: "対象", Type: "table", Columns: []string{"顧客", "件数"}, Rows: rows, Select: SelectMultiple, Value: []any{}, Tab: "基本"},
+		{Name: "one", Label: "一つ", Type: "table", Columns: []string{"顧客", "件数"}, Rows: rows, Select: SelectSingle, Value: []any{float64(0)}, Tab: "詳細"},
+		{Name: "none", Label: "なし", Type: "table", Columns: []string{"顧客", "件数"}, Rows: rows, Select: SelectMultiple, Value: []any{float64(1)}, Tab: "詳細"},
+	}})
+	if !ok {
+		t.Fatalf("cancelled:\n%s", out.String())
+	}
+	want := map[string]any{"a": "x", "pick": []any{1, 2}, "one": []any{0}, "none": []any{}}
+	if !reflect.DeepEqual(v, want) {
+		t.Errorf("values = %#v", v)
+	}
+	for _, s := range []string{"== 基本 ==", "== 詳細 ==", "表示だけ", "│ 3 │ C社", "Enter で 1 のまま", "Enter で選択なし", "1 から 3 までの番号"} {
+		if !strings.Contains(out.String(), s) {
+			t.Errorf("output does not contain %q:\n%s", s, out.String())
+		}
+	}
+}
+
 func TestConsoleTable(t *testing.T) {
 	var out bytes.Buffer
 	c := &Console{In: strings.NewReader("4\n3-2\n1, 3-4\n"), Out: &out}

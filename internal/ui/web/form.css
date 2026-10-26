@@ -1,6 +1,52 @@
 main { flex: 1; overflow: auto; padding: 16px 20px 8px; }
 #description { margin: 0 0 14px; white-space: pre-wrap; }
-#fields { display: grid; grid-template-columns: max-content 1fr; gap: 10px 14px; align-items: start; }
+.fields { display: grid; grid-template-columns: max-content 1fr; gap: 10px 14px; align-items: start; }
+#fields:empty { display: none; }
+#tabs { display: flex; flex-wrap: wrap; gap: 2px; margin: 14px 0 12px; border-bottom: 1px solid var(--border); }
+#fields:empty + #tabs { margin-top: 0; }
+.tab {
+  min-width: 0;
+  padding: 6px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  margin-bottom: -1px;
+}
+.tab:hover:not(:disabled) { background: var(--hover); }
+.tab.active { border-bottom-color: var(--accent); color: var(--accent); }
+.tab.has-error::after { content: " ●"; color: var(--error); }
+.lbl.wide, .ctl.wide { grid-column: 1 / -1; }
+.lbl.wide { padding-top: 0; max-width: none; }
+.ftable {
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input);
+  outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.ftable:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ftable table { border-collapse: collapse; min-width: 100%; }
+.ftable th, .ftable td { height: 26px; padding: 0 8px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.ftable th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  font-weight: normal;
+  max-width: 24em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ftable th[data-sort=asc]::after { content: " ▲"; font-size: 10px; }
+.ftable th[data-sort=desc]::after { content: " ▼"; font-size: 10px; }
+.ftable th.sel, .ftable td.sel { width: 30px; padding: 0 0 0 8px; }
+.ftable td.num { text-align: right; }
+.ftable tbody tr:hover { background: var(--hover); }
+.ftable tbody tr.selected { background: var(--sel); color: var(--sel-fg); }
+.ftable tr.empty td { color: var(--muted); text-align: center; }
+.invalid .ftable { border-color: var(--error); }
 .lbl { padding-top: 5px; max-width: 14em; }
 .lbl .req { color: var(--error); margin-left: 2px; }
 .ctl { min-width: 0; }

@@ -113,8 +113,9 @@ type UI interface {
 }
 
 // FormOptions describes a form for UIs without HTML windows. Values are
-// strings for every field type except checkbox (bool) and files ([]string,
-// one path each); empty means no value.
+// strings for every field type except checkbox (bool), files ([]string, one
+// path each) and table (the indices of the selected rows); empty means no
+// value.
 type FormOptions struct {
 	Title       string      `json:"title"`
 	Description string      `json:"description"`
@@ -127,7 +128,7 @@ type FormOptions struct {
 type FormField struct {
 	Name        string       `json:"name"`
 	Label       string       `json:"label"`
-	Type        string       `json:"type"` // text, password, number, date, month, time, select, radio, checkbox, textarea, file, files, folder, saveFile
+	Type        string       `json:"type"` // text, password, number, date, month, time, select, radio, checkbox, textarea, file, files, folder, saveFile, table
 	Options     []FormOption `json:"options"`
 	Required    bool         `json:"required"`
 	Placeholder string       `json:"placeholder"`
@@ -135,6 +136,13 @@ type FormField struct {
 	Accept      []string     `json:"accept"` // file types: ".xlsx"
 	Value       any          `json:"value"`  // current value
 	Error       string       `json:"error"`  // message from a previous attempt
+	// Tab is the label of the tab the field is on ("" = above the tabs).
+	Tab string `json:"tab"`
+	// Columns, Rows and Select describe a table field (see TableOptions);
+	// a table without Select only shows rows.
+	Columns []string   `json:"columns"`
+	Rows    [][]string `json:"rows"`
+	Select  string     `json:"select"`
 }
 
 // FormOption is a choice of a select or radio field.
