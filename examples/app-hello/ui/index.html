@@ -10,10 +10,13 @@
     <h1>こんにちは</h1>
     <p>このページは <code>ui/index.html</code> です。<br>
        <code>xljs pack app.js</code> で exe にすると、ui フォルダも一緒に埋め込まれます。</p>
-    <p id="now"></p>
+    <!-- フォームの値をスクリプトの greet() に渡し、戻り値を state.greeting に入れる -->
+    <form data-action="greet" data-result="greeting">
+      <input name="name" placeholder="お名前" required>
+      <button>挨拶</button>
+    </form>
+    <p class="greeting" data-bind="greeting"></p>
+    <p class="note">起動: <span data-bind="started"></span></p>
   </main>
-  <script>
-    document.getElementById("now").textContent = new Date().toLocaleString("ja-JP");
-  </script>
 </body>
 </html>

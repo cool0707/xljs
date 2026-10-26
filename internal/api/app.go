@@ -139,3 +139,9 @@ func OpenMainWindow(vm *goja.Runtime, env *Env) error {
 	_, err := fn(goja.Undefined())
 	return err
 }
+
+// ExportsHook returns the function that receives the entry's exports (an
+// object of getters, see engine.Bundle): the functions windows can invoke.
+func ExportsHook(env *Env) goja.Value {
+	return env.natives.obj.Get("setExports")
+}

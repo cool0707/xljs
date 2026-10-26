@@ -62,6 +62,7 @@ type webWindow struct {
 	wv     *edge.Chromium
 	core   *edge.ICoreWebView2
 	o      WindowOptions
+	nav    [2]*navHandler
 	ready  bool
 	closed bool
 }
@@ -217,6 +218,8 @@ func (w *webWindow) embed() (err error) {
 		s.PutIsStatusBarEnabled(false)
 	}
 	wv.AddWebResourceRequestedFilter(AssetOrigin+"*", edge.COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL)
+	wv.Init(PageScript)
+	w.keepInside()
 	wv.Resize()
 	wv.Focus()
 	if w.o.URL != "" {
@@ -230,7 +233,8 @@ func (w *webWindow) embed() (err error) {
 var iidICoreWebView2File = mustGUID("{F2C19559-6BC1-4583-A757-90021BE9AFEC}")
 
 // attachedFiles returns the paths of the File objects a page passed to
-// chrome.webview.postMessageWithAdditionalObjects (WebView2 113+).
+// chrome.webview.postMessageWithAdditionalObjects (WebView2 113+), in order;
+// "" for an object whose path cannot be read.
 func attachedFiles(args *edge.ICoreWebView2WebMessageReceivedEventArgs) []string {
 	objs, err := args.GetAdditionalObjects()
 	if err != nil || objs == nil {
@@ -241,30 +245,34 @@ func attachedFiles(args *edge.ICoreWebView2WebMessageReceivedEventArgs) []string
 	if err != nil {
 		return nil
 	}
-	var paths []string
+	paths := make([]string, count)
 	for i := uint32(0); i < count; i++ {
-		v, err := objs.GetValueAtIndex(i)
-		if err != nil || v == nil {
-			continue
-		}
-		// GetValueAtIndex returns an IUnknown pointer.
-		obj := (*comObject)(unsafe.Pointer(v))
-		var f *comObject
-		hr := obj.call(0, uintptr(unsafe.Pointer(&iidICoreWebView2File)), uintptr(unsafe.Pointer(&f)))
-		obj.release()
-		if failed(hr) || f == nil {
-			continue
-		}
-		var p *uint16
-		hr = f.call(3, uintptr(unsafe.Pointer(&p))) // ICoreWebView2File::get_Path
-		f.release()
-		if failed(hr) || p == nil {
-			continue
-		}
-		paths = append(paths, windows.UTF16PtrToString(p))
-		windows.CoTaskMemFree(unsafe.Pointer(p))
+		paths[i] = attachedPath(objs, i)
 	}
 	return paths
+}
+
+func attachedPath(objs *edge.ICoreWebView2ObjectCollectionView, i uint32) string {
+	v, err := objs.GetValueAtIndex(i)
+	if err != nil || v == nil {
+		return ""
+	}
+	// GetValueAtIndex returns an IUnknown pointer.
+	obj := (*comObject)(unsafe.Pointer(v))
+	var f *comObject
+	hr := obj.call(0, uintptr(unsafe.Pointer(&iidICoreWebView2File)), uintptr(unsafe.Pointer(&f)))
+	obj.release()
+	if failed(hr) || f == nil {
+		return ""
+	}
+	var p *uint16
+	hr = f.call(3, uintptr(unsafe.Pointer(&p))) // ICoreWebView2File::get_Path
+	f.release()
+	if failed(hr) || p == nil {
+		return ""
+	}
+	defer windows.CoTaskMemFree(unsafe.Pointer(p))
+	return windows.UTF16PtrToString(p)
 }
 
 // serve answers requests for AssetOrigin from o.Assets.

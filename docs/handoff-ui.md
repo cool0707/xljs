@@ -53,6 +53,38 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
     ページ JS は Linux の Playwright（Chromium）に `chrome.webview` の代役を入れて確認した（リポジトリには含めていない）。
   - 未確認: Windows 実機での見た目・ドロップ・ピッカーの親ウィンドウ。
 
+- **フェーズ 3（アプリモード）: 実装済み**（ブランチ `ccr-5fcdb3cd-o9i3du`）。相互呼び出し・イベント・データバインド・簡易 DOM・evaluate・ファイル実パス・外部 URL。
+  - 画面側ランタイム: `internal/ui/web/xljs.js`（`ui.PageScript`）を Native が `AddScriptToExecuteOnDocumentCreated`（`wv.Init`）で
+    全ページに注入。`https://app.xljs` のページだけで動き、組み込みページ（`/_xljs/`）では何もしない。`xljs` は
+    `invoke` `handle` `emit` `on` `off` `state` `ready` `formValues`。属性は `data-bind`（`a.b` のネスト可）`data-show`（`!a` で否定）
+    `data-model`（双方向。初期値はスクリプトに値がなければ画面から送る）`data-action`（フォーム内ならフォームの値、`data-args`、
+    `data-result` で戻り値を state へ。実行中は disabled＋`xljs-busy`）。`<form>` の送信は常に既定の動作を止める（再読み込み防止）。
+  - スクリプト側: prelude の `AppWindow`（`state` `invoke` `emit` `on` `off` `$` `evaluate` `close` `closed`）と `app.handle`。
+    メッセージはすべて `{"xljs": 種類, ...}`（組み込みページの `{"type": ...}` と混ざらない）: `ready`→`init`（state のスナップショットと
+    `$().on` の登録一覧）、`invoke`/`result`/`error`、`event`、`state`（`deleted`）、`dom`（`op`。読み取りは `id` 付き、`on`/`off` は `hid`）、
+    `dom-event`、`eval`（`code` と `fn`）、`unhandled`（画面で処理されなかったスクリプトのエラー）。
+    ページの ready 前に送ったものはキューに入れ、ready で init を送ってから流す（state と on/off はスナップショットに含まれるので捨てる）。
+    再読み込み（2 回目の ready）では応答待ちを reject して init を送り直す。閉じたら応答待ちを reject、以降の送信は無視。
+  - 値（wire）: JSON.stringify の replacer で `{"$date"}` `{"$file"}` `{"$dir"}` `{"$bytes"}`（base64）`{"$error"}`、Map→オブジェクト、
+    Set→配列。画面の `File`/`FileList` は `postMessageWithAdditionalObjects` に添付して `{"$attach": i}`（同じ File は同じ番号）。
+    `attachedFiles` は取得できなかった位置を "" にして番号をそろえる（組み込みページ向けには prelude で "" を除く）。
+  - エントリの export: esbuild の ESM 出力の末尾 `export { a, b as c };` を `engine.moveExports` が取り除き、ラッパー関数の先頭（banner 行）で
+    `__xljs_exports({ get a() {...}, ... })` を呼ぶ（getter なので TLA 中でも function 宣言は呼べ、後の代入も見える）。
+    エンジンはラッパーを `fn(undefined, native.setExports)` で呼ぶ。`app.handle` は export と同名ならエラー。ハンドラの `this` はウィンドウ。
+  - エラー: 画面から呼ばれた関数の throw は画面の Promise を reject。画面で処理されなければ `unhandled` でスクリプトに戻り
+    `native.uiError`（エラーダイアログ、スクリプトは続行）。`win.on` / `$().on` のハンドラのエラーも同じ（`guarded`）。
+  - 外部 URL（2.6）: `internal/ui/nav_windows.go` で NavigationStarting / NewWindowRequested の COM ハンドラを自前で実装
+    （vtable 位置は pkg/edge の `iCoreWebView2Vtbl` と WebView2.h）。app.xljs・about:・data: 以外への遷移は取り消し、
+    ポップアップは常に止め、http(s)/mailto は `OpenPath`（既定のブラウザ）で開く。
+  - mock: 応答の `"app"` はウィンドウごとのシナリオ（`ui.AppStep`: invoke/emit/state/event/handle/wait/close）。mock がページ役で
+    ready を送り、init を待ってから順に実行し、最後に閉じる。スクリプトからのメッセージはログに出し、読み取り・evaluate は null、
+    `win.invoke` は handle で指定した値（既定 null）で答える。
+  - テスト: `testdata/scripts/bridge.test.js`（mock シナリオ、ログは `engine_test.go` で検査）、`TestEntryExports`、
+    Windows CI の `TestPageRuntime`（実 WebView2 で注入・data-bind・eval・ポップアップ／外部遷移の阻止）。
+    `xljs.js` は Playwright（Chromium）に `chrome.webview` の代役を入れて確認した（リポジトリには含めていない）。
+    サンプル `examples/app-aggregate/` は mock と pack 後の実行で確認。
+  - 未確認: Windows 実機での動作全般（COM ハンドラ、ファイルの実パス、見た目）。
+
 ### 1.1 の調査結果（go-webview2）
 
 - `jchv/go-webview2` は WebResourceRequested はあるが、追加オブジェクト（ファイル実パス）などが無い。

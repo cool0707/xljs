@@ -22,17 +22,20 @@ import (
 //	  "showDirectoryPicker": ["data", null],
 //	  "progress": [{"cancelAfter": 3}],
 //	  "form": [{"src": "data", "tax": true}, null],
-//	  "table": [[0, 2], null]
+//	  "table": [[0, 2], null],
+//	  "app": [[{"invoke": "aggregate", "args": ["2026-04"]}, {"close": true}]]
 //	}
 //
 // When a queue is empty the call behaves as if the user cancelled. A form
 // answer lists the values that differ from the current ones; a table
-// answer lists the indices of the chosen rows. Windows (OpenWindow) are
-// logged and closed immediately.
+// answer lists the indices of the chosen rows. Each window (OpenWindow)
+// plays the next "app" scenario (see AppStep) and then closes; without one
+// it is logged and closed immediately.
 type Mock struct {
 	Log io.Writer
 
 	mu      sync.Mutex
+	logMu   sync.Mutex // windows log from their own goroutine
 	answers map[string][]json.RawMessage
 }
 
@@ -85,7 +88,9 @@ func (m *Mock) next(key string, dst any) bool {
 
 func (m *Mock) logf(format string, args ...any) {
 	if m.Log != nil {
+		m.logMu.Lock()
 		fmt.Fprintf(m.Log, "[mock] "+format+"\n", args...)
+		m.logMu.Unlock()
 	}
 }
 
@@ -229,6 +234,10 @@ func (m *Mock) Table(o TableOptions) ([]int, bool) {
 // closed it without doing anything.
 func (m *Mock) OpenWindow(o WindowOptions) (Window, error) {
 	m.logf("window.open(%s, %s, %dx%d)", q(o.Title), q(o.URL), o.Width, o.Height)
+	var steps []AppStep
+	if m.next("app", &steps) {
+		return newAppWindow(m, o, steps), nil
+	}
 	w := &mockWindow{m: m, o: o}
 	w.Close()
 	return w, nil

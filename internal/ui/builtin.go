@@ -16,6 +16,13 @@ const BuiltinPrefix = "_xljs/"
 // (ui.table) with their scripts and styles.
 var BuiltinFS fs.FS
 
+// PageScript is the page runtime (the xljs object, data-bind and friends)
+// that windows run in every page of the script before the page's own
+// scripts.
+//
+//go:embed web/xljs.js
+var PageScript string
+
 func init() {
 	sub, err := fs.Sub(webFiles, "web")
 	if err != nil {
