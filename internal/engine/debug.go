@@ -122,7 +122,9 @@ func runDebug(o Options, code []byte) (int, error) {
 				// A call of the page, which waits for the answer.
 				l.addPending()
 				l.post(func() error {
-					s.w.Post(debugAnswer + string(s.handle([]byte(req))))
+					res := s.handle([]byte(req))
+					s.w.Post(debugAnswer + string(res))
+					trace("answer " + short(string(res)))
 					return nil
 				})
 				return

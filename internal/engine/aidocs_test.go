@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -24,6 +25,8 @@ func TestAIDocs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// A Windows checkout may have CRLF line ends.
+		src = bytes.ReplaceAll(src, []byte("\r\n"), []byte("\n"))
 		if name == "prompt.md" {
 			if n := utf8.RuneCount(src); n > promptLimit {
 				t.Errorf("prompt.md is %d characters; keep it within %d", n, promptLimit)
