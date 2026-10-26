@@ -292,6 +292,11 @@ func (w *slowWindow) closeAs(by string) {
 	})
 }
 
+// windowUI shows forms and tables as (slowUI) windows.
+type windowUI struct{ *slowUI }
+
+func (windowUI) SupportsWindows() bool { return true }
+
 func TestAppWindowKeepsRunning(t *testing.T) {
 	m, _ := ui.NewMockFromJSON("", io.Discard)
 	app := "// ==xljs==\n// @mode app\n// ==/xljs==\n"
@@ -318,6 +323,21 @@ func TestAppWindowKeepsRunning(t *testing.T) {
 	}
 	if got := strings.Join(u.events, ","); got != "open b,open sub,closed by script,closed by script" {
 		t.Fatalf("events = %s", got)
+	}
+
+	// exit() after awaiting a window that the user closed (the promise is
+	// resolved from Go, outside of any call into the script).
+	for _, src := range []string{
+		"await app.open({ title: 'sub' }).closed; exit(7); console.log('after')",
+		"app.open({ title: 'sub' }).closed.then(() => { exit(7); console.log('after') })",
+		"const r = await ui.table([1], { selectable: true }); if (!r.length) exit(7); console.log('after')",
+	} {
+		u = &slowUI{Mock: m, after: 20 * time.Millisecond}
+		out.Reset()
+		code, err = Run(Options{ScriptPath: writeScript(t, "d.js", src), UI: windowUI{u}, Stdout: &out, Stderr: io.Discard})
+		if code != 7 || err != nil || out.Len() != 0 {
+			t.Errorf("%s: exit %d, %v, stdout %q", src, code, err, out.String())
+		}
 	}
 
 	// Through ui.Run the script runs on its own thread and the UI calls
