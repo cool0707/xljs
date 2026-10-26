@@ -114,8 +114,8 @@ ok(Array.isArray(names.sheets));
 deepEqual(names.sheets.map((s) => s.name), ["明細 ", "Data", "DATA2"]);
 const twins = workbooks.create();
 twins.addSheet("a");
-twins.addSheet("A");
-equal(twins.sheets["A"].name, "A");
-equal(twins.sheet(" a "), null, "ambiguous");
+twins.addSheet("ａ");
+equal(twins.sheets["ａ"].name, "ａ");
+equal(twins.sheet(" A "), null, "ambiguous");
 
 console.log("xlsx ok");
