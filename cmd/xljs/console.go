@@ -24,8 +24,8 @@ type consoleState struct {
 }
 
 // fromExplorer reports whether the process was not started from a
-// terminal: it got a console of its own (xljs.exe double-clicked) or none
-// at all (xljsw.exe).
+// terminal: it got a console of its own (xljsc.exe double-clicked) or none
+// at all (xljs.exe).
 func (c *consoleState) fromExplorer() bool { return c.own || !c.has }
 
 func (c *consoleState) finish() {

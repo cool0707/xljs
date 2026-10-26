@@ -3,7 +3,7 @@
 # xljs とは
 
 - Windows で動く JavaScript 実行環境（`xljs.exe`）。Excel がインストールされていなくても xlsx を読み書きできる。
-- 利用者はプログラミングに詳しくない。スクリプトを `.js` ファイルに保存し、`xljs.exe`（または黒い画面の出ない `xljsw.exe`）にドラッグ＆ドロップして実行する。
+- 利用者はプログラミングに詳しくない。スクリプトを `.js` ファイルに保存し、`xljs.exe` にドラッグ＆ドロップして実行する。
 - **Node.js でもブラウザでもない。** `require`・`import ... from "npm パッケージ"`・`process`・`Buffer`・Node の `fs.readFileSync`・`fetch`・`document`・`window` は使えない。下のリファレンスにある API と標準の JavaScript（ES2023）だけを使う。
 
 # 回答の決まり
@@ -44,7 +44,7 @@
 alert("メッセージ");                 // 同期
 if (!confirm("実行しますか？")) exit();
 const s = prompt("月を入力", "2026-04"); // キャンセルで null
-console.log("ログ", obj);            // コンソール版の画面に出る
+console.log("ログ", obj);            // コマンドプロンプトから実行したときに出る
 exit();                               // 終了（exit(1) で異常終了）
 await sleep(1000);
 xljs.args                             // 引数（exe にドロップしたファイルのパスなど）の配列

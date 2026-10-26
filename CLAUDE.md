@@ -39,12 +39,12 @@ JavaScript/TypeScript のスクリプトで Excel・CSV・JSON を処理する W
 ```
 go test ./...                       # Linux でも全ロジックをテスト可（ネイティブ UI 以外）
 GOOS=windows go vet ./...           # Windows 専用コードのコンパイル確認
-make windows / make dist            # dist/x64/{xljs,xljsw}.exe と配布 zip（x64/arm64）
+make windows / make dist            # dist/x64/{xljs,xljsc}.exe と配布 zip（x64/arm64）
 xljs --ui=mock --ui-answers=a.json --lang=ja script.js   # ダイアログなしで実行
 xljs --debug script.ts                                    # デバッグウィンドウ＋開発者ツール（Windows）
 ```
 
-- Go 1.26（go.mod）。cgo 不要。`-H=windowsgui` で GUI 版（xljsw.exe）。
+- Go 1.26（go.mod）。cgo 不要。`-H=windowsgui` で GUI 版（xljs.exe）。付けないとコンソール版（xljsc.exe）。
 - CI（.github/workflows/ci.yml）: ubuntu と windows で vet+test、Windows ではダイアログ生成テスト（`internal/ui/native_windows_test.go`、`testAutoClose` で自動クローズ）も走る。失敗時はテスト出力をアノテーションに出す。タグ `v*` で Release に zip を添付。
 - 出力の見た目確認: LibreOffice があれば `soffice --headless --convert-to pdf` → `pdftoppm` で画像化できる。
 - アイコン再生成: `python3 tools/make_icon.py <logo>` → rsrc で syso を作り直す（README 参照）。
