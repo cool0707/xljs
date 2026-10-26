@@ -1,0 +1,62 @@
+package api
+
+import (
+	"embed"
+	"path"
+	"sort"
+	"strings"
+)
+
+// Day.js (https://day.js.org, MIT) with the Japanese locale and the plugins
+// in dayjs/plugin, unmodified from the npm package (version in
+// dayjs/README.md). To update, copy dayjs.min.js, locale/ja.js and the same
+// plugin files from a newer package.
+//
+//go:embed dayjs/dayjs.min.js dayjs/locale/ja.js dayjs/plugin/*.js
+var dayjsFS embed.FS
+
+// dayjsPlaceholder in prelude.js is replaced by dayjsBundle().
+const dayjsPlaceholder = "/*@dayjs@*/null"
+
+// dayjsBundle returns a JavaScript expression that evaluates to
+// { dayjs, locales, plugins } without defining any globals: each UMD file
+// runs as a CommonJS module (module, exports and require are provided).
+func dayjsBundle() string {
+	var b strings.Builder
+	b.WriteString("(function () { const mods = {}; const require = (name) => mods[name]; ")
+	b.WriteString("const load = (name, fn) => { const module = { exports: {} }; fn(module, module.exports, require); mods[name] = module.exports; }; ")
+	module := func(name, file string) {
+		src, err := dayjsFS.ReadFile(file)
+		if err != nil {
+			panic(err)
+		}
+		b.WriteString("load(" + quoteJS(name) + ", function (module, exports, require) {\n")
+		b.Write(src)
+		b.WriteString("\n});\n")
+	}
+	module("dayjs", "dayjs/dayjs.min.js")
+	module("dayjs/locale/ja", "dayjs/locale/ja.js")
+	entries, err := dayjsFS.ReadDir("dayjs/plugin")
+	if err != nil {
+		panic(err)
+	}
+	var plugins []string
+	for _, e := range entries {
+		plugins = append(plugins, strings.TrimSuffix(e.Name(), ".js"))
+	}
+	sort.Strings(plugins)
+	for _, p := range plugins {
+		module("dayjs/plugin/"+p, path.Join("dayjs/plugin", p+".js"))
+	}
+	b.WriteString("return { dayjs: mods.dayjs, plugins: [")
+	for i, p := range plugins {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString("mods[" + quoteJS("dayjs/plugin/"+p) + "]")
+	}
+	b.WriteString("] }; })()")
+	return b.String()
+}
+
+func quoteJS(s string) string { return `"` + strings.ReplaceAll(s, `"`, `\"`) + `"` }

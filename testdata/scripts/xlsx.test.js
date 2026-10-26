@@ -97,4 +97,25 @@ throws(() => workbooks.create().save(), /保存先/);
 equal(workbooks.columnName(28), "AB");
 equal(workbooks.cellName(3, 2), "B3");
 
+// Sheet names match ignoring case, surrounding spaces and full/half width
+// when only one sheet fits; exact names win.
+const names = workbooks.create();
+names.addSheet("明細 ");
+names.addSheet("Data");
+names.addSheet("DATA2");
+equal(names.sheets["明細"].name, "明細 ");
+equal(names.sheets["data"].name, "Data");
+equal(names.sheets["ＤＡＴＡ２"].name, "DATA2");
+equal(names.sheet("data2").name, "DATA2");
+equal(names.sheets["none"], undefined);
+equal(names.sheet("none"), null);
+equal(names.sheets.length, 3);
+ok(Array.isArray(names.sheets));
+deepEqual(names.sheets.map((s) => s.name), ["明細 ", "Data", "DATA2"]);
+const twins = workbooks.create();
+twins.addSheet("a");
+twins.addSheet("ａ");
+equal(twins.sheets["ａ"].name, "ａ");
+equal(twins.sheet(" A "), null, "ambiguous");
+
 console.log("xlsx ok");

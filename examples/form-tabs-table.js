@@ -37,7 +37,7 @@ const values = await ui.form({
   submit: "集計",
   async onSubmit(v, ctx) {
     const codes = new Set(v.targets.map((b) => b.支店));
-    const files = v.src.walk({ glob: "*.xlsx", exclude: ["~$*"] }).toArray();
+    const files = v.src.walk("*.xlsx").toArray();
     /** @type {any[]} */
     const rows = [];
     for (const h of ctx.withProgress(files)) {

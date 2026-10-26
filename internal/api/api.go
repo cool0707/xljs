@@ -60,7 +60,10 @@ func (e *Env) Cleanup() {
 }
 
 //go:embed prelude.js
-var preludeSrc string
+var preludeRaw string
+
+// preludeSrc is the prelude with Day.js put in (see dayjsBundle).
+var preludeSrc = strings.Replace(preludeRaw, dayjsPlaceholder, dayjsBundle(), 1)
 
 var (
 	preludeOnce sync.Once

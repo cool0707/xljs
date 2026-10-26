@@ -219,6 +219,11 @@ try {
 			Assets:   assets,
 			Isolated: true,
 			OnMessage: func(m string, _ []string) {
+				// The page runtime (xljs.js) says {"xljs":"ready"} too, before
+				// or after the worker's answer.
+				if strings.HasPrefix(m, `{"xljs"`) {
+					return
+				}
 				select {
 				case got <- m:
 				default:

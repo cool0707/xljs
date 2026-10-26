@@ -119,7 +119,7 @@ declare global {
 
   /** ファイルを選択する。キャンセル時は空配列 */
   function showOpenFilePicker(options?: OpenFilePickerOptions): Promise<FileSystemFileHandle[]>;
-  /** 保存先を選択する。キャンセル時は null */
+  /** 保存先を選択する。キャンセル時は null。types を省略すると suggestedName の拡張子を種類と既定の拡張子にする */
   function showSaveFilePicker(options?: SaveFilePickerOptions): Promise<FileSystemFileHandle | null>;
   /** フォルダを選択する。キャンセル時は null */
   function showDirectoryPicker(options?: DirectoryPickerOptions): Promise<FileSystemDirectoryHandle | null>;
@@ -151,6 +151,11 @@ declare global {
   interface WithProgressOptions<T> extends ProgressOptions {
     /** 各要素の表示ラベル。既定はハンドルなら relativePath */
     label?: (item: T, index: number) => string;
+    /**
+     * キャンセルされたとき: "exit"（既定）はスクリプトを終了する（終了コード 1。フォームの ctx.withProgress では onSubmit を終える）。
+     * "break" は反復を終えるだけ（続きの処理で ui.cancelled / ctx.cancelled を見る）
+     */
+    onCancel?: "exit" | "break";
   }
 
   interface Ui {
@@ -162,7 +167,7 @@ declare global {
     showDirectoryPicker: typeof showDirectoryPicker;
     /** 進捗表示を開く */
     progress(options?: ProgressOptions | string): Progress;
-    /** 反復しながら進捗を表示する。キャンセルされると反復が途中で終わる */
+    /** 反復しながら進捗を表示する。キャンセルされるとスクリプトを終了する（onCancel: "break" なら反復が終わるだけ） */
     withProgress<T>(iterable: Iterable<T>, options?: WithProgressOptions<T> | string): Generator<T, void, undefined>;
     withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T> | string): AsyncIterableIterator<T>;
     /**
@@ -258,7 +263,7 @@ declare global {
      * コンソール・mock では表を出力する
      */
     table(name: string, rows: readonly unknown[], columns?: (string | TableColumn)[]): void;
-    /** ui.withProgress と同じ。進捗をフォーム内に表示し、中止されると反復が終わる */
+    /** ui.withProgress と同じ。進捗をフォーム内に表示し、中止されると onSubmit を終える（onCancel: "break" なら反復が終わるだけ） */
     withProgress<T>(iterable: Iterable<T>, options?: WithProgressOptions<T>): Generator<T, void, undefined>;
     withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T>): AsyncIterableIterator<T>;
   }
@@ -507,6 +512,7 @@ declare global {
     /** 既定 "auto"（BOM / UTF-8 / CP932 を自動判定） */
     readText(encoding?: Encoding): string;
     readBytes(): ArrayBuffer;
+    /** 既定 "utf8"（.csv / .tsv は Excel 向けに "utf8bom"） */
     writeText(text: string, encoding?: Encoding): this;
     appendText(text: string, encoding?: Encoding): this;
     writeBytes(data: ArrayBuffer | ArrayBufferView): this;
@@ -522,6 +528,15 @@ declare global {
     directories?: boolean;
     /** ファイルを返す（既定 true） */
     files?: boolean;
+    /**
+     * 隠しファイル・システムファイル（Windows の属性）、"." で始まる名前、Office のロックファイル（~$*）も返す（既定 false）。
+     * false では隠しフォルダの中も走査しない
+     */
+    hidden?: boolean;
+  }
+  interface ListOptions {
+    /** 隠しファイル・システムファイル、"." で始まる名前、~$* も返す（既定 false） */
+    hidden?: boolean;
   }
 
   interface WalkResult<T extends FileSystemHandle = FileSystemHandle> extends Iterable<T>, AsyncIterable<T> {
@@ -544,8 +559,8 @@ declare global {
     // xljs extensions
     /** サブフォルダを含めて走査する */
     walk(options?: WalkOptions | string | string[]): WalkResult<FileSystemFileHandle>;
-    /** 直下の項目を同期的に列挙する */
-    list(): (FileSystemFileHandle | FileSystemDirectoryHandle)[];
+    /** 直下の項目を同期的に列挙する（既定では隠しファイル・システムファイルを除く） */
+    list(options?: ListOptions): (FileSystemFileHandle | FileSystemDirectoryHandle)[];
     /** 直下のファイルのハンドル（存在確認なし） */
     file(name: string): FileSystemFileHandle;
     /** 直下のフォルダのハンドル（存在確認なし） */
@@ -593,6 +608,7 @@ declare global {
     isDirectory(path: PathLike): boolean;
     stat(path: PathLike): FileStat | null;
     readText(path: PathLike, encoding?: Encoding): string;
+    /** 既定 "utf8"（.csv / .tsv は Excel 向けに "utf8bom"） */
     writeText(path: PathLike, text: string, encoding?: Encoding): void;
     appendText(path: PathLike, text: string, encoding?: Encoding): void;
     readBytes(path: PathLike): ArrayBuffer;
@@ -605,11 +621,11 @@ declare global {
     readJSONL<T = any>(src: PathLike | Blob, options?: JsonReadOptions): T[];
     /** 配列を JSON Lines で書き出す */
     writeJSONL(dest: PathLike, rows: Iterable<unknown>, options?: JsonWriteOptions): void;
-    /** 直下の名前一覧 */
-    list(path?: PathLike): string[];
+    /** 直下の名前一覧（既定では隠しファイル・システムファイルを除く） */
+    list(path?: PathLike, options?: ListOptions): string[];
     walk(path: PathLike, options?: WalkOptions | string | string[]): WalkResult<FileSystemFileHandle>;
     /** カレントフォルダ（または cwd）からの glob */
-    glob(pattern: string, options?: { cwd?: PathLike; exclude?: string | string[] }): FileSystemFileHandle[];
+    glob(pattern: string, options?: { cwd?: PathLike; exclude?: string | string[]; hidden?: boolean }): FileSystemFileHandle[];
     mkdir(path: PathLike): void;
     remove(path: PathLike, options?: { recursive?: boolean }): void;
     rename(from: PathLike, to: PathLike): void;
@@ -672,7 +688,10 @@ declare global {
     delimiter?: string;
     /** header: false のときの列名 */
     columns?: string[];
-    /** 数値・真偽値に変換し、空欄を null にする */
+    /**
+     * 値の変換（既定 true）: 数値（"1,234" も可。先頭が 0 のコードや 16 桁以上は文字列のまま）、
+     * 日付（2026/4/1、2026-04-01 09:30 → Date）、TRUE/FALSE、空欄は null。false ですべて文字列
+     */
     cast?: boolean;
     trim?: boolean;
     skipEmptyLines?: boolean;
@@ -700,10 +719,10 @@ declare global {
   }
   interface Csv {
     parse(text: string, options?: CsvParseOptions & { header?: true }): Row[];
-    parse(text: string, options: CsvParseOptions & { header: false }): string[][];
+    parse(text: string, options: CsvParseOptions & { header: false }): CellValue[][];
     stringify(rows: Row[] | unknown[][], options?: CsvStringifyOptions): string;
     read(src: PathLike | Blob, options?: CsvReadOptions & { header?: true }): Row[];
-    read(src: PathLike | Blob, options: CsvReadOptions & { header: false }): string[][];
+    read(src: PathLike | Blob, options: CsvReadOptions & { header: false }): CellValue[][];
     write(dest: PathLike, rows: Row[] | unknown[][], options?: CsvWriteOptions): void;
   }
   const csv: Csv;
@@ -903,7 +922,7 @@ declare global {
   interface Workbook {
     readonly path: string | null;
     readonly sheetNames: string[];
-    /** シート一覧。book.sheets["売上"] のように名前でも参照できる */
+    /** シート一覧。book.sheets["売上"] のように名前でも参照できる（大文字小文字・前後の空白・全角半角の違いは、該当が 1 つなら許す） */
     readonly sheets: Worksheet[] & { [name: string]: Worksheet | undefined };
     sheet(nameOrIndex: string | number): Worksheet | null;
     addSheet(name: string): Worksheet;
@@ -929,6 +948,105 @@ declare global {
     cellName(row: number, column: number): string;
   }
   const workbooks: Workbooks;
+
+  // ------------------------------------------------------------------ dayjs
+
+  /**
+   * Day.js（https://day.js.org/）。組み込み済みで、日本語ロケールとプラグイン
+   * （customParseFormat, isBetween, isSameOrAfter, isSameOrBefore, minMax, quarterOfYear,
+   * weekOfYear, isoWeek, dayOfYear, duration, relativeTime, advancedFormat, isLeapYear,
+   * isToday, isTomorrow, isYesterday, weekday, localeData）を読み込み済み。
+   * "2026-04-01" や "2026/4/1" はローカル時刻の 0 時として読む。
+   * Dayjs のオブジェクトは Date と同じようにセル・CSV・JSON・表・フォームに渡せる。
+   */
+  type DayjsInput = Dayjs | Date | string | number | null | undefined;
+  type DayjsUnit = "millisecond" | "second" | "minute" | "hour" | "day" | "week" | "month" | "quarter" | "year" | "date" |
+    "ms" | "s" | "m" | "h" | "d" | "w" | "M" | "Q" | "y" | "isoWeek" |
+    "milliseconds" | "seconds" | "minutes" | "hours" | "days" | "weeks" | "months" | "quarters" | "years";
+  interface Dayjs {
+    /** "YYYY-MM-DD"、"YYYY年M月D日(ddd)"、"HH:mm:ss" など */
+    format(template?: string): string;
+    isValid(): boolean;
+    toDate(): Date;
+    /** UTC の ISO 形式（JSON.stringify と同じ） */
+    toISOString(): string;
+    toJSON(): string;
+    valueOf(): number;
+    unix(): number;
+    clone(): Dayjs;
+    year(): number; year(value: number): Dayjs;
+    /** 月（0〜11） */
+    month(): number; month(value: number): Dayjs;
+    /** 日（1〜31） */
+    date(): number; date(value: number): Dayjs;
+    /** 曜日（0 = 日曜） */
+    day(): number; day(value: number): Dayjs;
+    hour(): number; hour(value: number): Dayjs;
+    minute(): number; minute(value: number): Dayjs;
+    second(): number; second(value: number): Dayjs;
+    millisecond(): number; millisecond(value: number): Dayjs;
+    get(unit: DayjsUnit): number;
+    set(unit: DayjsUnit, value: number): Dayjs;
+    add(value: number, unit?: DayjsUnit): Dayjs;
+    subtract(value: number, unit?: DayjsUnit): Dayjs;
+    startOf(unit: DayjsUnit): Dayjs;
+    endOf(unit: DayjsUnit): Dayjs;
+    /** 差（this - other）。float: true で小数 */
+    diff(other?: DayjsInput, unit?: DayjsUnit, float?: boolean): number;
+    daysInMonth(): number;
+    isBefore(other?: DayjsInput, unit?: DayjsUnit): boolean;
+    isAfter(other?: DayjsInput, unit?: DayjsUnit): boolean;
+    isSame(other?: DayjsInput, unit?: DayjsUnit): boolean;
+    isSameOrBefore(other?: DayjsInput, unit?: DayjsUnit): boolean;
+    isSameOrAfter(other?: DayjsInput, unit?: DayjsUnit): boolean;
+    /** inclusivity: "()"（既定）"[]" "[)" "(]" */
+    isBetween(a: DayjsInput, b: DayjsInput, unit?: DayjsUnit | null, inclusivity?: "()" | "[]" | "[)" | "(]"): boolean;
+    quarter(): number; quarter(value: number): Dayjs;
+    week(): number; week(value: number): Dayjs;
+    isoWeek(): number; isoWeek(value: number): Dayjs;
+    isoWeekday(): number; isoWeekday(value: number): Dayjs;
+    isoWeekYear(): number;
+    dayOfYear(): number; dayOfYear(value: number): Dayjs;
+    weekday(): number; weekday(value: number): Dayjs;
+    isLeapYear(): boolean;
+    isToday(): boolean;
+    isTomorrow(): boolean;
+    isYesterday(): boolean;
+    /** "3日前" など */
+    from(other: DayjsInput, withoutSuffix?: boolean): string;
+    to(other: DayjsInput, withoutSuffix?: boolean): string;
+    fromNow(withoutSuffix?: boolean): string;
+    toNow(withoutSuffix?: boolean): string;
+    locale(): string; locale(name: string): Dayjs;
+  }
+  interface DayjsDuration {
+    format(template?: string): string;
+    asMilliseconds(): number; asSeconds(): number; asMinutes(): number; asHours(): number; asDays(): number; asMonths(): number; asYears(): number;
+    milliseconds(): number; seconds(): number; minutes(): number; hours(): number; days(): number; months(): number; years(): number;
+    add(value: number | DayjsDuration, unit?: DayjsUnit): DayjsDuration;
+    subtract(value: number | DayjsDuration, unit?: DayjsUnit): DayjsDuration;
+    humanize(withSuffix?: boolean): string;
+    toISOString(): string;
+  }
+  interface DayjsStatic {
+    /** 引数なしで現在時刻。format を渡すとその形式で読む（strict: true で厳密に） */
+    (date?: DayjsInput, format?: string | string[], strict?: boolean): Dayjs;
+    (date: DayjsInput, format: string | string[], locale: string, strict?: boolean): Dayjs;
+    isDayjs(value: unknown): value is Dayjs;
+    unix(seconds: number): Dayjs;
+    max(...dates: Dayjs[]): Dayjs | null;
+    max(dates: Dayjs[]): Dayjs | null;
+    min(...dates: Dayjs[]): Dayjs | null;
+    min(dates: Dayjs[]): Dayjs | null;
+    duration(value: number, unit?: DayjsUnit): DayjsDuration;
+    duration(value: Partial<Record<"milliseconds" | "seconds" | "minutes" | "hours" | "days" | "weeks" | "months" | "years", number>>): DayjsDuration;
+    /** 既定 "ja"。"en" で英語 */
+    locale(name?: string): string;
+    extend(plugin: unknown, option?: unknown): DayjsStatic;
+    /** Excel の日付のシリアル値（日付の書式がないセルの数値）を日時にする（xljs 拡張） */
+    fromExcel(serial: number): Dayjs;
+  }
+  const dayjs: DayjsStatic;
 
   interface ObjectConstructor {
     groupBy<K extends PropertyKey, T>(items: Iterable<T>, keySelector: (item: T, index: number) => K): Partial<Record<K, T[]>>;

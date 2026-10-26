@@ -10,6 +10,9 @@ fs.writeText("data/note.txt", "x");
 fs.writeText("data/sub/c.xlsx", "x");
 fs.writeText("data/sub/deep/d.xlsx", "x");
 fs.writeText("data/skip/e.xlsx", "x");
+fs.mkdir("data/.hidden");
+fs.writeText("data/.hidden/h.xlsx", "x");
+fs.writeText("data/.dot.txt", "x");
 
 const dir = fs.dir("data");
 ok(dir instanceof FileSystemDirectoryHandle);
@@ -19,12 +22,22 @@ ok(path.isAbsolute(dir.path));
 
 // walk: patterns without "/" match the base name at any depth, case-insensitively.
 const rel = (list) => list.map((h) => h.relativePath.replaceAll("\\", "/")).sort();
-deepEqual(rel(dir.walk({ glob: "*.xlsx", exclude: ["~$*", "skip"] }).toArray()),
+deepEqual(rel(dir.walk({ glob: "*.xlsx", exclude: "skip" }).toArray()),
   ["B.XLSX", "a.xlsx", "sub/c.xlsx", "sub/deep/d.xlsx"]);
+// Hidden entries ("." names, Office lock files "~$*", hidden/system
+// attributes on Windows) and hidden folders' contents are left out by default.
+deepEqual(rel(dir.walk({ glob: "*.xlsx", exclude: "sub", hidden: true }).toArray()),
+  [".hidden/h.xlsx", "B.XLSX", "a.xlsx", "skip/e.xlsx", "~$a.xlsx"]);
+equal(dir.walk({ hidden: true }).length, 9);
+deepEqual(fs.list("data").sort(), ["B.XLSX", "a.xlsx", "note.txt", "skip", "sub"]);
+equal(fs.list("data", { hidden: true }).length, 8);
+equal(dir.list({ hidden: true }).length, 8);
+equal(fs.glob("data/**/*.xlsx").length, 5);
+equal(fs.glob("data/**/*.xlsx", { hidden: true }).length, 7);
 deepEqual(rel(dir.walk({ glob: "sub/**/*.xlsx" }).toArray()), ["sub/c.xlsx", "sub/deep/d.xlsx"]);
 deepEqual(rel(dir.walk({ glob: "*.xlsx", exclude: "sub/deep" }).toArray()).filter((p) => p.startsWith("sub")), ["sub/c.xlsx"]);
 deepEqual(rel(dir.walk({ directories: true, files: false }).toArray()), ["skip", "sub", "sub/deep"]);
-equal(dir.walk().length, 7);
+equal(dir.walk().length, 6);
 
 // for await and for..of both work on walk().
 let n = 0;
@@ -36,7 +49,7 @@ equal(n, 2);
 const names = [];
 for await (const [name, h] of dir.entries()) names.push(name + (h.kind === "directory" ? "/" : ""));
 ok(names.includes("sub/") && names.includes("a.xlsx") && !names.includes("c.xlsx"));
-equal(dir.list().length, 6);
+equal(dir.list().length, 5);
 
 // fs.glob relative to cwd.
 deepEqual(rel(fs.glob("data/sub/**/*.xlsx")).map((p) => p.replace(/^data\//, "")), ["sub/c.xlsx", "sub/deep/d.xlsx"]);
@@ -85,6 +98,16 @@ fs.writeText("bom.txt", "a", "utf8bom");
 fs.appendText("bom.txt", "b", "utf8bom"); // BOM only once
 equal(fs.readBytes("bom.txt").byteLength, 5);
 equal(fs.readText("bom.txt"), "ab");
+// .csv / .tsv get a BOM by default (Excel reads them as UTF-8); other files do not.
+fs.writeText("hand.csv", "名前\r\n");
+fs.appendText("hand.csv", "山田\r\n");
+fs.dir(".").file("hand.tsv").writeText("x");
+equal(new Uint8Array(fs.readBytes("hand.csv"))[0], 0xef);
+equal(new Uint8Array(fs.readBytes("hand.tsv"))[0], 0xef);
+equal(fs.readText("hand.csv"), "名前\r\n山田\r\n");
+equal(fs.readBytes("data/note.txt").byteLength, 1);
+fs.writeText("plain.csv", "a", "utf8");
+equal(fs.readBytes("plain.csv").byteLength, 1);
 equal(await (await fs.file("sjis.txt").getFile()).text("auto"), "表示テスト");
 
 // fs helpers.
