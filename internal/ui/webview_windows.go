@@ -19,6 +19,7 @@ import (
 	"github.com/cool0707/xljs/internal/i18n"
 	"github.com/wailsapp/go-webview2/pkg/edge"
 	"github.com/wailsapp/go-webview2/webviewloader"
+	"golang.org/x/sys/windows"
 )
 
 // WebView2DownloadURL is where users get the WebView2 runtime.
@@ -107,6 +108,15 @@ func WebView2Version() string {
 	return v
 }
 
+// SupportsWindows is true: forms and tables are HTML windows.
+func (n *Native) SupportsWindows() bool { return true }
+
+// Form is not used: the script shows forms as HTML windows.
+func (n *Native) Form(o FormOptions) (map[string]any, bool) { return nil, false }
+
+// Table is not used: the script shows tables as HTML windows.
+func (n *Native) Table(o TableOptions) ([]int, bool) { return nil, false }
+
 // OpenWindow opens a window showing o.URL in WebView2.
 func (n *Native) OpenWindow(o WindowOptions) (Window, error) {
 	if WebView2Version() == "" {
@@ -179,7 +189,12 @@ func (w *webWindow) embed() (err error) {
 	})
 	wv.MessageCallback = func(msg string, _ *edge.ICoreWebView2, _ *edge.ICoreWebView2WebMessageReceivedEventArgs) {
 		if w.o.OnMessage != nil {
-			w.o.OnMessage(msg)
+			w.o.OnMessage(msg, nil)
+		}
+	}
+	wv.MessageWithAdditionalObjectsCallback = func(msg string, _ *edge.ICoreWebView2, args *edge.ICoreWebView2WebMessageReceivedEventArgs) {
+		if w.o.OnMessage != nil {
+			w.o.OnMessage(msg, attachedFiles(args))
 		}
 	}
 	wv.WebResourceRequestedCallback = w.serve
@@ -210,6 +225,46 @@ func (w *webWindow) embed() (err error) {
 		wv.NavigateToString("<!doctype html><title></title>")
 	}
 	return nil
+}
+
+var iidICoreWebView2File = mustGUID("{F2C19559-6BC1-4583-A757-90021BE9AFEC}")
+
+// attachedFiles returns the paths of the File objects a page passed to
+// chrome.webview.postMessageWithAdditionalObjects (WebView2 113+).
+func attachedFiles(args *edge.ICoreWebView2WebMessageReceivedEventArgs) []string {
+	objs, err := args.GetAdditionalObjects()
+	if err != nil || objs == nil {
+		return nil
+	}
+	defer objs.Release()
+	count, err := objs.GetCount()
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for i := uint32(0); i < count; i++ {
+		v, err := objs.GetValueAtIndex(i)
+		if err != nil || v == nil {
+			continue
+		}
+		// GetValueAtIndex returns an IUnknown pointer.
+		obj := (*comObject)(unsafe.Pointer(v))
+		var f *comObject
+		hr := obj.call(0, uintptr(unsafe.Pointer(&iidICoreWebView2File)), uintptr(unsafe.Pointer(&f)))
+		obj.release()
+		if failed(hr) || f == nil {
+			continue
+		}
+		var p *uint16
+		hr = f.call(3, uintptr(unsafe.Pointer(&p))) // ICoreWebView2File::get_Path
+		f.release()
+		if failed(hr) || p == nil {
+			continue
+		}
+		paths = append(paths, windows.UTF16PtrToString(p))
+		windows.CoTaskMemFree(unsafe.Pointer(p))
+	}
+	return paths
 }
 
 // serve answers requests for AssetOrigin from o.Assets.

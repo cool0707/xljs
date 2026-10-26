@@ -165,12 +165,154 @@ declare global {
     /** 反復しながら進捗を表示する。キャンセルされると反復が途中で終わる */
     withProgress<T>(iterable: Iterable<T>, options?: WithProgressOptions<T> | string): Generator<T, void, undefined>;
     withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T> | string): AsyncIterableIterator<T>;
+    /**
+     * 入力フォームを表示する。キャンセルされると null。
+     * ネイティブ UI ではウィンドウ（WebView2）、コンソールでは対話入力になる。
+     * onSubmit を指定すると、実行後もウィンドウを開いたまま進捗とログを表示し、
+     * ウィンドウが閉じられたときに最後に送信された値を返す。
+     */
+    form<V extends FormValues = FormValues>(options: FormOptions<V>): Promise<V | null>;
+    /**
+     * 表を表示する（並べ替え・絞り込み・列幅の変更・コピー・CSV/Excel に保存）。
+     * selectable を指定すると OK/キャンセル付きになり、選んだ行（元のオブジェクト）を返す。キャンセルは []。
+     */
+    table<T>(rows: Iterable<T>, options: TableSelectOptions): Promise<T[]>;
+    /** 表示のみ。ウィンドウを開いてすぐに戻る（閉じるまでプロセスは終了しない） */
+    table<T>(rows: Iterable<T>, options?: TableOptions | string): TableView;
     /** 直近の進捗表示がキャンセルされたか */
     readonly cancelled: boolean;
     /** エラーダイアログを表示する */
     error(message: unknown): void;
   }
   const ui: Ui;
+
+  // ------------------------------------------------------------------ ui.form
+
+  type FormFieldType = "text" | "password" | "number" | "date" | "month" | "time" | "select" | "radio" |
+    "checkbox" | "textarea" | "file" | "files" | "folder" | "saveFile";
+
+  /**
+   * フォームの項目。値の型は type による:
+   * text / password / textarea / select / radio は string、number は number | null、
+   * date は Date | null（ローカル日付）、month は "YYYY-MM" | null、time は "HH:MM" | null、
+   * checkbox は boolean、file / saveFile は FileSystemFileHandle | null、
+   * files は FileSystemFileHandle[]、folder は FileSystemDirectoryHandle | null
+   */
+  interface FormField {
+    /** 値のキー */
+    name: string;
+    /** 表示名（既定は name） */
+    label?: string;
+    /** 既定 "text" */
+    type?: FormFieldType;
+    /** 初期値。ファイル系はパスかハンドル、date は Date か "YYYY-MM-DD" */
+    default?: unknown;
+    /** 入力必須（checkbox はチェック必須） */
+    required?: boolean;
+    /** select / radio の選択肢 */
+    options?: (string | { value: string; label?: string })[];
+    /** 入力欄が空のときの薄い表示 */
+    placeholder?: string;
+    /** 入力欄の下に出す説明 */
+    help?: string;
+    /** number の範囲と刻み */
+    min?: number;
+    max?: number;
+    step?: number | "any";
+    /** textarea / files の行数 */
+    rows?: number;
+    /** ファイル系の拡張子（".xlsx" など）。ピッカーとドロップに使う */
+    accept?: string | string[];
+    /** 入力全体が一致すべき正規表現（文字列なら全体一致） */
+    pattern?: string | RegExp;
+    /** pattern に一致しないときのメッセージ */
+    patternMessage?: string;
+    /** remember: true のフォームで、この項目を保存しない場合は false（password は保存しない） */
+    remember?: boolean;
+  }
+
+  interface FormValues {
+    [name: string]: any;
+  }
+
+  /** onSubmit の第 2 引数。ウィンドウ内の進捗・ログ表示 */
+  interface FormContext {
+    /** 中止ボタンが押された（またはウィンドウが閉じられた）か */
+    readonly cancelled: boolean;
+    /** 進捗を表示する。total を省略すると前回の総数（0 なら総数不明） */
+    progress(done: number, total?: number, message?: string): void;
+    progress(done: number, message: string): void;
+    /** ログ欄に 1 行追加する */
+    log(...args: unknown[]): void;
+    /** ログ欄にエラーとして追加する */
+    error(...args: unknown[]): void;
+    /** ui.withProgress と同じ。進捗をフォーム内に表示し、中止されると反復が終わる */
+    withProgress<T>(iterable: Iterable<T>, options?: WithProgressOptions<T>): Generator<T, void, undefined>;
+    withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T>): AsyncIterableIterator<T>;
+  }
+
+  interface FormOptions<V extends FormValues = FormValues> {
+    /** ウィンドウのタイトル（既定は @title → スクリプト名） */
+    title?: string;
+    /** 項目の上に出す説明 */
+    description?: string;
+    fields: FormField[];
+    /** 送信ボタンの文字（既定 "OK"） */
+    submit?: string;
+    /**
+     * 追加の検証。問題があれば { 項目名: "メッセージ" } か、全体へのメッセージ（文字列）を返す。
+     * required / pattern / min / max / ファイルの存在の検証が通ったあとに呼ばれる
+     */
+    validate?(values: V): Record<string, string | null | undefined> | string | null | undefined | void |
+      Promise<Record<string, string | null | undefined> | string | null | undefined | void>;
+    /**
+     * 送信後に実行する処理。ウィンドウは開いたままで、進捗・ログ・中止ボタンを表示する。
+     * 出力ファイル（パス・ハンドル、配列可）を返すと完了後に「フォルダを開く」ボタンを出す。
+     * ここで起きたエラーはウィンドウに表示される（コンソールでは呼び出し元に伝わる）
+     */
+    onSubmit?(values: V, ctx: FormContext): unknown;
+    /** 前回の値を %APPDATA%\xljs\<スクリプト名>.json に保存して次回の初期値にする */
+    remember?: boolean;
+    /** remember の保存キー（既定は title）。同じスクリプトで複数のフォームを区別する */
+    id?: string;
+    /** ウィンドウの大きさ（既定は項目数から決める） */
+    width?: number;
+    height?: number;
+  }
+
+  // ------------------------------------------------------------------ ui.table
+
+  interface TableColumn {
+    /** 行オブジェクトのキー（配列の行なら位置） */
+    key: string | number;
+    /** 見出し（既定は key） */
+    label?: string;
+    /** 列幅（px）。既定は内容から決める */
+    width?: number;
+  }
+
+  interface TableOptions {
+    title?: string;
+    /**
+     * 表示する列と順序。既定はオブジェクトのキー（配列の行なら A, B, C…）。
+     * 配列の行に文字列を指定すると、その位置の列の見出しになる
+     */
+    columns?: (string | TableColumn)[];
+    width?: number;
+    height?: number;
+  }
+
+  interface TableSelectOptions extends TableOptions {
+    /** "single"（1 行）/ "multiple" または true（複数行） */
+    selectable: "single" | "multiple" | true;
+  }
+
+  /** 表示のみの表のウィンドウ */
+  interface TableView {
+    /** ウィンドウが閉じられると解決する（コンソールではすぐ解決） */
+    readonly closed: Promise<void>;
+    close(): void;
+  }
 
   // ------------------------------------------------------------------ app (HTML windows)
 

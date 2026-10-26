@@ -56,10 +56,11 @@ type WindowOptions struct {
 	Assets fs.FS
 	// Debug enables the developer tools (F12) and the context menu.
 	Debug bool
-	// OnMessage receives the messages posted by the page. OnClosed is called
-	// once after the window has closed (by the user or Close). Both may be
-	// called on any goroutine and must not block.
-	OnMessage func(msg string)
+	// OnMessage receives the messages posted by the page, with the paths of
+	// the files the page attached (chrome.webview.postMessageWithAdditionalObjects).
+	// OnClosed is called once after the window has closed (by the user or
+	// Close). Both may be called on any goroutine and must not block.
+	OnMessage func(msg string, files []string)
 	OnClosed  func()
 }
 
@@ -96,6 +97,63 @@ type UI interface {
 	// OpenWindow opens an HTML window (WebView2). It fails when the UI
 	// cannot show one (console) or the WebView2 runtime is missing.
 	OpenWindow(o WindowOptions) (Window, error)
+	// SupportsWindows reports whether forms and tables are shown as HTML
+	// windows (driven by the script through OpenWindow) instead of Form and
+	// Table.
+	SupportsWindows() bool
+	// Form asks for the values of a form and returns them by field name, or
+	// false when cancelled. See FormOptions for the value types.
+	Form(o FormOptions) (map[string]any, bool)
+	// Table shows rows. With o.Select it returns the indices of the chosen
+	// rows, or false when cancelled.
+	Table(o TableOptions) ([]int, bool)
+}
+
+// FormOptions describes a form for UIs without HTML windows. Values are
+// strings for every field type except checkbox (bool) and files ([]string,
+// one path each); empty means no value.
+type FormOptions struct {
+	Title       string      `json:"title"`
+	Description string      `json:"description"`
+	Fields      []FormField `json:"fields"`
+	// Error is a message about the form as a whole (from a previous attempt).
+	Error string `json:"error"`
+}
+
+// FormField is one input of a form.
+type FormField struct {
+	Name        string       `json:"name"`
+	Label       string       `json:"label"`
+	Type        string       `json:"type"` // text, password, number, date, month, time, select, radio, checkbox, textarea, file, files, folder, saveFile
+	Options     []FormOption `json:"options"`
+	Required    bool         `json:"required"`
+	Placeholder string       `json:"placeholder"`
+	Help        string       `json:"help"`
+	Accept      []string     `json:"accept"` // file types: ".xlsx"
+	Value       any          `json:"value"`  // current value
+	Error       string       `json:"error"`  // message from a previous attempt
+}
+
+// FormOption is a choice of a select or radio field.
+type FormOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+// Selection modes of a table.
+const (
+	SelectNone     = ""
+	SelectSingle   = "single"
+	SelectMultiple = "multiple"
+)
+
+// TableOptions describes a table for UIs without HTML windows. Cells are
+// already formatted as text.
+type TableOptions struct {
+	Title   string     `json:"title"`
+	Columns []string   `json:"columns"`
+	Rows    [][]string `json:"rows"`
+	Select  string     `json:"select"`
 }
 
 // interrupts counts Ctrl+C presses so that progress indicators can report

@@ -32,6 +32,26 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
   - テスト: `internal/ui/thread_test.go`（転送先スレッド）、`engine_test.go` の `TestAppMode` / `TestAppWindowKeepsRunning`、
     `testdata/scripts/app.test.js`、Windows CI では `TestWebViewWindow`（ランタイムがあれば実ウィンドウを開いて閉じる）。
 
+- **フェーズ 2（`ui.form` / `ui.table`）: 実装済み**（ブランチ `ccr-374d7106-mw1l5b`）。
+  - 組み込みページ: `internal/ui/web/`（`form.html` `table.html`＋`bridge.js` `base.css`）を `ui.BuiltinFS` として埋め込み、
+    `https://app.xljs/_xljs/` で配信（`api.windowAssets` がスクリプトのアセットと重ねる）。ライト/ダーク対応。
+  - 振り分け: `UI.SupportsWindows()` が true（Native）ならスクリプト（prelude）が組み込みページを `appOpen` で開いて
+    JSON メッセージで操作する。false（console/mock）なら `UI.Form` / `UI.Table`（JSON で受け渡し）。
+  - `appOpen` は `onMessage(msg, files)` と `post` / `isClosed` / `cancelRequested` / `clearCancel` を持つ（フェーズ 3 の土台）。
+    ページの `{"type":"cancel"}` は UI スレッドで受けた時点で Go 側のフラグを立てるので、同期ループ中の `ctx.cancelled` にも反映される。
+  - ドロップしたファイルの実パス: `chrome.webview.postMessageWithAdditionalObjects` → `attachedFiles`（`ICoreWebView2File::get_Path`
+    を QueryInterface で取得。IID は WebView2.h の値。実機未確認）→ `OnMessage(msg, files)`。
+  - フォームの値は「wire 形式」（文字列。checkbox は bool、files は文字列配列）でページ・コンソール・mock とやり取りし、
+    検証（required/pattern/min/max/存在確認/validate）と型変換（ハンドル・Date）はすべて prelude 側。
+  - `remember`: `%APPDATA%\xljs\<スクリプト名>.json`（`XLJS_CONFIG_DIR` で変更可）に `{ id か title: { 項目: wire 値 } }`。password と `remember: false` は保存しない。
+  - `onSubmit` 中のエラーはウィンドウのログに表示（コンソール/mock では呼び出し元へ）。戻り値の既存パスで「フォルダを開く」。
+  - 表: 行は 2000 行ずつ送る。セルは number/string/boolean/null（Date は文字列化）。並べ替え・絞り込みはページ側、
+    CSV/Excel 保存はスクリプト側（元の値で書き出す）。30 万行で並べ替え約 0.1 秒、絞り込み約 0.4 秒（Chromium で確認）。
+  - テスト: `testdata/scripts/{form,table}.test.js`（mock）、`internal/engine/pages_test.go`（偽ページでウィンドウ側のプロトコル）、
+    `internal/ui/console_form_test.go`、Windows CI の `TestBuiltinPages`（実 WebView2 で ready → init → shown）。
+    ページ JS は Linux の Playwright（Chromium）に `chrome.webview` の代役を入れて確認した（リポジトリには含めていない）。
+  - 未確認: Windows 実機での見た目・ドロップ・ピッカーの親ウィンドウ。
+
 ### 1.1 の調査結果（go-webview2）
 
 - `jchv/go-webview2` は WebResourceRequested はあるが、追加オブジェクト（ファイル実パス）などが無い。
