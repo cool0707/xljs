@@ -46,11 +46,11 @@ func (f *fakeDebugUI) OpenWindow(o ui.WindowOptions) (ui.Window, error) {
 	if o.URL != DebugPage {
 		return f.UI.OpenWindow(o)
 	}
-	if !o.Debug || !o.DevTools || o.Handle == nil {
+	if !o.Debug || !o.DevTools || !o.Isolated {
 		f.t.Errorf("debugger window options: %+v", o)
 	}
 	vm := goja.New()
-	p := &debugPage{o: o, vm: vm, l: newLoop(vm)}
+	p := &debugPage{o: o, vm: vm, l: newLoop(vm), answers: make(chan string, 1)}
 	p.l.install()
 	p.l.addPending() // until the window closes
 	f.page = p
@@ -63,9 +63,10 @@ type debugPage struct {
 	vm *goja.Runtime
 	l  *loop
 
-	mu     sync.Mutex
-	closed bool
-	listen goja.Callable
+	mu      sync.Mutex
+	closed  bool
+	listen  goja.Callable
+	answers chan string // answers to the page's calls
 	// Error is set when the page itself broke (not the script).
 	err error
 }
@@ -74,6 +75,10 @@ func (p *debugPage) Post(msg string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.closed {
+		return
+	}
+	if answer, ok := strings.CutPrefix(msg, debugAnswer); ok {
+		p.answers <- answer
 		return
 	}
 	p.l.addPending()
@@ -117,9 +122,9 @@ func (p *debugPage) run() {
 	})
 	transport := vm.NewObject()
 	transport.Set("call", func(text string) string {
-		ch := make(chan []byte, 1)
-		p.o.Handle([]byte(text), func(b []byte) { ch <- b })
-		return string(<-ch)
+		// As debug-page.js: a message, then wait for the answer.
+		p.o.OnMessage(debugCall+text, nil)
+		return <-p.answers
 	})
 	transport.Set("listen", func(fn goja.Callable) { p.listen = fn })
 	var session *goja.Object

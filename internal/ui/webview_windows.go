@@ -207,7 +207,10 @@ func loadIcon(data []byte, metric uintptr) uintptr {
 func (w *webWindow) embed() (err error) {
 	wv := edge.NewChromium()
 	wv.Debug = w.o.Debug
-	if dir, e := os.UserCacheDir(); e == nil {
+	if dir := os.Getenv(WebView2DataEnv); dir != "" {
+		// Tests: a folder per process (see WebView2DataEnv).
+		wv.DataPath = dir
+	} else if dir, e := os.UserCacheDir(); e == nil {
 		wv.DataPath = filepath.Join(dir, "xljs", "WebView2")
 	}
 	wv.SetErrorCallback(func(e error) {
@@ -321,10 +324,6 @@ func (w *webWindow) serve(req *edge.ICoreWebView2WebResourceRequest, args *edge.
 	if u, err := url.PathUnescape(name); err == nil {
 		name = u
 	}
-	if name == RPCPath && w.o.Handle != nil {
-		w.handle(req, args)
-		return
-	}
 	if name == "" || strings.HasSuffix(name, "/") {
 		name += "index.html"
 	}
@@ -339,8 +338,11 @@ func (w *webWindow) serve(req *edge.ICoreWebView2WebResourceRequest, args *edge.
 		ctype = contentType(name)
 	}
 	env := w.wv.Environment()
-	resp, err := env.CreateWebResourceResponse(nil, status, reason,
-		"Content-Type: "+ctype+"\r\nCache-Control: no-cache")
+	headers := "Content-Type: " + ctype + "\r\nCache-Control: no-cache"
+	if w.o.Isolated {
+		headers += "\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Embedder-Policy: require-corp"
+	}
+	resp, err := env.CreateWebResourceResponse(nil, status, reason, headers)
 	if err != nil {
 		return
 	}
@@ -349,44 +351,6 @@ func (w *webWindow) serve(req *edge.ICoreWebView2WebResourceRequest, args *edge.
 		resp.PutByteContent(body)
 	}
 	args.PutResponse(resp)
-}
-
-// handle answers a request to RPCPath with o.Handle. The response comes
-// later (on the UI thread), so the request is deferred meanwhile.
-func (w *webWindow) handle(req *edge.ICoreWebView2WebResourceRequest, args *edge.ICoreWebView2WebResourceRequestedEventArgs) {
-	var body []byte
-	if st, err := req.GetContent(); err == nil && st != nil {
-		// Some streams report the end with S_OK and nothing read (which
-		// io.ReadAll would retry forever).
-		buf := make([]byte, 64<<10)
-		for {
-			n, err := st.Read(buf)
-			body = append(body, buf[:n]...)
-			if n == 0 || err != nil {
-				break
-			}
-		}
-		st.Release()
-	}
-	deferral, err := args.GetDeferral()
-	if err != nil {
-		return
-	}
-	args.AddRef()
-	w.o.Handle(body, func(resp []byte) {
-		defer deferral.Release()
-		defer args.Release()
-		if w.wv != nil && !w.closed {
-			r, err := w.wv.Environment().CreateWebResourceResponse(nil, 200, "OK",
-				"Content-Type: application/json; charset=utf-8\r\nCache-Control: no-cache")
-			if err == nil {
-				r.PutByteContent(resp)
-				args.PutResponse(r)
-				r.Release()
-			}
-		}
-		deferral.Complete()
-	})
 }
 
 var contentTypes = map[string]string{

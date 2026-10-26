@@ -166,12 +166,6 @@ func (p *threaded) Progress(o ProgressOptions) Progress {
 func (p *threaded) OpenWindow(o WindowOptions) (Window, error) {
 	var w Window
 	var err error
-	if h := o.Handle; h != nil {
-		// The UI answers on its own thread.
-		o.Handle = func(body []byte, reply func([]byte)) {
-			h(body, func(resp []byte) { p.t.post(func() { reply(resp) }) })
-		}
-	}
 	call(p.t, func() { w, err = p.u.OpenWindow(o) })
 	if err != nil {
 		return nil, err

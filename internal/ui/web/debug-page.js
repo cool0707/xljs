@@ -1,32 +1,16 @@
 "use strict";
-// The debugger window of xljs --debug: connects debug.js to Go (a
-// synchronous request for each native call, WebView2 messages for events)
-// and lets the user start the script once the breakpoints are set.
-(() => {
+// The debugger window of xljs --debug. The script runs in a worker
+// (debug-worker.js) that waits for each call to Go with Atomics.wait; this
+// page passes the calls on as WebView2 messages and puts the answers into
+// the shared buffers. (A synchronous XMLHttpRequest answered from Go does
+// not come back in every WebView2.) The page needs to be cross-origin
+// isolated for SharedArrayBuffer (ui.WindowOptions.Isolated).
+(async () => {
   const wv = window.chrome && window.chrome.webview;
   const $ = (id) => document.getElementById(id);
-  const transport = {
-    call(text) {
-      const x = new XMLHttpRequest();
-      x.open("POST", "/_xljs/rpc", false);
-      x.setRequestHeader("Content-Type", "application/json; charset=utf-8");
-      x.send(text);
-      if (x.status !== 200) throw new Error(`xljs: bridge error ${x.status} ${x.responseText}`);
-      return x.responseText;
-    },
-    listen(fn) {
-      // The WebView2 wrapper echoes the page's own messages; Go's start with \x02.
-      wv.addEventListener("message", (e) => {
-        if (typeof e.data === "string" && e.data[0] === "\x02") fn(e.data.slice(1));
-      });
-    },
-  };
-
   // ?autorun (tests): run at once and close at the end.
   const autorun = new URLSearchParams(location.search).has("autorun");
-  let session;
-  // Labels, fetched while the bridge is up ({0} stays a placeholder).
-  const L = {};
+  let L = {};
   const fmt = (s, ...args) => String(s).replace(/\{(\d+)\}/g, (m, i) => (args[i] === undefined ? m : args[i]));
   const setStatus = (text, cls) => {
     $("status").textContent = text;
@@ -35,6 +19,10 @@
   const showError = (text) => {
     $("error").textContent = text;
     $("error").hidden = !text;
+  };
+  const fail = (text) => {
+    setStatus("xljs: " + String(text).split("\n")[0], "error");
+    showError(String(text));
   };
 
   function status(state, detail) {
@@ -60,29 +48,82 @@
     }
   }
 
-  try {
-    session = xljsDebug.start(transport, { status, console: window.console });
-  } catch (e) {
-    setStatus("xljs: " + e.message, "error");
-    showError(String(e.stack || e));
+  if (!wv) return;
+  if (!self.crossOriginIsolated) {
+    fail("the debugger window is not cross-origin isolated (SharedArrayBuffer is not available)");
     return;
   }
-  const t = session.t;
-  for (const k of ["running", "finished", "failed", "close"]) L[k] = t("debug." + k, "{0}");
-  document.title = t("debug.windowTitle", xljs.title);
-  $("name").textContent = xljs.script;
-  $("hint").textContent = t("debug.hint");
-  $("break-first-label").textContent = t("debug.breakFirst");
-  $("run").textContent = t("debug.run");
-  $("run").disabled = false;
-  $("run").onclick = () => session.run($("break-first").checked);
-  $("run").focus();
-  setStatus(t("debug.ready"));
-  if (autorun) setTimeout(() => $("run").click(), 0);
+  const ctrl = new SharedArrayBuffer(8);
+  const data = new SharedArrayBuffer(1 << 16, { maxByteLength: 1 << 30 });
+  const ctrlView = new Int32Array(ctrl);
+  const encoder = new TextEncoder();
 
-  window.addEventListener("error", (e) => session.fatal(e.error !== undefined ? e.error : e.message));
-  window.addEventListener("unhandledrejection", (e) => session.rejected(e.promise, e.reason));
-  window.addEventListener("rejectionhandled", (e) => session.handled(e.promise));
+  /** Puts Go's answer to the worker's call where the worker waits for it. */
+  function answer(text) {
+    const bytes = encoder.encode(text);
+    if (bytes.length > data.byteLength) data.grow(Math.min(data.maxByteLength, Math.max(bytes.length, data.byteLength * 2)));
+    new Uint8Array(data).set(bytes);
+    ctrlView[1] = bytes.length;
+    Atomics.store(ctrlView, 0, 1);
+    Atomics.notify(ctrlView, 0);
+  }
+
+  let worker;
+  try {
+    const base = new URL(".", location.href);
+    const load = async (name) => {
+      const r = await fetch(name);
+      if (!r.ok) throw new Error(`${name}: ${r.status}`);
+      return { url: new URL(name, base).href, text: await r.text() };
+    };
+    const [main, ...sources] = await Promise.all(["debug-worker.js", "debug/prelude.js", "debug/bundle.js", "debug.js"].map(load));
+    // A worker from the text: its requests would not reach Go in every WebView2.
+    const blob = new Blob([main.text + "\n//# sourceURL=" + main.url], { type: "text/javascript" });
+    worker = new Worker(URL.createObjectURL(blob), { name: "xljs" });
+    worker.postMessage({ type: "init", ctrl, data, sources });
+  } catch (e) {
+    fail(e.stack || e);
+    return;
+  }
+
+  // Go's messages start with \x02 (the wrapper echoes the page's own):
+  // "R" + an answer, or an event (JSON).
+  wv.addEventListener("message", (e) => {
+    if (typeof e.data !== "string" || e.data[0] !== "\x02") return;
+    const text = e.data.slice(1);
+    if (text[0] === "R") answer(text.slice(1));
+    else worker.postMessage({ type: "event", text });
+  });
+
+  worker.onerror = (e) => fail(e.message);
+  worker.onmessage = (e) => {
+    const m = e.data;
+    switch (m.type) {
+      case "call":
+        wv.postMessage("call:" + m.text);
+        break;
+      case "status":
+        status(m.state, m.detail);
+        break;
+      case "failed":
+        fail(m.error);
+        break;
+      case "ready":
+        L = m.labels;
+        document.title = m.title;
+        $("name").textContent = m.script;
+        $("hint").textContent = L.hint;
+        $("break-first-label").textContent = L.breakFirst;
+        $("run").textContent = L.run;
+        $("run").disabled = false;
+        $("run").onclick = () => worker.postMessage({ type: "run", breakFirst: $("break-first").checked });
+        $("run").focus();
+        setStatus(L.ready);
+        if (autorun) $("run").click();
+        break;
+    }
+  };
+
   document.addEventListener("keydown", (e) => {
     if (e.key === "F5" || (e.ctrlKey && (e.key === "r" || e.key === "R"))) {
       // No reload (see debug.reloaded); F5 runs.

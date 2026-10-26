@@ -288,14 +288,17 @@ const picked = await ui.table(rows, { selectable: "multiple", title: "処理す�
 
 **実装済み（V8 + DevTools 方式）**: goja のフォークはやめ、`--debug` のときだけ prelude とスクリプトを
 デバッグウィンドウ（WebView2）で実行して、開発者ツールをデバッガとして使う。natives は Go の goja 側に残し、
-`api.Remote`（`internal/api/remote.go`）が同期 XHR（`ui.RPCPath` → `WindowOptions.Handle`、WebView2 では
-WebResourceRequested の deferral）で中継する。Go からページへはイベント（ページ側関数の呼び出し・Promise の settle）。
+`api.Remote`（`internal/api/remote.go`）が中継する。スクリプトはページのワーカー（`debug-worker.js`）で動き、Go への
+呼び出しはページ経由の WebView2 メッセージで送って、応答を SharedArrayBuffer＋`Atomics.wait` で待つ（ページは COOP/COEP 付きで
+cross-origin isolated）。最初は同期 XHR を WebResourceRequested の deferral で答えていたが、CI の WebView2 では応答が
+ページに返らなかった（非同期の fetch は返る）ので変更した。Go からページへはイベント（ページ側関数の呼び出し・Promise の settle）。
 セッションと終了判定は `internal/engine/debug.go`、ページ側は `internal/ui/web/debug.js`（ランタイム）と
 `debug-page.js`（画面・トランスポート）。エラーはバンドルのソースマップで元ファイルの位置に戻して表示する。
 `--debug=window` で従来の「goja で実行＋画面の開発者ツールだけ有効」も残している。
 - 制約: native 呼び出しごとに往復があるので遅い／V8 と goja の差（ブラウザの API が見える）／エディタ一体型ではない。
 - テスト: Linux は `fakeDebugUI`（goja がページ役）で全結合テストをこの経路でも実行（`TestScriptsInDebugger` ほか）。
-  Windows CI は `TestWebViewRPC`（同期 XHR＋deferral）と `TestDebuggerWindow`（実ウィンドウで自動実行）。
+  Windows CI は `TestWebViewIsolated`（COOP/COEP、SharedArrayBuffer、ワーカーの Atomics.wait）と `TestDebuggerWindow`（実ウィンドウで自動実行）。
+  WebView2 のテストは `go test ./...` で並行に走るので、テストバイナリごとにユーザーデータフォルダを分ける（`XLJS_WEBVIEW2_DATA`）。
 - 以下は検討時のメモ（goja フォーク案・エディタ一体型）。
 
 - 公式 goja にはデバッガ API がない。フォークの先行例 `mostafa/goja`（debugger ブランチ）と CLI

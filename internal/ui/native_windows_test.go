@@ -168,10 +168,11 @@ func TestWebViewWindow(t *testing.T) {
 	}
 }
 
-// TestWebViewRPC makes the debugger's synchronous request: the page waits
-// in a synchronous XMLHttpRequest while the answer is prepared on another
-// goroutine, which meanwhile uses the UI thread (opens a second window).
-func TestWebViewRPC(t *testing.T) {
+// TestWebViewIsolated checks what the debugger window relies on: with
+// Isolated the page is cross-origin isolated, and a worker made from a
+// blob waits with Atomics.wait on a growable SharedArrayBuffer until the
+// page wakes it.
+func TestWebViewIsolated(t *testing.T) {
 	if WebView2Version() == "" {
 		t.Skip("WebView2 runtime is not installed")
 	}
@@ -183,33 +184,40 @@ func TestWebViewRPC(t *testing.T) {
 	}
 	assets := fstest.MapFS{
 		"index.html": {Data: []byte(`<!doctype html><meta charset="utf-8"><title>t</title><script>
-const x = new XMLHttpRequest();
-x.open("POST", "/` + RPCPath + `", false);
-x.send(JSON.stringify({ text: "ping 日本語" }));
-chrome.webview.postMessage(x.status + " " + x.getResponseHeader("Content-Type") + " " + x.responseText);
+try {
+  const sab = new SharedArrayBuffer(8, { maxByteLength: 64 });
+  const src = "onmessage = (e) => { const a = new Int32Array(e.data); postMessage('waiting'); Atomics.wait(a, 0, 0); postMessage('woke ' + a[1]); };";
+  const w = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+  w.onmessage = (e) => {
+    if (e.data === "waiting") {
+      sab.grow(16);
+      const a = new Int32Array(sab);
+      a[1] = 42;
+      Atomics.store(a, 0, 1);
+      Atomics.notify(a, 0);
+    } else {
+      chrome.webview.postMessage(crossOriginIsolated + " " + sab.byteLength + " " + e.data);
+    }
+  };
+  w.onerror = (e) => chrome.webview.postMessage("worker error " + e.message);
+  w.postMessage(sab);
+} catch (e) {
+  chrome.webview.postMessage("error " + e);
+}
 </script>`)},
 	}
 	got := make(chan string, 1)
-	var msg, body string
+	var msg string
 	Run(u, func(su UI) {
 		closed := make(chan struct{})
 		var w Window
 		w, err = su.OpenWindow(WindowOptions{
-			Title:  "RPC",
-			Width:  400,
-			Height: 300,
-			URL:    AssetOrigin + "index.html",
-			Assets: assets,
-			Handle: func(b []byte, reply func([]byte)) {
-				body = string(b)
-				go func() {
-					other, err := su.OpenWindow(WindowOptions{Title: "other", Width: 200, Height: 100})
-					if err == nil {
-						other.Close()
-					}
-					reply([]byte(`{"value":"pong 日本語"}`))
-				}()
-			},
+			Title:    "isolated",
+			Width:    400,
+			Height:   300,
+			URL:      AssetOrigin + "index.html",
+			Assets:   assets,
+			Isolated: true,
 			OnMessage: func(m string, _ []string) {
 				select {
 				case got <- m:
@@ -231,10 +239,7 @@ chrome.webview.postMessage(x.status + " " + x.getResponseHeader("Content-Type") 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := `{"text":"ping 日本語"}`; body != want {
-		t.Errorf("request body = %q, want %q", body, want)
-	}
-	if want := `200 application/json; charset=utf-8 {"value":"pong 日本語"}`; msg != want {
+	if want := "true 16 woke 42"; msg != want {
 		t.Fatalf("message = %q, want %q", msg, want)
 	}
 }
