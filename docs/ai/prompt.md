@@ -196,7 +196,14 @@ if (!v) exit();
 ```js
 await ui.table(rows, { title: "結果" }).closed;                     // 表示して閉じるまで待つ
 const picked = await ui.table(rows, { title: "対象を選択", selectable: "multiple" }); // 選んだ行の配列。キャンセルは []
+ui.table(results, {
+  title: "チェック結果",
+  onDoubleClick(e) { if (e.column === "ファイル") shell.openPath(e.row.path); }, // e: { row, index, column, key, value, close() }
+});
 ```
+
+- `ui.table` は表示と選択だけで、セルは編集できない。編集させるときは `ui.form` の `type: "table"`（上の「表の編集」）。
+- 行のダブルクリック（`onDoubleClick`）は `ui.table` だけにある（フォームの表にはない）。
 
 ## 集計の定番
 

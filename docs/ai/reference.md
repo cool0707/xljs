@@ -327,6 +327,9 @@ ui.table(rows, {
 
 表は並べ替え・絞り込み・コピー・CSV / Excel への保存が画面上でできる。
 
+- `ui.table` は表示と選択だけで、セルは編集できない。編集させるときは `ui.form` の `type: "table"` に `editable: true`（上の「入力フォーム」）。
+- `onDoubleClick` は `ui.table` だけにある（フォームの表にはない）。`e.column` はダブルクリックした列の見出し（行番号の欄なら `null`）、`e.key` は列のキー。`selectable: "single"` と一緒に指定すると、ダブルクリックでは OK にならない。
+
 ## 日付（dayjs）
 
 [Day.js](https://day.js.org/) を組み込んである（`import` 不要。グローバルの `dayjs`）。PC の表示言語のロケール（日本語環境なら日本語。`dayjs.locale("ja")` で固定できる）と次のプラグインを読み込み済み: customParseFormat, isBetween, isSameOrAfter, isSameOrBefore, minMax, quarterOfYear, weekOfYear, isoWeek, dayOfYear, duration, relativeTime, advancedFormat, isLeapYear, isToday, isTomorrow, isYesterday, weekday, localeData。
