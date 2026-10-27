@@ -1,3 +1,8 @@
+---
+name: xljs-reference
+description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows 用の実行環境）の詳しい API リファレンスとレシピ。xljs のスクリプトを書く・直すときに、全オプション・書式・入力フォーム（ui.form）・表（ui.table）・日付（dayjs）・アプリモードを確かめるために使う。
+---
+
 # xljs API リファレンス（AI チャット向け）
 
 `prompt.md` の要点リファレンスより詳しい版です。AI に資料（ナレッジ）として添付するか、`prompt.md` のあとに貼ります。
