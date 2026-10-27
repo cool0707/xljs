@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"path/filepath"
 
 	"github.com/cool0707/xljs/internal/i18n"
@@ -15,15 +16,27 @@ const (
 	launchVBA
 )
 
+// Icons of the choices (drawn by tools/make_launch_icons.py).
+var (
+	//go:embed icons/run.ico
+	iconRun []byte
+	//go:embed icons/debug.ico
+	iconDebug []byte
+	//go:embed icons/pack.ico
+	iconPack []byte
+	//go:embed icons/vba.ico
+	iconVBA []byte
+)
+
 // launch is the start screen of xljs started without a script
 // (double-clicked): it asks whether to run, debug or pack a script, or to
 // extract the VBA code of macro workbooks, and asks for the files.
 func launch(con *consoleState, u ui.UI, c ui.Chooser, explicitLang bool) int {
 	choice := c.Choose("xljs", i18n.T("cli.launchMessage"), []ui.Choice{
-		{Label: i18n.T("cli.launchRun"), Note: i18n.T("cli.launchRunNote")},
-		{Label: i18n.T("cli.launchDebug"), Note: i18n.T("cli.launchDebugNote")},
-		{Label: i18n.T("cli.launchPack"), Note: i18n.T("cli.launchPackNote")},
-		{Label: i18n.T("cli.launchVBA"), Note: i18n.T("cli.launchVBANote")},
+		{Label: i18n.T("cli.launchRun"), Note: i18n.T("cli.launchRunNote"), Icon: iconRun},
+		{Label: i18n.T("cli.launchDebug"), Note: i18n.T("cli.launchDebugNote"), Icon: iconDebug},
+		{Label: i18n.T("cli.launchPack"), Note: i18n.T("cli.launchPackNote"), Icon: iconPack},
+		{Label: i18n.T("cli.launchVBA"), Note: i18n.T("cli.launchVBANote"), Icon: iconVBA},
 	})
 	switch choice {
 	case launchRun, launchDebug:

@@ -229,6 +229,7 @@ func ProgressActive() bool { return activeProgress.Load() > 0 }
 type Choice struct {
 	Label string
 	Note  string // a line of explanation under the label
+	Icon  []byte // an .ico file or a PNG image (nil = the default arrow)
 }
 
 // Chooser is implemented by UIs that can ask which of a few actions to take

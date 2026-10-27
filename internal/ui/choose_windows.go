@@ -17,12 +17,16 @@ const (
 	bsCommandLink    = 0x0E
 	bsDefCommandLink = 0x0F
 	bcmSetNote       = 0x1609
+	bmSetImage       = 0x00F7
+	imageIcon        = 1
+	choiceIconSize   = 32   // logical pixels
 	idChoice         = 1000 // + the index of the choice
 )
 
 type chooseState struct {
 	choices []Choice
 	result  int
+	icons   []uintptr // created for the choices; destroyed after the dialog
 }
 
 var (
@@ -36,14 +40,27 @@ func chooseDlgProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 	switch msg {
 	case wmInitDialog:
 		procSetForegroundWindow.Call(hwnd)
+		icons := exeIcons()
+		procSendMessageW.Call(hwnd, wmSetIcon, iconBig, icons[0])
+		procSendMessageW.Call(hwnd, wmSetIcon, iconSmall, icons[1])
 		if st != nil {
+			dpi, _, _ := procGetDpiForSystem.Call()
+			if dpi == 0 {
+				dpi = 96
+			}
 			for i, c := range st.choices {
-				if c.Note == "" {
-					continue
+				btn := dlgItem(hwnd, idChoice+i)
+				if c.Note != "" {
+					p := wstr(c.Note)
+					procSendMessageW.Call(btn, bcmSetNote, 0, uintptr(unsafe.Pointer(p)))
+					runtime.KeepAlive(p)
 				}
-				p := wstr(c.Note)
-				procSendMessageW.Call(dlgItem(hwnd, idChoice+i), bcmSetNote, 0, uintptr(unsafe.Pointer(p)))
-				runtime.KeepAlive(p)
+				if len(c.Icon) > 0 {
+					if icon := loadIconSize(c.Icon, choiceIconSize*dpi/96); icon != 0 {
+						st.icons = append(st.icons, icon)
+						procSendMessageW.Call(btn, bmSetImage, imageIcon, icon)
+					}
+				}
 			}
 		}
 		procSetFocus.Call(dlgItem(hwnd, idChoice))
@@ -108,10 +125,14 @@ func (n *Native) Choose(title, message string, choices []Choice) int {
 		y += h + 4
 	}
 	for i, c := range choices {
-		// The label is in a larger font; the note starts after the arrow.
+		// The label is in a larger font; the note starts after the arrow
+		// (or the icon).
 		h := 18
 		if c.Note != "" {
-			h += textLines(c.Note, textW-30) * 9
+			h += textLines(c.Note, textW-40) * 9
+		}
+		if len(c.Icon) > 0 && h < 26 {
+			h = 26
 		}
 		style := uint32(wsTabStop | bsCommandLink)
 		if i == 0 {
@@ -144,7 +165,12 @@ func (n *Native) Choose(title, message string, choices []Choice) int {
 
 	st := &chooseState{choices: choices, result: -1}
 	curChoose = st
-	defer func() { curChoose = nil }()
+	defer func() {
+		curChoose = nil
+		for _, icon := range st.icons {
+			procDestroyIcon.Call(icon)
+		}
+	}()
 	hinst, _, _ := procGetModuleHandleW.Call(0)
 	procDialogBoxIndirectParamW.Call(hinst, uintptr(unsafe.Pointer(&words[0])), n.owner(), chooseProcPtr, 0)
 	runtime.KeepAlive(words)

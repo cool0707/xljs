@@ -93,9 +93,13 @@ func TestPromptDialog(t *testing.T) {
 
 func TestChooseDialog(t *testing.T) {
 	withAutoClose(t)
+	testIcon, err := os.ReadFile(filepath.Join("..", "..", "assets", "xljs.ico"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	n := &Native{}
 	got := n.Choose("テスト", "何をしますか？", []Choice{
-		{Label: "実行", Note: "スクリプトを選んで実行します"},
+		{Label: "実行", Note: "スクリプトを選んで実行します", Icon: testIcon},
 		{Label: "取り出す"},
 	})
 	if got != 0 {
