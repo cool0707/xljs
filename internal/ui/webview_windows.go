@@ -39,6 +39,7 @@ var (
 	procCreateIconFromResEx  = moduser32.NewProc("CreateIconFromResourceEx")
 	procDestroyIcon          = moduser32.NewProc("DestroyIcon")
 	procGetSystemMetrics     = moduser32.NewProc("GetSystemMetrics")
+	procIsIconic             = moduser32.NewProc("IsIconic")
 )
 
 const (
@@ -49,6 +50,7 @@ const (
 	wmDestroy          = 0x0002
 	wmMove             = 0x0003
 	wmSize             = 0x0005
+	sizeMinimized      = 1
 	wmActivate         = 0x0006
 	wmSetIcon          = 0x0080
 	iconSmall          = 0
@@ -262,7 +264,7 @@ func (w *webWindow) embed() (err error) {
 	wv.Init(PageScript)
 	w.keepInside()
 	wv.Resize()
-	wv.Focus()
+	w.focus()
 	if w.o.URL != "" {
 		wv.Navigate(w.o.URL)
 	} else {
@@ -400,7 +402,7 @@ func webWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 	if w := webWindows[hwnd]; w != nil {
 		switch msg {
 		case wmSize:
-			if w.ready {
+			if w.ready && wParam != sizeMinimized {
 				w.wv.Resize()
 			}
 		case wmMove:
@@ -408,8 +410,9 @@ func webWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 				w.wv.NotifyParentWindowPositionChanged()
 			}
 		case wmActivate:
-			if w.ready && wParam&0xFFFF != 0 {
-				w.wv.Focus()
+			// The high word is nonzero when the window is minimized.
+			if w.ready && wParam&0xFFFF != 0 && wParam>>16&0xFFFF == 0 {
+				w.focus()
 			}
 		case wmDestroy:
 			w.destroyed()
@@ -417,6 +420,19 @@ func webWndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 	}
 	r, _, _ := procDefWindowProcW.Call(hwnd, uintptr(msg), wParam, lParam)
 	return r
+}
+
+// focus moves the keyboard focus into the page. MoveFocus fails with
+// E_INVALIDARG ("The parameter is incorrect") at times, e.g. when the window
+// is activated while it is minimized or another application is in front;
+// the wrapper's Focus would report that and end the process, so the
+// controller is called directly and failures are ignored.
+func (w *webWindow) focus() {
+	if c := w.wv.GetController(); c != nil {
+		if iconic, _, _ := procIsIconic.Call(w.hwnd); iconic == 0 {
+			_ = c.MoveFocus(edge.COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)
+		}
+	}
 }
 
 func (w *webWindow) destroyed() {
