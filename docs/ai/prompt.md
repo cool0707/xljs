@@ -121,7 +121,7 @@ const v = await ui.form({
 });
 ```
 
-項目の type: `text` `number` `date` `month` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table`。表の行をその場で直させる（`type: "table"` に `editable: true`）、ボタンの追加などはリファレンスを参照。
+項目の type: `text` `number` `date` `month` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table`。項目・ボタンには Font Awesome のアイコンを付けられる（`icon: "folder-open"`）。表の行をその場で直させる（`type: "table"` に `editable: true`）、ボタンの追加などはリファレンスを参照。
 
 ## 表で見せる・選ばせる
 

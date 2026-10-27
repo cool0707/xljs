@@ -8,6 +8,9 @@ const el = (tag, props = {}, ...children) => {
   return e;
 };
 
+/** A Font Awesome icon (cls: its classes) followed by text; just the text without cls. */
+const withIcon = (cls, text) => (cls ? [el("i", { className: cls + " icon" }), text] : [text]);
+
 let texts = {};
 let fields = [];
 let tabButtons = []; // one per tab; fields name their tab by index (-1 = above the tabs)
@@ -35,16 +38,19 @@ host.on((m) => {
 function init(m) {
   texts = m.texts || {};
   fields = m.fields || [];
+  // The title is the window's; with an icon it is shown as a heading too.
+  $("heading").replaceChildren(...withIcon(m.icon, m.title || ""));
+  $("heading").hidden = !m.icon;
   if (m.description) {
     $("description").textContent = m.description;
     $("description").hidden = false;
   }
-  $("submit").textContent = m.submit || texts.ok;
+  $("submit").replaceChildren(...withIcon(m.submitIcon, m.submit || texts.ok));
   noSubmit = !!m.noSubmit;
   $("submit").hidden = noSubmit;
   for (const b of extraButtons) b.remove();
   extraButtons = (m.buttons || []).map((label, k) => {
-    const b = el("button", { type: "button", textContent: label });
+    const b = el("button", { type: "button" }, ...withIcon((m.buttonIcons || [])[k], label));
     b.onclick = () => submit(k);
     $("submit").before(b);
     return b;
@@ -55,12 +61,12 @@ function init(m) {
   const box = $("fields");
   box.textContent = "";
   controls.clear();
-  const panels = buildTabs(m.tabs || []);
+  const panels = buildTabs(m.tabs || [], m.tabIcons || []);
   fields.forEach((f, i) => {
     const id = "f" + i;
     const c = buildControl(f, id);
     const wide = f.type === "table" ? " wide" : "";
-    const label = el("label", { className: "lbl" + wide, htmlFor: id }, f.type === "checkbox" ? "" : f.label);
+    const label = el("label", { className: "lbl" + wide, htmlFor: id }, ...(f.type === "checkbox" ? [] : withIcon(f.icon, f.label)));
     if (f.required && f.type !== "checkbox") label.append(el("span", { className: "req", textContent: "*" }));
     const ctl = el("div", { className: "ctl" + wide }, c.node);
     if (f.help) ctl.append(el("div", { className: "help", textContent: f.help }));
@@ -82,12 +88,12 @@ function init(m) {
 // ---- tabs
 
 /** Builds the tab bar and one panel per tab (after the fields above the tabs); returns the panels. */
-function buildTabs(labels) {
+function buildTabs(labels, icons) {
   $("tabs").textContent = "";
   $("panels").textContent = "";
   $("tabs").hidden = labels.length === 0;
   tabButtons = labels.map((label, k) => {
-    const b = el("button", { type: "button", className: "tab", textContent: label, id: "tab" + k });
+    const b = el("button", { type: "button", className: "tab", id: "tab" + k }, ...withIcon(icons[k], label));
     b.setAttribute("role", "tab");
     b.onclick = () => showTab(k, true);
     $("tabs").append(b);
@@ -123,7 +129,7 @@ function buildControl(f, id) {
     case "checkbox": {
       const i = el("input", { type: "checkbox", id, name: f.name });
       return {
-        node: el("label", { className: "check" }, i, f.label),
+        node: el("label", { className: "check" }, i, ...withIcon(f.icon, f.label)),
         get: () => i.checked, set: (v) => { i.checked = !!v; }, focus: () => i.focus(), inputs: [i],
       };
     }
