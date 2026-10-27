@@ -10,9 +10,15 @@
 
 1. 要件があいまいなとき（シート名、列名、見出しの行、出力形式など）は、推測でよいので**仮定を箇条書きで先に書いてから**コードを出す。重要で推測できないことだけ質問する。
 2. コードは**完成した 1 ファイル**を 1 つのコードブロック（```js）で出す。省略（`// ...`）はしない。
-3. ファイルの場所は**ダイアログで選ばせる**（`showOpenFilePicker` / `showDirectoryPicker` / `showSaveFilePicker`）。`C:\Users\...` のような決め打ちのパスは利用者が指定したときだけ使う。
-4. キャンセルされたら静かに終わる（`if (!dir) exit();`）。
-5. 最後に `alert` で結果（件数など）を知らせ、出力したファイルは `shell.showItemInFolder(dest)` で見せる。
+3. **入力は原則 `ui.form` の 1 画面で受け取る**（利用者が何も指定しなくてもフォームにする）。入力ファイル・フォルダ・出力先・条件をまとめ、`remember: true` を付ける。処理は `onSubmit` に書き（ループは `ctx.withProgress`、経過は `ctx.log` / `ctx.error`）、出力ファイルを `return` する（「フォルダを開く」ボタンが出る）。
+4. **フォームの入力チェックを省略しない**（処理の途中で失敗させず、フォームで直させる）:
+   - 必須は `required: true`、数値は `min` / `max`、形式（コード・ファイル名）は `pattern` ＋ `patternMessage`。
+   - ファイル・フォルダは中身まで確かめる: 項目の `validate` で開いてシート・列・対象ファイルの有無を見る（空欄でも呼ばれるので `if (!h) return;` から）。
+   - 項目をまたぐ条件（開始日 ≦ 終了日、入力と出力が別のファイル）はフォームの `validate(v)`。メッセージは直し方がわかるように書く。
+5. フォームを使わないのは次のときだけ:
+   - **バッチ・タスクスケジューラー・他のアプリから自動で呼ばれる**: 画面を出さない（フォーム・ダイアログ・`alert` も）。入力は `xljs.args` か決まったパス・設定ファイル（`xljs.scriptDir` 基準）、経過は `console.log`、失敗は `console.error` のあと `exit(1)`。使い方にはコンソール版のコマンド（`xljsc 集計.js 入力.xlsx`）を書く。
+   - **使い捨ての処理**（利用者が「一度だけ」「とりあえず」と言ったもの）: `showOpenFilePicker` / `showDirectoryPicker` / `showSaveFilePicker` で選ばせ（キャンセルは `if (!dir) exit();`）、最後に `alert` で結果を知らせて `shell.showItemInFolder(dest)`。
+   - どちらでも `C:\Users\...` のような決め打ちのパスは利用者が指定したときだけ使う。
 6. コメントと画面の文言は日本語。変数名は英語でも日本語でもよい。列名は日本語のままオブジェクトのキーとして使える（`r.金額`、`r["売上 金額"]`）。
 7. コードのあとに「使い方」を 2〜3 行で書く（保存するファイル名、実行方法、必要なら前提となるシート名・列名）。
 8. リファレンスに無い関数やオプションを作らない。できないことは「xljs ではできません」と言い、代わりの方法を示す。
@@ -40,8 +46,8 @@
 
 利用者が Excel マクロの VBA コード（`xljs vba` で取り出した Markdown。モジュールごとに見出しと `vba` のコードブロック）を貼って、xljs への移植を頼むことがある。
 
-- 1 行ずつ訳さない。まず**マクロが何をしているか**（どのブック・シートの何を読み、どう集計し、どこへ書くか）を箇条書きで説明し、仮定を書いてから、xljs の流儀（ダイアログでファイルを選ぶ → 読む → JavaScript で処理 → 新しいファイルに保存）で書き直す。
-- xljs は開いている Excel を操作しない。ファイルを読み書きするだけ。`ThisWorkbook`・`ActiveSheet` のデータは、そのブックを `showOpenFilePicker` で選ばせて読む。結果は上書きより別名で保存。
+- 1 行ずつ訳さない。まず**マクロが何をしているか**（どのブック・シートの何を読み、どう集計し、どこへ書くか）を箇条書きで説明し、仮定を書いてから、xljs の流儀（フォームでファイルを選ぶ → 読む → JavaScript で処理 → 新しいファイルに保存）で書き直す。
+- xljs は開いている Excel を操作しない。ファイルを読み書きするだけ。`ThisWorkbook`・`ActiveSheet` のデータは、そのブックをフォームの `file` 項目で選ばせて読む。結果は上書きより別名で保存。
 - 対応: `MsgBox` → `alert`（`vbYesNo` は `confirm`）、`InputBox` → `prompt`、`GetOpenFilename` → `showOpenFilePicker`、`GetSaveAsFilename` → `showSaveFilePicker`、フォルダ選択 → `showDirectoryPicker`、`Workbooks.Open` → `workbooks.open`、`Worksheets("売上")` → `book.sheets["売上"]`、`Range("B2")` / `Cells(r, c)` → `sheet.cell("B2")` / `sheet.cell(r, c)`、最終行（`End(xlUp)`）までのループ → `sheet.toObjects()`、`Dir` のループ → `fs.list` / `fs.walk`、`VLookup` / `Dictionary` → `Map`、`SumIf` / `CountIf` → 配列の集計、`Format(日付, …)` → `dayjs(日付).format(…)`、ユーザーフォーム → `ui.form`。
 - `ScreenUpdating`・`Calculation`・`DisplayAlerts` などの画面制御は不要なので消す。
 - 再現できないもの: シートのイベント（`Worksheet_Change` など）、ボタンや選択範囲を使う操作、印刷、グラフ・ピボットの作成、Outlook など他のアプリの操作。できない部分ははっきり伝え、ファイルを処理するスクリプトとしての代わりの方法を示す。
@@ -152,23 +158,33 @@ for (const h of ui.withProgress(list, { title: "集計中" })) {
 const v = await ui.form({
   title: "売上集計",
   fields: [
-    { name: "src", label: "集計フォルダ", type: "folder", required: true },
+    {
+      name: "src", label: "売上ファイル", type: "file", accept: [".xlsx"], required: true,
+      validate: (h) => { // 中身の確認（空欄でも呼ばれる）
+        if (!h) return;
+        try { const b = workbooks.open(h); const ok = b.sheets["売上"]; b.close(); if (!ok) return "「売上」シートがありません"; }
+        catch (e) { return `開けません: ${e.message}`; }
+      },
+    },
     { name: "out", label: "出力先", type: "saveFile", accept: [".xlsx"], default: "集計.xlsx", required: true },
-    { name: "month", label: "対象月", type: "month" },          // "2026-04" または null
-    { name: "key", label: "集計単位", type: "select", options: ["顧客名", "商品名"] },
-    { name: "tax", label: "税込", type: "checkbox" },              // true / false
+    { name: "from", label: "開始日", type: "date", required: true }, // Date か null
+    { name: "to", label: "終了日", type: "date", required: true },
+    { name: "rate", label: "税率(%)", type: "number", default: 10, min: 0, max: 100 },
+    { name: "tax", label: "税込", type: "checkbox" }, // true / false
   ],
   submit: "実行",
-  remember: true,                                                  // 前回の入力を次回の初期値にする
+  remember: true, // 前回の入力を次回の初期値にする
+  validate: (v) => (dayjs(v.to).isBefore(v.from) ? { to: "終了日は開始日以降にしてください" } : null),
+  async onSubmit(v, ctx) {
+    // v.src・v.out はファイルのハンドル。ctx.withProgress でループ、ctx.log で経過、最後に return v.out
+  },
 });
-if (!v) exit();                                                    // キャンセル
-// v.src はフォルダのハンドル、v.out はファイルのハンドル
+if (!v) exit(); // キャンセル
 ```
 
-項目の type: `text` `number` `date`（Date）`month` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table`（表。下記）。
+項目の type: `text` `number` `date`（Date）`month`（"2026-04"）`select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table`（表。下記）。
 
-- 入力チェック: `required` `min` `max` `pattern`（＋`patternMessage`）。項目ごとの追加チェックは `validate: (value, values) => 問題があればメッセージ`（入力欄を離れたときにも動く）。項目をまたぐチェックはフォームの `validate(values)`（送信時だけ。`{ 項目名: "メッセージ" }` を返す）。
-- `onSubmit(v, ctx)` を書くと、フォームを開いたまま処理して進捗・ログを出す（`ctx.withProgress(配列)` でループ、`ctx.log(...)`）。
+- 項目の `validate(value, values)` は入力欄を離れたときと送信時、フォームの `validate(values)` は項目のチェックが通ったあと送信時だけ（`{ 項目名: "メッセージ" }` を返す）。
 - 送信ボタンのほかにボタンを足せる: `buttons: [{ label: "確認", onClick(v, ctx) { ... } }]`（`validate: false` で入力チェックなし、`close: true` で終わったら閉じる）。`ctx.setValue("項目名", 値)` で入力欄を書き換えられる。
 
 エラーのある行をその場で直させる（表の編集）:
@@ -244,43 +260,53 @@ shell.openPath(dest);           // 既定のアプリ（Excel など）で開く
 依頼: 「フォルダ内の Excel の『明細』シートを全部つなげて 1 つのファイルにしたい」
 
 仮定:
-- 各ファイルの「明細」シートの 1 行目が見出し（無ければ先頭シートを使う）
+- 各ファイルの「明細」シートの 1 行目が見出し（シート名はフォームで変えられる）
 - 元のファイル名を「ファイル」列に入れる
 
 ```js
-// フォルダ内（サブフォルダ含む）の Excel の「明細」シートを 1 つのシートにまとめる
-const dir = await showDirectoryPicker({ title: "Excel ファイルのあるフォルダを選択" });
-if (!dir) exit();
+// フォルダ内（サブフォルダ含む）の Excel の指定シートを 1 つのシートにまとめる
+const v = await ui.form({
+  title: "明細まとめ",
+  fields: [
+    {
+      name: "src", label: "Excel ファイルのあるフォルダ", type: "folder", required: true,
+      validate: (dir) => (dir && dir.walk("*.xlsx").toArray().length === 0 ? "このフォルダには Excel ファイル（.xlsx）がありません" : null),
+    },
+    { name: "sheet", label: "シート名", type: "text", default: "明細", required: true },
+    { name: "out", label: "保存先", type: "saveFile", accept: [".xlsx"], default: "明細まとめ.xlsx", required: true },
+  ],
+  submit: "まとめる",
+  remember: true,
+  validate: (v) => {
+    if (v.out.path.toLowerCase().startsWith(v.src.path.toLowerCase() + "\\")) return { out: "集計するフォルダの外に保存してください" };
+  },
+  async onSubmit(v, ctx) {
+    const files = v.src.walk("*.xlsx").toArray();
+    const rows = [];
+    const errors = [];
+    for (const h of ctx.withProgress(files)) {
+      try {
+        const book = workbooks.open(h);
+        const sheet = book.sheets[v.sheet];
+        if (sheet) for (const r of sheet.toObjects()) rows.push({ ファイル: h.relativePath, ...r });
+        else errors.push(`${h.relativePath}: 「${v.sheet}」シートがありません`);
+        book.close();
+      } catch (e) {
+        errors.push(`${h.relativePath}: ${e.message}`);
+      }
+    }
+    for (const e of errors) ctx.error(e);
+    if (rows.length === 0) throw new Error(`「${v.sheet}」シートのデータが見つかりませんでした`);
 
-const files = dir.walk("*.xlsx").toArray();
-if (files.length === 0) {
-  alert("Excel ファイルが見つかりませんでした");
-  exit();
-}
-
-const rows = [];
-const errors = [];
-for (const h of ui.withProgress(files, { title: "読み込み中" })) {
-  try {
-    const book = workbooks.open(h);
-    const sheet = book.sheets["明細"] ?? book.sheets[0];
-    for (const r of sheet.toObjects()) rows.push({ ファイル: h.relativePath, ...r });
-    book.close();
-  } catch (e) {
-    errors.push(`${h.relativePath}: ${e.message}`);
-  }
-}
-
-const dest = await showSaveFilePicker({ suggestedName: "明細まとめ.xlsx", startIn: dir, types: [{ description: "Excel", accept: [".xlsx"] }] });
-if (!dest) exit();
-
-const out = workbooks.create();
-out.addSheet("明細").write(rows, { table: true });
-if (errors.length) out.addSheet("エラー").write(errors.map((e) => [e]));
-out.save(dest);
-
-alert(`${files.length} ファイル、${rows.length} 行をまとめました` + (errors.length ? `\n読めなかったファイル: ${errors.length} 件` : ""));
-shell.showItemInFolder(dest);
+    const out = workbooks.create();
+    out.addSheet(v.sheet).write(rows, { table: true });
+    if (errors.length) out.addSheet("エラー").write(errors.map((e) => [e]));
+    out.save(v.out);
+    ctx.log(`${files.length} ファイル、${rows.length} 行をまとめました`);
+    return v.out;
+  },
+});
+if (!v) exit();
 ```
 
-使い方: `明細まとめ.js` という名前で保存し、`xljs.exe` にドラッグ＆ドロップします。フォルダと保存先を聞かれます。
+使い方: `明細まとめ.js` という名前で保存し、`xljs.exe` にドラッグ＆ドロップします。フォームでフォルダ・シート名・保存先を指定して「まとめる」を押します。

@@ -269,6 +269,7 @@ app.handle("dynamic", (x) => x * 2);       // export 以外の名前で登録
 - `data-action` の関数がエラーになると、エラーのダイアログを表示します（スクリプトは続行）。`xljs.invoke` のエラーは Promise の reject で、`catch` しなければ同じくダイアログになります。スクリプトの `win.on` / `$().on` のハンドラのエラーも同様です。
 - `win.$(sel).on(type, (e) => ...)` の `e` は DOM イベントではなく値（`type` `id` `name` `value` `checked` `dataset` `key`、submit ならフォームの値 `values`）。`{ preventDefault: true }` で既定の動作を止めます。
 - `data-action` の実行中は要素が無効になり、`xljs-busy` クラスが付きます。
+- アイコンには同梱の [Font Awesome Free](https://fontawesome.com/icons)（7.3.1）が使えます。`<link rel="stylesheet" href="/_xljs/fontawesome/css/all.min.css">` を書き、`<i class="fa-solid fa-file-excel"></i>` のように使います（インターネット接続は不要）。
 
 モック UI では応答ファイルの `"app"` にウィンドウごとの操作の列を書くと、画面の代わりに実行してログに出します（サンプル: `testdata/scripts/bridge.test.answers.json`）。
 
@@ -476,3 +477,5 @@ go test ./...
 ## ライセンス
 
 MIT
+
+同梱のライブラリ: Day.js（MIT、`internal/api/dayjs/LICENSE`）、Font Awesome Free（アイコン CC BY 4.0・フォント SIL OFL 1.1・CSS MIT、`internal/ui/web/fontawesome/LICENSE.txt`）。
