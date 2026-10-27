@@ -16,7 +16,10 @@
     null,
     {"from": ""},
     {"from": "2026-04-05", "to": "2026-04-01"},
-    {"to": "2026-04-09"}
+    {"to": "2026-04-09"},
+    {"sales": "data/売上_04.csv"},
+    {"sales": "data/none.csv", "purchase": "data/b.xlsx"},
+    {"sales": ""}
   ],
   "progress": [{}, {"cancelAfter": 1}]
 }

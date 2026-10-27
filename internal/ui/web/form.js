@@ -18,13 +18,20 @@ let state = "input"; // input | busy (waiting for the script) | running | stoppi
 let ran = false;
 let noSubmit = false;
 let extraButtons = []; // the form's buttons (beside the submit button)
+let seq = 0; // the last value set by the script (ctx.setValue) applied here; sent back with the values
 const controls = new Map(); // name -> { field, row, get(), set(value, append), focus() }
 
 host.on((m) => {
   switch (m.type) {
     case "init": init(m); break;
     case "errors": setState("input"); showErrors(m.errors || {}, m.error || ""); break;
-    case "picked": { const c = controls.get(m.field); if (c) { c.set(m.value, m.append); liveCheck(m.field, true); } break; }
+    case "picked": {
+      // From a picker or a drop (a change by the user), or quiet: set by the script.
+      const c = controls.get(m.field);
+      if (m.seq) seq = Math.max(seq, m.seq);
+      if (c) { c.set(m.value, m.append); liveCheck(m.field, true, !m.quiet); }
+      break;
+    }
     case "fieldError": { const c = controls.get(m.field); if (c) { setError(c, m.error || ""); markTabs(); } break; }
     case "table": { const c = controls.get(m.field); if (c && c.setTable) c.setTable(m); break; }
     case "cellErrors": { const c = controls.get(m.field); if (c && c.setCellErrors) c.setCellErrors(m.errors || [], m.row); break; }
@@ -50,7 +57,7 @@ function init(m) {
   $("submit").hidden = noSubmit;
   for (const b of extraButtons) b.remove();
   extraButtons = (m.buttons || []).map((label, k) => {
-    const b = el("button", { type: "button" }, ...withIcon((m.buttonIcons || [])[k], label));
+    const b = el("button", { type: "button", title: (m.buttonTooltips || [])[k] || "" }, ...withIcon((m.buttonIcons || [])[k], label));
     b.onclick = () => submit(k);
     $("submit").before(b);
     return b;
@@ -68,6 +75,7 @@ function init(m) {
     const wide = f.type === "table" ? " wide" : "";
     const label = el("label", { className: "lbl" + wide, htmlFor: id }, ...(f.type === "checkbox" ? [] : withIcon(f.icon, f.label)));
     if (f.required && f.type !== "checkbox") label.append(el("span", { className: "req", textContent: "*" }));
+    if (f.tooltip) label.title = c.node.title = f.tooltip;
     const ctl = el("div", { className: "ctl" + wide }, c.node);
     if (f.help) ctl.append(el("div", { className: "help", textContent: f.help }));
     c.err = ctl.appendChild(el("div", { className: "err", hidden: true }));
@@ -145,11 +153,16 @@ function buildControl(f, id) {
       };
     }
     case "select": {
-      const s = el("select", { id, name: f.name }, ...(f.options || []).map((o) => el("option", { value: o.value, textContent: o.label })));
+      // With a placeholder the select starts on an empty option that shows it.
+      const s = el("select", { id, name: f.name },
+        ...(f.placeholder ? [el("option", { value: "", textContent: f.placeholder, className: "placeholder" })] : []),
+        ...(f.options || []).map((o) => el("option", { value: o.value, textContent: o.label })));
+      const empty = () => s.classList.toggle("empty", !!f.placeholder && s.value === "");
+      s.addEventListener("change", empty);
       return {
         node: s, inputs: [s],
         get: () => s.value,
-        set: (v) => { s.value = String(v ?? ""); if (s.selectedIndex < 0 && s.options.length) s.selectedIndex = 0; },
+        set: (v) => { s.value = String(v ?? ""); if (s.selectedIndex < 0 && s.options.length) s.selectedIndex = 0; empty(); },
         focus: () => s.focus(),
       };
     }
@@ -173,7 +186,11 @@ function buildControl(f, id) {
       const clear = el("button", { type: "button", className: "small", textContent: texts.clear });
       const lines = () => t.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
       b.onclick = () => pick(f, lines());
-      clear.onclick = () => { t.value = ""; t.focus(); };
+      clear.onclick = () => {
+        t.value = "";
+        t.dispatchEvent(new Event("change", { bubbles: true }));
+        t.focus();
+      };
       const node = el("div", { className: "row" }, t, el("div", { className: "files" }, b, clear));
       dropTarget(node, f);
       return {
@@ -472,16 +489,18 @@ function values() {
 }
 
 // ---- checks while typing: a changed field is checked by the script
-// (its checks and its own validate); a field showing an error is checked
-// again as it is typed in, so that the error goes away once fixed.
+// (its checks and its own validate, then its onChange); a field showing an
+// error is checked again as it is typed in, so that the error goes away
+// once fixed.
 
 const checkTimers = new Map();
-function liveCheck(name, now) {
+/** change: the user changed the field (not just typing in it, or the script setting it). */
+function liveCheck(name, now, change) {
   if (state !== "input") return;
   clearTimeout(checkTimers.get(name));
   const send = () => {
     checkTimers.delete(name);
-    if (state === "input") host.send({ type: "check", field: name, values: values() });
+    if (state === "input") host.send({ type: "check", field: name, values: values(), seq, change: !!change });
   };
   if (now) send();
   else checkTimers.set(name, setTimeout(send, 250));
@@ -490,10 +509,10 @@ function liveCheck(name, now) {
 function watch(c) {
   const name = c.field.name;
   if (c.field.type === "table") {
-    c.onChange = () => { if (!c.err.hidden) liveCheck(name, true); };
+    c.onChange = () => { if (!c.err.hidden || c.field.change) liveCheck(name, true, true); };
     return;
   }
-  c.ctl.addEventListener("change", () => liveCheck(name, true));
+  c.ctl.addEventListener("change", () => liveCheck(name, true, true));
   c.ctl.addEventListener("input", () => { if (!c.err.hidden) liveCheck(name, false); });
 }
 
@@ -542,7 +561,7 @@ function submit(k) {
   if (state !== "input") return;
   flushCells();
   setState("busy");
-  host.send(k === undefined ? { type: "submit", values: values() } : { type: "submit", values: values(), button: k });
+  host.send(k === undefined ? { type: "submit", values: values(), seq } : { type: "submit", values: values(), seq, button: k });
 }
 
 // Enter submits (not when the submit button is hidden).
