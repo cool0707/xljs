@@ -13,7 +13,8 @@ var webFiles embed.FS
 const BuiltinPrefix = "_xljs/"
 
 // BuiltinFS holds the built-in pages: form.html (ui.form) and table.html
-// (ui.table) with their scripts and styles.
+// (ui.table) with their scripts and styles, and Font Awesome Free
+// (fontawesome/css/all.min.css) for the script's own pages.
 var BuiltinFS fs.FS
 
 // PageScript is the page runtime (the xljs object, data-bind and friends)

@@ -210,6 +210,8 @@ declare global {
     name: string;
     /** 表示名（既定は name） */
     label?: string;
+    /** ラベルの前に出す Font Awesome のアイコン（"folder-open" は solid、"fa-regular fa-calendar" のようにクラスでも可） */
+    icon?: string;
     /** 既定 "text" */
     type?: FormFieldType;
     /** 初期値。ファイル系はパスかハンドル、date は Date か "YYYY-MM-DD"、table は選択する行（行そのものか番号、配列可） */
@@ -290,6 +292,8 @@ declare global {
 
   interface FormButton<V extends FormValues = FormValues> {
     label: string;
+    /** Font Awesome のアイコン（FormField の icon と同じ） */
+    icon?: string;
     /** 押されたときの処理。onSubmit と同じく、出力ファイルを返すと「フォルダを開く」ボタンを出す */
     onClick(values: V, ctx: FormContext): unknown;
     /** false なら検証せずに入力のままの値で実行する（読み込み・クリアなど）。既定 true */
@@ -309,9 +313,13 @@ declare global {
      * タブ。各タブの項目はタブを切り替えて表示する（値は fields と同じく 1 つのオブジェクトにまとまるので、名前は全体で重複不可）。
      * コンソールではタブごとに見出しを出して順に尋ねる
      */
-    tabs?: { label: string; fields: FormField[] }[];
+    tabs?: { label: string; icon?: string; fields: FormField[] }[];
     /** 送信ボタンの文字（既定 "OK"）。false で送信ボタンを出さない（buttons があるときだけ） */
     submit?: string | false;
+    /** 送信ボタンの Font Awesome のアイコン（FormField の icon と同じ） */
+    submitIcon?: string;
+    /** 指定するとページの先頭にこのアイコン（FormField の icon と同じ）とタイトルを見出しとして表示する */
+    icon?: string;
     /**
      * 送信ボタンの左に並べるボタン。押すと onClick を onSubmit と同じように実行する（進捗・ログ・中止。ウィンドウは開いたまま）。
      * コンソールでは項目のあとにどのボタンを押すか尋ねる

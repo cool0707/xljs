@@ -224,6 +224,8 @@ p.close();
 
 ## 入力フォーム（ui.form）
 
+入力は原則このフォームで受け取る（バッチ・他のアプリから自動で呼ばれるときは画面を出さず `xljs.args` や設定ファイルから、使い捨ての処理はダイアログで）。`required` `min` `max` `pattern` と `validate` で入力チェックを必ず入れ、ファイルは中身（シート・列）まで `validate` で確かめる。
+
 ```js
 const v = await ui.form({
   title: "請求書作成",
@@ -260,6 +262,7 @@ if (!v) exit();
 
 - 項目の共通オプション: `label` `default` `required` `placeholder` `help`（説明文）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
+- アイコン（Font Awesome Free の名前。`"folder-open"` など）: 項目・タブ・ボタンの `icon`、送信ボタンは `submitIcon`。フォームの `icon` でページの先頭にアイコン付きのタイトルを出す。
 - `table` に `editable: true` を付けるとセルをその場で編集でき、入力のたびに検証してエラーのセルを赤く表示する（エラーが残っていると送信できない）。検証を通った値は元の行オブジェクトに書き込まれる。
 
 ```js
@@ -380,12 +383,15 @@ export async function run({ month }) {    // 画面から呼べる関数
 
 ```html
 <!-- ui/index.html -->
+<link rel="stylesheet" href="/_xljs/fontawesome/css/all.min.css">
 <form data-action="run" data-result="count">
   <input name="month" type="month" required>
-  <button>実行</button>
+  <button><i class="fa-solid fa-play"></i> 実行</button>
 </form>
 <p>状態: <span data-bind="status"></span> / 件数: <span data-bind="count"></span></p>
 ```
+
+- アイコンは同梱の Font Awesome Free 7 が使える（上の `<link>` を書く。CDN は使わない）: `<i class="fa-solid fa-file-excel"></i>`、`fa-regular`、`fa-brands`。
 
 ## レシピ
 

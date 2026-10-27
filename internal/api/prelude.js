@@ -1519,6 +1519,17 @@
     return { columns: w.columns, rows: w.rows.map((r) => r.map((v) => (v === null ? "" : String(v)))) };
   };
 
+  /**
+   * The Font Awesome classes for an icon option: a bare name ("folder") is
+   * the solid icon, classes ("fa-regular fa-folder") are kept.
+   */
+  function faClass(icon) {
+    if (icon === undefined || icon === null || icon === "") return "";
+    const words = String(icon).trim().split(/\s+/).filter((w) => /^[\w-]+$/.test(w));
+    if (words.length === 1 && !words[0].startsWith("fa-")) return "fa-solid fa-" + words[0];
+    return words.join(" ");
+  }
+
   function normField(f, i, tab) {
     if (!f || typeof f !== "object" || f.name === undefined || f.name === null || f.name === "") {
       throw new TypeError(T("form.fieldName", i + 1));
@@ -1538,6 +1549,7 @@
       name, type, options, accept, table, tab, columns: f.columns,
       tableSpec: { selectable: f.selectable, editable: f.editable, validateRow: f.validateRow },
       label: f.label === undefined ? name : String(f.label),
+      icon: faClass(f.icon),
       required: !!f.required,
       placeholder: f.placeholder ? String(f.placeholder) : "",
       help: f.help ? String(f.help) : "",
@@ -1790,9 +1802,11 @@
     if (!options || typeof options !== "object") throw new TypeError(T("form.expectedOptions"));
     // Fields above the tabs, then each tab's fields (tab: its index, or -1).
     const fields = Array.from(options.fields || []).map((f, i) => normField(f, i, -1));
+    const tabIcons = [];
     const tabs = Array.from(options.tabs || []).map((t, k) => {
       if (!t || typeof t !== "object") throw new TypeError(T("form.badTab", k + 1));
       for (const f of Array.from(t.fields || [])) fields.push(normField(f, fields.length, k));
+      tabIcons.push(faClass(t.icon));
       return t.label === undefined ? String(k + 1) : String(t.label);
     });
     const seen = new Set();
@@ -1807,14 +1821,18 @@
     // Buttons beside the submit button; each runs its onClick like onSubmit.
     const buttons = Array.from(options.buttons || []).map((b, k) => {
       if (!b || typeof b !== "object" || typeof b.onClick !== "function") throw new TypeError(T("form.badButton", k + 1));
-      return { label: b.label === undefined ? String(k + 1) : String(b.label), onClick: b.onClick, validate: b.validate !== false, close: !!b.close };
+      return {
+        label: b.label === undefined ? String(k + 1) : String(b.label), icon: faClass(b.icon),
+        onClick: b.onClick, validate: b.validate !== false, close: !!b.close,
+      };
     });
     const o = {
       title: options.title === undefined ? title() : String(options.title),
       description: options.description ? String(options.description) : "",
       submit: options.submit ? String(options.submit) : "",
       noSubmit: options.submit === false && buttons.length > 0,
-      key, tabs, buttons,
+      icon: faClass(options.icon), submitIcon: faClass(options.submitIcon),
+      key, tabs, tabIcons, buttons,
     };
     return native.supportsWindows ? formWindow(o, fields, wire, options) : formPrompt(o, fields, wire, options);
   }
@@ -1915,6 +1933,7 @@
 
   function formSize(o, fields, hasRun, options) {
     let h = 100;
+    if (o.icon) h += 44; // the heading
     if (o.description) h += 14 + 21 * Math.min(8, o.description.split("\n").reduce((n, l) => n + 1 + Math.floor(l.length / 40), 0));
     // Fields above the tabs, plus the tallest tab.
     const heights = o.tabs.map(() => 0);
@@ -1960,10 +1979,11 @@
         switch (m.type) {
           case "ready":
             page.send({
-              type: "init", description: o.description, submit: o.submit, texts: formTexts(), tabs: o.tabs,
-              noSubmit: o.noSubmit, buttons: o.buttons.map((b) => b.label),
+              type: "init", title: o.title, icon: o.icon, description: o.description, texts: formTexts(),
+              submit: o.submit, submitIcon: o.submitIcon, tabs: o.tabs, tabIcons: o.tabIcons,
+              noSubmit: o.noSubmit, buttons: o.buttons.map((b) => b.label), buttonIcons: o.buttons.map((b) => b.icon),
               fields: fields.map((f) => ({
-                name: f.name, label: f.label, type: f.type, options: f.options, required: f.required,
+                name: f.name, label: f.label, icon: f.icon, type: f.type, options: f.options, required: f.required,
                 placeholder: f.placeholder, help: f.help, accept: f.accept, min: f.min, max: f.max, step: f.step,
                 rows: f.type === "table" ? tableLines(f) : f.rows, value: wire[f.name], tab: f.tab,
                 table: f.table ? Object.assign({ select: f.table.select, editable: editWire(f.table) || undefined }, tableWire(f.table)) : undefined,

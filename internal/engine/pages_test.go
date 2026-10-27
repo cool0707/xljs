@@ -143,6 +143,13 @@ func TestFormAndTableWindows(t *testing.T) {
 				!strings.Contains(got, `"value":"顧客別"`) || !strings.Contains(got, `"value":"2026-04-01"`) {
 				t.Errorf("init fields = %s", got)
 			}
+			// Icons: a bare name is the solid icon, classes are kept (bad words dropped).
+			if init["icon"] != "fa-solid fa-table" || init["title"] != "窓" || init["submitIcon"] != "fa-regular fa-circle-play" {
+				t.Errorf("init icon = %v, title = %v, submitIcon = %v", init["icon"], init["title"], init["submitIcon"])
+			}
+			if got := asJSON(init["fields"]); !strings.Contains(got, `"icon":"fa-solid fa-folder-open"`) || !strings.Contains(got, `"icon":"fa-brands fa-windows"`) {
+				t.Errorf("field icons = %s", got)
+			}
 			if texts := init["texts"].(map[string]any); texts["browse"] != "参照…" {
 				t.Errorf("texts = %v", texts)
 			}
@@ -254,9 +261,9 @@ func TestFormAndTableWindows(t *testing.T) {
 	}
 
 	src := `
-const v = await ui.form({ title: "窓", fields: [
-  { name: "src", label: "フォルダ", type: "folder", required: true },
-  { name: "n", type: "number" },
+const v = await ui.form({ title: "窓", icon: "table", submitIcon: "fa-regular fa-circle-play", fields: [
+  { name: "src", label: "フォルダ", type: "folder", required: true, icon: "folder-open" },
+  { name: "n", type: "number", icon: "bad<icon> fa-brands  fa-windows" },
   { name: "mode", type: "select", options: ["顧客別", "商品別"] },
   { name: "day", type: "date", default: new Date(2026, 3, 1) },
   { name: "inputs", type: "files", accept: ".xlsx" },

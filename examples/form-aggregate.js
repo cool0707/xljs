@@ -3,15 +3,17 @@
 // 前回の入力内容は remember: true で次回の初期値になる。
 const values = await ui.form({
   title: "売上集計",
+  icon: "chart-column", // Font Awesome のアイコン（ページ先頭にタイトルと表示）
   description: "フォルダ内（サブフォルダ含む）の Excel ファイルの「明細」シートを顧客ごとに集計します。",
   fields: [
-    { name: "src", label: "集計フォルダ", type: "folder", required: true },
-    { name: "out", label: "出力先", type: "saveFile", accept: [".xlsx"], default: "集計結果.xlsx", required: true },
+    { name: "src", label: "集計フォルダ", type: "folder", required: true, icon: "folder-open" },
+    { name: "out", label: "出力先", icon: "file-excel", type: "saveFile", accept: [".xlsx"], default: "集計結果.xlsx", required: true },
     { name: "key", label: "集計単位", type: "radio", options: ["顧客名", "商品名"], default: "顧客名" },
     { name: "from", label: "対象期間（開始）", type: "date", help: "空欄なら全期間" },
     { name: "details", label: "明細シートも出力する", type: "checkbox", default: true },
   ],
   submit: "集計",
+  submitIcon: "play",
   remember: true,
   validate(v) {
     if (v.out && !v.out.name.toLowerCase().endsWith(".xlsx")) return { out: "拡張子は .xlsx にしてください" };
