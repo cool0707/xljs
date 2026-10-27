@@ -375,7 +375,7 @@ func TestFormWindowTablesAndTabs(t *testing.T) {
 			for _, want := range []string{
 				`"name":"common","options":[],"placeholder":"","required":false,"rows":0,"step":null,"tab":-1`,
 				`"name":"a",`, `"tab":0`,
-				`"table":{"columns":["名前","数"],"rows":[["a",1],["b",null]],"select":"single"},"type":"table","value":[1]`,
+				`"table":{"columns":["名前","数"],"rows":[["a",1],["b",null]],"select":"single"},"tooltip":"","type":"table","value":[1]`,
 				`"name":"out","options":[],"placeholder":"","required":false,"rows":3,"step":null,"tab":1,"table":{"columns":[],"rows":[],"select":""}`,
 			} {
 				if !strings.Contains(fields, want) {
@@ -429,7 +429,7 @@ func TestFormWindowButtons(t *testing.T) {
 			// validate: false runs with the values as entered; ctx.setValue updates the page.
 			p.send(map[string]any{"type": "submit", "button": 0, "values": map[string]any{"n": ""}})
 			p.expect("running", nil)
-			if got := asJSON(p.expect("picked", nil)); got != `{"append":false,"field":"n","type":"picked","value":"7"}` {
+			if got := asJSON(p.expect("picked", nil)); got != `{"append":false,"field":"n","quiet":true,"seq":1,"type":"picked","value":"7"}` {
 				t.Errorf("picked = %s", got)
 			}
 			p.expect("done", nil)
@@ -569,5 +569,68 @@ await ui.form({
 	u.wg.Wait()
 	if code != 0 || err != nil {
 		t.Fatalf("exit %d, %v", code, err)
+	}
+}
+
+func TestFormWindowOnChange(t *testing.T) {
+	m, _ := ui.NewMockFromJSON("", io.Discard)
+	u := &pageUI{Mock: m, t: t}
+	t.Setenv("XLJS_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	for _, n := range []string{"売上_202604.csv", "仕入_202604.csv"} {
+		if err := os.WriteFile(filepath.Join(dir, n), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sales := filepath.Join(dir, "売上_202604.csv")
+	u.pages = []func(p *fakePage){
+		func(p *fakePage) {
+			init := p.expect("init", nil)
+			fs := init["fields"].([]any)
+			if f := fs[0].(map[string]any); f["tooltip"] != "売上の CSV" || f["change"] != true {
+				t.Errorf("field = %s", asJSON(f))
+			}
+			if f := fs[2].(map[string]any); f["value"] != "" || f["placeholder"] != "選んでください" {
+				t.Errorf("select = %s", asJSON(f))
+			}
+			if tips := asJSON(init["buttonTooltips"]); tips != `["説明"]` {
+				t.Errorf("buttonTooltips = %s", tips)
+			}
+			// Typing (no change) does not run onChange.
+			p.send(map[string]any{"type": "check", "field": "sales", "values": map[string]any{"sales": sales, "purchase": "", "kind": ""}})
+			p.expect("fieldError", nil)
+			// A change: onChange fills the other file (quiet, with its seq).
+			p.send(map[string]any{"type": "check", "field": "sales", "change": true, "values": map[string]any{"sales": sales, "purchase": "", "kind": ""}})
+			p.expect("fieldError", nil)
+			picked := p.expect("picked", nil)
+			if picked["field"] != "purchase" || picked["value"] != filepath.Join(dir, "仕入_202604.csv") || picked["quiet"] != true || picked["seq"] != 1.0 {
+				t.Errorf("picked = %s", asJSON(picked))
+			}
+			// A submit sent before the page applied it keeps the value the script set.
+			p.send(map[string]any{"type": "submit", "seq": 0, "values": map[string]any{"sales": sales, "purchase": "", "kind": "a"}})
+			p.waitClosed()
+		},
+	}
+	src := `
+let changes = 0;
+const v = await ui.form({
+  fields: [
+    { name: "sales", type: "file", tooltip: "売上の CSV", required: true, onChange(h, values, ctx) {
+      changes++;
+      const other = h.path.replace("売上_", "仕入_");
+      if (!values.purchase && fs.exists(other)) ctx.setValue("purchase", other);
+    } },
+    { name: "purchase", type: "file", required: true },
+    { name: "kind", type: "select", options: ["a", "b"], placeholder: "選んでください", required: true },
+  ],
+  buttons: [{ label: "?", tooltip: "説明", validate: false, onClick() {} }],
+});
+console.log(changes, v.purchase.name, v.kind);
+`
+	var out bytes.Buffer
+	code, err := Run(Options{ScriptPath: writeScript(t, "change.js", src), UI: u, Stdout: &out, Stderr: io.Discard})
+	u.wg.Wait()
+	if want := "1 仕入_202604.csv a\n"; code != 0 || err != nil || out.String() != want {
+		t.Fatalf("exit %d, %v, stdout %q, want %q", code, err, out.String(), want)
 	}
 }

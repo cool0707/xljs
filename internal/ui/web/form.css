@@ -81,6 +81,8 @@ main { flex: 1; overflow: auto; padding: 16px 20px 8px; }
 .help { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .err { color: var(--error); font-size: 12px; margin-top: 2px; }
 .invalid input, .invalid select, .invalid textarea { border-color: var(--error); }
+select.empty { color: var(--muted); }
+select.empty option:not(.placeholder) { color: var(--fg); }
 .choices { display: flex; flex-wrap: wrap; gap: 4px 16px; padding-top: 5px; }
 .choices label, .check { display: inline-flex; align-items: center; gap: 6px; }
 .check { padding-top: 5px; }

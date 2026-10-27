@@ -1553,6 +1553,7 @@
       required: !!f.required,
       placeholder: f.placeholder ? String(f.placeholder) : "",
       help: f.help ? String(f.help) : "",
+      tooltip: f.tooltip ? String(f.tooltip) : "",
       min: num(f.min), max: num(f.max), step: f.step === undefined ? null : f.step,
       rows: type === "table" ? Number(f.height) || 0 : Number(f.rows) || 0,
       pattern: f.pattern === undefined || f.pattern === null || f.pattern === "" ? null
@@ -1560,6 +1561,7 @@
       patternMessage: f.patternMessage ? String(f.patternMessage) : "",
       remember: f.remember !== false && type !== "password" && type !== "table",
       validate: typeof f.validate === "function" ? f.validate : null,
+      onChange: typeof f.onChange === "function" ? f.onChange : null,
       default: f.default,
     };
   }
@@ -1577,7 +1579,8 @@
       return f.table.select === "single" ? idx.slice(0, 1) : Array.from(new Set(idx));
     }
     if (f.type === "files") return [v].flat().filter((x) => x !== null && x !== undefined && x !== "").map((x) => toPath(x));
-    if (v === null || v === undefined) return f.type === "select" ? f.options[0].value : "";
+    // A select with a placeholder starts on it (""), otherwise on its first option.
+    if (v === null || v === undefined) return f.type === "select" && !f.placeholder ? f.options[0].value : "";
     switch (f.type) {
       case "file": case "folder": case "saveFile": return toPath(v);
       case "date": return v instanceof Date ? (isNaN(v) ? "" : ymd(v)) : String(v);
@@ -1823,6 +1826,7 @@
       if (!b || typeof b !== "object" || typeof b.onClick !== "function") throw new TypeError(T("form.badButton", k + 1));
       return {
         label: b.label === undefined ? String(k + 1) : String(b.label), icon: faClass(b.icon),
+        tooltip: b.tooltip ? String(b.tooltip) : "",
         onClick: b.onClick, validate: b.validate !== false, close: !!b.close,
       };
     });
@@ -1896,7 +1900,22 @@
         }
         delete answer.$cells;
       }
-      for (const f of fields) if (f.name in answer) wire[f.name] = answer[f.name];
+      // The answered values in field order; one that differs from what was
+      // shown is a change by the user and runs the field's onChange (once
+      // it passes its checks), whose setValue may fill later fields.
+      const shown = Object.assign({}, wire);
+      for (const f of fields) {
+        if (!(f.name in answer) || JSON.stringify(answer[f.name]) === JSON.stringify(shown[f.name])) continue;
+        wire[f.name] = answer[f.name];
+        if (f.onChange && !(await checkField(fields, f, wire))) {
+          const ctx = promptContext(o, fields, wire);
+          try {
+            await f.onChange(fromWire(f, wire[f.name]), rawValues(fields, wire), ctx);
+          } finally {
+            ctx._i.close();
+          }
+        }
+      }
       const c = await pressValues(o, b, fields, wire, options);
       errors = c.errors || {};
       error = c.error || "";
@@ -1904,31 +1923,37 @@
       if (!b || b.validate || b.close) result = c.values;
       const handler = b ? b.onClick : options.onSubmit;
       if (typeof handler === "function") {
-        let p = null;
-        const ctx = new FormContext({
-          fields,
-          table(f) {
-            native.uiTable(JSON.stringify(Object.assign({ title: f.label, select: "" }, tableText(f.table))));
-          },
-          setValue(f, w) { wire[f.name] = w; },
-          progress(done, total, message) {
-            if (!p) p = new Progress({ title: o.title, total: total || 0 });
-            else if (total !== undefined) p.total = total;
-            p.update(done, message);
-          },
-          log: (text, level) => (level === "error" ? err : out)(text),
-          cancelled: () => (p ? p.cancelled : false),
-        });
+        const ctx = promptContext(o, fields, wire);
         try {
           await handler(c.values, ctx);
         } catch (e) {
           if (!(e instanceof FormCancel)) throw e;
         } finally {
-          if (p) p.close();
+          ctx._i.close();
         }
       }
       if (!b || b.close) return result;
     }
+  }
+
+  /** onSubmit's (and onChange's) ctx for the console and mock: a progress indicator once it reports progress. */
+  function promptContext(o, fields, wire) {
+    let p = null;
+    return new FormContext({
+      fields,
+      table(f) {
+        native.uiTable(JSON.stringify(Object.assign({ title: f.label, select: "" }, tableText(f.table))));
+      },
+      setValue(f, w) { wire[f.name] = w; },
+      progress(done, total, message) {
+        if (!p) p = new Progress({ title: o.title, total: total || 0 });
+        else if (total !== undefined) p.total = total;
+        p.update(done, message);
+      },
+      log: (text, level) => (level === "error" ? err : out)(text),
+      cancelled: () => (p ? p.cancelled : false),
+      close: () => { if (p) p.close(); },
+    });
   }
 
   function formSize(o, fields, hasRun, options) {
@@ -1964,6 +1989,8 @@
     const hasRun = !!onSubmit || o.buttons.length > 0;
     return new Promise((resolve, reject) => {
       let result = null, failed = null, running = false, outputs = [];
+      // ctx.setValue calls: their count and, per field, the last one.
+      const sets = { n: 0, at: new Map() };
       // Cell edits and field checks are handled in order, and before a press of a button.
       let editQueue = Promise.resolve();
       const page = openPage("form.html", Object.assign({ title: o.title }, formSize(o, fields, hasRun, options)),
@@ -1982,9 +2009,11 @@
               type: "init", title: o.title, icon: o.icon, description: o.description, texts: formTexts(),
               submit: o.submit, submitIcon: o.submitIcon, tabs: o.tabs, tabIcons: o.tabIcons,
               noSubmit: o.noSubmit, buttons: o.buttons.map((b) => b.label), buttonIcons: o.buttons.map((b) => b.icon),
+              buttonTooltips: o.buttons.map((b) => b.tooltip),
               fields: fields.map((f) => ({
                 name: f.name, label: f.label, icon: f.icon, type: f.type, options: f.options, required: f.required,
-                placeholder: f.placeholder, help: f.help, accept: f.accept, min: f.min, max: f.max, step: f.step,
+                placeholder: f.placeholder, help: f.help, tooltip: f.tooltip, change: !!f.onChange,
+                accept: f.accept, min: f.min, max: f.max, step: f.step,
                 rows: f.type === "table" ? tableLines(f) : f.rows, value: wire[f.name], tab: f.tab,
                 table: f.table ? Object.assign({ select: f.table.select, editable: editWire(f.table) || undefined }, tableWire(f.table)) : undefined,
               })),
@@ -1994,13 +2023,16 @@
             }
             break;
           case "check": {
-            // A field was changed: its error, or "" to clear it.
+            // A field was changed (change: by the user) or is being typed in: its error, or "" to clear it.
+            // A changed field that passes its checks runs its onChange.
             const f = byName.get(m.field);
             if (!f || running) return;
             editQueue = editQueue.then(async () => {
-              for (const g of fields) if (m.values && g.name in m.values) wire[g.name] = m.values[g.name];
+              takeValues(m);
               const error = await checkField(fields, f, wire);
-              if (!page.n.isClosed() && !running) page.send({ type: "fieldError", field: f.name, error });
+              if (page.n.isClosed() || running) return;
+              page.send({ type: "fieldError", field: f.name, error });
+              if (!error && m.change && f.onChange) await changed(f);
             });
             await editQueue;
             break;
@@ -2034,7 +2066,7 @@
             const b = typeof m.button === "number" ? o.buttons[m.button] : null;
             if (b === undefined || (!b && o.noSubmit) || running) return;
             await editQueue;
-            for (const f of fields) if (m.values && f.name in m.values) wire[f.name] = m.values[f.name];
+            takeValues(m);
             const c = await pressValues(o, b, fields, wire, options);
             if (page.n.isClosed()) return;
             if (!c.values) {
@@ -2058,12 +2090,36 @@
         }
       }
 
+      /**
+       * Takes the values of a message from the page, except those the
+       * script set (ctx.setValue) after the page sent them: m.seq is the
+       * last setValue the page had applied (none: take them all).
+       */
+      function takeValues(m) {
+        if (!m.values) return;
+        const stale = (f) => typeof m.seq === "number" && (sets.at.get(f.name) || 0) > m.seq;
+        for (const f of fields) if (f.name in m.values && !stale(f)) wire[f.name] = m.values[f.name];
+      }
+
+      /** Runs a field's onChange; an error it throws is shown as the field's error. */
+      async function changed(f) {
+        const ctx = windowContext(page, fields, wire, sets);
+        try {
+          await f.onChange(fromWire(f, wire[f.name]), rawValues(fields, wire), ctx);
+        } catch (e) {
+          if (!(e instanceof FormCancel) && !page.n.isClosed()) {
+            page.send({ type: "fieldError", field: f.name, error: errorText(e).split("\n")[0] });
+          }
+        }
+        ctx._i.flush();
+      }
+
       /** Runs onSubmit or a button's onClick; true if it ended without an error or being stopped. */
       async function run(handler, values) {
         running = true;
         page.n.clearCancel();
         page.send({ type: "running" });
-        const ctx = windowContext(page, fields, wire);
+        const ctx = windowContext(page, fields, wire, sets);
         let done;
         try {
           outputs = outputsOf(await handler(values, ctx));
@@ -2081,8 +2137,11 @@
     });
   }
 
-  /** onSubmit's ctx for a form window: updates are sent at most every 50 ms. */
-  function windowContext(page, fields, wire) {
+  /**
+   * onSubmit's (and onChange's) ctx for a form window: updates are sent at
+   * most every 50 ms. sets counts the setValue calls (see takeValues).
+   */
+  function windowContext(page, fields, wire, sets) {
     const state = { done: 0, total: 0, message: "" };
     let progressDirty = false, lines = [], level = "info", last = 0, timer = 0;
     const flush = () => {
@@ -2110,7 +2169,9 @@
       setValue(f, w) {
         flush();
         wire[f.name] = w;
-        page.send({ type: "picked", field: f.name, value: w, append: false });
+        sets.at.set(f.name, ++sets.n);
+        // quiet: checked on the page, but not a change by the user (no onChange).
+        page.send({ type: "picked", field: f.name, value: w, append: false, quiet: true, seq: sets.n });
       },
       progress(done, total, message) {
         state.done = done;

@@ -220,10 +220,12 @@ declare global {
     required?: boolean;
     /** select / radio の選択肢 */
     options?: (string | { value: string; label?: string })[];
-    /** 入力欄が空のときの薄い表示 */
+    /** 入力欄が空のときの薄い表示。select では未選択の項目として表示し、初期値を未選択（""）にする */
     placeholder?: string;
     /** 入力欄の下に出す説明 */
     help?: string;
+    /** マウスを重ねたときに出す説明（ツールチップ）。ラベルと入力欄に付く */
+    tooltip?: string;
     /** number の範囲と刻み */
     min?: number;
     max?: number;
@@ -259,6 +261,14 @@ declare global {
      * required などの検証が通ったあとに、入力欄を離れたとき（エラー表示中は入力のたび）と送信時に呼ばれる
      */
     validate?(value: any, values: FormValues): string | null | undefined | void | Promise<string | null | undefined | void>;
+    /**
+     * ユーザーが値を変えたときに呼ばれる（入力欄を離れたとき・Enter・選択・参照・ドロップ・table の行の選択）。
+     * required などの検証と項目の validate が通ったときだけ呼ばれる（空欄にしたときも、必須でなければ呼ばれる）。
+     * ctx.setValue でほかの項目を埋められる（例: 1 つ目のファイルと同じフォルダにある 2 つ目のファイルを自動で設定）。
+     * setValue で変えた項目の onChange は呼ばれない。ここで起きたエラーはこの項目のエラーとして表示される
+     * （コンソールでは呼び出し元に伝わる）。コンソール・mock では回答で変わった項目について項目の順に呼ばれる
+     */
+    onChange?(value: any, values: FormValues, ctx: FormChangeContext): unknown;
     /** remember: true のフォームで、この項目を保存しない場合は false（password は保存しない） */
     remember?: boolean;
   }
@@ -290,10 +300,20 @@ declare global {
     withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T>): AsyncIterableIterator<T>;
   }
 
+  /** 項目の onChange の第 3 引数 */
+  interface FormChangeContext {
+    /** 項目の値を変える（default と同じ形で指定。table は選択する行）。変えた項目は検証される */
+    setValue(name: string, value: unknown): void;
+    /** table の項目の行（と列）を入れ替える（選択は解除） */
+    table(name: string, rows: readonly unknown[], columns?: (string | FormTableColumn)[]): void;
+  }
+
   interface FormButton<V extends FormValues = FormValues> {
     label: string;
     /** Font Awesome のアイコン（FormField の icon と同じ） */
     icon?: string;
+    /** マウスを重ねたときに出す説明（ツールチップ） */
+    tooltip?: string;
     /** 押されたときの処理。onSubmit と同じく、出力ファイルを返すと「フォルダを開く」ボタンを出す */
     onClick(values: V, ctx: FormContext): unknown;
     /** false なら検証せずに入力のままの値で実行する（読み込み・クリアなど）。既定 true */

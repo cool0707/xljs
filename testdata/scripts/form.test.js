@@ -131,6 +131,30 @@ const r5 = await ui.form({
 deepEqual(fieldChecks, [null, 1, 9]);
 equal(r5.to.getDate(), 9);
 
+// onChange runs for a field the answer changes (once it passes its checks);
+// its setValue fills a later field unless the answer changes that too.
+fs.writeText("data/売上_04.csv", "");
+fs.writeText("data/仕入_04.csv", "");
+const changes = [];
+const pair = {
+  title: "変更時",
+  fields: [
+    { name: "sales", type: "file", tooltip: "売上の CSV", onChange(h, values, ctx) {
+      changes.push(h ? h.name : null);
+      if (h && !values.purchase) ctx.setValue("purchase", h.path.replace("売上_", "仕入_"));
+    } },
+    { name: "purchase", type: "file" },
+    { name: "kind", type: "select", options: ["a", "b"], placeholder: "選んでください" },
+  ],
+};
+const r6 = await ui.form(pair);
+deepEqual(changes, ["売上_04.csv"]);
+equal(r6.purchase.name, "仕入_04.csv");
+equal(r6.kind, "", "a select with a placeholder starts empty");
+const r7 = await ui.form(pair);
+deepEqual(changes, ["売上_04.csv", null], "no onChange for a missing file; clearing runs it");
+equal(r7.purchase.name, "b.xlsx");
+
 // Bad definitions.
 await rejects(() => ui.form({ fields: [], buttons: [{ label: "x" }] }), /onClick/);
 await rejects(() => ui.form({ fields: [{ name: "a", type: "colour" }] }), /colour/);

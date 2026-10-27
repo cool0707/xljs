@@ -260,7 +260,28 @@ if (!v) exit();
 | `folder` | フォルダハンドルか `null` |
 | `table` | 表から選んだ行（`rows` `columns` `selectable: true | "single"`） |
 
-- 項目の共通オプション: `label` `default` `required` `placeholder` `help`（説明文）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
+- 項目の共通オプション: `label` `default` `required` `placeholder`（`select` では未選択の表示になり、初期値が `""`）`help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
+- `onChange(value, values, ctx)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる。`ctx.setValue(name, value)` でほかの項目を埋められる（setValue で変えた項目の onChange は呼ばれない）。
+
+```js
+// 1 つ目のファイルを選ぶと、同じフォルダの対になるファイルを自動で設定する
+await ui.form({
+  title: "突合",
+  fields: [
+    { name: "sales", label: "売上", type: "file", accept: [".csv"], required: true, tooltip: "売上_YYYYMM.csv",
+      onChange(h, v, ctx) {
+        const m = h && /^売上_(\d{6})\.csv$/.exec(h.name);
+        if (!m) return;
+        const dir = path.dirname(h.path);
+        for (const [name, file] of [["purchase", `仕入_${m[1]}.csv`], ["stock", `在庫_${m[1]}.csv`]]) {
+          if (!v[name] && fs.exists(path.join(dir, file))) ctx.setValue(name, path.join(dir, file));
+        }
+      } },
+    { name: "purchase", label: "仕入", type: "file", accept: [".csv"], required: true },
+    { name: "stock", label: "在庫", type: "file", accept: [".csv"], required: true },
+  ],
+});
+```
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
 - アイコン（Font Awesome Free の名前。`"folder-open"` など）: 項目・タブ・ボタンの `icon`、送信ボタンは `submitIcon`。フォームの `icon` でページの先頭にアイコン付きのタイトルを出す。
 - `table` に `editable: true` を付けるとセルをその場で編集でき、入力のたびに検証してエラーのセルを赤く表示する（エラーが残っていると送信できない）。検証を通った値は元の行オブジェクトに書き込まれる。
