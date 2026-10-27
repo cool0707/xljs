@@ -8,8 +8,12 @@
 (async () => {
   const wv = window.chrome && window.chrome.webview;
   const $ = (id) => document.getElementById(id);
-  // ?autorun (tests): run at once and close at the end.
+  // ?autorun (tests): run at once, close at the end and tell Go how far the
+  // page got (in the trace of a test that hangs).
   const autorun = new URLSearchParams(location.search).has("autorun");
+  const note = (text) => {
+    if (autorun && wv) wv.postMessage("trace:" + text);
+  };
   let L = {};
   const fmt = (s, ...args) => String(s).replace(/\{(\d+)\}/g, (m, i) => (args[i] === undefined ? m : args[i]));
   const setStatus = (text, cls) => {
@@ -20,9 +24,17 @@
     $("error").textContent = text;
     $("error").hidden = !text;
   };
+  let failed = false;
   const fail = (text) => {
     setStatus("xljs: " + String(text).split("\n")[0], "error");
     showError(String(text));
+    // The run cannot go on: Go ends it with this error instead of waiting
+    // (and with ?autorun the window closes, as at the end of a run).
+    if (wv && !failed) {
+      wv.postMessage("call:" + JSON.stringify({ op: "fail", error: String(text) }));
+      if (autorun) wv.postMessage("close");
+    }
+    failed = true;
   };
 
   function status(state, detail) {
@@ -49,6 +61,7 @@
   }
 
   if (!wv) return;
+  note("loaded");
   if (!self.crossOriginIsolated) {
     fail("the debugger window is not cross-origin isolated (SharedArrayBuffer is not available)");
     return;
@@ -77,10 +90,12 @@
       return { url: new URL(name, base).href, text: await r.text() };
     };
     const [main, ...sources] = await Promise.all(["debug-worker.js", "debug/prelude.js", "debug/bundle.js", "debug.js"].map(load));
+    note("fetched " + [main, ...sources].map((s) => s.text.length).join(" "));
     // A worker from the text: its requests would not reach Go in every WebView2.
     const blob = new Blob([main.text + "\n//# sourceURL=" + main.url], { type: "text/javascript" });
     worker = new Worker(URL.createObjectURL(blob), { name: "xljs" });
     worker.postMessage({ type: "init", ctrl, data, sources });
+    note("worker started");
   } catch (e) {
     fail(e.stack || e);
     return;
@@ -95,11 +110,13 @@
     else worker.postMessage({ type: "event", text });
   });
 
-  worker.onerror = (e) => fail(e.message);
+  worker.onerror = (e) => fail(e.message || "worker error");
+  let calls = 0;
   worker.onmessage = (e) => {
     const m = e.data;
     switch (m.type) {
       case "call":
+        if (calls++ === 0) note("first call");
         wv.postMessage("call:" + m.text);
         break;
       case "status":
@@ -109,6 +126,7 @@
         fail(m.error);
         break;
       case "ready":
+        note("ready");
         L = m.labels;
         document.title = m.title;
         $("name").textContent = m.script;

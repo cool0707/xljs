@@ -23,13 +23,15 @@ import (
 // DebugPage is the URL of the debugger window (internal/ui/web/debug.html).
 const DebugPage = ui.AssetOrigin + ui.BuiltinPrefix + "debug.html"
 
-// Messages of the debugger window: its close button, and its calls
-// (debugCall + request) and their answers (debugAnswer + response). Events
-// are JSON objects (they start with "{").
+// Messages of the debugger window: its close button, its calls (debugCall +
+// request) and their answers (debugAnswer + response), and with ?autorun
+// (tests) how far the page got (debugTraceMsg + text). Events are JSON
+// objects (they start with "{").
 const (
-	debugClose  = "close"
-	debugCall   = "call:"
-	debugAnswer = "R"
+	debugClose    = "close"
+	debugCall     = "call:"
+	debugAnswer   = "R"
+	debugTraceMsg = "trace:"
 )
 
 // debugSession runs a script in the debugger window (xljs --debug): the
@@ -117,7 +119,12 @@ func runDebug(o Options, code []byte) (int, error) {
 		Debug:    true,
 		DevTools: !o.debugAutoRun,
 		Isolated: true,
+		Trace:    func(s string) { trace("window " + s) },
 		OnMessage: func(msg string, _ []string) {
+			if t, ok := strings.CutPrefix(msg, debugTraceMsg); ok {
+				trace("page " + t)
+				return
+			}
 			if req, ok := strings.CutPrefix(msg, debugCall); ok {
 				// A call of the page, which waits for the answer.
 				l.addPending()
