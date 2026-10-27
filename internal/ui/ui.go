@@ -224,3 +224,18 @@ var activeProgress atomic.Int32
 
 // ProgressActive reports whether any progress indicator is open.
 func ProgressActive() bool { return activeProgress.Load() > 0 }
+
+// Choice is one of the options of Chooser.Choose.
+type Choice struct {
+	Label string
+	Note  string // a line of explanation under the label
+	Icon  []byte // an .ico file or a PNG image (nil = the default arrow)
+}
+
+// Chooser is implemented by UIs that can ask which of a few actions to take
+// (the native UI shows them as large buttons; see the start screen in
+// cmd/xljs).
+type Chooser interface {
+	// Choose returns the index of the chosen option, or -1 when cancelled.
+	Choose(title, message string, choices []Choice) int
+}

@@ -23,12 +23,14 @@ import (
 //	  "progress": [{"cancelAfter": 3}],
 //	  "form": [{"src": "data", "tax": true}, null],
 //	  "table": [[0, 2], null],
-//	  "app": [[{"invoke": "aggregate", "args": ["2026-04"]}, {"close": true}]]
+//	  "app": [[{"invoke": "aggregate", "args": ["2026-04"]}, {"close": true}]],
+//	  "choose": [0, null]
 //	}
 //
 // When a queue is empty the call behaves as if the user cancelled. A form
 // answer lists the values that differ from the current ones; a table
-// answer lists the indices of the chosen rows. Each window (OpenWindow)
+// answer lists the indices of the chosen rows and a choose answer the index
+// of the chosen option (the start screen of xljs). Each window (OpenWindow)
 // plays the next "app" scenario (see AppStep) and then closes; without one
 // it is logged and closed immediately.
 type Mock struct {
@@ -102,6 +104,15 @@ func (m *Mock) Confirm(title, message string) bool {
 	var v bool
 	m.next("confirm", &v)
 	m.logf("confirm(%s) -> %v", q(message), v)
+	return v
+}
+
+func (m *Mock) Choose(title, message string, choices []Choice) int {
+	v := -1
+	if !m.next("choose", &v) || v < 0 || v >= len(choices) {
+		v = -1
+	}
+	m.logf("choose(%s) -> %d", q(message), v)
 	return v
 }
 

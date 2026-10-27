@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -81,6 +82,8 @@ var (
 	webClassOnce sync.Once
 	webClass     *uint16
 	webIcons     [2]uintptr // big, small
+	exeIconsOnce sync.Once
+	exeIconsVal  [2]uintptr
 	webWindows   = map[uintptr]*webWindow{}
 )
 
@@ -90,11 +93,7 @@ func registerWebClass() {
 		// other use for the standard logger.
 		log.SetOutput(io.Discard)
 		webClass = wstr("xljsWindow")
-		if exe, err := os.Executable(); err == nil {
-			p := wstr(exe)
-			procExtractIconExW.Call(uintptr(unsafe.Pointer(p)), 0,
-				uintptr(unsafe.Pointer(&webIcons[0])), uintptr(unsafe.Pointer(&webIcons[1])), 1)
-		}
+		webIcons = exeIcons()
 		hinst, _, _ := procGetModuleHandleW.Call(0)
 		cursor, _, _ := procLoadCursorW.Call(0, idcArrow)
 		wc := wndClassEx{
@@ -185,6 +184,20 @@ func (n *Native) OpenWindow(o WindowOptions) (Window, error) {
 	return w, nil
 }
 
+// exeIcons returns the big and small icons of the exe (kept for the
+// lifetime of the process).
+func exeIcons() [2]uintptr {
+	exeIconsOnce.Do(func() {
+		if exe, err := os.Executable(); err == nil {
+			p := wstr(exe)
+			procExtractIconExW.Call(uintptr(unsafe.Pointer(p)), 0,
+				uintptr(unsafe.Pointer(&exeIconsVal[0])), uintptr(unsafe.Pointer(&exeIconsVal[1])), 1)
+			runtime.KeepAlive(p)
+		}
+	})
+	return exeIconsVal
+}
+
 // loadIcon creates an icon of the system size metric (SM_CXICON or
 // SM_CXSMICON) from an .ico file or a PNG image; 0 when it cannot.
 func loadIcon(data []byte, metric uintptr) uintptr {
@@ -192,6 +205,12 @@ func loadIcon(data []byte, metric uintptr) uintptr {
 	if size == 0 {
 		size = 32
 	}
+	return loadIconSize(data, size)
+}
+
+// loadIconSize creates an icon of size pixels from an .ico file or a PNG
+// image; 0 when it cannot.
+func loadIconSize(data []byte, size uintptr) uintptr {
 	img, err := iconImage(data, int(size))
 	if err != nil {
 		return 0
