@@ -472,3 +472,50 @@ console.log("w", JSON.stringify(w));
 		t.Fatalf("exit %d, %v, stdout %q, want %q", code, err, out.String(), want)
 	}
 }
+
+func TestFormWindowEditableTable(t *testing.T) {
+	m, _ := ui.NewMockFromJSON("", io.Discard)
+	u := &pageUI{Mock: m, t: t}
+	t.Setenv("XLJS_CONFIG_DIR", t.TempDir())
+	u.pages = []func(p *fakePage){
+		func(p *fakePage) {
+			init := p.expect("init", nil)
+			if got := asJSON(init["fields"]); !strings.Contains(got, `"editable":[null,{"max":null,"min":0,"options":[],"required":true,"step":null,"type":"number"},{"max":null,"min":null,"options":[{"label":"売上","value":"売上"},{"label":"返品","value":"返品"}],"required":false,"step":null,"type":"select"}]`) {
+				t.Errorf("fields = %s", got)
+			}
+			// The errors of the rows as shown, then of the row edited.
+			if got := asJSON(p.expect("cellErrors", nil)); got != `{"errors":[{"col":1,"message":"数値を入力してください","row":1},{"col":-1,"message":"2 件以上","row":1}],"field":"t","type":"cellErrors"}` {
+				t.Errorf("cellErrors = %s", got)
+			}
+			p.send(map[string]any{"type": "cell", "field": "t", "row": 1, "col": 1, "value": "y"})
+			if got := asJSON(p.expect("cellErrors", nil)); got != `{"errors":[{"col":1,"message":"数値を入力してください","row":1},{"col":-1,"message":"2 件以上","row":1}],"field":"t","row":1,"type":"cellErrors"}` {
+				t.Errorf("cellErrors = %s", got)
+			}
+			p.send(map[string]any{"type": "submit", "values": map[string]any{}})
+			if e := asJSON(p.expect("errors", nil)); !strings.Contains(e, `"t":"表に 2 件のエラーがあります"`) {
+				t.Errorf("errors = %s", e)
+			}
+			p.expect("cellErrors", nil)
+			// Edits sent right before a press are applied first.
+			p.send(map[string]any{"type": "cell", "field": "t", "row": 1, "col": 1, "value": "3"})
+			p.send(map[string]any{"type": "cell", "field": "t", "row": 0, "col": 2, "value": "返品"})
+			p.send(map[string]any{"type": "submit", "values": map[string]any{}})
+			p.waitClosed()
+		},
+	}
+	src := `
+const rows = [{ 名前: "a", 数: 1, 区分: "売上" }, { 名前: "b", 数: "x", 区分: "売上" }];
+const v = await ui.form({ fields: [{
+  name: "t", type: "table", rows, editable: true,
+  columns: [{ key: "名前", editable: false }, { key: "数", min: 0, required: true }, { key: "区分", type: "select", options: ["売上", "返品"] }],
+  validateRow: (row) => (row.名前 === "b" && !(row.数 >= 2) ? "2 件以上" : ""),
+}]});
+console.log(JSON.stringify(v.t));
+`
+	var out bytes.Buffer
+	code, err := Run(Options{ScriptPath: writeScript(t, "edit.js", src), UI: u, Stdout: &out, Stderr: io.Discard})
+	u.wg.Wait()
+	if want := `[{"名前":"a","数":1,"区分":"返品"},{"名前":"b","数":3,"区分":"売上"}]` + "\n"; code != 0 || err != nil || out.String() != want {
+		t.Fatalf("exit %d, %v, stdout %q, want %q", code, err, out.String(), want)
+	}
+}

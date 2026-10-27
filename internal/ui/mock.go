@@ -202,6 +202,9 @@ func (m *Mock) Form(o FormOptions) (map[string]any, bool) {
 		if f.Error != "" {
 			m.logf("form error: %s: %s", f.Name, f.Error)
 		}
+		for _, e := range f.CellErrors {
+			m.logf("form error: %s: %s", f.Name, cellErrorText(f, e))
+		}
 	}
 	v := map[string]any{}
 	if !m.next("form", &v) {

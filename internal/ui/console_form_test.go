@@ -106,6 +106,39 @@ func TestConsoleFormButtons(t *testing.T) {
 	}
 }
 
+func TestConsoleFormEditableTable(t *testing.T) {
+	i18n.SetLanguage("ja")
+	defer i18n.SetLanguage("auto")
+	var out bytes.Buffer
+	// Row 9 is out of range; row 2: 金額 "200", 区分 by number, 済 "y".
+	c := &Console{In: strings.NewReader("9\n2\n200\n1\ny\n\n"), Out: &out}
+	o := FormOptions{Fields: []FormField{{
+		Name: "t", Type: "table", Columns: []string{"名前", "金額", "区分", "済"},
+		Rows: [][]string{{"a", "1", "売上", "false"}, {"b", "x"}},
+		Editable: []FormCellColumn{
+			{Index: 1, Type: "number"},
+			{Index: 2, Type: "select", Options: []FormOption{{Value: "売上", Label: "売上"}, {Value: "返品", Label: "返品"}}},
+			{Index: 3, Type: "checkbox"},
+		},
+		CellErrors: []FormCellError{{Row: 1, Col: 1, Message: "数値を入力してください"}, {Row: 1, Col: -1, Message: "確認"}},
+	}}}
+	v, ok := c.Form(o)
+	if !ok {
+		t.Fatal("cancelled")
+	}
+	if got, want := v["$cells"], map[string]any{"t": []any{[]any{1, 1, "200"}, []any{1, 2, "売上"}, []any{1, 3, true}}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("cells = %#v\n%s", got, out.String())
+	}
+	if _, has := v["t"]; has {
+		t.Errorf("a table without select has no value: %v", v)
+	}
+	for _, want := range []string{"! 2 行目 金額: 数値を入力してください", "! 2 行目: 確認", "1 から 2 までの番号"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output does not contain %q:\n%s", want, out.String())
+		}
+	}
+}
+
 func TestConsoleTable(t *testing.T) {
 	var out bytes.Buffer
 	c := &Console{In: strings.NewReader("4\n3-2\n1, 3-4\n"), Out: &out}

@@ -202,7 +202,8 @@ declare global {
    * date は Date | null（ローカル日付）、month は "YYYY-MM" | null、time は "HH:MM" | null、
    * checkbox は boolean、file / saveFile は FileSystemFileHandle | null、
    * files は FileSystemFileHandle[]、folder は FileSystemDirectoryHandle | null、
-   * table は選択した行（元のオブジェクト）の配列（selectable: "single" なら行か null。selectable なしなら値なし）
+   * table は選択した行（元のオブジェクト）の配列（selectable: "single" なら行か null。selectable なしなら値なし。
+   * 編集できる表で selectable なしならすべての行）
    */
   interface FormField {
     /** 値のキー */
@@ -227,10 +228,22 @@ declare global {
     step?: number | "any";
     /** textarea / files の行数。table では表示する行（ui.table の rows と同じ） */
     rows?: number | readonly unknown[];
-    /** table の列（ui.table の columns と同じ。既定はオブジェクトのキー） */
-    columns?: (string | TableColumn)[];
+    /** table の列（ui.table の columns と同じ。既定はオブジェクトのキー）。列ごとに編集の可否と検証を指定できる */
+    columns?: (string | FormTableColumn)[];
     /** table で行を選べるようにする（クリックで選択。true は "multiple"） */
     selectable?: boolean | "single" | "multiple";
+    /**
+     * table のセルをその場で編集できるようにする（列の editable で個別に指定も可）。
+     * 編集した値は検証を通ると元の行オブジェクトに直接書き込まれる。
+     * エラーのあるセルは赤く表示され、エラーが残っていると送信できない
+     */
+    editable?: boolean;
+    /**
+     * table の行の検証（編集できる表）。行全体へのメッセージか { 列のキー: "メッセージ" } を返す。
+     * 表示時と、行のセルが編集されるたびに呼ばれる
+     */
+    validateRow?(row: any, index: number): Record<string, string | null | undefined> | string | null | undefined | void |
+      Promise<Record<string, string | null | undefined> | string | null | undefined | void>;
     /** table の表示する高さ（行数。既定は 8 行まで） */
     height?: number;
     /** ファイル系の拡張子（".xlsx" など）。ピッカーとドロップに使う */
@@ -262,7 +275,7 @@ declare global {
      * table の項目の行（と列）を入れ替える（選択は解除）。結果の一覧の表示などに使う。
      * コンソール・mock では表を出力する
      */
-    table(name: string, rows: readonly unknown[], columns?: (string | TableColumn)[]): void;
+    table(name: string, rows: readonly unknown[], columns?: (string | FormTableColumn)[]): void;
     /** 項目の値を変える（default と同じ形で指定。table は選択する行） */
     setValue(name: string, value: unknown): void;
     /** ui.withProgress と同じ。進捗をフォーム内に表示し、中止されると onSubmit を終える（onCancel: "break" なら反復が終わるだけ） */
@@ -329,6 +342,25 @@ declare global {
     label?: string;
     /** 列幅（px）。既定は内容から決める */
     width?: number;
+  }
+
+  /** フォームの table の列。編集できる列は入力欄になり、入力のたびに検証される */
+  interface FormTableColumn extends TableColumn {
+    /** この列を編集できるか（既定は項目の editable） */
+    editable?: boolean;
+    /** 入力欄の種類（既定は値から: 数値は number、Date は date、真偽値は checkbox、ほかは text） */
+    type?: "text" | "number" | "date" | "month" | "time" | "select" | "checkbox";
+    /** select の選択肢 */
+    options?: (string | { value: string; label?: string })[];
+    required?: boolean;
+    min?: number;
+    max?: number;
+    step?: number | "any";
+    /** 入力全体が一致すべき正規表現（文字列なら全体一致） */
+    pattern?: string | RegExp;
+    patternMessage?: string;
+    /** 追加の検証。問題があればメッセージを返す（row は編集中の行） */
+    validate?(value: any, row: any, index: number): string | null | undefined | void | Promise<string | null | undefined | void>;
   }
 
   interface TableOptions {

@@ -1409,13 +1409,103 @@
   const FIELD_TYPES = ["text", "password", "number", "date", "month", "time", "select", "radio", "checkbox",
     "textarea", "file", "files", "folder", "saveFile", "table"];
 
-  /** The table of a "table" field: { data, cols, select } (see ui.table). */
+  /** Types of editable table cells. */
+  const CELL_TYPES = ["text", "number", "date", "month", "time", "select", "checkbox"];
+
+  /**
+   * The table of a "table" field: { data, cols, select } (see ui.table) and,
+   * when cells are editable, edit (per column: a normalized field for the
+   * cell, or null), bad (cells whose last input did not parse: "row:col" ->
+   * message) and validateRow.
+   */
   function formTable(f, rows, columns) {
     const data = Array.from(rows || []);
     const sel = f.selectable === true ? "multiple" : f.selectable ? String(f.selectable) : "";
     if (sel && sel !== "single" && sel !== "multiple") throw new TypeError(T("table.badSelectable", sel));
-    return { data, cols: tableColumns(data, columns), select: sel };
+    const cols = tableColumns(data, columns);
+    const specs = Array.from(columns || []);
+    const edit = cols.map((c, i) => {
+      const s = specs[i] !== null && typeof specs[i] === "object" ? specs[i] : {};
+      if (!(s.editable !== undefined ? s.editable : f.editable) || c.key === null) return null;
+      let type = s.type;
+      if (type === undefined) {
+        // From the values: numbers, dates and booleans; otherwise text.
+        const v = data.map((r) => plainDate(c.get(r))).find((x) => x !== null && x !== undefined && x !== "");
+        type = typeof v === "number" ? "number" : typeof v === "boolean" ? "checkbox" : v instanceof Date ? "date" : "text";
+      }
+      if (!CELL_TYPES.includes(String(type))) throw new TypeError(T("form.cellType", c.label, type));
+      const cf = normField(Object.assign({}, s, { name: c.label, type: String(type) }), i, -1);
+      cf.col = i;
+      cf.validate = typeof s.validate === "function" ? s.validate : null;
+      return cf;
+    });
+    return {
+      data, cols, select: sel,
+      edit: edit.some(Boolean) ? edit : null, bad: new Map(),
+      validateRow: typeof f.validateRow === "function" ? f.validateRow : null,
+    };
   }
+
+  /** Wire value of a cell for checking it again (empty cells are "", not a select's first option). */
+  const cellToWire = (cf, v) => (v === null || v === undefined || v === "" ? (cf.type === "checkbox" ? false : "") : toWire(cf, v));
+
+  /**
+   * Applies an input to a cell: the row gets the value when it passes the
+   * cell's checks; otherwise the message is kept until the next input.
+   */
+  function setCell(t, r, c, w) {
+    const cf = t.edit && t.edit[c];
+    if (!cf || !Number.isInteger(r) || r < 0 || r >= t.data.length) return false;
+    const v = fromWire(cf, w);
+    const e = checkValue(cf, w, v);
+    if (e) t.bad.set(r + ":" + c, e);
+    else {
+      t.bad.delete(r + ":" + c);
+      t.cols[c].set(t.data[r], v);
+    }
+    return true;
+  }
+
+  /** Errors of a row of an editable table: [{ row, col, message }] (col -1: the row as a whole). */
+  async function rowErrors(t, r) {
+    const out = [];
+    const row = t.data[r];
+    for (const cf of t.edit) {
+      if (!cf) continue;
+      let e = t.bad.get(r + ":" + cf.col) || "";
+      if (!e) {
+        const v = t.cols[cf.col].get(row);
+        const w = cellToWire(cf, v);
+        e = checkValue(cf, w, fromWire(cf, w));
+        if (!e && cf.validate) e = await cf.validate(plainDate(v), row, r) || "";
+      }
+      if (e) out.push({ row: r, col: cf.col, message: String(e) });
+    }
+    if (t.validateRow) {
+      const m = await t.validateRow(row, r);
+      if (typeof m === "string" && m) out.push({ row: r, col: -1, message: m });
+      else if (m && typeof m === "object") {
+        for (const [k, msg] of Object.entries(m)) {
+          if (!msg) continue;
+          const col = t.cols.findIndex((c) => String(c.key) === k || c.label === k);
+          if (!out.some((x) => x.col === col && col >= 0)) out.push({ row: r, col, message: String(msg) });
+        }
+      }
+    }
+    return out;
+  }
+
+  /** Errors of all rows of an editable table. */
+  async function tableErrors(t) {
+    const out = [];
+    if (t.edit) for (let r = 0; r < t.data.length; r++) out.push(...(await rowErrors(t, r)));
+    return out;
+  }
+
+  /** How the page edits the cells: per column { type, options, min, max, step, required } or null. */
+  const editWire = (t) => (t.edit ? t.edit.map((cf) => cf && {
+    type: cf.type, options: cf.options, min: cf.min, max: cf.max, step: cf.step, required: cf.required,
+  }) : null);
 
   /** Rows and columns of a form table for the page. */
   const tableWire = (t) => ({
@@ -1446,6 +1536,7 @@
     const table = type === "table" ? formTable(f, f.rows, f.columns) : null;
     return {
       name, type, options, accept, table, tab, columns: f.columns,
+      tableSpec: { selectable: f.selectable, editable: f.editable, validateRow: f.validateRow },
       label: f.label === undefined ? name : String(f.label),
       required: !!f.required,
       placeholder: f.placeholder ? String(f.placeholder) : "",
@@ -1499,13 +1590,19 @@
       case "checkbox": return w === true || w === "true";
       case "files": return wireList(w).map((p) => new FileSystemFileHandle(p));
       case "table": {
+        if (!f.table.select) return f.table.data.slice(); // editable: all rows
         const rows = (Array.isArray(w) ? w : []).filter((i) => Number.isInteger(i) && i >= 0 && i < f.table.data.length)
           .map((i) => f.table.data[i]);
         return f.table.select === "single" ? (rows.length ? rows[0] : null) : rows;
       }
       case "file": case "saveFile": { const p = wireStr(w).trim(); return p ? new FileSystemFileHandle(p) : null; }
       case "folder": { const p = wireStr(w).trim(); return p ? new FileSystemDirectoryHandle(p) : null; }
-      case "number": { const s = wireStr(w).trim(); return s === "" ? null : Number(s); }
+      case "number": {
+        // Full-width digits and thousands separators as typed in Japanese.
+        const s = wireStr(w).trim().replace(/[０-９．，－＋]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+          .replace(/^(?=[+-]?[\d,]+(\.\d*)?$)([+-]?)(\d{1,3}(,\d{3})+)/, (m) => m.replace(/,/g, ""));
+        return s === "" ? null : Number(s);
+      }
       case "date": {
         const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(wireStr(w).trim().replace(/\//g, "-"));
         if (!m) return null;
@@ -1517,34 +1614,47 @@
     return wireStr(w);
   }
 
-  /** Checks the wire values; returns { ok, errors: { name: message }, error, values }. */
+  /** Message for a wire value of a field or an editable cell that does not pass its checks ("" if it does). */
+  function checkValue(f, w, v) {
+    if (wireEmpty(f, w)) return f.required ? T(f.type === "table" ? "form.selectRow" : "form.required") : "";
+    let e = "";
+    switch (f.type) {
+      case "number":
+        if (!isFinite(v)) e = T("form.notNumber");
+        else if (f.min !== null && v < f.min) e = T("form.min", f.min);
+        else if (f.max !== null && v > f.max) e = T("form.max", f.max);
+        break;
+      case "date": if (v === null) e = T("form.notDate"); break;
+      case "month": if (!/^\d{4}-\d{2}$/.test(v)) e = T("form.notMonth"); break;
+      case "time": if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(v)) e = T("form.notTime"); break;
+      case "select": case "radio": if (!f.options.some((o) => o.value === v)) e = T("form.badOption"); break;
+      case "file": if (!fsObj.isFile(v)) e = T("form.fileNotFound", v.path); break;
+      case "files": { const bad = v.find((h) => !fsObj.isFile(h)); if (bad) e = T("form.fileNotFound", bad.path); break; }
+      case "folder": if (!fsObj.isDirectory(v)) e = T("form.folderNotFound", v.path); break;
+    }
+    if (!e && f.pattern && typeof v === "string" && !f.pattern.test(v)) e = f.patternMessage || T("form.pattern");
+    return e;
+  }
+
+  /**
+   * Checks the wire values; returns { ok, errors: { name: message }, error,
+   * values, cells: { name: errors of an editable table } }.
+   */
   async function checkForm(fields, wire, validate) {
-    const errors = {}, values = {};
+    const errors = {}, values = {}, cells = {};
     for (const f of fields) {
       const w = wire[f.name];
-      if (f.type === "table" && !f.table.select) continue; // shown only
-      const v = fromWire(f, w);
-      values[f.name] = v;
-      if (wireEmpty(f, w)) {
-        if (f.required) errors[f.name] = T(f.type === "table" ? "form.selectRow" : "form.required");
-        continue;
+      if (f.type === "table" && !f.table.select && !f.table.edit) continue; // shown only
+      values[f.name] = fromWire(f, w);
+      if (f.type === "table" && f.table.edit) {
+        cells[f.name] = await tableErrors(f.table);
+        if (cells[f.name].length) {
+          errors[f.name] = T("form.tableErrors", cells[f.name].length);
+          continue;
+        }
+        if (!f.table.select) continue;
       }
-      let e = "";
-      switch (f.type) {
-        case "number":
-          if (!isFinite(v)) e = T("form.notNumber");
-          else if (f.min !== null && v < f.min) e = T("form.min", f.min);
-          else if (f.max !== null && v > f.max) e = T("form.max", f.max);
-          break;
-        case "date": if (v === null) e = T("form.notDate"); break;
-        case "month": if (!/^\d{4}-\d{2}$/.test(v)) e = T("form.notMonth"); break;
-        case "time": if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(v)) e = T("form.notTime"); break;
-        case "select": case "radio": if (!f.options.some((o) => o.value === v)) e = T("form.badOption"); break;
-        case "file": if (!fsObj.isFile(v)) e = T("form.fileNotFound", v.path); break;
-        case "files": { const bad = v.find((h) => !fsObj.isFile(h)); if (bad) e = T("form.fileNotFound", bad.path); break; }
-        case "folder": if (!fsObj.isDirectory(v)) e = T("form.folderNotFound", v.path); break;
-      }
-      if (!e && f.pattern && typeof v === "string" && !f.pattern.test(v)) e = f.patternMessage || T("form.pattern");
+      const e = checkValue(f, w, values[f.name]);
       if (e) errors[f.name] = e;
     }
     let error = "";
@@ -1559,13 +1669,13 @@
         }
       }
     }
-    return { ok: !error && !Object.keys(errors).length, errors, error, values };
+    return { ok: !error && !Object.keys(errors).length, errors, error, values, cells };
   }
 
   /** Values of the fields as entered, without checking them (buttons with validate: false). */
   function rawValues(fields, wire) {
     const values = {};
-    for (const f of fields) if (!(f.type === "table" && !f.table.select)) values[f.name] = fromWire(f, wire[f.name]);
+    for (const f of fields) if (!(f.type === "table" && !f.table.select && !f.table.edit)) values[f.name] = fromWire(f, wire[f.name]);
     return values;
   }
 
@@ -1619,7 +1729,7 @@
       const f = this._i.fields.find((x) => x.name === String(name) && x.type === "table");
       if (!f) throw new TypeError(T("form.noTable", name));
       if (columns !== undefined) f.columns = columns;
-      f.table = formTable({ selectable: f.table.select }, rows, f.columns);
+      f.table = formTable(f.tableSpec, rows, f.columns);
       this._i.table(f);
     }
     /** Sets the value of a field (as its default would be given). */
@@ -1653,6 +1763,7 @@
       clear: T("form.clear"), dropHere: T("form.dropHere"), dropFolder: T("form.dropFolder"), abort: T("form.abort"), aborting: T("form.aborting"),
       running: T("form.running"), done: T("form.done"), aborted: T("form.aborted"), failed: T("form.failed"),
       openFolder: T("form.openFolder"), noRows: T("table.empty"),
+      cellError: T("form.cellError"), rowError: T("form.rowError"), moreErrors: T("form.moreErrors"),
     };
   }
 
@@ -1697,7 +1808,7 @@
   async function pressValues(o, b, fields, wire, options) {
     if (b && !b.validate) return { values: rawValues(fields, wire) };
     const c = await checkForm(fields, wire, options.validate);
-    if (!c.ok) return { errors: c.errors, error: c.error };
+    if (!c.ok) return { errors: c.errors, error: c.error, cells: c.cells };
     if (options.remember) saveRemembered(o.key, fields, wire);
     return { values: c.values };
   }
@@ -1708,6 +1819,8 @@
   async function formPrompt(o, fields, wire, options) {
     let errors = {}, error = "", result = null;
     for (;;) {
+      const cells = {};
+      for (const f of fields) if (f.table && f.table.edit) cells[f.name] = await tableErrors(f.table);
       const spec = {
         title: o.title, description: o.description, error,
         submit: o.noSubmit ? "" : o.submit || T("form.ok"), buttons: o.buttons.map((b) => b.label),
@@ -1715,7 +1828,11 @@
           name: f.name, label: f.label, type: f.type, options: f.options, required: f.required,
           placeholder: f.placeholder, help: f.help, accept: f.accept, value: wire[f.name], error: errors[f.name] || "",
           tab: f.tab >= 0 ? o.tabs[f.tab] : "",
-        }, f.table ? Object.assign({ select: f.table.select }, tableText(f.table)) : {})),
+        }, f.table ? Object.assign({ select: f.table.select }, tableText(f.table)) : {},
+        f.table && f.table.edit ? {
+          editable: f.table.edit.filter(Boolean).map((cf) => ({ index: cf.col, type: cf.type, options: cf.options })),
+          cellErrors: cells[f.name],
+        } : {})),
       };
       const r = native.uiForm(JSON.stringify(spec));
       if (r === null) return result;
@@ -1729,6 +1846,18 @@
           b = typeof x === "number" ? o.buttons[x] : o.buttons.find((y) => y.label === String(x));
           if (!b) throw new TypeError(T("form.noButton", x));
         }
+      }
+      // "$cells": edited cells, { field: [[row, column (index, key or label), value], ...] }.
+      if ("$cells" in answer) {
+        for (const [name, list] of Object.entries(answer.$cells || {})) {
+          const t = fields.find((f) => f.name === name && f.table && f.table.edit);
+          if (!t) throw new TypeError(T("form.noTable", name));
+          for (const [row, col, value] of Array.from(list || [])) {
+            const c = typeof col === "number" ? col : t.table.cols.findIndex((x) => String(x.key) === String(col) || x.label === String(col));
+            setCell(t.table, row, c, value);
+          }
+        }
+        delete answer.$cells;
       }
       for (const f of fields) if (f.name in answer) wire[f.name] = answer[f.name];
       const c = await pressValues(o, b, fields, wire, options);
@@ -1797,6 +1926,8 @@
     const hasRun = !!onSubmit || o.buttons.length > 0;
     return new Promise((resolve, reject) => {
       let result = null, failed = null, running = false, outputs = [];
+      // Cell edits are handled in order, and before a press of a button.
+      let cellQueue = Promise.resolve();
       const page = openPage("form.html", Object.assign({ title: o.title }, formSize(o, fields, hasRun, options)),
         (m, files) => { handle(m, files).catch(fail); });
       const finish = () => (failed ? reject(failed) : resolve(result));
@@ -1816,10 +1947,25 @@
                 name: f.name, label: f.label, type: f.type, options: f.options, required: f.required,
                 placeholder: f.placeholder, help: f.help, accept: f.accept, min: f.min, max: f.max, step: f.step,
                 rows: f.type === "table" ? tableLines(f) : f.rows, value: wire[f.name], tab: f.tab,
-                table: f.table ? Object.assign({ select: f.table.select }, tableWire(f.table)) : undefined,
+                table: f.table ? Object.assign({ select: f.table.select, editable: editWire(f.table) || undefined }, tableWire(f.table)) : undefined,
               })),
             });
+            for (const f of fields) {
+              if (f.table && f.table.edit) page.send({ type: "cellErrors", field: f.name, errors: await tableErrors(f.table) });
+            }
             break;
+          case "cell": {
+            const f = byName.get(m.field);
+            if (!f || !f.table || !f.table.edit || running) return;
+            const t = f.table;
+            cellQueue = cellQueue.then(async () => {
+              if (t !== f.table || !setCell(t, m.row, m.col, m.value)) return;
+              const errors = await rowErrors(t, m.row);
+              if (!page.n.isClosed()) page.send({ type: "cellErrors", field: f.name, row: m.row, errors });
+            });
+            await cellQueue;
+            break;
+          }
           case "pick": {
             const f = byName.get(m.field);
             const v = f ? await pickPath(f, m.value) : null;
@@ -1836,11 +1982,13 @@
             // button: the index of the button pressed (none: the submit button).
             const b = typeof m.button === "number" ? o.buttons[m.button] : null;
             if (b === undefined || (!b && o.noSubmit) || running) return;
+            await cellQueue;
             for (const f of fields) if (m.values && f.name in m.values) wire[f.name] = m.values[f.name];
             const c = await pressValues(o, b, fields, wire, options);
             if (page.n.isClosed()) return;
             if (!c.values) {
               page.send({ type: "errors", errors: c.errors, error: c.error });
+              for (const [name, errors] of Object.entries(c.cells || {})) page.send({ type: "cellErrors", field: name, errors });
               return;
             }
             if (!b || b.validate || b.close) result = c.values;
@@ -1900,7 +2048,13 @@
       fields,
       table(f) {
         flush();
-        page.send(Object.assign({ type: "table", field: f.name, select: f.table.select }, tableWire(f.table)));
+        page.send(Object.assign({ type: "table", field: f.name, select: f.table.select, editable: editWire(f.table) || undefined }, tableWire(f.table)));
+        if (f.table.edit) {
+          const t = f.table;
+          tableErrors(t).then((errors) => {
+            if (t === f.table && !page.n.isClosed()) page.send({ type: "cellErrors", field: f.name, errors });
+          }, (e) => page.send({ type: "log", lines: [errorText(e)], level: "error" }));
+        }
       },
       setValue(f, w) {
         flush();
@@ -1979,7 +2133,10 @@
 
   const isRecord = (r) => r !== null && typeof r === "object" && !(r instanceof Date) && !Array.isArray(r);
 
-  /** Columns as [{ key, label, width, get(row) }] (key is null for a list of plain values). */
+  /** Sets a cell of an object or array row (editable form tables). */
+  const setter = (key) => (r, v) => { if (r !== null && typeof r === "object") r[key] = v; };
+
+  /** Columns as [{ key, label, width, get(row), set(row, value) }] (key is null for a list of plain values). */
   function tableColumns(rows, columns) {
     const sample = rows.find((r) => r !== null && r !== undefined);
     const arrays = Array.isArray(sample);
@@ -1989,15 +2146,15 @@
         let key = spec.key === undefined ? i : spec.key;
         const label = String(spec.label === undefined ? key : spec.label);
         if (arrays && typeof key !== "number") key = /^\d+$/.test(String(key)) && spec.label !== undefined ? Number(key) : i;
-        return { key, label, width: Number(spec.width) || 0, get: (r) => (r === null || r === undefined ? undefined : r[key]) };
+        return { key, label, width: Number(spec.width) || 0, get: (r) => (r === null || r === undefined ? undefined : r[key]), set: setter(key) };
       });
     }
     if (arrays) {
       const n = rows.reduce((m, r) => (Array.isArray(r) ? Math.max(m, r.length) : m), 0);
-      return Array.from({ length: n }, (_, i) => ({ key: i, label: native.xlsxColumnName(i + 1), width: 0, get: (r) => (r ? r[i] : undefined) }));
+      return Array.from({ length: n }, (_, i) => ({ key: i, label: native.xlsxColumnName(i + 1), width: 0, get: (r) => (r ? r[i] : undefined), set: setter(i) }));
     }
     if (sample === undefined || isRecord(sample)) {
-      return keysOf(rows.filter(isRecord)).map((k) => ({ key: k, label: k, width: 0, get: (r) => (isRecord(r) ? r[k] : undefined) }));
+      return keysOf(rows.filter(isRecord)).map((k) => ({ key: k, label: k, width: 0, get: (r) => (isRecord(r) ? r[k] : undefined), set: setter(k) }));
     }
     return [{ key: null, label: T("table.value"), width: 0, get: (r) => r }];
   }

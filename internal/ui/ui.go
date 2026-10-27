@@ -159,6 +159,26 @@ type FormField struct {
 	Columns []string   `json:"columns"`
 	Rows    [][]string `json:"rows"`
 	Select  string     `json:"select"`
+	// Editable lists the columns of a table whose cells can be changed and
+	// CellErrors the cells that do not pass their checks. Edits are
+	// returned in "$cells": {field: [[row, column, value], ...]}.
+	Editable   []FormCellColumn `json:"editable"`
+	CellErrors []FormCellError  `json:"cellErrors"`
+}
+
+// FormCellColumn is an editable column of a table field.
+type FormCellColumn struct {
+	Index   int          `json:"index"`
+	Type    string       `json:"type"` // text, number, date, month, time, select, checkbox
+	Options []FormOption `json:"options"`
+}
+
+// FormCellError is a cell of a table field that does not pass its checks
+// (Col -1: the row as a whole).
+type FormCellError struct {
+	Row     int    `json:"row"`
+	Col     int    `json:"col"`
+	Message string `json:"message"`
 }
 
 // FormOption is a choice of a select or radio field.

@@ -32,19 +32,33 @@ func (c *Console) Form(o FormOptions) (map[string]any, bool) {
 			tab = f.Tab
 			fmt.Fprintf(c.Out, "== %s ==\n", tab)
 		}
-		if f.Type == "table" && f.Select == SelectNone {
-			fmt.Fprintln(c.Out, fieldLabel(f))
-			fmt.Fprint(c.Out, renderTable(f.Columns, f.Rows))
-			continue
-		}
 		if f.Error != "" {
 			fmt.Fprintf(c.Out, "! %s: %s\n", fieldLabel(f), f.Error)
 		}
-		v, ok := c.askField(f)
-		if !ok {
-			return nil, false
+		if f.Type == "table" && f.Select == SelectNone {
+			fmt.Fprintln(c.Out, fieldLabel(f))
+			fmt.Fprint(c.Out, renderTable(f.Columns, f.Rows))
+		} else {
+			v, ok := c.askField(f)
+			if !ok {
+				return nil, false
+			}
+			values[f.Name] = v
 		}
-		values[f.Name] = v
+		if f.Type == "table" && len(f.Editable) > 0 {
+			edits, ok := c.askEdits(f)
+			if !ok {
+				return nil, false
+			}
+			if len(edits) > 0 {
+				cells, _ := values["$cells"].(map[string]any)
+				if cells == nil {
+					cells = map[string]any{}
+					values["$cells"] = cells
+				}
+				cells[f.Name] = edits
+			}
+		}
 	}
 	if len(o.Buttons) > 0 {
 		b, ok := c.askButton(o)
@@ -207,6 +221,71 @@ func (c *Console) askRows(label string, f FormField) (any, bool) {
 		}
 		return out, true
 	}
+}
+
+// askEdits shows the errors of an editable table and asks for the rows to
+// change, then for each editable cell of the row; it returns the edits as
+// [row, column, value].
+func (c *Console) askEdits(f FormField) ([]any, bool) {
+	for _, e := range f.CellErrors {
+		fmt.Fprintln(c.Out, "! "+cellErrorText(f, e))
+	}
+	var edits []any
+	for {
+		line, ok := c.Prompt("", i18n.T("ui.tableEdit"), "")
+		if !ok {
+			return nil, false
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			return edits, true
+		}
+		n, err := strconv.Atoi(line)
+		if err != nil || n < 1 || n > len(f.Rows) {
+			fmt.Fprintln(c.Out, "! "+i18n.T("ui.badChoice", len(f.Rows)))
+			continue
+		}
+		row := f.Rows[n-1]
+		for _, col := range f.Editable {
+			if col.Index < 0 || col.Index >= len(f.Columns) {
+				continue
+			}
+			for len(row) <= col.Index {
+				row = append(row, "")
+			}
+			label := f.Columns[col.Index]
+			var v any
+			switch col.Type {
+			case "select":
+				v, ok = c.askChoice(label, col.Options, row[col.Index])
+			case "checkbox":
+				var s string
+				s, ok = c.Prompt("", label+" [y/n]", row[col.Index])
+				switch strings.ToLower(strings.TrimSpace(s)) {
+				case "y", "yes", "はい", "ok", "1", "true":
+					v = true
+				default:
+					v = false
+				}
+			default:
+				v, ok = c.Prompt("", label, row[col.Index])
+			}
+			if !ok {
+				return nil, false
+			}
+			row[col.Index] = valueString(v)
+			edits = append(edits, []any{n - 1, col.Index, v})
+		}
+		f.Rows[n-1] = row
+	}
+}
+
+// cellErrorText is "row 3 金額: message" for an error of a table cell.
+func cellErrorText(f FormField, e FormCellError) string {
+	if e.Col >= 0 && e.Col < len(f.Columns) {
+		return i18n.T("form.cellError", e.Row+1, f.Columns[e.Col], e.Message)
+	}
+	return i18n.T("form.rowError", e.Row+1, e.Message)
 }
 
 func acceptFilters(accept []string) []FileFilter {

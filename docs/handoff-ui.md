@@ -49,6 +49,12 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
     `validate: false` は `rawValues`（検証なし）。`close: true` は正常終了で閉じる。`submit: false` で送信ボタンを隠す（Enter も無効）。
     `ctx.setValue(name, value)` はページへ `picked`。コンソール/mock は `uiForm` の応答の `"$button"`（番号かラベル、null は送信）で、
     close なしのボタンのあとはフォームを再度尋ねる（mock の応答が尽きたら最後に検証を通った値を返す）。
+  - 編集できる表（`editable` / 列の `editable`）: `formTable` が列ごとのセル用フィールド（`normField` を流用、`t.edit`）を作る。
+    検証はスクリプト側だけ（`checkValue` をフォーム項目と共用＋列の `validate`＋`validateRow`）。ページは入力欄（数値は text＋`inputmode`）で、
+    入力が止まって 250ms か確定で `{"type":"cell",field,row,col,value}`、スクリプトは行に書き込んで（通らない値は `t.bad` に保持）
+    `{"type":"cellErrors",field,row?,errors:[{row,col,message}]}` を返す（row なしは表全体）。cell はキューで順に処理し、submit はそれを待つ。
+    HTML 標準の制約検証や Validator.js は使わない（メッセージを i18n とそろえる・コンソール/mock/デバッガでも同じ検証にするため）。
+    コンソール/mock は `uiForm` の `editable` `cellErrors` と応答の `"$cells": {field: [[row, col(番号・キー・見出し), value]]}`。
   - 表: 行は 2000 行ずつ送る。セルは number/string/boolean/null（Date は文字列化）。並べ替え・絞り込みはページ側、
     CSV/Excel 保存はスクリプト側（元の値で書き出す）。`onDoubleClick(e)`（`{ row, index, column, key, value, close() }`）で
     行・セルのダブルクリックを受ける。行は mousedown ごとに描き直すので、ダブルクリックは mousedown の `detail === 2` で判定している。30 万行で並べ替え約 0.1 秒、絞り込み約 0.4 秒（Chromium で確認）。
