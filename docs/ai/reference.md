@@ -271,7 +271,7 @@ const v = await ui.form({
       { key: "コード", pattern: "[A-Z]\\d{2}", patternMessage: "英大文字＋数字2桁" },
       { key: "金額", type: "number", min: 0, required: true },
       { key: "区分", type: "select", options: ["売上", "返品"] },
-      { key: "日付", type: "date", validate: (d) => (d > new Date() ? "未来の日付です" : "") },
+      { key: "日付", type: "date", validate: (d) => (dayjs(d).isAfter(dayjs(), "day") ? "未来の日付です" : "") },
     ],
     validateRow: (r) => (r.区分 === "返品" && r.金額 > 10000 ? { 金額: "返品は 1 万円まで" } : ""),
   }],

@@ -155,7 +155,31 @@ if (!v) exit();                                                    // キャン�
 // v.src はフォルダのハンドル、v.out はファイルのハンドル
 ```
 
-項目の type: `text` `number` `date`（Date）`month` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile`。
+項目の type: `text` `number` `date`（Date）`month` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table`（表。下記）。
+
+- 入力チェック: `required` `min` `max` `pattern`（＋`patternMessage`）。項目ごとの追加チェックは `validate: (value, values) => 問題があればメッセージ`（入力欄を離れたときにも動く）。項目をまたぐチェックはフォームの `validate(values)`（送信時だけ。`{ 項目名: "メッセージ" }` を返す）。
+- `onSubmit(v, ctx)` を書くと、フォームを開いたまま処理して進捗・ログを出す（`ctx.withProgress(配列)` でループ、`ctx.log(...)`）。
+- 送信ボタンのほかにボタンを足せる: `buttons: [{ label: "確認", onClick(v, ctx) { ... } }]`（`validate: false` で入力チェックなし、`close: true` で終わったら閉じる）。`ctx.setValue("項目名", 値)` で入力欄を書き換えられる。
+
+エラーのある行をその場で直させる（表の編集）:
+
+```js
+const v = await ui.form({
+  title: "エラー行の修正",
+  fields: [{
+    name: "rows", label: "エラーのある行", type: "table", rows: badRows, editable: true, // badRows: 問題のある行の配列
+    columns: [
+      { key: "ファイル", editable: false },
+      { key: "金額", type: "number", min: 0, required: true },
+      { key: "区分", type: "select", options: ["売上", "返品"] },
+      { key: "日付", type: "date" },
+    ],
+  }],
+  submit: "修正して続行",
+});
+if (!v) exit();
+// 直した値は badRows の各行（元のオブジェクト）に書き込まれている。エラーが残っている間は送信できない
+```
 
 ## 表で見せる・選ばせる
 
