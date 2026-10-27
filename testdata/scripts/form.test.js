@@ -119,6 +119,18 @@ const r4 = await ui.form({
 deepEqual(clicks.slice(3), ["run:a"]);
 equal(r4.x, "a");
 
+// A field's own validate gets its value and all the values; it runs once the field passes its checks.
+const fieldChecks = [];
+const r5 = await ui.form({
+  title: "項目の検証",
+  fields: [
+    { name: "from", type: "date", required: true },
+    { name: "to", type: "date", validate(v, values) { fieldChecks.push(v === null ? null : v.getDate()); if (v && values.from && v < values.from) return "開始日より後にしてください"; } },
+  ],
+});
+deepEqual(fieldChecks, [null, 1, 9]);
+equal(r5.to.getDate(), 9);
+
 // Bad definitions.
 await rejects(() => ui.form({ fields: [], buttons: [{ label: "x" }] }), /onClick/);
 await rejects(() => ui.form({ fields: [{ name: "a", type: "colour" }] }), /colour/);

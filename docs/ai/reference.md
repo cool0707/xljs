@@ -257,7 +257,7 @@ if (!v) exit();
 | `folder` | フォルダハンドルか `null` |
 | `table` | 表から選んだ行（`rows` `columns` `selectable: true | "single"`） |
 
-- 項目の共通オプション: `label` `default` `required` `placeholder` `help`（説明文）。
+- 項目の共通オプション: `label` `default` `required` `placeholder` `help`（説明文）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
 - `table` に `editable: true` を付けるとセルをその場で編集でき、入力のたびに検証してエラーのセルを赤く表示する（エラーが残っていると送信できない）。検証を通った値は元の行オブジェクトに書き込まれる。
 

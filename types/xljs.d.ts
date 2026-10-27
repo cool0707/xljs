@@ -252,6 +252,11 @@ declare global {
     pattern?: string | RegExp;
     /** pattern に一致しないときのメッセージ */
     patternMessage?: string;
+    /**
+     * この項目の追加の検証。問題があればメッセージを返す（values はすべての項目の値）。
+     * required などの検証が通ったあとに、入力欄を離れたとき（エラー表示中は入力のたび）と送信時に呼ばれる
+     */
+    validate?(value: any, values: FormValues): string | null | undefined | void | Promise<string | null | undefined | void>;
     /** remember: true のフォームで、この項目を保存しない場合は false（password は保存しない） */
     remember?: boolean;
   }
@@ -314,7 +319,8 @@ declare global {
     buttons?: FormButton<V>[];
     /**
      * 追加の検証。問題があれば { 項目名: "メッセージ" } か、全体へのメッセージ（文字列）を返す。
-     * required / pattern / min / max / ファイルの存在の検証が通ったあとに呼ばれる
+     * 項目の検証（required / pattern / min / max / ファイルの存在 / 項目の validate）が通ったあと、送信時だけ呼ばれる。
+     * 項目をまたぐ検証に使う（項目の検証は入力中にも行われる）
      */
     validate?(values: V): Record<string, string | null | undefined> | string | null | undefined | void |
       Promise<Record<string, string | null | undefined> | string | null | undefined | void>;

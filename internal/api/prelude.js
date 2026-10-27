@@ -1547,6 +1547,7 @@
         : f.pattern instanceof RegExp ? f.pattern : new RegExp("^(?:" + f.pattern + ")$"),
       patternMessage: f.patternMessage ? String(f.patternMessage) : "",
       remember: f.remember !== false && type !== "password" && type !== "table",
+      validate: typeof f.validate === "function" ? f.validate : null,
       default: f.default,
     };
   }
@@ -1657,6 +1658,13 @@
       const e = checkValue(f, w, values[f.name]);
       if (e) errors[f.name] = e;
     }
+    // The fields' own validate, with all the values.
+    for (const f of fields) {
+      if (f.validate && f.name in values && !errors[f.name]) {
+        const e = await f.validate(values[f.name], values);
+        if (e) errors[f.name] = String(e);
+      }
+    }
     let error = "";
     if (!Object.keys(errors).length && typeof validate === "function") {
       const r = await validate(values);
@@ -1670,6 +1678,17 @@
       }
     }
     return { ok: !error && !Object.keys(errors).length, errors, error, values, cells };
+  }
+
+  /**
+   * Message for a field as entered, while the form is shown ("" if it
+   * passes): its checks and its own validate, not the form's validate.
+   */
+  async function checkField(fields, f, wire) {
+    if (f.type === "table" && !f.table.select) return ""; // cells are checked on their own
+    const w = wire[f.name], v = fromWire(f, w);
+    const e = checkValue(f, w, v) || (f.validate ? await f.validate(v, rawValues(fields, wire)) : "");
+    return e ? String(e) : "";
   }
 
   /** Values of the fields as entered, without checking them (buttons with validate: false). */
@@ -1926,8 +1945,8 @@
     const hasRun = !!onSubmit || o.buttons.length > 0;
     return new Promise((resolve, reject) => {
       let result = null, failed = null, running = false, outputs = [];
-      // Cell edits are handled in order, and before a press of a button.
-      let cellQueue = Promise.resolve();
+      // Cell edits and field checks are handled in order, and before a press of a button.
+      let editQueue = Promise.resolve();
       const page = openPage("form.html", Object.assign({ title: o.title }, formSize(o, fields, hasRun, options)),
         (m, files) => { handle(m, files).catch(fail); });
       const finish = () => (failed ? reject(failed) : resolve(result));
@@ -1954,16 +1973,28 @@
               if (f.table && f.table.edit) page.send({ type: "cellErrors", field: f.name, errors: await tableErrors(f.table) });
             }
             break;
+          case "check": {
+            // A field was changed: its error, or "" to clear it.
+            const f = byName.get(m.field);
+            if (!f || running) return;
+            editQueue = editQueue.then(async () => {
+              for (const g of fields) if (m.values && g.name in m.values) wire[g.name] = m.values[g.name];
+              const error = await checkField(fields, f, wire);
+              if (!page.n.isClosed() && !running) page.send({ type: "fieldError", field: f.name, error });
+            });
+            await editQueue;
+            break;
+          }
           case "cell": {
             const f = byName.get(m.field);
             if (!f || !f.table || !f.table.edit || running) return;
             const t = f.table;
-            cellQueue = cellQueue.then(async () => {
+            editQueue = editQueue.then(async () => {
               if (t !== f.table || !setCell(t, m.row, m.col, m.value)) return;
               const errors = await rowErrors(t, m.row);
               if (!page.n.isClosed()) page.send({ type: "cellErrors", field: f.name, row: m.row, errors });
             });
-            await cellQueue;
+            await editQueue;
             break;
           }
           case "pick": {
@@ -1982,7 +2013,7 @@
             // button: the index of the button pressed (none: the submit button).
             const b = typeof m.button === "number" ? o.buttons[m.button] : null;
             if (b === undefined || (!b && o.noSubmit) || running) return;
-            await cellQueue;
+            await editQueue;
             for (const f of fields) if (m.values && f.name in m.values) wire[f.name] = m.values[f.name];
             const c = await pressValues(o, b, fields, wire, options);
             if (page.n.isClosed()) return;

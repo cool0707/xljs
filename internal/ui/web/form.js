@@ -21,7 +21,8 @@ host.on((m) => {
   switch (m.type) {
     case "init": init(m); break;
     case "errors": setState("input"); showErrors(m.errors || {}, m.error || ""); break;
-    case "picked": { const c = controls.get(m.field); if (c) c.set(m.value, m.append); break; }
+    case "picked": { const c = controls.get(m.field); if (c) { c.set(m.value, m.append); liveCheck(m.field, true); } break; }
+    case "fieldError": { const c = controls.get(m.field); if (c) { setError(c, m.error || ""); markTabs(); } break; }
     case "table": { const c = controls.get(m.field); if (c && c.setTable) c.setTable(m); break; }
     case "cellErrors": { const c = controls.get(m.field); if (c && c.setCellErrors) c.setCellErrors(m.errors || [], m.row); break; }
     case "running": startRun(m); break;
@@ -68,6 +69,7 @@ function init(m) {
     c.ctl = ctl;
     (f.tab >= 0 && panels[f.tab] ? panels[f.tab] : box).append(label, ctl);
     controls.set(f.name, c);
+    watch(c);
     c.set(f.value);
   });
   setState("input");
@@ -380,6 +382,7 @@ function tableControl(f, id) {
     } else if (selected.has(i)) selected.delete(i);
     else selected.add(i);
     mark();
+    if (control.onChange) control.onChange();
   });
   // Enter in a cell goes to the same column of the next row (Shift+Enter: the row above), as in Excel.
   body.addEventListener("keydown", (e) => {
@@ -398,12 +401,13 @@ function tableControl(f, id) {
     if (selected.size === rows.length) selected.clear();
     else rows.forEach((_, i) => selected.add(i));
     mark();
+    if (control.onChange) control.onChange();
   };
 
   sort();
   header();
   render();
-  return {
+  const control = {
     node: el("div", {}, wrap, list),
     get inputs() { return [...(select ? [all, ...boxes] : []), ...cellInputs]; },
     get: () => Array.from(selected).sort((a, b) => a - b),
@@ -430,6 +434,7 @@ function tableControl(f, id) {
     },
     focus: () => wrap.focus(),
   };
+  return control;
 }
 
 function pick(f, current) {
@@ -460,17 +465,54 @@ function values() {
   return v;
 }
 
+// ---- checks while typing: a changed field is checked by the script
+// (its checks and its own validate); a field showing an error is checked
+// again as it is typed in, so that the error goes away once fixed.
+
+const checkTimers = new Map();
+function liveCheck(name, now) {
+  if (state !== "input") return;
+  clearTimeout(checkTimers.get(name));
+  const send = () => {
+    checkTimers.delete(name);
+    if (state === "input") host.send({ type: "check", field: name, values: values() });
+  };
+  if (now) send();
+  else checkTimers.set(name, setTimeout(send, 250));
+}
+
+function watch(c) {
+  const name = c.field.name;
+  if (c.field.type === "table") {
+    c.onChange = () => { if (!c.err.hidden) liveCheck(name, true); };
+    return;
+  }
+  c.ctl.addEventListener("change", () => liveCheck(name, true));
+  c.ctl.addEventListener("input", () => { if (!c.err.hidden) liveCheck(name, false); });
+}
+
+function setError(c, msg) {
+  c.err.textContent = msg;
+  c.err.hidden = !msg;
+  c.ctl.classList.toggle("invalid", !!msg);
+}
+
+/** Marks the tabs with fields that show an error. */
+function markTabs() {
+  tabButtons.forEach((b, k) => b.classList.toggle("has-error",
+    [...controls.values()].some((c) => c.field.tab === k && !c.err.hidden)));
+}
+
 function showErrors(errors, general) {
   let first = null;
-  tabButtons.forEach((b) => b.classList.remove("has-error"));
+  for (const t of checkTimers.values()) clearTimeout(t);
+  checkTimers.clear();
   for (const [name, c] of controls) {
     const msg = errors[name] || "";
-    c.err.textContent = msg;
-    c.err.hidden = !msg;
-    c.ctl.classList.toggle("invalid", !!msg);
-    if (msg && c.field.tab >= 0) tabButtons[c.field.tab].classList.add("has-error");
+    setError(c, msg);
     if (msg && !first) first = c;
   }
+  markTabs();
   $("form-error").textContent = general;
   $("form-error").hidden = !general;
   if (first) {

@@ -519,3 +519,48 @@ console.log(JSON.stringify(v.t));
 		t.Fatalf("exit %d, %v, stdout %q, want %q", code, err, out.String(), want)
 	}
 }
+
+func TestFormWindowLiveChecks(t *testing.T) {
+	m, _ := ui.NewMockFromJSON("", io.Discard)
+	u := &pageUI{Mock: m, t: t}
+	t.Setenv("XLJS_CONFIG_DIR", t.TempDir())
+	u.pages = []func(p *fakePage){
+		func(p *fakePage) {
+			p.expect("init", nil)
+			check := func(field string, values map[string]any, want string) {
+				t.Helper()
+				p.send(map[string]any{"type": "check", "field": field, "values": values})
+				if got := asJSON(p.expect("fieldError", nil)); got != want {
+					t.Errorf("check %s = %s, want %s", field, got, want)
+				}
+			}
+			check("n", map[string]any{"n": "x", "code": ""}, `{"error":"数値を入力してください","field":"n","type":"fieldError"}`)
+			check("n", map[string]any{"n": "50", "code": ""}, `{"error":"10 以下の値を入力してください","field":"n","type":"fieldError"}`)
+			check("n", map[string]any{"n": "5", "code": ""}, `{"error":"","field":"n","type":"fieldError"}`)
+			check("code", map[string]any{"n": "5", "code": "B1"}, `{"error":"5 で始めてください","field":"code","type":"fieldError"}`)
+			check("code", map[string]any{"n": "5", "code": ""}, `{"error":"入力してください","field":"code","type":"fieldError"}`)
+			// The form's validate runs only when a button is pressed.
+			check("code", map[string]any{"n": "5", "code": "51"}, `{"error":"","field":"code","type":"fieldError"}`)
+			p.send(map[string]any{"type": "submit", "values": map[string]any{"n": "5", "code": "51"}})
+			if e := asJSON(p.expect("errors", nil)); !strings.Contains(e, `"error":"全体"`) {
+				t.Errorf("errors = %s", e)
+			}
+			p.send(map[string]any{"type": "close"})
+			p.waitClosed()
+		},
+	}
+	src := `
+await ui.form({
+  fields: [
+    { name: "n", type: "number", max: 10 },
+    { name: "code", required: true, validate: (v, values) => (v.startsWith(String(values.n)) ? "" : values.n + " で始めてください") },
+  ],
+  validate: () => "全体",
+});
+`
+	code, err := Run(Options{ScriptPath: writeScript(t, "live.js", src), UI: u, Stdout: io.Discard, Stderr: io.Discard})
+	u.wg.Wait()
+	if code != 0 || err != nil {
+		t.Fatalf("exit %d, %v", code, err)
+	}
+}
