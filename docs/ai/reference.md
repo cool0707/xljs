@@ -257,8 +257,29 @@ if (!v) exit();
 | `folder` | フォルダハンドルか `null` |
 | `table` | 表から選んだ行（`rows` `columns` `selectable: true | "single"`） |
 
-- 項目の共通オプション: `label` `default` `required` `placeholder` `help`（説明文）。
+- 項目の共通オプション: `label` `default` `required` `placeholder` `help`（説明文）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
+- `table` に `editable: true` を付けるとセルをその場で編集でき、入力のたびに検証してエラーのセルを赤く表示する（エラーが残っていると送信できない）。検証を通った値は元の行オブジェクトに書き込まれる。
+
+```js
+const v = await ui.form({
+  title: "エラー行の修正",
+  fields: [{
+    name: "rows", label: "エラーのある行", type: "table", rows: badRows, editable: true,
+    columns: [
+      { key: "行", editable: false },
+      { key: "コード", pattern: "[A-Z]\\d{2}", patternMessage: "英大文字＋数字2桁" },
+      { key: "金額", type: "number", min: 0, required: true },
+      { key: "区分", type: "select", options: ["売上", "返品"] },
+      { key: "日付", type: "date", validate: (d) => (d > new Date() ? "未来の日付です" : "") },
+    ],
+    validateRow: (r) => (r.区分 === "返品" && r.金額 > 10000 ? { 金額: "返品は 1 万円まで" } : ""),
+  }],
+  submit: "修正を反映",
+});
+if (!v) exit();
+// v.rows は（編集済みの）全行。badRows の各オブジェクトも書き換わっている
+```
 - `onSubmit(v, ctx)` を書くと、送信後もフォームが開いたまま処理し、進捗・ログ・中止ボタンを表示する。出力ファイルを `return` すると「フォルダを開く」ボタンが出る。
 
 ```js
@@ -273,6 +294,20 @@ await ui.form({
     // ... 保存
     // return dest;
   },
+});
+```
+
+- `buttons: [{ label, onClick(v, ctx) }]` で送信ボタンの左にボタンを追加できる。押すと onClick が onSubmit と同じように動く（ウィンドウは開いたまま）。`validate: false` で検証なし、`close: true` で正常終了後に閉じる。`submit: false` で送信ボタンを出さない。`ctx.setValue(name, value)` で項目の値を変えられる。
+
+```js
+await ui.form({
+  title: "名簿",
+  fields: [{ name: "file", label: "名簿", type: "file", accept: [".xlsx"], required: true }, { name: "count", label: "件数", type: "number" }],
+  buttons: [
+    { label: "件数を確認", onClick(v, ctx) { ctx.setValue("count", workbooks.open(v.file).sheets[0].toObjects().length); } },
+  ],
+  submit: "作成",
+  async onSubmit(v, ctx) { /* ... */ },
 });
 ```
 

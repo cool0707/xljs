@@ -13,14 +13,18 @@ let fields = [];
 let tabButtons = []; // one per tab; fields name their tab by index (-1 = above the tabs)
 let state = "input"; // input | busy (waiting for the script) | running | stopping
 let ran = false;
+let noSubmit = false;
+let extraButtons = []; // the form's buttons (beside the submit button)
 const controls = new Map(); // name -> { field, row, get(), set(value, append), focus() }
 
 host.on((m) => {
   switch (m.type) {
     case "init": init(m); break;
     case "errors": setState("input"); showErrors(m.errors || {}, m.error || ""); break;
-    case "picked": { const c = controls.get(m.field); if (c) c.set(m.value, m.append); break; }
+    case "picked": { const c = controls.get(m.field); if (c) { c.set(m.value, m.append); liveCheck(m.field, true); } break; }
+    case "fieldError": { const c = controls.get(m.field); if (c) { setError(c, m.error || ""); markTabs(); } break; }
     case "table": { const c = controls.get(m.field); if (c && c.setTable) c.setTable(m); break; }
+    case "cellErrors": { const c = controls.get(m.field); if (c && c.setCellErrors) c.setCellErrors(m.errors || [], m.row); break; }
     case "running": startRun(m); break;
     case "progress": progress(m); break;
     case "log": appendLog(m.lines, m.level); break;
@@ -36,6 +40,16 @@ function init(m) {
     $("description").hidden = false;
   }
   $("submit").textContent = m.submit || texts.ok;
+  noSubmit = !!m.noSubmit;
+  $("submit").hidden = noSubmit;
+  for (const b of extraButtons) b.remove();
+  extraButtons = (m.buttons || []).map((label, k) => {
+    const b = el("button", { type: "button", textContent: label });
+    b.onclick = () => submit(k);
+    $("submit").before(b);
+    return b;
+  });
+  if (noSubmit && extraButtons.length) extraButtons[extraButtons.length - 1].classList.add("primary");
   $("cancel").textContent = texts.cancel;
   $("open").textContent = texts.openFolder;
   const box = $("fields");
@@ -55,6 +69,7 @@ function init(m) {
     c.ctl = ctl;
     (f.tab >= 0 && panels[f.tab] ? panels[f.tab] : box).append(label, ctl);
     controls.set(f.name, c);
+    watch(c);
     c.set(f.value);
   });
   setState("input");
@@ -180,6 +195,8 @@ function buildControl(f, id) {
 }
 
 // ---- table fields: sortable; rows are chosen by clicking (selectable) and the value is their indices.
+// Editable cells are inputs: each change goes to the script, which checks it
+// and answers with the errors of the row ("cellErrors").
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
 function compareCells(a, b) {
@@ -189,14 +206,44 @@ function compareCells(a, b) {
   return collator.compare(String(a), String(b));
 }
 
+/** Cell edits waiting to be sent (sent before a button press). */
+const pendingCells = new Map();
+function flushCells() {
+  for (const send of pendingCells.values()) send();
+  pendingCells.clear();
+}
+
+const fill = (t, ...a) => String(t || "").replace(/\{(\d)\}/g, (_, i) => a[i]);
+
+/** The input of an editable cell (e: the column's { type, options, min, max, step }). */
+function cellInput(e, v) {
+  let i;
+  if (e.type === "select") {
+    i = el("select", {}, el("option", { value: "", textContent: "" }), ...(e.options || []).map((o) => el("option", { value: o.value, textContent: o.label })));
+    i.value = v === null ? "" : String(v);
+    if (i.selectedIndex < 0) i.append(el("option", { value: String(v), textContent: String(v), selected: true }));
+  } else if (e.type === "checkbox") {
+    i = el("input", { type: "checkbox", checked: v === true });
+  } else {
+    // Numbers are typed as text so that what does not parse stays visible (and full-width digits work).
+    i = el("input", { type: e.type === "text" || e.type === "number" ? "text" : e.type, spellcheck: false });
+    if (e.type === "number") i.inputMode = "decimal";
+    for (const k of ["min", "max", "step"]) if (e[k] !== undefined && e[k] !== null) i[k] = e[k];
+    i.value = v === null ? "" : String(v);
+  }
+  return i;
+}
+
 function tableControl(f, id) {
-  let cols = f.table.columns, rows = f.table.rows, select = f.table.select;
-  let order = [], sortCol = -1, sortDir = 1, boxes = [];
+  let cols = f.table.columns, rows = f.table.rows, select = f.table.select, edit = f.table.editable || null;
+  let order = [], sortCol = -1, sortDir = 1, boxes = [], cellInputs = [];
   const selected = new Set();
+  const errors = new Map(); // "row:col" -> message (col -1: the row)
   const head = el("thead");
   const body = el("tbody");
   const all = el("input", { type: "checkbox", tabIndex: -1 });
-  const wrap = el("div", { className: "ftable", id, tabIndex: 0 }, el("table", {}, head, body));
+  const wrap = el("div", { className: "ftable" + (edit ? " editable" : ""), id, tabIndex: 0 }, el("table", {}, head, body));
+  const list = el("ul", { className: "cell-errors", hidden: true });
   wrap.style.maxHeight = (30 + 27 * (f.rows || 8)) + "px";
 
   function header() {
@@ -223,9 +270,31 @@ function tableControl(f, id) {
     if (sortCol >= 0) order.sort((a, b) => sortDir * compareCells(rows[a][sortCol], rows[b][sortCol]) || a - b);
   }
 
+  /** Sends the value of an editable cell; text inputs wait until typing pauses. */
+  function changed(i, k, input, now) {
+    const e = edit[k];
+    const v = e.type === "checkbox" ? input.checked : input.value;
+    rows[i][k] = e.type === "number" && v.trim() !== "" && isFinite(v) ? Number(v) : v;
+    const key = i + ":" + k;
+    // Enter sends at once and the change on leaving the cell would again.
+    if (now && !pendingCells.has(key) && input._sent === v) return;
+    const send = () => {
+      pendingCells.delete(key);
+      input._sent = v;
+      host.send({ type: "cell", field: f.name, row: i, col: k, value: v });
+    };
+    clearTimeout(input._timer);
+    if (now) send();
+    else {
+      pendingCells.set(key, send);
+      input._timer = setTimeout(send, 250);
+    }
+  }
+
   function render() {
     body.textContent = "";
     boxes = [];
+    cellInputs = [];
     if (!rows.length) {
       body.append(el("tr", { className: "empty" }, el("td", { colSpan: cols.length + (select ? 1 : 0), textContent: texts.noRows })));
     }
@@ -238,10 +307,25 @@ function tableControl(f, id) {
         boxes.push(box);
         tr.append(el("td", { className: "sel" }, box));
       }
-      rows[i].forEach((v) => tr.append(el("td", { className: "cell" + (typeof v === "number" ? " num" : ""), textContent: v === null ? "" : String(v) })));
+      cols.forEach((_, k) => {
+        const v = rows[i][k] === undefined ? null : rows[i][k];
+        if (edit && edit[k]) {
+          const input = cellInput(edit[k], v);
+          input.disabled = state !== "input";
+          input.dataset.c = k;
+          const text = input.tagName === "INPUT" && input.type !== "checkbox";
+          input.addEventListener(text ? "input" : "change", () => changed(i, k, input, !text));
+          if (text) input.addEventListener("change", () => changed(i, k, input, true));
+          cellInputs.push(input);
+          tr.append(el("td", { className: "edit " + edit[k].type }, input));
+        } else {
+          tr.append(el("td", { className: "cell" + (typeof v === "number" ? " num" : ""), textContent: v === null ? "" : String(v) }));
+        }
+      });
       body.append(tr);
     }
     mark();
+    markErrors();
   }
 
   function mark() {
@@ -254,9 +338,43 @@ function tableControl(f, id) {
     all.indeterminate = selected.size > 0 && selected.size < rows.length;
   }
 
+  /** Marks the cells and rows with errors and lists the first ones below the table. */
+  function markErrors() {
+    body.querySelectorAll("tr[data-i]").forEach((tr) => {
+      const i = Number(tr.dataset.i);
+      const rowMsg = errors.get(i + ":-1") || "";
+      tr.classList.toggle("bad-row", rowMsg !== "" || [...errors.keys()].some((x) => x.startsWith(i + ":")));
+      tr.title = rowMsg;
+      tr.querySelectorAll("td").forEach((td, n) => {
+        const k = n - (select ? 1 : 0);
+        if (k < 0) return;
+        const msg = errors.get(i + ":" + k) || "";
+        td.classList.toggle("bad", msg !== "");
+        td.title = msg;
+      });
+    });
+    list.textContent = "";
+    const entries = [...errors].map(([key, msg]) => [...key.split(":").map(Number), msg]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    for (const [i, k, msg] of entries.slice(0, 5)) {
+      const li = el("li", { textContent: k >= 0 ? fill(texts.cellError, i + 1, cols[k], msg) : fill(texts.rowError, i + 1, msg) });
+      li.onclick = () => focusCell(i, k);
+      list.append(li);
+    }
+    if (entries.length > 5) list.append(el("li", { className: "more", textContent: fill(texts.moreErrors, entries.length - 5) }));
+    list.hidden = entries.length === 0;
+  }
+
+  function focusCell(i, k) {
+    const tr = body.querySelector(`tr[data-i="${i}"]`);
+    if (!tr) return;
+    const input = tr.querySelector(`[data-c="${k}"]`) || tr.querySelector("[data-c]");
+    tr.scrollIntoView({ block: "nearest" });
+    if (input && !input.disabled) input.focus();
+  }
+
   body.addEventListener("click", (e) => {
     const tr = e.target.closest("tr[data-i]");
-    if (!tr || !select || state !== "input") return;
+    if (!tr || !select || state !== "input" || e.target.closest("td.edit")) return;
     const i = Number(tr.dataset.i);
     if (select === "single") {
       selected.clear();
@@ -264,6 +382,18 @@ function tableControl(f, id) {
     } else if (selected.has(i)) selected.delete(i);
     else selected.add(i);
     mark();
+    if (control.onChange) control.onChange();
+  });
+  // Enter in a cell goes to the same column of the next row (Shift+Enter: the row above), as in Excel.
+  body.addEventListener("keydown", (e) => {
+    const input = e.target.closest("[data-c]");
+    if (!input || e.key !== "Enter" || e.isComposing) return;
+    e.preventDefault();
+    const trs = [...body.querySelectorAll("tr[data-i]")];
+    const next = trs[trs.indexOf(input.closest("tr")) + (e.shiftKey ? -1 : 1)];
+    const target = next && next.querySelector(`[data-c="${input.dataset.c}"]`);
+    if (target) target.focus();
+    if (input.tagName === "INPUT" && input.type !== "checkbox") changed(Number(input.closest("tr").dataset.i), Number(input.dataset.c), input, true);
   });
   all.onclick = (e) => {
     e.stopPropagation();
@@ -271,14 +401,15 @@ function tableControl(f, id) {
     if (selected.size === rows.length) selected.clear();
     else rows.forEach((_, i) => selected.add(i));
     mark();
+    if (control.onChange) control.onChange();
   };
 
   sort();
   header();
   render();
-  return {
-    node: wrap,
-    get inputs() { return select ? [all, ...boxes] : []; },
+  const control = {
+    node: el("div", {}, wrap, list),
+    get inputs() { return [...(select ? [all, ...boxes] : []), ...cellInputs]; },
     get: () => Array.from(selected).sort((a, b) => a - b),
     set: (v) => {
       selected.clear();
@@ -286,15 +417,24 @@ function tableControl(f, id) {
       mark();
     },
     setTable: (m) => {
-      cols = m.columns; rows = m.rows; select = m.select;
+      cols = m.columns; rows = m.rows; select = m.select; edit = m.editable || null;
+      wrap.classList.toggle("editable", !!edit);
       selected.clear();
+      errors.clear();
       sortCol = -1;
       sort();
       header();
       render();
     },
+    /** Errors of the whole table, or (row) of one row. */
+    setCellErrors: (list, row) => {
+      for (const key of [...errors.keys()]) if (row === undefined || key.startsWith(row + ":")) errors.delete(key);
+      for (const e of list) errors.set(e.row + ":" + e.col, e.message);
+      markErrors();
+    },
     focus: () => wrap.focus(),
   };
+  return control;
 }
 
 function pick(f, current) {
@@ -325,17 +465,54 @@ function values() {
   return v;
 }
 
+// ---- checks while typing: a changed field is checked by the script
+// (its checks and its own validate); a field showing an error is checked
+// again as it is typed in, so that the error goes away once fixed.
+
+const checkTimers = new Map();
+function liveCheck(name, now) {
+  if (state !== "input") return;
+  clearTimeout(checkTimers.get(name));
+  const send = () => {
+    checkTimers.delete(name);
+    if (state === "input") host.send({ type: "check", field: name, values: values() });
+  };
+  if (now) send();
+  else checkTimers.set(name, setTimeout(send, 250));
+}
+
+function watch(c) {
+  const name = c.field.name;
+  if (c.field.type === "table") {
+    c.onChange = () => { if (!c.err.hidden) liveCheck(name, true); };
+    return;
+  }
+  c.ctl.addEventListener("change", () => liveCheck(name, true));
+  c.ctl.addEventListener("input", () => { if (!c.err.hidden) liveCheck(name, false); });
+}
+
+function setError(c, msg) {
+  c.err.textContent = msg;
+  c.err.hidden = !msg;
+  c.ctl.classList.toggle("invalid", !!msg);
+}
+
+/** Marks the tabs with fields that show an error. */
+function markTabs() {
+  tabButtons.forEach((b, k) => b.classList.toggle("has-error",
+    [...controls.values()].some((c) => c.field.tab === k && !c.err.hidden)));
+}
+
 function showErrors(errors, general) {
   let first = null;
-  tabButtons.forEach((b) => b.classList.remove("has-error"));
+  for (const t of checkTimers.values()) clearTimeout(t);
+  checkTimers.clear();
   for (const [name, c] of controls) {
     const msg = errors[name] || "";
-    c.err.textContent = msg;
-    c.err.hidden = !msg;
-    c.ctl.classList.toggle("invalid", !!msg);
-    if (msg && c.field.tab >= 0) tabButtons[c.field.tab].classList.add("has-error");
+    setError(c, msg);
     if (msg && !first) first = c;
   }
+  markTabs();
   $("form-error").textContent = general;
   $("form-error").hidden = !general;
   if (first) {
@@ -349,18 +526,22 @@ function setState(s) {
   const editing = s === "input";
   for (const c of controls.values()) for (const i of c.inputs) i.disabled = !editing;
   $("submit").disabled = !editing;
+  for (const b of extraButtons) b.disabled = !editing;
   $("cancel").disabled = s === "stopping";
   $("cancel").textContent = s === "running" ? texts.abort : s === "stopping" ? texts.aborting : ran ? texts.close : texts.cancel;
 }
 
-function submit() {
+/** Sends the values for the submit button or, with k, the form's k-th button. */
+function submit(k) {
   if (state !== "input") return;
+  flushCells();
   setState("busy");
-  host.send({ type: "submit", values: values() });
+  host.send(k === undefined ? { type: "submit", values: values() } : { type: "submit", values: values(), button: k });
 }
 
-$("form").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
-$("submit").onclick = submit;
+// Enter submits (not when the submit button is hidden).
+$("form").addEventListener("submit", (e) => { e.preventDefault(); if (!noSubmit) submit(); });
+$("submit").onclick = () => submit();
 $("cancel").onclick = cancel;
 $("open").onclick = () => host.send({ type: "open" });
 document.addEventListener("keydown", (e) => {
