@@ -144,25 +144,19 @@ func run() int {
 	}
 
 	if len(rest) == 0 {
-		// Double-clicked without a script: let the user pick one.
-		if u.Name() == "native" {
-			paths := u.OpenFiles(ui.PickerOptions{
-				Title: i18n.T("cli.selectScript"),
-				Filters: []ui.FileFilter{
-					{Description: i18n.T("cli.scripts"), Patterns: []string{"*.js", "*.mjs", "*.ts"}},
-					{Description: i18n.T("cli.macroBooks"), Patterns: macroPatterns},
-				},
-			})
-			if len(paths) == 0 {
-				return 0
-			}
-			rest = paths
-		} else {
-			fmt.Fprint(os.Stderr, usage())
-			return 2
+		// Double-clicked without a script: ask what to do.
+		if c, ok := u.(ui.Chooser); ok {
+			return launch(con, u, c, *lang != "")
 		}
+		fmt.Fprint(os.Stderr, usage())
+		return 2
 	}
-	// Workbooks instead of a script: write out their VBA code.
+	return start(con, u, rest, *lang != "", debug.value)
+}
+
+// start runs the script rest[0] with the arguments rest[1:], or writes out
+// the VBA code when workbooks are given instead of a script.
+func start(con *consoleState, u ui.UI, rest []string, explicitLang bool, debug string) int {
 	if isWorkbook(rest[0]) {
 		return dropVBA(con, u, rest)
 	}
@@ -170,10 +164,10 @@ func run() int {
 	if err != nil {
 		return con.fail(u, err)
 	}
-	applyLang(m, *lang != "")
+	applyLang(m, explicitLang)
 	o := engine.Options{ScriptPath: rest[0], Args: rest[1:], Meta: m}
 	useScriptDir(con, &o)
-	if err := setDebug(&o, debug.value, u); err != nil {
+	if err := setDebug(&o, debug, u); err != nil {
 		return con.fail(u, err)
 	}
 	return runScript(con, u, o)
@@ -323,28 +317,39 @@ func cmdPack(con *consoleState, args []string) int {
 		fmt.Fprintln(os.Stderr, i18n.T("cli.usagePack"))
 		return 2
 	}
-	m, err := readMeta(script)
-	if err != nil {
-		return con.fail(nil, err)
-	}
-	code, err := engine.Bundle(script)
-	if err != nil {
-		return con.fail(nil, err)
-	}
 	if *out == "" {
-		base := strings.TrimSuffix(filepath.Base(script), filepath.Ext(script))
-		ext := ""
-		if runtime.GOOS == "windows" {
-			ext = ".exe"
-		}
-		*out = filepath.Join(filepath.Dir(script), base+ext)
+		*out = packOutput(script)
 	}
-	p := &pack.Payload{Name: filepath.Base(script), Code: code, Meta: m, Assets: m.AssetFS(filepath.Dir(script))}
-	if err := pack.Write(*out, p); err != nil {
+	if err := packScript(script, *out); err != nil {
 		return con.fail(nil, err)
 	}
 	fmt.Println(i18n.T("cli.created", *out))
 	return 0
+}
+
+// packOutput is the default exe for the script: the script's name with
+// .exe (no extension outside Windows), next to it.
+func packOutput(script string) string {
+	base := strings.TrimSuffix(filepath.Base(script), filepath.Ext(script))
+	ext := ""
+	if runtime.GOOS == "windows" {
+		ext = ".exe"
+	}
+	return filepath.Join(filepath.Dir(script), base+ext)
+}
+
+// packScript writes out: this exe with the bundled script embedded.
+func packScript(script, out string) error {
+	m, err := readMeta(script)
+	if err != nil {
+		return err
+	}
+	code, err := engine.Bundle(script)
+	if err != nil {
+		return err
+	}
+	p := &pack.Payload{Name: filepath.Base(script), Code: code, Meta: m, Assets: m.AssetFS(filepath.Dir(script))}
+	return pack.Write(out, p)
 }
 
 func cmdInit(con *consoleState, args []string) int {

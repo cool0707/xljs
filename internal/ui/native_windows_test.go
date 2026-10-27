@@ -91,6 +91,18 @@ func TestPromptDialog(t *testing.T) {
 	}
 }
 
+func TestChooseDialog(t *testing.T) {
+	withAutoClose(t)
+	n := &Native{}
+	got := n.Choose("テスト", "何をしますか？", []Choice{
+		{Label: "実行", Note: "スクリプトを選んで実行します"},
+		{Label: "取り出す"},
+	})
+	if got != 0 {
+		t.Fatalf("Choose = %d", got)
+	}
+}
+
 func TestProgressDialog(t *testing.T) {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
