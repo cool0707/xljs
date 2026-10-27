@@ -2766,6 +2766,16 @@
       if (src instanceof ArrayBuffer || ArrayBuffer.isView(src)) return new Workbook(native.xlsxOpenBytes(src, ""));
       return new Workbook(native.xlsxOpen(toPath(src, "workbooks.open()")));
     },
+    /**
+     * Reads the VBA code of a macro workbook (.xlsm, .xlsb, .xlam, .xls ...)
+     * without opening it: { name, codePage, modules, text }, or null when it
+     * has no macros. text is all modules as Markdown, for an AI chat.
+     */
+    readVBA(src) {
+      if (src instanceof Blob && !(src instanceof File && src.path)) return native.vbaReadBytes(src._bytes(), src.name || "");
+      if (src instanceof ArrayBuffer || ArrayBuffer.isView(src)) return native.vbaReadBytes(src, "");
+      return native.vbaRead(toPath(src, "workbooks.readVBA()"));
+    },
     /** Creates an empty workbook. The first addSheet() replaces the default sheet. */
     create(options) { return new Workbook(native.xlsxCreate(options)); },
     Workbook,

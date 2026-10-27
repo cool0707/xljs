@@ -991,9 +991,34 @@ declare global {
     readonly defaultFont: { name: string; size: number };
   }
 
+  interface VBAModule {
+    name: string;
+    /** standard = 標準モジュール、document = ThisWorkbook とシートのモジュール、form = ユーザーフォーム（コードのみ） */
+    type: "standard" | "class" | "document" | "form";
+    /** ソース（改行は \n。先頭の Attribute 行も含む） */
+    code: string;
+    /** シートのモジュールのシート名（.xlsm などで分かる場合。それ以外は null） */
+    sheet: string | null;
+  }
+
+  interface VBAProject {
+    /** プロジェクト名（通常 "VBAProject"） */
+    name: string;
+    /** ソースの文字コード（日本語の Excel では 932） */
+    codePage: number;
+    modules: VBAModule[];
+    /** 全モジュールを 1 つにまとめた Markdown（xljs vba の出力と同じ。AI チャットに貼る用） */
+    text: string;
+  }
+
   interface Workbooks {
     /** .xlsx を開く（パス・ハンドル・File・Blob・ArrayBuffer） */
     open(src: PathLike | Blob | ArrayBuffer | ArrayBufferView): Workbook;
+    /**
+     * マクロブック（.xlsm / .xlsb / .xlam / .xltm / .xls）の VBA コードを、ブックを開かずに読む。
+     * マクロがなければ null。xlsx でない形式・読み取りパスワード付きのブックは例外
+     */
+    readVBA(src: PathLike | Blob | ArrayBuffer | ArrayBufferView): VBAProject | null;
     /** 新しいブックを作る（最初の addSheet が既定シートを置き換える）。
      * 既定フォントは表示言語に合わせる（日本語では游ゴシック）。font で変更可 */
     create(options?: { font?: string }): Workbook;

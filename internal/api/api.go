@@ -109,6 +109,7 @@ func installNatives(vm *goja.Runtime, env *Env) *natives {
 	n.installCSV()
 	n.installXLSX()
 	n.installXLSXStyle()
+	n.installVBA()
 	n.installUI()
 	n.installApp()
 	return n
