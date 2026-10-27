@@ -75,7 +75,7 @@
     "cli.vbaText": "テキスト",
     "cli.vbaSaved": "VBA コード（モジュール {0} 個）を保存しました:\n{1}\n\n今すぐ開きますか？",
     "cli.macroBooks": "Excel ブック（VBA コードを取り出す）",
-    "vba.unsupported": "マクロを含められる Excel ブック（.xlsm / .xlsb / .xlam / .xltm / .xls）ではありません",
+    "vba.unsupported": "マクロを含められる Excel ブック（.xlsm / .xlsb / .xlam / .xltm）ではありません",
     "vba.encrypted": "読み取りパスワードで保護されたブックです。先に Excel でパスワードなしで保存してください",
     "vba.corrupt": "VBA プロジェクトが壊れているか、読めない形式です（{0}）",
     "vba.moduleMissing": "モジュール {0} のコードがありません",

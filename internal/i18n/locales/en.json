@@ -75,7 +75,7 @@
     "cli.vbaText": "Text",
     "cli.vbaSaved": "Saved the VBA code ({0} modules) to\n{1}\n\nOpen it now?",
     "cli.macroBooks": "Excel workbooks (extract the VBA code)",
-    "vba.unsupported": "not an Excel workbook that can hold macros (.xlsm, .xlsb, .xlam, .xltm, .xls)",
+    "vba.unsupported": "not an Excel workbook that can hold macros (.xlsm, .xlsb, .xlam, .xltm)",
     "vba.encrypted": "the workbook is protected with a password to open; save it without the password in Excel first",
     "vba.corrupt": "the VBA project is damaged or in an unknown format ({0})",
     "vba.moduleMissing": "the code of module {0} is missing",

@@ -1015,7 +1015,7 @@ declare global {
     /** .xlsx を開く（パス・ハンドル・File・Blob・ArrayBuffer） */
     open(src: PathLike | Blob | ArrayBuffer | ArrayBufferView): Workbook;
     /**
-     * マクロブック（.xlsm / .xlsb / .xlam / .xltm / .xls）の VBA コードを、ブックを開かずに読む。
+     * マクロブック（.xlsm / .xlsb / .xlam / .xltm）の VBA コードを、ブックを開かずに読む。
      * マクロがなければ null。xlsx でない形式・読み取りパスワード付きのブックは例外
      */
     readVBA(src: PathLike | Blob | ArrayBuffer | ArrayBufferView): VBAProject | null;

@@ -59,11 +59,11 @@ xljs version
 
 ### VBA マクロを取り出す（AI チャットでの移植用）
 
-マクロ付きのブック（.xlsm / .xlsb / .xlam / .xltm / .xls）を `xljs.exe` にドラッグ＆ドロップすると、保存先を聞いたうえで、全モジュールの VBA コードを 1 つのテキストファイル（既定は `<ブック名>_VBA.txt`）にまとめます。保存後に「今すぐ開きますか？」で開けば、そのまま AI チャットに貼り付けられます。複数のブックをまとめてドロップすると 1 つのファイルに続けて書きます。引数なしで起動したときのファイル選択でも、種類を「Excel ブック」にすれば選べます。
+マクロ付きのブック（.xlsm / .xlsb / .xlam / .xltm）を `xljs.exe` にドラッグ＆ドロップすると、保存先を聞いたうえで、全モジュールの VBA コードを 1 つのテキストファイル（既定は `<ブック名>_VBA.txt`）にまとめます。保存後に「今すぐ開きますか？」で開けば、そのまま AI チャットに貼り付けられます。複数のブックをまとめてドロップすると 1 つのファイルに続けて書きます。引数なしで起動したときのファイル選択でも、種類を「Excel ブック」にすれば選べます。
 
 ```
 xljs vba 売上集計.xlsm              → 売上集計_VBA.txt（ブックと同じフォルダ）
-xljs vba a.xlsm b.xls -o マクロ.txt  → 2 冊分を マクロ.txt に
+xljs vba a.xlsm b.xlsm -o マクロ.txt → 2 冊分を マクロ.txt に
 xljsc vba 売上集計.xlsm -o -        → 標準出力へ
 ```
 
@@ -367,7 +367,7 @@ out.save("集計.xlsx");
 - 日付の書式が付いた数値セルは `Date` になります（Excel の日付はタイムゾーンを持たないので、ローカル時刻として扱います）。
 - 数式は保存時に「開いたときに再計算」フラグを立てるので、Excel で開けば計算結果が表示されます。スクリプト内で値が必要なら `cell.calc()`（対応関数は一部）。
 - xlsx / xlsm に対応しています（旧形式の .xls は不可）。マクロ、ピボットテーブル、グラフなどは読み書きの過程で失われることがあります。
-- `workbooks.readVBA(src)` はマクロブック（.xlsm / .xlsb / .xlam / .xls など）の VBA コードを、ブックを開かずに読みます。`{ name, codePage, modules: [{ name, type, code, sheet }], text }` を返し、マクロがなければ `null` です。`type` は `"standard"`（標準モジュール）・`"class"`・`"document"`（ThisWorkbook とシート）・`"form"`、`sheet` はシートのモジュールのシート名（.xlsm などで分かる場合）、`text` は `xljs vba` と同じ Markdown です。
+- `workbooks.readVBA(src)` はマクロブック（.xlsm / .xlsb / .xlam など）の VBA コードを、ブックを開かずに読みます。`{ name, codePage, modules: [{ name, type, code, sheet }], text }` を返し、マクロがなければ `null` です。`type` は `"standard"`（標準モジュール）・`"class"`・`"document"`（ThisWorkbook とシート）・`"form"`、`sheet` はシートのモジュールのシート名（.xlsm などで分かる場合）、`text` は `xljs vba` と同じ Markdown です。
 
 ### 書式（フォント・罫線・塗りつぶしなど）
 

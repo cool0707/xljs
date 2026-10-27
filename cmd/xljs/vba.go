@@ -13,7 +13,7 @@ import (
 )
 
 // macroPatterns are the workbooks offered by the picker for extracting VBA.
-var macroPatterns = []string{"*.xlsm", "*.xlsb", "*.xlam", "*.xltm", "*.xls", "*.xla"}
+var macroPatterns = []string{"*.xlsm", "*.xlsb", "*.xlam", "*.xltm"}
 
 // isWorkbook reports whether path is an Excel workbook (with or without
 // macros) rather than a script.

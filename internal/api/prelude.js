@@ -2767,7 +2767,7 @@
       return new Workbook(native.xlsxOpen(toPath(src, "workbooks.open()")));
     },
     /**
-     * Reads the VBA code of a macro workbook (.xlsm, .xlsb, .xlam, .xls ...)
+     * Reads the VBA code of a macro workbook (.xlsm, .xlsb, .xlam ...)
      * without opening it: { name, codePage, modules, text }, or null when it
      * has no macros. text is all modules as Markdown, for an AI chat.
      */
