@@ -10,11 +10,12 @@ JavaScript/TypeScript のスクリプトで Excel・CSV・JSON を処理する W
 
 | パス | 役割 |
 |---|---|
-| `cmd/xljs` | CLI。グローバルフラグ（`--ui` `--ui-answers` `--lang` `--debug`）→ サブコマンド（pack/check/init/version/help）→ メタデータを読んで `ui.Run` でスクリプト実行。`rsrc_windows_*.syso` はアイコン＋マニフェスト |
+| `cmd/xljs` | CLI。グローバルフラグ（`--ui` `--ui-answers` `--lang` `--debug`）→ サブコマンド（pack/check/init/vba/version/help。スクリプトの代わりにブックを渡すと VBA の取り出し）→ メタデータを読んで `ui.Run` でスクリプト実行。`rsrc_windows_*.syso` はアイコン＋マニフェスト |
 | `internal/engine` | esbuild でバンドル（TS 変換、async generator 変換、インラインソースマップ）→ `(async () => {...})` で包んで goja で実行。`loop.go` はタイマーと他 goroutine からの post。`debug.go` は `--debug` のデバッグセッション（後述） |
 | `internal/api` | Go 側ネイティブ関数（`natives` に `n.set("name", fn)` で登録）と `prelude.js`（公開 API をすべて JS で組み立てる）。Go→JS は `native.xxx` 経由のみ。`dayjs/` は npm の Day.js をそのまま置いたもの（`dayjs.go` が prelude 末尾の `/*@dayjs@*/null` に埋め込む。グローバルの `dayjs`、常に日本語ロケール） |
 | `internal/ui` | `UI` インターフェースと実装: `Native`（Win32/COM 直叩き、cgo なし。HTML ウィンドウは `webview_windows.go`＝`wailsapp/go-webview2` の `pkg/edge`）、`Console`、`Mock`（応答 JSON＋ログ。テスト用）。`thread.go` の `ui.Run` がスクリプトを専用スレッドで動かし、UI 呼び出しを呼び出し元（main スレッド）へ転送する。`web/` は `ui.form` / `ui.table` の組み込みページ（`https://app.xljs/_xljs/` で配信）と、全ページに注入する画面側ランタイム `xljs.js`（アプリモードの `xljs` オブジェクト。スクリプト側は prelude の `AppWindow`） |
 | `internal/meta` | エントリ先頭の `// ==xljs==` メタデータのパースと、アセット（`@html`＋`@assets`）だけを見せる `AssetFS` |
+| `internal/vba` | マクロブックの VBA ソースの読み取り（`xljs vba`・ドロップ時の `cmd/xljs/vba.go` と `workbooks.readVBA`）。zip の `vbaProject.bin` か .xls の `_VBA_PROJECT_CUR` を mscfb で開き、`dir` ストリーム（MS-OVBA）を解凍してモジュールを読む。テスト用の .xlsm は `fixture_test.go` が組み立てる（`go test ./internal/vba -run TestWriteFixture -update` で `testdata/scripts/macro.xlsm` を更新） |
 | `internal/i18n` | メッセージ。`locales/<lang>.json` を go:embed。`en.json` が基準・フォールバック |
 | `internal/pack` | exe 末尾へのスクリプト埋め込み。v2 = `[zip(manifest.json, main.js, assets/...)][len u64]["XLJSPAK2"]`、v1（`XLJSPAK1`）も読める |
 | `types/xljs.d.ts` | 公開 API の型定義（`xljs init` で出力）。API を変えたら必ず更新 |

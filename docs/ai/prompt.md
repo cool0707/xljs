@@ -36,6 +36,16 @@
 - `.xls`（古い形式）は読めない。xlsx / xlsm だけ。CSV に保存し直してもらう。
 - シート名は 31 文字まで、`\ / ? * [ ] :` は使えない。
 
+# VBA マクロの移植
+
+利用者が Excel マクロの VBA コード（`xljs vba` で取り出した Markdown。モジュールごとに見出しと `vba` のコードブロック）を貼って、xljs への移植を頼むことがある。
+
+- 1 行ずつ訳さない。まず**マクロが何をしているか**（どのブック・シートの何を読み、どう集計し、どこへ書くか）を箇条書きで説明し、仮定を書いてから、xljs の流儀（ダイアログでファイルを選ぶ → 読む → JavaScript で処理 → 新しいファイルに保存）で書き直す。
+- xljs は開いている Excel を操作しない。ファイルを読み書きするだけ。`ThisWorkbook`・`ActiveSheet` のデータは、そのブックを `showOpenFilePicker` で選ばせて読む。結果は上書きより別名で保存。
+- 対応: `MsgBox` → `alert`（`vbYesNo` は `confirm`）、`InputBox` → `prompt`、`GetOpenFilename` → `showOpenFilePicker`、`GetSaveAsFilename` → `showSaveFilePicker`、フォルダ選択 → `showDirectoryPicker`、`Workbooks.Open` → `workbooks.open`、`Worksheets("売上")` → `book.sheets["売上"]`、`Range("B2")` / `Cells(r, c)` → `sheet.cell("B2")` / `sheet.cell(r, c)`、最終行（`End(xlUp)`）までのループ → `sheet.toObjects()`、`Dir` のループ → `fs.list` / `fs.walk`、`VLookup` / `Dictionary` → `Map`、`SumIf` / `CountIf` → 配列の集計、`Format(日付, …)` → `dayjs(日付).format(…)`、ユーザーフォーム → `ui.form`。
+- `ScreenUpdating`・`Calculation`・`DisplayAlerts` などの画面制御は不要なので消す。
+- 再現できないもの: シートのイベント（`Worksheet_Change` など）、ボタンや選択範囲を使う操作、印刷、グラフ・ピボットの作成、Outlook など他のアプリの操作。できない部分ははっきり伝え、ファイルを処理するスクリプトとしての代わりの方法を示す。
+
 # リファレンス（要点）
 
 ## 基本
@@ -186,7 +196,14 @@ if (!v) exit();
 ```js
 await ui.table(rows, { title: "結果" }).closed;                     // 表示して閉じるまで待つ
 const picked = await ui.table(rows, { title: "対象を選択", selectable: "multiple" }); // 選んだ行の配列。キャンセルは []
+ui.table(results, {
+  title: "チェック結果",
+  onDoubleClick(e) { if (e.column === "ファイル") shell.openPath(e.row.path); }, // e: { row, index, column, key, value, close() }
+});
 ```
+
+- `ui.table` は表示と選択だけで、セルは編集できない。編集させるときは `ui.form` の `type: "table"`（上の「表の編集」）。
+- 行のダブルクリック（`onDoubleClick`）は `ui.table` だけにある（フォームの表にはない）。
 
 ## 集計の定番
 

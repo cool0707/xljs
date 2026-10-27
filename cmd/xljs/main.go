@@ -133,6 +133,8 @@ func run() int {
 			return cmdCheck(con, rest[1:])
 		case "init":
 			return cmdInit(con, rest[1:])
+		case "vba":
+			return cmdVBA(con, rest[1:])
 		}
 	}
 
@@ -145,8 +147,11 @@ func run() int {
 		// Double-clicked without a script: let the user pick one.
 		if u.Name() == "native" {
 			paths := u.OpenFiles(ui.PickerOptions{
-				Title:   i18n.T("cli.selectScript"),
-				Filters: []ui.FileFilter{{Description: i18n.T("cli.scripts"), Patterns: []string{"*.js", "*.mjs", "*.ts"}}},
+				Title: i18n.T("cli.selectScript"),
+				Filters: []ui.FileFilter{
+					{Description: i18n.T("cli.scripts"), Patterns: []string{"*.js", "*.mjs", "*.ts"}},
+					{Description: i18n.T("cli.macroBooks"), Patterns: macroPatterns},
+				},
 			})
 			if len(paths) == 0 {
 				return 0
@@ -156,6 +161,10 @@ func run() int {
 			fmt.Fprint(os.Stderr, usage())
 			return 2
 		}
+	}
+	// Workbooks instead of a script: write out their VBA code.
+	if isWorkbook(rest[0]) {
+		return dropVBA(con, u, rest)
 	}
 	m, err := readMeta(rest[0])
 	if err != nil {

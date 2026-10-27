@@ -71,6 +71,10 @@ type WindowOptions struct {
 	// Close). Both may be called on any goroutine and must not block.
 	OnMessage func(msg string, files []string)
 	OnClosed  func()
+	// Trace, when set, receives what happens to the page that the page
+	// cannot report itself (navigation, a failed browser process), for
+	// diagnosing tests. It is called on the UI thread.
+	Trace func(string)
 }
 
 // WebView2DataEnv names the environment variable that overrides the

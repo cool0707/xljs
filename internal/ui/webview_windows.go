@@ -4,6 +4,7 @@ package ui
 
 import (
 	"cmp"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -230,6 +231,15 @@ func (w *webWindow) embed() (err error) {
 		}
 	}
 	wv.WebResourceRequestedCallback = w.serve
+	if trace := w.o.Trace; trace != nil {
+		wv.NavigationCompletedCallback = func(*edge.ICoreWebView2, *edge.ICoreWebView2NavigationCompletedEventArgs) {
+			trace("navigation completed")
+		}
+		wv.ProcessFailedCallback = func(_ *edge.ICoreWebView2, args *edge.ICoreWebView2ProcessFailedEventArgs) {
+			kind, _ := args.GetProcessFailedKind()
+			trace(fmt.Sprintf("process failed (kind %d)", kind))
+		}
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			err = i18n.Err("ui.webviewError", r)

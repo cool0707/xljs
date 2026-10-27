@@ -8,6 +8,7 @@ require (
 	github.com/evanw/esbuild v0.28.2
 	github.com/go-sourcemap/sourcemap v2.1.3+incompatible
 	github.com/mattn/go-runewidth v0.0.31
+	github.com/richardlehane/mscfb v1.0.7
 	github.com/wailsapp/go-webview2 v1.0.23
 	github.com/xuri/excelize/v2 v2.11.0
 	golang.org/x/sys v0.49.0
@@ -20,7 +21,6 @@ require (
 	github.com/dlclark/regexp2/v2 v2.8.1 // indirect
 	github.com/google/pprof v0.0.0-20230207041349-798e818bf904 // indirect
 	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect
-	github.com/richardlehane/mscfb v1.0.7 // indirect
 	github.com/richardlehane/msoleps v1.0.6 // indirect
 	github.com/tiendc/go-deepcopy v1.7.2 // indirect
 	github.com/xuri/efp v0.0.1 // indirect
