@@ -20,7 +20,7 @@ var jsBlock = regexp.MustCompile("(?s)```js\n(.*?)```")
 // (docs/ai) is valid syntax, since the models copy it as is.
 func TestAIDocs(t *testing.T) {
 	dir := filepath.Join("..", "..", "docs", "ai")
-	for _, name := range []string{"prompt.md", "reference.md"} {
+	for _, name := range []string{"prompt.md", "reference.md", "skills/vba-port/SKILL.md"} {
 		src, err := os.ReadFile(filepath.Join(dir, name))
 		if err != nil {
 			t.Fatal(err)
