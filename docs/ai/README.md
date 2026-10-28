@@ -9,7 +9,7 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 | [`reference.md`](reference.md) | 詳しいリファレンス（全オプション・書式・フォーム・表・アプリモード）とレシピ 6 本 | 約 22,000 字 |
 | [`skills/vba-port/SKILL.md`](skills/vba-port/SKILL.md) | Excel マクロ（VBA）移植用のスキル。素直な書き方への置き換え、不要なコードの省略、手順の見直しの提案 | 約 4,000 字 |
 
-配布 zip にも `docs/ai/` として同梱しています。
+配布 zip にも `docs/ai/` として同梱しています。スキルを登録できるチャット用に、zip の `docs/ai/skills/` には `xljs-reference/SKILL.md`（`reference.md` と同じ内容）と `vba-port/SKILL.md` を入れています。
 
 ## 使い方
 

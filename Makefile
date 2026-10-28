@@ -30,9 +30,13 @@ dist: windows-x64 windows-arm64
 	cd dist && rm -f xljs-windows-*.zip \
 	  && zip -j xljs-windows-x64.zip x64/xljs.exe x64/xljsc.exe \
 	  && zip -j xljs-windows-arm64.zip arm64/xljs.exe arm64/xljsc.exe
-	# Documents for writing scripts with AI chats (docs/ai/*.md)
-	zip dist/xljs-windows-x64.zip docs/ai/*.md
-	zip dist/xljs-windows-arm64.zip docs/ai/*.md
+	# Documents for writing scripts with AI chats (docs/ai), with each skill
+	# also as <name>/SKILL.md so it can be registered as is
+	rm -rf dist/docs && mkdir -p dist/docs/ai/skills/xljs-reference
+	cp docs/ai/*.md dist/docs/ai/
+	cp -r docs/ai/skills dist/docs/ai/
+	cp docs/ai/reference.md dist/docs/ai/skills/xljs-reference/SKILL.md
+	cd dist && zip -r xljs-windows-x64.zip docs && zip -r xljs-windows-arm64.zip docs
 
 linux:
 	$(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/xljs ./cmd/xljs
