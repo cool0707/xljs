@@ -7,9 +7,11 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 |---|---|---|
 | [`prompt.md`](prompt.md) | AI への指示（回答の決まり・よくある間違い）＋要点のリファレンス＋回答例。**これだけで基本的な集計・変換は書ける** | 約 8,000 字 |
 | [`reference.md`](reference.md) | 詳しいリファレンス（全オプション・書式・フォーム・表・アプリモード）とレシピ 6 本 | 約 22,000 字 |
-| [`skills/vba-port/SKILL.md`](skills/vba-port/SKILL.md) | Excel マクロ（VBA）移植用のスキル。素直な書き方への置き換え、不要なコードの省略、手順の見直しの提案 | 約 4,000 字 |
+| [`copilot/instructions.md`](copilot/instructions.md) | Copilot のエージェント用の指示（`prompt.md` を 8,000 字以内に縮めたもの） | 約 4,300 字 |
+| [`copilot/skills/xljs-reference/SKILL.md`](copilot/skills/xljs-reference/SKILL.md) | スキル版のリファレンス（`reference.md` と同じ内容） | 約 22,000 字 |
+| [`copilot/skills/vba-port/SKILL.md`](copilot/skills/vba-port/SKILL.md) | Excel マクロ（VBA）移植用のスキル。素直な書き方への置き換え、不要なコードの省略、手順の見直しの提案 | 約 4,000 字 |
 
-配布 zip にも `docs/ai/` として同梱しています。スキルを登録できるチャット用に、zip の `docs/ai/skills/` には `xljs-reference/SKILL.md`（`reference.md` と同じ内容）と `vba-port/SKILL.md` を入れています。
+配布 zip にも `docs/ai/` として同梱しています。
 
 ## 使い方
 
@@ -28,14 +30,14 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 | Claude | プロジェクトを作り、「指示」に `prompt.md`、「ファイル（ナレッジ）」に `reference.md` |
 | Gemini | Gem を作り、「カスタム指示」に `prompt.md`、「知識」に `reference.md` |
 | ChatGPT | GPT（またはプロジェクト）の「指示」に `prompt.md`、ファイルに `reference.md` |
-| Microsoft 365 Copilot | エージェントを作れる場合は「指示」に `prompt.md`、「知識」に `reference.md` |
+| Microsoft 365 Copilot | エージェントを作れる場合は「指示」に `copilot/instructions.md`（8,000 字の上限に収まる）、スキルに `copilot/skills/` の 2 つ（スキルが使えなければ「知識」に `reference.md`） |
 | GitHub Copilot（VS Code） | スクリプトのフォルダに `.github/copilot-instructions.md` として `prompt.md` を置く。`xljs init` で型定義も出すと補完が効く |
 
 ## Excel マクロ（VBA）を移植する
 
 1. マクロ付きのブック（.xlsm など）を `xljs.exe` にドラッグ＆ドロップし、VBA コードをテキストファイルに保存する（コマンドなら `xljs vba ブック.xlsm`）。
 2. `prompt.md` を貼ったチャットに、「この Excel マクロを xljs に移植してください」と書いて、保存したテキストを貼る（または添付する）。
-   スキルを使えるチャット（Claude のスキルなど）には `skills/vba-port/SKILL.md` を登録し、使えないチャットでは `prompt.md` に続けて貼るか添付してください。
+   スキルを使えるチャット（Copilot のエージェント、Claude のスキルなど）には `copilot/skills/vba-port/SKILL.md` を登録し、使えないチャットでは `prompt.md` に続けて貼るか添付してください。
 3. 入力ブックの形（シート名・見出し・列名）も書くと確実です。マクロの中身は AI がまず説明するので、意図どおりか確かめてから使ってください。
 
 ## 頼み方のコツ
@@ -58,6 +60,6 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 
 ## 資料を更新するとき（開発者向け）
 
-- API を変えたら `types/xljs.d.ts` と合わせてこの 2 ファイルも直す。ここに書いたことは AI がそのまま使うので、存在しないオプションや古い書き方を残さない。
-- `go test ./internal/engine` がコードブロック（```js）の構文と、`prompt.md` の長さ（貼り付けの上限に収まるよう 15,000 字以内）を検査する。
+- API を変えたら `types/xljs.d.ts` と合わせて `prompt.md`・`reference.md`・`copilot/instructions.md` も直し、`reference.md` を `copilot/skills/xljs-reference/SKILL.md` にコピーする（`go test` が一致を検査する）。ここに書いたことは AI がそのまま使うので、存在しないオプションや古い書き方を残さない。
+- `go test ./internal/engine` がコードブロック（```js）の構文と、`prompt.md` の長さ（貼り付けの上限に収まるよう 15,000 字以内）、`copilot/instructions.md` の長さ（8,000 字以内）を検査する。
 - コード例は `xljs --ui=mock --ui-answers=応答.json` で実際に動かして確かめる。
