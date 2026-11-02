@@ -3105,6 +3105,11 @@
       if (!(sc >= 10 && sc <= 400)) throw new TypeError(T("pdf.badNumber", "scale"));
       r.scale = sc;
     }
+    if (o.zoom !== undefined && o.zoom !== null) {
+      const z = Number(o.zoom);
+      if (!(z >= 10 && z <= 400)) throw new TypeError(T("pdf.badNumber", "zoom"));
+      r.zoom = z;
+    }
     if (o.margin !== undefined && o.margin !== null) {
       const m = o.margin;
       const num = (v, k) => {
@@ -3118,9 +3123,15 @@
         : { top: num(m, "margin"), right: num(m, "margin"), bottom: num(m, "margin"), left: num(m, "margin") };
     }
     if (o.gridLines !== undefined && o.gridLines !== null) r.gridLines = !!o.gridLines;
+    if (o.blackAndWhite !== undefined && o.blackAndWhite !== null) r.blackAndWhite = !!o.blackAndWhite;
     if (o.centerHorizontally !== undefined && o.centerHorizontally !== null) r.centerHorizontally = !!o.centerHorizontally;
     if (o.charts === false) r.charts = false;
     return r;
+  }
+
+  /** How the pages of the sheets of book are cut (see PrintPages in xljs.d.ts). */
+  function printPages(book, options, sheets) {
+    return JSON.parse(native.xlsxPrintPages(book._h, JSON.stringify(printOptions(book, options, sheets))));
   }
 
   /** { html, charts: [{ sheet, index }], pages } of the sheets of book. */
@@ -3744,6 +3755,8 @@
     }
     /** The sheet as it would be printed, as an HTML document (charts are empty boxes). */
     toHtml(options) { return printLayout(this._book, options, [this._name]).html; }
+
+    printPages(options) { return printPages(this._book, options, [this._name])[0] ?? null; }
     /** Writes the sheet as Excel would print it to a PDF file (WebView2); resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this._book, dest, options, [this._name]); }
     get dimension() { return native.xlsxDimension(this._book._h, this._name); }
@@ -3831,6 +3844,8 @@
     }
     /** The sheets as they would be printed, as an HTML document (charts are empty boxes). */
     toHtml(options) { return printLayout(this, options).html; }
+
+    printPages(options) { return printPages(this, options); }
     /** Writes the sheets (every visible one, or options.sheets) as Excel would print them to a PDF file; resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this, dest, options); }
     toArrayBuffer() { return native.xlsxToBytes(this._h); }

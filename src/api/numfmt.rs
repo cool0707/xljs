@@ -207,7 +207,18 @@ const DAYS_JA: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];
 /// Formats a wall-clock time (y, month, d, h, mi, s, ms) with a date code.
 pub fn format_date(t: (i32, u32, u32, u32, u32, u32, u32), code: &str) -> String {
     let (y, mo, d, h, mi, s, ms) = t;
-    let sec = strip_brackets(sections(code).into_iter().next().unwrap_or_default().as_str());
+    let first = sections(code).into_iter().next().unwrap_or_default();
+    // [$-F800] / [$-F400]: the system's long date / time format, whatever follows.
+    let upper = first.to_uppercase();
+    let ja = crate::i18n::lang() == "ja";
+    let first = if upper.contains("[$-F800]") {
+        (if ja { "yyyy\"年\"m\"月\"d\"日\"" } else { "dddd, mmmm d, yyyy" }).to_string()
+    } else if upper.contains("[$-F400]") {
+        (if ja { "h:mm:ss" } else { "h:mm:ss AM/PM" }).to_string()
+    } else {
+        first
+    };
+    let sec = strip_brackets(&first);
     let weekday = chrono::NaiveDate::from_ymd_opt(y, mo, d).map(|dt| {
         use chrono::Datelike;
         dt.weekday().num_days_from_sunday() as usize
@@ -351,5 +362,18 @@ mod tests {
         assert_eq!(format_date(t, "yyyy\"年\"m\"月\"d\"日\"(aaa)"), "2026年4月1日(水)");
         assert_eq!(format_date(t, "h:mm:ss AM/PM"), "1:05:09 PM");
         assert_eq!(format_date(t, "mm-dd-yy"), "04-01-26");
+    }
+
+    #[test]
+    fn system_formats() {
+        let t = (2026, 7, 30, 13, 5, 9, 0);
+        let code = "[$-F800]dddd\\,\\ mmmm\\ dd\\,\\ yyyy";
+        {
+            let _g = crate::testutil::lock_lang("ja");
+            assert_eq!(format_date(t, code), "2026年7月30日");
+            assert_eq!(format_date(t, "[$-F400]h:mm:ss\\ AM/PM"), "13:05:09");
+        }
+        let _g = crate::testutil::lock_lang("en");
+        assert_eq!(format_date(t, code), "Thursday, July 30, 2026");
     }
 }

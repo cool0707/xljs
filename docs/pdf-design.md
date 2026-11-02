@@ -28,8 +28,10 @@ await xljs.htmlToPdf("<h1>報告書</h1>", "報告書.pdf", { paper: "A4" }); //
 
 - `toPdf` は書き出したファイルの絶対パスで resolve する。WebView2 がない UI（コンソール）ではエラー。mock は書かずにログだけ出す
   （`pdf("…/a.pdf", 4 pages, 1/1 charts)`）。
-- `options`（`PrintOptions`）: `sheets` `paper` `landscape` `scale` `fitToWidth` `fitToHeight` `fitToPage` `margin`（mm）`gridLines`
-  `centerHorizontally` `charts: false` `title`。省略した項目はシートのページ設定に従う。
+- `options`（`PrintOptions`）: `sheets` `paper` `landscape` `scale` `zoom`（シートの倍率・「次のページ数に合わせて」の結果にさらに掛ける %）`fitToWidth` `fitToHeight` `fitToPage` `margin`（mm）`gridLines`
+  `blackAndWhite` `centerHorizontally` `charts: false` `title`。省略した項目はシートのページ設定に従う。
+- `printPages(options)`（ブック: 印刷するシートの配列、シート: 1 つか null）は同じレイアウトの計算で、HTML を作らずにページの分かれ方
+  （`pages` `across` `down` `scale`（%）`areas: [{ range, across, down }]`）だけを返す（`PrintOptions::layout_only`）。
 - `htmlToPdf` は `options` の用紙・向き・余白を `@page` にして文書の `<head>` の先頭に入れる（文書の `@page` があればそちらが勝つ）。
   文書のスクリプトは動かない（`DOMParser` で取り込むため）。
 
@@ -42,18 +44,20 @@ await xljs.htmlToPdf("<h1>報告書</h1>", "報告書.pdf", { paper: "A4" }); //
 | 用紙・向き・拡大縮小 | umya の `PageSetup`（`paperSize` のコード → mm。不明なら A4） |
 | 次のページ数に合わせて印刷 | `fitToPage`（umya）＋ `fitToWidth` / `fitToHeight`（**シートの XML から直接**。umya は属性がないこと＝1 と 0＝自動を区別できない） |
 | 余白・ヘッダー/フッターの位置 | `PageMargins`（ないときは Excel の「標準」0.7/0.75/0.3 インチ） |
-| 印刷範囲・印刷タイトル | 定義された名前 `_xlnm.Print_Area` / `_xlnm.Print_Titles`（シートの名前、ブックの `localSheetId` 付きの名前）。複数の範囲は範囲ごとにページを分ける |
+| 印刷範囲・印刷タイトル | 定義された名前 `_xlnm.Print_Area` / `_xlnm.Print_Titles`（シートの名前、ブックの `localSheetId` 付きの名前）。複数の範囲は範囲ごとにページを分ける。列全体・行全体（`$A:$Q`）は使用範囲の端まで。数式の印刷範囲（`OFFSET($A$1,0,0,MAX(IFNA(MATCH(10^10,$B:$B),0)+5,43),7)` のような可変の範囲）は `xlsx_calc::eval_area` で計算する（`OFFSET` と単純な参照だけ。計算できなければ使用範囲） |
+| 白黒印刷 | `pageSetup blackAndWhite`（シートの XML から直接）。塗りを消し、文字・罫線を黒にする。`options.blackAndWhite` が優先（`false` で確認用にカラーで出せる） |
+| テーブル（リスト）の書式 | `src/api/xlsx_table.rs`。テーブルの範囲とスタイル名・縞模様などの表示は umya の `Table`、ブック独自のテーブルスタイルは styles.xml の `tableStyles` と `dxfs`（開いたときに `Book::table_styles`）。組み込みの `TableStyleLight1`〜`Dark11` は系統ごとの近似。要素（全体・縞・先頭/最後の列・見出し行・集計行・角のセル）を優先順に重ね、セル自身の塗り・罫線・文字色（既定の黒以外）が優先する |
 | 改ページ | `rowBreaks` / `colBreaks`（`id` は 0 始まりで、その次の行・列から新しいページ） |
 | ページの順序・枠線の印刷 | `pageOrder="overThenDown"`、`printOptions gridLines`（シートの XML から直接） |
 | 非表示のシート | `workbook.xml` の `state`（umya は読まない）。ブックを開いたときに `RawPrint`（`Book::print`）に保持する。シート名の変更に追従する |
 | ヘッダー/フッター | `oddHeader` / `oddFooter` の `&L` `&C` `&R`。`&P` `&N` → `counter(page)` / `counter(pages)`、`&D` `&T` `&A` `&F` `&Z`、`&B` `&I` `&U` `&S`、`&"フォント,太字"`、`&nn`（サイズ）、`&K`（色）。先頭ページ・偶数ページ用と画像（`&G`）は使わない |
 
-印刷範囲がなければ使用範囲（値・塗り・罫線のあるセル、値のある結合セル、画像・グラフ）。先頭の空の行・列は印刷しない。
+印刷範囲がなければ使用範囲（値・塗り・罫線のあるセル、値のある結合セル、テーブル、画像・グラフ）。先頭の空の行・列は印刷しない。
 
 ### 大きさ
 
 - 列幅（文字数）→ ピクセル: Excel と同じ `trunc(((256·w + trunc(128/mdw)) / 256)·mdw)`。最大の数字の幅 `mdw` は既定のフォントから
-  （日本語のフォントは 11pt で 8px、それ以外は 7px）。既定の列幅は `defaultColWidth`、なければ `baseColWidth·mdw + 5` を 8 の倍数に切り上げ。
+  （日本語のフォント（名前が日本語、Yu・MS・Meiryo・BIZ で始まる、JP・CJK を含む）は 11pt で 8px、それ以外は 7px）。既定の列幅は `defaultColWidth`、なければ `baseColWidth·mdw + 5` を 8 の倍数に切り上げ。
 - 行の高さ: 行の `ht`、なければ既定のフォントから（游ゴシック 11pt → 18.75pt、ＭＳ 系 → 13.5pt、Calibri → 15pt）。`customHeight` のときと
   知らないフォントのときはシートの `defaultRowHeight`。非表示の行・列は 0。
 - 「次のページ数に合わせて印刷」: 倍率 = min(1, 幅×横のページ数÷全体の幅, 高さ×縦のページ数÷全体の高さ)（1% 単位に切り捨て、10% 以上）。
@@ -128,17 +132,20 @@ umya-spreadsheet の図形のモデルは一部しか持たないので使わな
 - 条件付き書式、SmartArt、ワードアートの効果、図形の影・3-D・グラデーション（最初の色で塗る）・パターン、よく使うもの以外の既定の図形の形（四角になる）、
   画像のトリミング、EMF/WMF の画像、コメント、フォームのコントロール、ヘッダー/フッターの画像、先頭ページ・偶数ページ用のヘッダー。
 - 縮小して全体を表示（shrink to fit）、`#####` の表示（数値が入りきらない）、塗りのパターン（単色以外は前景色で塗る）、グラデーションの塗り。
-- 先頭ページ番号（`firstPageNumber`）、行列番号の印刷、白黒印刷・簡易印刷、印刷の品質。
+- 先頭ページ番号（`firstPageNumber`）、行列番号の印刷、簡易印刷、印刷の品質。白黒印刷は塗りと色を消すだけ（画像・図形はそのまま）。
+- 印刷ダイアログでだけ選んだ拡大縮小（「シートを 1 ページに印刷」など。保存されないもの）は分からないので、Excel の PDF とページ数が違うことがある。
 - Excel 2016 以降のグラフ（chartEx）やレーダーなど `sheet.charts` で描けないもの（枠の中に理由を書く）。
 - 行の高さの自動調整（折り返しのある行で `ht` がないとき、Excel が開いたときに広げる分）は再現しない。
 
 ## 5. テスト
 
 - `src/api/xlsx_shape.rs` の単体テスト: 既定の形の path。
+- `src/api/xlsx_table.rs` の単体テスト: テーブルスタイルの読み方、要素の罫線の当て方。
 - `src/api/xlsx_print.rs` の単体テスト: 範囲の読み方、ページの分け方（印刷タイトル・改ページ・非表示）、ヘッダー/フッター、表示形式の色、ページ設定の XML。
 - `testdata/scripts/pdf.test.js`（mock）: 新しいブックの HTML（値・結合・罫線・塗り・負数の赤）、オプション、検査、複数シート、
   `charts.xlsx` のグラフの枠、`testdata/xlsx/print.xlsx`（`make_print.py` で openpyxl から生成。横向き・横 1 ページ・印刷タイトル・
-  ヘッダー/フッター・改ページ・画像・グラフ・非表示の列とシート・印刷範囲・B5）、`testdata/xlsx/shapes.xlsx`（`make_shapes.py`。openpyxl の
+  ヘッダー/フッター・改ページ・画像・グラフ・非表示の列とシート・印刷範囲・B5）、`testdata/xlsx/tables.xlsx`（`make_tables.py`。
+  独自のテーブルスタイル（styles.xml に足す）と TableStyleMedium2・白黒印刷・OFFSET の印刷範囲・列全体の印刷範囲）、`testdata/xlsx/shapes.xlsx`（`make_shapes.py`。openpyxl の
   出力に描画の XML を足す: テキストボックス・既定のスタイルの図形・吹き出し・矢印・星（回転）・矢印付きの線・破線のカギ線コネクタ（反転）・グループ・
   フリーフォーム・縦書き・非表示・印刷しない図形）、mock のログ。デバッガ経由でも同じ（`scripts_in_debugger`）。
 - `src/ui/native/tests.rs`（Windows CI）: `print_page_draws_charts_hidden`（見えないウィンドウで縦棒とガントが描けること）、

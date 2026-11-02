@@ -30,6 +30,8 @@ ok(ws.toHtml({ paper: "A3", landscape: true }).includes("size:1190.551pt 841.89p
 ok(ws.toHtml({ gridLines: true }).includes('class="xljs-sheet grid"'), "grid lines");
 ok(ws.toHtml({ margin: 10 }).includes("margin:28.346pt 28.346pt 28.346pt 28.346pt"), "margins in mm");
 ok(ws.toHtml({ scale: 50 }).includes("zoom:0.5"), "scale");
+ok(ws.toHtml({ scale: 50, zoom: 90 }).includes("zoom:0.45"), "zoom: on top of the scale");
+throws(() => ws.toHtml({ zoom: 5 }), /zoom/);
 throws(() => ws.toHtml({ paper: "A9" }), /用紙のサイズ A9/);
 throws(() => ws.toHtml({ scale: 1000 }), /scale/);
 throws(() => wb.toHtml({ sheets: ["ない"] }), /シート ない/);
@@ -41,6 +43,16 @@ const rows = [];
 for (let r = 0; r < 120; r++) rows.push(Array.from({ length: 30 }, (_, c) => r * 100 + c));
 big.write(rows);
 const pages = (h) => h.match(/class="xljs-page"/g).length;
+const pp = ws.printPages();
+equal(pp.sheet, ws.name, "printPages: sheet");
+equal(pp.pages, pages(ws.toHtml()), "printPages: the same pages as toHtml");
+equal(pp.across * pp.down, pp.pages, "printPages: across × down");
+equal(ws.printPages({ scale: 50 }).scale, 50, "printPages: scale in percent");
+equal(ws.printPages({ scale: 50, zoom: 90 }).scale, 45, "printPages: zoom");
+equal(wb.addSheet("空2").printPages(), null, "printPages: nothing to print");
+const bp = big.printPages();
+ok(bp.across > 1 && bp.down > 1 && bp.pages === bp.across * bp.down, "printPages: pages across and down");
+equal(big.printPages({ fitToWidth: 1 }).across, 1, "printPages: fitToWidth");
 const all = big.toHtml();
 ok(pages(all) > 4, "pages: " + pages(all));
 const fit = big.toHtml({ fitToWidth: 1 });
@@ -79,7 +91,30 @@ ok(area.includes(">B2<") && area.includes(">D10<") && !area.includes(">A1<") && 
 ok(ph.includes("<img") && ph.includes('data-chart="0"'), "picture and chart");
 ok(!/>J\d/.test(ph), "hidden column");
 equal(pages(pb.sheet("一覧").toHtml({ scale: 100 })) > 3, true, "options win over the sheet's fit to page");
+ok(pages(pb.sheet("一覧").toHtml({ zoom: 50 })) < pages(pb.sheet("一覧").toHtml()), "zoom: on top of fit to page, fewer pages");
+const pps = pb.printPages();
+equal(pps.map((x) => x.sheet).join(","), "一覧,印刷範囲", "printPages: the printed sheets");
+equal(pps.reduce((n, x) => n + x.pages, 0), pages(ph), "printPages: the same pages as toHtml");
+equal(pps[0].across, 1, "printPages: fit to 1 page wide");
+equal(pps[1].areas[0].range, "B2:D10", "printPages: the print area");
 await pb.toPdf("print.pdf");
+
+// Table styles, black and white, print areas by formulas (testdata/xlsx/make_tables.py).
+const tb = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "tables.xlsx"));
+const th = tb.sheet("テーブル").toHtml();
+ok(th.includes("background-color:#DDEBF7"), "header fill of the custom table style");
+ok(th.includes("0.75pt solid #808080") && th.includes("0.5pt solid #808080"), "borders of the custom table style (thin, hair inside)");
+ok(/font-weight:bold[^}]*color:#FFFFFF|color:#FFFFFF[^}]*font-weight:bold/.test(th) || th.includes("font-weight:bold;color:#FFFFFF"), "TableStyleMedium2: white bold header");
+const mono = tb.sheet("白黒").toHtml();
+ok(mono.includes(">塗り<") && !mono.includes("#FFC000"), "black and white: no fills");
+ok(tb.sheet("白黒").toHtml({ blackAndWhite: false }).includes("#FFC000"), "blackAndWhite: false prints the colors");
+ok(!tb.sheet("テーブル").toHtml({ blackAndWhite: true }).includes("#DDEBF7"), "blackAndWhite: true drops the colors");
+const dyn = tb.sheet("可変範囲").toHtml();
+ok(dyn.includes(">見出し<") && dyn.includes(">80<") && !dyn.includes(">外<"), "OFFSET print area: A1:C8");
+equal(dyn.match(/<tr /g).length, 8, "OFFSET print area: 8 rows");
+const cols = tb.sheet("列指定").toHtml();
+equal(pages(cols), 1, "whole columns end at the used range");
+equal(cols.match(/<tr /g).length, 10, "whole columns: 10 rows");
 
 // Shapes, text boxes, lines, groups and a freeform (testdata/xlsx/make_shapes.py).
 const sh = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "shapes.xlsx")).sheets[0].toHtml();
