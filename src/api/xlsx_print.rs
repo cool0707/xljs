@@ -115,6 +115,9 @@ pub struct PrintOptions {
     pub fit_to_height: Option<u32>,
     /// The scale in percent (instead of "fit to").
     pub scale: Option<f64>,
+    /// A further scale in percent, on top of the sheet's (or the options')
+    /// scale or "fit to".
+    pub zoom: Option<f64>,
     pub margin: Option<Margins>,
     pub grid_lines: Option<bool>,
     /// Print in black and white (None = the sheet's blackAndWhite).
@@ -401,6 +404,8 @@ struct Setup {
     footer: f64,       // pt from the bottom edge
     scale: Option<f64>,
     fit: Option<(u32, u32)>,
+    /// Multiplies whatever scale the page gets (options.zoom).
+    zoom: f64,
     over_then_down: bool,
     grid: bool,
     center_h: bool,
@@ -1135,6 +1140,7 @@ fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setu
         footer: inch(pm.has_footer(), pm.footer(), 0.3),
         scale: if fit.is_some() { None } else { scale.or(Some(1.0)) },
         fit,
+        zoom: o.zoom.map(|z| (z / 100.0).clamp(0.1, 4.0)).unwrap_or(1.0),
         over_then_down: raw.over_then_down,
         grid: o.grid_lines.unwrap_or(raw.grid_lines),
         center_h: o.center_horizontally.unwrap_or(sh.ws.print_options().horizontal_centered()),
@@ -1194,6 +1200,7 @@ fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, St
         }
         None => (s.scale.unwrap_or(1.0), sh.breaks(false), sh.breaks(true)),
     };
+    let scale = (scale * s.zoom).clamp(0.01, 4.0);
     let col_segs = split(c1, c2, &|c| sh.w(c), avail_w / scale, tc_w, title_cols.map(|t| t.1).unwrap_or(0), &col_breaks);
     let row_segs = split(r1, r2, &|r| sh.h(r), avail_h / scale, tr_h, title_rows.map(|t| t.1).unwrap_or(0), &row_breaks);
     let mut order = Vec::new();

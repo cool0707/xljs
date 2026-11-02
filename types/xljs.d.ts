@@ -1653,6 +1653,11 @@ declare global {
     fitToHeight?: number | boolean;
     /** 1 ページに収める */
     fitToPage?: boolean;
+    /**
+     * さらに掛ける倍率（%、10〜400）。シートの拡大縮小や「次のページ数に合わせて印刷」で決まる倍率に掛ける。
+     * シートの設定を変えずに、はみ出す分だけ縮めたいときに（例: 95）
+     */
+    zoom?: number;
     /** 余白（mm）。数値なら上下左右とも */
     margin?: number | { top?: number; right?: number; bottom?: number; left?: number };
     /** 枠線（セルの境界の薄い線）を印刷する */

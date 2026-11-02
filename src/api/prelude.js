@@ -3105,6 +3105,11 @@
       if (!(sc >= 10 && sc <= 400)) throw new TypeError(T("pdf.badNumber", "scale"));
       r.scale = sc;
     }
+    if (o.zoom !== undefined && o.zoom !== null) {
+      const z = Number(o.zoom);
+      if (!(z >= 10 && z <= 400)) throw new TypeError(T("pdf.badNumber", "zoom"));
+      r.zoom = z;
+    }
     if (o.margin !== undefined && o.margin !== null) {
       const m = o.margin;
       const num = (v, k) => {

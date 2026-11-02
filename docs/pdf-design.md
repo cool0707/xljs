@@ -28,7 +28,7 @@ await xljs.htmlToPdf("<h1>報告書</h1>", "報告書.pdf", { paper: "A4" }); //
 
 - `toPdf` は書き出したファイルの絶対パスで resolve する。WebView2 がない UI（コンソール）ではエラー。mock は書かずにログだけ出す
   （`pdf("…/a.pdf", 4 pages, 1/1 charts)`）。
-- `options`（`PrintOptions`）: `sheets` `paper` `landscape` `scale` `fitToWidth` `fitToHeight` `fitToPage` `margin`（mm）`gridLines`
+- `options`（`PrintOptions`）: `sheets` `paper` `landscape` `scale` `zoom`（シートの倍率・「次のページ数に合わせて」の結果にさらに掛ける %）`fitToWidth` `fitToHeight` `fitToPage` `margin`（mm）`gridLines`
   `blackAndWhite` `centerHorizontally` `charts: false` `title`。省略した項目はシートのページ設定に従う。
 - `htmlToPdf` は `options` の用紙・向き・余白を `@page` にして文書の `<head>` の先頭に入れる（文書の `@page` があればそちらが勝つ）。
   文書のスクリプトは動かない（`DOMParser` で取り込むため）。

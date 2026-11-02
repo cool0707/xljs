@@ -30,6 +30,8 @@ ok(ws.toHtml({ paper: "A3", landscape: true }).includes("size:1190.551pt 841.89p
 ok(ws.toHtml({ gridLines: true }).includes('class="xljs-sheet grid"'), "grid lines");
 ok(ws.toHtml({ margin: 10 }).includes("margin:28.346pt 28.346pt 28.346pt 28.346pt"), "margins in mm");
 ok(ws.toHtml({ scale: 50 }).includes("zoom:0.5"), "scale");
+ok(ws.toHtml({ scale: 50, zoom: 90 }).includes("zoom:0.45"), "zoom: on top of the scale");
+throws(() => ws.toHtml({ zoom: 5 }), /zoom/);
 throws(() => ws.toHtml({ paper: "A9" }), /用紙のサイズ A9/);
 throws(() => ws.toHtml({ scale: 1000 }), /scale/);
 throws(() => wb.toHtml({ sheets: ["ない"] }), /シート ない/);
@@ -79,6 +81,7 @@ ok(area.includes(">B2<") && area.includes(">D10<") && !area.includes(">A1<") && 
 ok(ph.includes("<img") && ph.includes('data-chart="0"'), "picture and chart");
 ok(!/>J\d/.test(ph), "hidden column");
 equal(pages(pb.sheet("一覧").toHtml({ scale: 100 })) > 3, true, "options win over the sheet's fit to page");
+ok(pages(pb.sheet("一覧").toHtml({ zoom: 50 })) < pages(pb.sheet("一覧").toHtml()), "zoom: on top of fit to page, fewer pages");
 await pb.toPdf("print.pdf");
 
 // Table styles, black and white, print areas by formulas (testdata/xlsx/make_tables.py).
