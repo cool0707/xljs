@@ -59,6 +59,22 @@ const fit = big.toHtml({ fitToWidth: 1 });
 ok(pages(fit) < pages(all), "fewer pages when fit to width");
 equal(pages(big.toHtml({ fitToPage: true })), 1, "fit to one page");
 
+// skipBlankPages: leave out pages with nothing (true) or with no values ("values").
+const sparse = wb.addSheet("まばら");
+sparse.setValue("A1", "先頭");
+sparse.setValue("A200", "末尾");
+sparse.range("A100").border({ outline: "thin" });
+sparse.setValue("A150", "  ");
+equal(pages(sparse.toHtml()), 6, "6 pages down");
+const sk = sparse.toHtml({ skipBlankPages: true });
+equal(pages(sk), 3, "skipBlankPages: true keeps the page with a border");
+ok(sk.includes(">先頭<") && sk.includes(">末尾<"), "skipBlankPages: the values are kept");
+equal(pages(sparse.toHtml({ skipBlankPages: "values" })), 2, "skipBlankPages: values leaves out the page with only a border");
+const spp = sparse.printPages({ skipBlankPages: true });
+equal([spp.pages, spp.across * spp.down, spp.areas[0].pages].join(), "3,6,3", "printPages: the pages printed");
+equal(pages(sparse.toHtml({ skipBlankPages: false })), 6, "skipBlankPages: false");
+throws(() => sparse.toHtml({ skipBlankPages: "x" }), /skipBlankPages/);
+
 // Several sheets in one document, each with its own @page.
 const both = wb.toHtml({ sheets: ["見積", "大きい表"] });
 ok(both.includes("@page s0{") && both.includes("@page s1{"), "a page rule per sheet");

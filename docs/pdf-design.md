@@ -29,9 +29,13 @@ await xljs.htmlToPdf("<h1>報告書</h1>", "報告書.pdf", { paper: "A4" }); //
 - `toPdf` は書き出したファイルの絶対パスで resolve する。WebView2 がない UI（コンソール）ではエラー。mock は書かずにログだけ出す
   （`pdf("…/a.pdf", 4 pages, 1/1 charts)`）。
 - `options`（`PrintOptions`）: `sheets` `paper` `landscape` `scale` `zoom`（シートの倍率・「次のページ数に合わせて」の結果にさらに掛ける %）`fitToWidth` `fitToHeight` `fitToPage` `margin`（mm）`gridLines`
-  `blackAndWhite` `centerHorizontally` `charts: false` `title`。省略した項目はシートのページ設定に従う。
+  `blackAndWhite` `centerHorizontally` `charts: false` `title` `skipBlankPages`。省略した項目はシートのページ設定に従う。
+- `skipBlankPages`（native には 1 / 2 で渡す）: ページを分けたあとで、本体（印刷タイトルを除く行・列）に何もないページを外す（`blank_page`）。
+  `true` は値・塗り・罫線（斜線・テーブルのスタイルも）・画像・図形・グラフのどれもないページ、`"values"` は値と画像・図形・グラフのないページ。
+  結合セルは切られたページそれぞれに値があるとみなす。空白だけの文字列は値なし。枠線（`gridLines`）は数えない。
+  ページ番号（`counter(page)` / `counter(pages)`）は残ったページで数え、`printPages` の `pages`（範囲ごとの `areas[].pages` も）は残ったページ数（`across × down` より少なくなる）。
 - `printPages(options)`（ブック: 印刷するシートの配列、シート: 1 つか null）は同じレイアウトの計算で、HTML を作らずにページの分かれ方
-  （`pages` `across` `down` `scale`（%）`areas: [{ range, across, down }]`）だけを返す（`PrintOptions::layout_only`）。
+  （`pages` `across` `down` `scale`（%）`areas: [{ range, across, down, pages }]`）だけを返す（`PrintOptions::layout_only`）。
 - `htmlToPdf` は `options` の用紙・向き・余白を `@page` にして文書の `<head>` の先頭に入れる（文書の `@page` があればそちらが勝つ）。
   文書のスクリプトは動かない（`DOMParser` で取り込むため）。
 
