@@ -1635,6 +1635,27 @@ declare global {
     toPdf(dest: PathLike, options?: PrintOptions): Promise<string>;
     /** 印刷したときのページを HTML 文書にする（グラフは空の枠。ブラウザで開くとページの区切りが見える） */
     toHtml(options?: PrintOptions): string;
+    /**
+     * toPdf と同じ options で印刷したときに、ページが横・縦にいくつに分かれるかと倍率を返す（PDF は作らない）。
+     * 印刷する内容がなければ null
+     */
+    printPages(options?: PrintOptions): PrintPages | null;
+  }
+
+  /** printPages の結果（1 シート分） */
+  interface PrintPages {
+    /** シート名 */
+    sheet: string;
+    /** ページ数 */
+    pages: number;
+    /** 横のページ数（印刷範囲が複数あるときはいちばん多いもの） */
+    across: number;
+    /** 縦のページ数（印刷範囲が複数あるときは合計） */
+    down: number;
+    /** 印刷の倍率（%。シートの拡大縮小・「次のページ数に合わせて印刷」・options の scale と zoom を反映したもの） */
+    scale: number;
+    /** 印刷範囲ごとの分かれ方（range は "A1:K48" の形） */
+    areas: { range: string; across: number; down: number }[];
   }
 
   /** toPdf / toHtml のオプション。省略した項目はシートのページ設定に従う */
@@ -1697,6 +1718,8 @@ declare global {
     toPdf(dest: PathLike, options?: PrintOptions): Promise<string>;
     /** 印刷したときのページを HTML 文書にする（グラフは空の枠） */
     toHtml(options?: PrintOptions): string;
+    /** 印刷するシート（toPdf と同じ選び方）ごとに、ページが横・縦にいくつに分かれるかと倍率を返す（PDF は作らない）。詳しくは Worksheet.printPages */
+    printPages(options?: PrintOptions): PrintPages[];
     close(): void;
     /** ブックの既定フォント */
     readonly defaultFont: { name: string; size: number };

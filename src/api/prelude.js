@@ -3129,6 +3129,11 @@
     return r;
   }
 
+  /** How the pages of the sheets of book are cut (see PrintPages in xljs.d.ts). */
+  function printPages(book, options, sheets) {
+    return JSON.parse(native.xlsxPrintPages(book._h, JSON.stringify(printOptions(book, options, sheets))));
+  }
+
   /** { html, charts: [{ sheet, index }], pages } of the sheets of book. */
   function printLayout(book, options, sheets) {
     return JSON.parse(native.xlsxPrintHtml(book._h, JSON.stringify(printOptions(book, options, sheets))));
@@ -3750,6 +3755,8 @@
     }
     /** The sheet as it would be printed, as an HTML document (charts are empty boxes). */
     toHtml(options) { return printLayout(this._book, options, [this._name]).html; }
+
+    printPages(options) { return printPages(this._book, options, [this._name])[0] ?? null; }
     /** Writes the sheet as Excel would print it to a PDF file (WebView2); resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this._book, dest, options, [this._name]); }
     get dimension() { return native.xlsxDimension(this._book._h, this._name); }
@@ -3837,6 +3844,8 @@
     }
     /** The sheets as they would be printed, as an HTML document (charts are empty boxes). */
     toHtml(options) { return printLayout(this, options).html; }
+
+    printPages(options) { return printPages(this, options); }
     /** Writes the sheets (every visible one, or options.sheets) as Excel would print them to a PDF file; resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this, dest, options); }
     toArrayBuffer() { return native.xlsxToBytes(this._h); }

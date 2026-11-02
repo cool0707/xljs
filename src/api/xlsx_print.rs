@@ -126,6 +126,31 @@ pub struct PrintOptions {
     /// Draw the charts (default true).
     pub charts: Option<bool>,
     pub title: String,
+    /// Only work out how the pages are cut (PrintOut::sheets); no HTML.
+    #[serde(skip)]
+    pub layout_only: bool,
+}
+
+/// How the pages of a print area are cut.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct AreaPages {
+    /// "A1:K48"
+    pub range: String,
+    pub across: usize,
+    pub down: usize,
+}
+
+/// How the pages of a sheet are cut (book.printPages).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct SheetPages {
+    pub sheet: String,
+    pub pages: usize,
+    /// Pages across (the most of the areas) and down (the areas one after another).
+    pub across: usize,
+    pub down: usize,
+    /// The scale in percent the pages are printed at.
+    pub scale: f64,
+    pub areas: Vec<AreaPages>,
 }
 
 /// A chart placed in the HTML: the index-th of sheet.charts.
@@ -143,6 +168,7 @@ pub struct PrintOut {
     /// stands for (several divs may show the same chart, cut by pages).
     pub charts: Vec<ChartRef>,
     pub pages: usize,
+    pub sheets: Vec<SheetPages>,
 }
 
 /// The size of a paper in millimeters (portrait) by Excel's paperSize code
@@ -1014,6 +1040,7 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
     let mut body = String::new();
     let mut charts = Vec::new();
     let mut pages = 0;
+    let mut sheets = Vec::new();
     let ids = std::cell::Cell::new(0);
     for (si, name) in names.iter().enumerate() {
         let mut sh = Sheet::new(b, name)?;
@@ -1076,9 +1103,22 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
         }
         let page_name = format!("s{si}");
         page_css.push_str(&page_rule(&page_name, &sh, &setup, &file, &dir, &now));
+        let mut info = SheetPages { sheet: name.clone(), pages: 0, across: 0, down: 0, scale: 100.0, areas: Vec::new() };
         for area in areas {
-            pages += sheet_pages(&sh, &setup, area, &objects, &page_name, &mut classes, &mut body);
+            let (a, scale) = sheet_pages(&sh, &setup, area, &objects, &page_name, &mut classes, if o.layout_only { None } else { Some(&mut body) });
+            pages += a.across * a.down;
+            info.pages += a.across * a.down;
+            info.across = info.across.max(a.across);
+            info.down += a.down;
+            if info.areas.is_empty() {
+                info.scale = (scale * 1000.0).round() / 10.0;
+            }
+            info.areas.push(a);
         }
+        sheets.push(info);
+    }
+    if o.layout_only {
+        return Ok(PrintOut { html: String::new(), charts, pages, sheets });
     }
     if pages == 0 {
         return Err(err!("pdf.empty"));
@@ -1092,7 +1132,7 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
         esc(&title),
         classes.css
     );
-    Ok(PrintOut { html, charts, pages })
+    Ok(PrintOut { html, charts, pages, sheets })
 }
 
 fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setup> {
@@ -1176,8 +1216,9 @@ fn page_rule(name: &str, sh: &Sheet, s: &Setup, file: &str, dir: &str, now: &(St
     css
 }
 
-/// Writes the pages of one area of a sheet; returns how many.
-fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, String)], page: &str, classes: &mut Classes, out: &mut String) -> usize {
+/// Writes the pages of one area of a sheet (only works them out when out is
+/// None); returns how they are cut and the scale.
+fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, String)], page: &str, classes: &mut Classes, out: Option<&mut String>) -> (AreaPages, f64) {
     let (c1, r1, c2, r2) = area;
     let (title_rows, title_cols) = sh.titles();
     let sum = |a: u32, b: u32, f: &dyn Fn(u32) -> f64| (a..=b).map(f).sum::<f64>();
@@ -1203,6 +1244,12 @@ fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, St
     let scale = (scale * s.zoom).clamp(0.01, 4.0);
     let col_segs = split(c1, c2, &|c| sh.w(c), avail_w / scale, tc_w, title_cols.map(|t| t.1).unwrap_or(0), &col_breaks);
     let row_segs = split(r1, r2, &|r| sh.h(r), avail_h / scale, tr_h, title_rows.map(|t| t.1).unwrap_or(0), &row_breaks);
+    let cut = AreaPages {
+        range: format!("{}{}:{}{}", super::xlsx::column_name(c1 as i64).unwrap_or_default(), r1, super::xlsx::column_name(c2 as i64).unwrap_or_default(), r2),
+        across: col_segs.len(),
+        down: row_segs.len(),
+    };
+    let Some(out) = out else { return (cut, scale) };
     let mut order = Vec::new();
     if s.over_then_down {
         for rs in &row_segs {
@@ -1274,7 +1321,7 @@ fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, St
         }
         out.push_str("</div>\n</section>\n");
     }
-    order.len()
+    (cut, scale)
 }
 
 /// The CSS of a cell: (td: fill and borders, div: font and alignment).
@@ -1676,5 +1723,12 @@ pub(super) fn install(n: &super::N) {
         let o: PrintOptions = serde_json::from_str(&a.str(1)).map_err(|e| a.throw(&crate::Error::from(e)))?;
         let out = super::xlsx::with_book(h, a, |b| workbook_html(b, &o).map_err(|e| a.throw(&e)))?;
         a.ret(serde_json::json!({ "html": out.html, "charts": out.charts, "pages": out.pages }).to_string())
+    });
+    // xlsxPrintPages(book, optionsJSON) -> JSON [{ sheet, pages, across, down, scale, areas: [{ range, across, down }] }]
+    n.set("xlsxPrintPages", |h, a| {
+        let mut o: PrintOptions = serde_json::from_str(&a.str(1)).map_err(|e| a.throw(&crate::Error::from(e)))?;
+        o.layout_only = true;
+        let out = super::xlsx::with_book(h, a, |b| workbook_html(b, &o).map_err(|e| a.throw(&e)))?;
+        a.ret(serde_json::to_string(&out.sheets).map_err(|e| a.throw(&crate::Error::from(e)))?)
     });
 }

@@ -43,6 +43,16 @@ const rows = [];
 for (let r = 0; r < 120; r++) rows.push(Array.from({ length: 30 }, (_, c) => r * 100 + c));
 big.write(rows);
 const pages = (h) => h.match(/class="xljs-page"/g).length;
+const pp = ws.printPages();
+equal(pp.sheet, ws.name, "printPages: sheet");
+equal(pp.pages, pages(ws.toHtml()), "printPages: the same pages as toHtml");
+equal(pp.across * pp.down, pp.pages, "printPages: across × down");
+equal(ws.printPages({ scale: 50 }).scale, 50, "printPages: scale in percent");
+equal(ws.printPages({ scale: 50, zoom: 90 }).scale, 45, "printPages: zoom");
+equal(wb.addSheet("空2").printPages(), null, "printPages: nothing to print");
+const bp = big.printPages();
+ok(bp.across > 1 && bp.down > 1 && bp.pages === bp.across * bp.down, "printPages: pages across and down");
+equal(big.printPages({ fitToWidth: 1 }).across, 1, "printPages: fitToWidth");
 const all = big.toHtml();
 ok(pages(all) > 4, "pages: " + pages(all));
 const fit = big.toHtml({ fitToWidth: 1 });
@@ -82,6 +92,11 @@ ok(ph.includes("<img") && ph.includes('data-chart="0"'), "picture and chart");
 ok(!/>J\d/.test(ph), "hidden column");
 equal(pages(pb.sheet("一覧").toHtml({ scale: 100 })) > 3, true, "options win over the sheet's fit to page");
 ok(pages(pb.sheet("一覧").toHtml({ zoom: 50 })) < pages(pb.sheet("一覧").toHtml()), "zoom: on top of fit to page, fewer pages");
+const pps = pb.printPages();
+equal(pps.map((x) => x.sheet).join(","), "一覧,印刷範囲", "printPages: the printed sheets");
+equal(pps.reduce((n, x) => n + x.pages, 0), pages(ph), "printPages: the same pages as toHtml");
+equal(pps[0].across, 1, "printPages: fit to 1 page wide");
+equal(pps[1].areas[0].range, "B2:D10", "printPages: the print area");
 await pb.toPdf("print.pdf");
 
 // Table styles, black and white, print areas by formulas (testdata/xlsx/make_tables.py).
