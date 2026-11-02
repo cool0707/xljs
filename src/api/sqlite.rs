@@ -7,6 +7,7 @@ use std::time::Duration;
 use chrono::{NaiveDate, NaiveDateTime};
 use regex::Regex;
 use rquickjs::class::Trace;
+use rquickjs::function::Rest;
 use rquickjs::{BigInt, Class, Constructor, Ctx, JsLifetime, Value};
 use rusqlite::types::Value as Sql;
 
@@ -28,12 +29,56 @@ fn handle_id(v: &Value) -> Option<u64> {
     Some(c.borrow().id)
 }
 
-/// Runs f with the open database of the handle (argument 0).
+/// The databases, unless a function of the script (db.function) running
+/// inside a call of a database wants them.
+fn dbs<'a>(h: &'a Host, a: &A) -> rquickjs::Result<std::cell::RefMut<'a, std::collections::HashMap<u64, Db>>> {
+    h.dbs.try_borrow_mut().map_err(|_| a.throw(&err!("sqlite.functionReentrant")))
+}
+
+/// Runs f with the open database of the handle (argument 0). The SQL
+/// functions of the script are called meanwhile; when one throws, the
+/// call throws what it threw.
 fn with_db<'js, T>(h: &Host, a: &A<'js>, f: impl FnOnce(&mut Db) -> crate::Result<T>) -> rquickjs::Result<T> {
     let Some(id) = handle_id(&a.arg(0)) else { return Err(a.throw(&err!("sqlite.invalidHandle"))) };
-    let mut dbs = h.dbs.borrow_mut();
+    let mut dbs = dbs(h, a)?;
     let Some(d) = dbs.get_mut(&id) else { return Err(a.throw(&err!("sqlite.invalidHandle"))) };
-    f(d).map_err(|e| a.throw(&e))
+    let mut thrown: Option<Value<'js>> = None;
+    let r = {
+        let mut call = |fid: u64, args: Vec<Sql>| call_fn(h, a, fid, args, &mut thrown);
+        db::with_calls(&mut call, || f(d))
+    };
+    drop(dbs);
+    r.map_err(|e| match thrown {
+        // exit() (or the watchdog) in the function: stop the script.
+        Some(_) if h.exited() => js::throw_uncatchable(&a.ctx),
+        Some(v) => a.ctx.throw(v),
+        None => a.throw(&e),
+    })
+}
+
+/// Calls the function of the script with the id for SQL: the value, or the
+/// message of what it threw (kept in thrown).
+fn call_fn<'js>(h: &Host, a: &A<'js>, id: u64, args: Vec<Sql>, thrown: &mut Option<Value<'js>>) -> Result<Sql, String> {
+    let r = (|| -> rquickjs::Result<Sql> {
+        let Some(f) = h.kept_fn(&a.ctx, id) else { return Ok(Sql::Null) };
+        let vals = args.into_iter().map(|v| to_js(&a.ctx, v, None)).collect::<rquickjs::Result<Vec<_>>>()?;
+        let v: Value = f.call((Rest(vals),))?;
+        if let Some(o) = v.as_object()
+            && o.get::<_, Value>("then").is_ok_and(|t| t.is_function())
+        {
+            return Err(a.throw_t("sqlite.asyncFunction", &[]));
+        }
+        to_sql(a, &v)
+    })();
+    r.map_err(|_| {
+        let e = a.ctx.catch();
+        let msg = match e.as_object().and_then(|o| o.get::<_, Value>("message").ok()).filter(|m| !nullish(m)) {
+            Some(m) => js::to_str(&m),
+            None => js::to_str(&e),
+        };
+        *thrown = Some(e);
+        msg
+    })
 }
 
 // ---- values ----
@@ -222,7 +267,7 @@ pub(super) fn install(n: &N) {
         };
         let d = Db::open(&path, opts).map_err(|e| super::throw_path(&a.ctx, &path, e))?;
         let id = h.next_id();
-        h.dbs.borrow_mut().insert(id, d);
+        dbs(h, a)?.insert(id, d);
         Ok(Class::instance(a.ctx.clone(), Handle { id })?.into_value())
     });
     // sqliteQuery(h, sql, params, mode): 0 = objects, 1 = the first object
@@ -322,11 +367,39 @@ pub(super) fn install(n: &N) {
     });
     n.set("sqliteClose", |h, a| {
         if let Some(id) = handle_id(&a.arg(0))
-            && let Some(d) = h.dbs.borrow_mut().get_mut(&id)
+            && let Some(d) = dbs(h, a)?.get_mut(&id)
         {
             d.close();
+            for f in d.function_ids() {
+                h.drop_fn(f);
+            }
         }
         a.undefined()
+    });
+    // sqliteFunction(h, name, fn, deterministic): an SQL function of the
+    // script (see crate::db::script).
+    n.set("sqliteFunction", |h, a| {
+        // The script runs in the debugger page, which cannot be called
+        // back while SQLite waits.
+        if h.ext.borrow().is_some() {
+            return Err(a.throw(&err!("sqlite.functionInDebugger")));
+        }
+        let name = a.str(1);
+        let Some(f) = a.arg(2).into_function() else { return Err(a.throw_t("engine.callbackNotFunction", &[])) };
+        let id = h.keep_fn(&a.ctx, f);
+        let det = a.bool(3);
+        match with_db(h, a, |d| d.add_function(db::ScriptFn { name, id, deterministic: det })) {
+            Ok(old) => {
+                if let Some(old) = old {
+                    h.drop_fn(old);
+                }
+                a.undefined()
+            }
+            Err(e) => {
+                h.drop_fn(id);
+                Err(e)
+            }
+        }
     });
     // sqliteRepair(path, force, timeoutMs, keep): a database that is not open.
     n.set("sqliteRepair", |_, a| {

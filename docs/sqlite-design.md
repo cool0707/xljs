@@ -24,6 +24,7 @@ db.exec(sql)                 // 複数文、パラメータなし
 db.run(sql, ...params)       // { changes, lastInsertRowid }
 db.all / get / values(sql, ...params)
 db.transaction(fn)           // 入れ子は SAVEPOINT。fn は同期のみ（better-sqlite3 と同じ）
+db.function(name, [{ deterministic }], fn)   // JS の関数を SQL から呼ぶ（クエリ専用。後述）
 db.insert(table, rows, { columns, replace, ignore, create })
 db.tables / hasTable / columns / check / backup / backups / repair / close
 sqlite.check(p) / sqlite.repair(p) / sqlite.backups(p)
@@ -38,6 +39,45 @@ sqlite.check(p) / sqlite.repair(p) / sqlite.backups(p)
 - 接続ごとに `foreign_keys=ON`・`trusted_schema=OFF`。
 - `transaction` はコールバックを Rust から呼ばず、prelude が `sqliteBegin` → fn → `sqliteCommit` / `sqliteRollback` を呼ぶ
   （デバッガでは JS の関数を Rust から同期的に呼べないため）。値はすべてデバッガのワイヤ形式で表せる。
+
+## SQL の関数
+
+### Excel 互換の関数（`src/db/excel.rs`）
+
+`connect` がすべての接続（スクリプトの接続、修復・検査の接続）に登録する。`DETERMINISTIC | INNOCUOUS` なので、
+`trusted_schema=OFF` のままで生成列・CHECK・ビュー・式インデックス・トリガーに使える。
+修復の `integrity_check` も変更ログの再実行もこれらを計算できる（ほかのツールでは、これらを使った VIRTUAL の生成列・ビュー・
+インデックスのあるテーブルに書き込めず `SELECT *` もできない。STORED の生成列は保存済みの値が読める）。
+
+- 数: `ROUNDHALF`（Excel の ROUND）・`ROUNDUP`・`ROUNDDOWN`・`INT`・`QUOTIENT`。丸める前に 15 桁に丸める
+  （`ROUNDUP(0.1 + 0.2, 1)` = 0.3、`ROUNDHALF(1.005, 2)` = 1.01）。SQLite の `round` は `round(2.675, 2)` = 2.67・
+  `round(1.005, 2)` = 1.0 で、負の桁は無視される。
+- 文字列: `LEFT`・`RIGHT`・`MID`・`LEN`・`FIND`・`TEXT`（`numfmt.rs` の表示書式。日付の書式なら日付として）。
+- 日付: `YEAR`・`MONTH`・`DAY`・`WEEKDAY`・`EDATE`・`EOMONTH`・`DATEDIF`。日付は xljs が保存する文字列（`/` 区切りも可）か
+  Excel のシリアル値。日付を返す関数は `"2026-04-01"`。
+- 失敗せずに NULL を返す（SQLite の日付関数と同じ。生成列の計算が失敗すると INSERT が失敗するため）。
+- 名前は SQLite の関数と重ねない。数学関数（`floor`・`mod`・`trunc` など）は bundled のビルドにはないが、ほかのツールにはあり
+  意味が違う（`mod` は fmod）ので使わない。MOD・TRUNC・IF・CONCAT は `%`・`ROUNDDOWN`・`iif`・`||` で書く。
+
+### スクリプトの関数（`db.function`、`src/db/script.rs`）
+
+登録したスクリプトの接続にしかない。ほかの接続（ほかの人のスクリプト、修復、ほかのツール）はこの関数を知らないので、
+スキーマに入るとテーブルが壊れて見える（生成列・CHECK・式インデックスでは `unknown function` で `SELECT *` も INSERT もできない。
+`INNOCUOUS` なしで登録した関数がスキーマにあると、`trusted_schema=OFF` の接続ではスキーマ全体が
+`malformed database schema` になる）。そこで次のようにする。
+
+- `SQLITE_DIRECTONLY` で登録する。SQLite が生成列・CHECK・インデックス（作るとき）とビュー・トリガーからの呼び出しを拒む。
+- ビュー・トリガー・DEFAULT は作るときに SQLite が確かめない（authorizer にも関数が見えない）ので、`CREATE`・`ALTER` の文で
+  登録した関数を呼んでいるものは実行の前に拒む（`check_schema_sql`。文の区切りは `sqlite3_complete` で、トリガーの本体の `;` を区切りにしない）。
+- 共有モードで変更ログがあるとき、データベースを変更する文の中では呼べない（修復は変更ログを関数なしで再実行するため）。
+  読み取りの文と、ローカルモード・`backup: false` の変更は使える。
+- 接続を開くたびに登録する（共有モードは呼び出しごとに接続を開く）。SQLite からの呼び出しは、natives が `with_calls` で
+  渡した呼び出し元（スレッドローカル）を通って JS の関数（`Host::keep_fn`）を呼ぶ。関数が投げたものは、その呼び出し
+  （`db.all` など）からそのまま投げ直す（`exit()` ならキャッチできない例外で止める）。
+- 関数の中からデータベースは使えない（`Host::dbs` を借りているため）。async の関数（then のある値を返す）はエラー。
+- デバッガでは使えない（スクリプトはページで動き、SQLite が待っている間に同期的に呼べない。`transaction` と同じ事情）。
+- 性能: SQLite → Rust → QuickJS の呼び出しで 1 回あたり 0.2µs 程度の上乗せ（10 万行で数十 ms）。行を JS のオブジェクトに
+  する（`db.all`）ほうが重い。
 
 ## 共有モード
 

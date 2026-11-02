@@ -201,3 +201,31 @@ fn damaged_index_is_rebuilt_without_loss() {
     assert_eq!(r.tables, vec![("t".to_string(), 200)]);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn excel_functions_in_the_schema_survive_repair() {
+    let _g = lock_lang("en");
+    let dir = tempdir();
+    let path = dir.join("x.db");
+    let ps = path.to_str().unwrap();
+    let mut db = Db::open(ps, opts(true)).unwrap();
+    fill(&mut db, 300);
+    db.exec(
+        "CREATE TABLE p(price REAL, sold DATE, tax INTEGER AS (ROUNDDOWN(price * 0.1)) STORED, due DATE AS (EOMONTH(sold, 1)) VIRTUAL);
+         CREATE INDEX p_month ON p(MONTH(sold))",
+    )
+    .unwrap();
+    db.run("INSERT INTO p(price, sold) VALUES(?, ?)", &p(vec![Value::Real(1980.0), text("2026-04-15")])).unwrap();
+    // A change that uses them goes into the change log, and is replayed.
+    db.run("UPDATE p SET price = ROUNDUP(price * 1.05, -1)", &p(vec![])).unwrap();
+    db.close();
+    assert!(is_ok(&check_file(&path).unwrap()));
+    damage(&path, 2, 200);
+    let mut db = Db::open(ps, opts(true)).unwrap();
+    let r = db.repair(false).unwrap();
+    assert_eq!((r.method.as_str(), r.skipped), ("backup", 0), "{r:?}");
+    let row = db.query("SELECT price, tax, due FROM p WHERE MONTH(sold) = 4", &p(vec![]), None).unwrap();
+    assert_eq!(row.rows, vec![vec![Value::Real(2080.0), Value::Integer(208), text("2026-05-31")]]);
+    assert!(is_ok(&db.check().unwrap()));
+    let _ = std::fs::remove_dir_all(&dir);
+}

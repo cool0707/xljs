@@ -782,3 +782,19 @@ fn debug_bundle_breaks_on_first_line() {
     let plain = String::from_utf8(bundle(&p).unwrap()).unwrap();
     assert!(!plain.contains("debugger"));
 }
+
+#[test]
+fn exit_in_sql_function() {
+    let _l = lock_lang("ja");
+    let p = write_script(
+        "exit_fn.js",
+        r#"const db = sqlite.open("x.db");
+db.function("stop", () => exit(3));
+try { db.get("SELECT stop()"); } catch (e) { console.log("caught", e.message); }
+console.log("after");
+"#,
+    );
+    let r = run_script(&p, "", &[]);
+    assert_eq!(r.code, 3, "{} {}", r.err_text(), r.stdout);
+    assert!(r.stdout.is_empty(), "the script went on: {}", r.stdout);
+}

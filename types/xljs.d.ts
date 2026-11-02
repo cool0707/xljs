@@ -1377,8 +1377,22 @@ declare global {
      */
     transaction<T>(fn: (db: Database) => T): T;
     /**
+     * fn を SQL の関数 name として登録する（このスクリプトの文からだけ呼べる）。
+     * 例: `db.function("税込", (price) => Math.floor(price * 1.1)).all("SELECT 品名, 税込(単価) AS 税込 FROM 商品")`
+     *
+     * 引数は number・string（日付は "2026-04-01" の文字列）・Uint8Array・null で受け取り、戻り値はパラメータと同じように保存される。
+     * ほかの人のスクリプトや修復、ほかのツールはこの関数を知らないので、次のことはできない（エラーになる）:
+     * - テーブル（生成列・CHECK・DEFAULT）・ビュー・トリガー・インデックスの定義に使う → 組み込みの関数（`sqlite` の説明の Excel 互換の関数など）を使う
+     * - 共有モード（バックアップあり）でデータベースを変更する文に使う → JavaScript で計算してパラメータで渡す
+     *
+     * fn は async にできない。fn の中でデータベースは使えない。デバッガ（--debug）では使えない。
+     * deterministic: 同じ引数なら必ず同じ結果を返す（SQLite が呼び出しを減らせる）
+     */
+    function(name: string, fn: (...args: any[]) => SqlValue): this;
+    function(name: string, options: { deterministic?: boolean }, fn: (...args: any[]) => SqlValue): this;
+    /**
      * 行（オブジェクト、または columns を指定して配列）をまとめて挿入し、件数を返す。
-     * テーブルがなければ値から列の型を決めて作る（create: false で作らない）。
+     * テーブルがなければ値から列の型を決めて作る（create: false で作らない）。オブジェクトの生成列のキーは無視する。
      * replace: 主キーが同じ行を置き換える、ignore: 主キーが同じ行は飛ばす
      */
     insert(table: string, rows: Iterable<Row | unknown[]>, options?: { columns?: string[]; replace?: boolean; ignore?: boolean; create?: boolean }): number;
@@ -1396,6 +1410,18 @@ declare global {
     close(): void;
   }
 
+  /**
+   * SQLite のデータベース。
+   *
+   * SQL では SQLite の関数に加えて、次の Excel 互換の関数が使える（生成列・ビュー・インデックス・トリガーでも使え、修復でも計算できる）。
+   * 引数が NULL や数・日付として読めない値なら NULL を返す。日付は "2026-04-01"・"2026/4/1"・"2026-04-01 09:30:00" の文字列か
+   * Excel のシリアル値で、日付を返す関数は "2026-04-01" の文字列を返す。
+   * - 数: ROUNDHALF(x, 桁)（Excel の ROUND。SQLite の round は 2.675 → 2.67 で、負の桁も使えない）・ROUNDUP・ROUNDDOWN・INT・QUOTIENT
+   * - 文字列: LEFT・RIGHT・MID・LEN・FIND（見つからなければ NULL）・TEXT(値, 表示形式)（`TEXT(日付, 'm/d(aaa)')` など）
+   * - 日付: YEAR・MONTH・DAY・WEEKDAY(日付, 種類)・EDATE(日付, 月数)・EOMONTH(日付, 月数)・DATEDIF(開始, 終了, 単位)
+   *
+   * Excel の TRUNC は ROUNDDOWN、IF は iif、CONCAT は `||`、MOD は `%`（負の数のときの符号が Excel と違う）で書く。
+   */
   interface Sqlite {
     /** SQLite のデータベースを開く（なければ作る） */
     open(src: PathLike, options?: SqliteOpenOptions): Database;
