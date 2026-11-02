@@ -20,7 +20,7 @@ use windows::Win32::UI::HiDpi::GetDpiForSystem;
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::{ExtractIconExW, SHCreateMemStream};
 use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::core::{Interface, PCWSTR, PWSTR, w};
+use windows::core::{BOOL, Interface, PCWSTR, PWSTR, w};
 
 use super::{WINDOWS, hstr, loader};
 use crate::ui::{
@@ -59,6 +59,9 @@ struct WinState {
     active: Cell<bool>,
     /// The browser pane (WindowOptions::browser).
     browser: RefCell<Option<Rc<super::browser::Browser>>>,
+    /// Whether the developer tools opened with the window
+    /// (WindowOptions::dev_tools) have shown up yet.
+    dev_tools_seen: Cell<bool>,
 }
 
 thread_local! {
@@ -235,6 +238,7 @@ fn open_hwnd(o: WindowOptions) -> Result<HWND> {
             closed: RefCell::new(false),
             active: Cell::new(true),
             browser: RefCell::new(None),
+            dev_tools_seen: Cell::new(false),
         });
         STATES.with(|s| s.borrow_mut().insert(hwnd.0 as isize, st.clone()));
         if st.o.custom_title_bar {
@@ -601,6 +605,7 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
         }
         if st.o.debug && st.o.dev_tools {
             let _ = core.OpenDevToolsWindow();
+            SetTimer(Some(hwnd), DEV_TOOLS_TIMER, DEV_TOOLS_WATCH_MS, None);
         }
         if let Some(bo) = &st.o.browser {
             match super::browser::create(hwnd, &env, bo) {
@@ -610,6 +615,68 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// The timer that watches the developer tools opened with the window
+/// (WindowOptions::dev_tools): once they have shown up and are gone again,
+/// the window closes too.
+const DEV_TOOLS_TIMER: usize = 0x5844;
+const DEV_TOOLS_WATCH_MS: u32 = 200;
+
+/// Whether the developer tools of the window's page are open. WebView2 has
+/// no event for their closing; they are a top-level window of the browser
+/// process, titled "DevTools - <the page's URL without the scheme>".
+fn dev_tools_open(st: &WinState) -> bool {
+    struct Find {
+        pid: u32,
+        url: String,
+        found: bool,
+    }
+    unsafe extern "system" fn each(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let f = unsafe { &mut *(lparam.0 as *mut Find) };
+        let mut pid = 0u32;
+        unsafe { GetWindowThreadProcessId(hwnd, Some(&mut pid)) };
+        if pid == f.pid && unsafe { IsWindowVisible(hwnd) }.as_bool() {
+            let mut buf = [0u16; 512];
+            let n = unsafe { GetWindowTextW(hwnd, &mut buf) }.max(0) as usize;
+            if String::from_utf16_lossy(&buf[..n]).contains(&f.url) {
+                f.found = true;
+                return FALSE;
+            }
+        }
+        TRUE
+    }
+    let Some(core) = st.core.borrow().clone() else { return false };
+    let mut pid = 0u32;
+    if unsafe { core.BrowserProcessId(&mut pid) }.is_err() || pid == 0 {
+        return false;
+    }
+    // The path of the first page (the title leaves out the scheme and may
+    // shorten the rest).
+    let url = st.o.url.split(['?', '#']).next().unwrap_or("");
+    let url = url.split_once("://").map_or(url, |(_, r)| r);
+    let url = url.rsplit('/').next().unwrap_or(url).to_string();
+    if url.is_empty() {
+        return false;
+    }
+    let mut f = Find { pid, url, found: false };
+    unsafe {
+        let _ = EnumWindows(Some(each), LPARAM(&mut f as *mut Find as isize));
+    }
+    f.found
+}
+
+/// The developer tools timer: closes the window when its developer tools have
+/// been closed.
+fn watch_dev_tools(hwnd: HWND, st: &WinState) {
+    if dev_tools_open(st) {
+        st.dev_tools_seen.set(true);
+    } else if st.dev_tools_seen.get() {
+        unsafe {
+            let _ = KillTimer(Some(hwnd), DEV_TOOLS_TIMER);
+            let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+        }
+    }
 }
 
 /// The paths of the files the page attached
@@ -829,7 +896,16 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam:
                     focus(hwnd, c);
                 }
             }
-            WM_DESTROY => destroyed(hwnd, &st),
+            WM_TIMER if wparam.0 == DEV_TOOLS_TIMER => {
+                watch_dev_tools(hwnd, &st);
+                return LRESULT(0);
+            }
+            WM_DESTROY => {
+                unsafe {
+                    let _ = KillTimer(Some(hwnd), DEV_TOOLS_TIMER);
+                }
+                destroyed(hwnd, &st)
+            }
             _ => {}
         }
     }

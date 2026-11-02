@@ -98,7 +98,8 @@ pub struct WindowOptions {
     pub url: String,
     pub assets: Option<Arc<dyn AssetFs>>,
     /// Enables the developer tools (F12) and the context menu; dev_tools
-    /// also opens them with the window.
+    /// also opens them with the window, and closes the window when they are
+    /// closed (the debugger).
     pub debug: bool,
     pub dev_tools: bool,
     /// Serves the pages cross-origin isolated (COOP and COEP headers), so
