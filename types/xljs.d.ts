@@ -1657,6 +1657,8 @@ declare global {
     margin?: number | { top?: number; right?: number; bottom?: number; left?: number };
     /** 枠線（セルの境界の薄い線）を印刷する */
     gridLines?: boolean;
+    /** 白黒で印刷する（塗りを消し、文字と罫線を黒に）。false でシートの「白黒印刷」の設定を無視してカラーで出す */
+    blackAndWhite?: boolean;
     /** ページの左右中央に配置する */
     centerHorizontally?: boolean;
     /** false でグラフを描かない */

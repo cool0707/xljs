@@ -29,7 +29,7 @@ await xljs.htmlToPdf("<h1>報告書</h1>", "報告書.pdf", { paper: "A4" }); //
 - `toPdf` は書き出したファイルの絶対パスで resolve する。WebView2 がない UI（コンソール）ではエラー。mock は書かずにログだけ出す
   （`pdf("…/a.pdf", 4 pages, 1/1 charts)`）。
 - `options`（`PrintOptions`）: `sheets` `paper` `landscape` `scale` `fitToWidth` `fitToHeight` `fitToPage` `margin`（mm）`gridLines`
-  `centerHorizontally` `charts: false` `title`。省略した項目はシートのページ設定に従う。
+  `blackAndWhite` `centerHorizontally` `charts: false` `title`。省略した項目はシートのページ設定に従う。
 - `htmlToPdf` は `options` の用紙・向き・余白を `@page` にして文書の `<head>` の先頭に入れる（文書の `@page` があればそちらが勝つ）。
   文書のスクリプトは動かない（`DOMParser` で取り込むため）。
 
@@ -43,7 +43,7 @@ await xljs.htmlToPdf("<h1>報告書</h1>", "報告書.pdf", { paper: "A4" }); //
 | 次のページ数に合わせて印刷 | `fitToPage`（umya）＋ `fitToWidth` / `fitToHeight`（**シートの XML から直接**。umya は属性がないこと＝1 と 0＝自動を区別できない） |
 | 余白・ヘッダー/フッターの位置 | `PageMargins`（ないときは Excel の「標準」0.7/0.75/0.3 インチ） |
 | 印刷範囲・印刷タイトル | 定義された名前 `_xlnm.Print_Area` / `_xlnm.Print_Titles`（シートの名前、ブックの `localSheetId` 付きの名前）。複数の範囲は範囲ごとにページを分ける。列全体・行全体（`$A:$Q`）は使用範囲の端まで。数式の印刷範囲（`OFFSET($A$1,0,0,MAX(IFNA(MATCH(10^10,$B:$B),0)+5,43),7)` のような可変の範囲）は `xlsx_calc::eval_area` で計算する（`OFFSET` と単純な参照だけ。計算できなければ使用範囲） |
-| 白黒印刷 | `pageSetup blackAndWhite`（シートの XML から直接）。塗りを消し、文字・罫線を黒にする |
+| 白黒印刷 | `pageSetup blackAndWhite`（シートの XML から直接）。塗りを消し、文字・罫線を黒にする。`options.blackAndWhite` が優先（`false` で確認用にカラーで出せる） |
 | テーブル（リスト）の書式 | `src/api/xlsx_table.rs`。テーブルの範囲とスタイル名・縞模様などの表示は umya の `Table`、ブック独自のテーブルスタイルは styles.xml の `tableStyles` と `dxfs`（開いたときに `Book::table_styles`）。組み込みの `TableStyleLight1`〜`Dark11` は系統ごとの近似。要素（全体・縞・先頭/最後の列・見出し行・集計行・角のセル）を優先順に重ね、セル自身の塗り・罫線・文字色（既定の黒以外）が優先する |
 | 改ページ | `rowBreaks` / `colBreaks`（`id` は 0 始まりで、その次の行・列から新しいページ） |
 | ページの順序・枠線の印刷 | `pageOrder="overThenDown"`、`printOptions gridLines`（シートの XML から直接） |

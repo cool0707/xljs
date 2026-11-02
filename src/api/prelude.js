@@ -3118,6 +3118,7 @@
         : { top: num(m, "margin"), right: num(m, "margin"), bottom: num(m, "margin"), left: num(m, "margin") };
     }
     if (o.gridLines !== undefined && o.gridLines !== null) r.gridLines = !!o.gridLines;
+    if (o.blackAndWhite !== undefined && o.blackAndWhite !== null) r.blackAndWhite = !!o.blackAndWhite;
     if (o.centerHorizontally !== undefined && o.centerHorizontally !== null) r.centerHorizontally = !!o.centerHorizontally;
     if (o.charts === false) r.charts = false;
     return r;

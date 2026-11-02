@@ -117,6 +117,8 @@ pub struct PrintOptions {
     pub scale: Option<f64>,
     pub margin: Option<Margins>,
     pub grid_lines: Option<bool>,
+    /// Print in black and white (None = the sheet's blackAndWhite).
+    pub black_and_white: Option<bool>,
     pub center_horizontally: Option<bool>,
     /// Draw the charts (default true).
     pub charts: Option<bool>,
@@ -1009,7 +1011,10 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
     let mut pages = 0;
     let ids = std::cell::Cell::new(0);
     for (si, name) in names.iter().enumerate() {
-        let sh = Sheet::new(b, name)?;
+        let mut sh = Sheet::new(b, name)?;
+        if let Some(v) = o.black_and_white {
+            sh.mono = v;
+        }
         let setup = setup_of(&sh, b.print.get(name), o)?;
         // The drawing's objects as (anchor, opening tag, content), later ones on top.
         let mut objects: Vec<(Anchor, String, String)> = Vec::new();

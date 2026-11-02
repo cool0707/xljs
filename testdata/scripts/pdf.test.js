@@ -89,6 +89,8 @@ ok(th.includes("0.75pt solid #808080") && th.includes("0.5pt solid #808080"), "b
 ok(/font-weight:bold[^}]*color:#FFFFFF|color:#FFFFFF[^}]*font-weight:bold/.test(th) || th.includes("font-weight:bold;color:#FFFFFF"), "TableStyleMedium2: white bold header");
 const mono = tb.sheet("白黒").toHtml();
 ok(mono.includes(">塗り<") && !mono.includes("#FFC000"), "black and white: no fills");
+ok(tb.sheet("白黒").toHtml({ blackAndWhite: false }).includes("#FFC000"), "blackAndWhite: false prints the colors");
+ok(!tb.sheet("テーブル").toHtml({ blackAndWhite: true }).includes("#DDEBF7"), "blackAndWhite: true drops the colors");
 const dyn = tb.sheet("可変範囲").toHtml();
 ok(dyn.includes(">見出し<") && dyn.includes(">80<") && !dyn.includes(">外<"), "OFFSET print area: A1:C8");
 equal(dyn.match(/<tr /g).length, 8, "OFFSET print area: 8 rows");
