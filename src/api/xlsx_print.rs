@@ -16,6 +16,7 @@ use umya_spreadsheet::{Cell, CellRawValue, Color, Style, Worksheet};
 
 use super::xlsx::{Book, format_code, from_serial, style_is_date};
 use super::xlsx_chart::{Anchor, parse, resolve};
+use super::xlsx_table::{Overlay, Side};
 use crate::{Result, err};
 
 /// EMU per point.
@@ -35,6 +36,8 @@ pub struct RawPrint {
     pub grid_lines: bool,
     /// The sheet is hidden (state="hidden" / "veryHidden" in workbook.xml).
     pub hidden: bool,
+    /// pageSetup blackAndWhite: printed without colors.
+    pub black_and_white: bool,
 }
 
 /// Reads the page setup of every sheet of an xlsx file (see RawPrint).
@@ -83,6 +86,7 @@ fn raw_print(xml: &[u8]) -> RawPrint {
         over_then_down: attr("pageSetup", "pageOrder").as_deref() == Some("overThenDown"),
         grid_lines: on(attr("printOptions", "gridLines")),
         hidden: false,
+        black_and_white: on(attr("pageSetup", "blackAndWhite")),
     }
 }
 
@@ -252,7 +256,14 @@ pub(super) fn font_family(name: &str) -> String {
 }
 
 fn japanese_font(name: &str) -> bool {
-    !name.is_ascii() || name.starts_with("Yu ") || name.starts_with("MS ") || name.starts_with("Meiryo") || name.starts_with("BIZ ")
+    !name.is_ascii()
+        || name.starts_with("Yu ")
+        || name.starts_with("MS ")
+        || name.starts_with("Meiryo")
+        || name.starts_with("BIZ ")
+        || name.ends_with(" JP")
+        || name.contains(" JP ")
+        || name.contains("CJK")
 }
 
 /// The CSS of a border side (Excel draws thin as one pixel).
@@ -356,6 +367,10 @@ fn parse_area(s: &str, max_col: u32, max_row: u32) -> Option<Area> {
     let c2 = cb.unwrap_or(if ca.is_none() { max_col } else { c1 });
     let r1 = ra.unwrap_or(1);
     let r2 = rb.unwrap_or(if ra.is_none() { max_row } else { r1 });
+    let ok = |c: u32, r: u32| (1..=max_col).contains(&c) && (1..=max_row).contains(&r);
+    if !ok(c1, r1) || !ok(c2, r2) {
+        return None;
+    }
     Some((c1.min(c2), r1.min(r2), c1.max(c2), r1.max(r2)))
 }
 
@@ -406,6 +421,10 @@ struct Sheet<'a> {
     x_cache: std::cell::RefCell<Vec<f64>>,
     y_cache: std::cell::RefCell<Vec<f64>>,
     font: (String, f64),
+    /// What the tables' styles give the cells.
+    table: HashMap<(u32, u32), Overlay>,
+    /// Printed in black and white (no fills, black text and lines).
+    mono: bool,
 }
 
 impl<'a> Sheet<'a> {
@@ -483,6 +502,8 @@ impl<'a> Sheet<'a> {
             x_cache: Default::default(),
             y_cache: Default::default(),
             font,
+            table: super::xlsx_table::overlays(ws, &b.table_styles),
+            mono: b.print.get(name).is_some_and(|p| p.black_and_white),
         })
     }
 
@@ -582,7 +603,18 @@ impl<'a> Sheet<'a> {
         false
     }
 
+    /// A color as CSS (black when the sheet prints in black and white).
+    fn color(&self, c: &Color) -> Option<String> {
+        if self.mono {
+            return Some("#000".into());
+        }
+        css_color(c, self.theme)
+    }
+
     fn fill(&self, st: &Style) -> Option<String> {
+        if self.mono {
+            return None;
+        }
         let pf = st.fill()?.pattern_fill()?;
         let t = pf.pattern_type().value_string();
         if t == "none" || t.is_empty() || t == "gray125" {
@@ -595,11 +627,12 @@ impl<'a> Sheet<'a> {
         c.or_else(|| pf.background_color().and_then(|c| css_color(c, self.theme)))
     }
 
-    fn defined(&self, name: &str) -> Vec<String> {
+    /// What a name of this sheet (Print_Area, Print_Titles) refers to, as written.
+    fn defined(&self, name: &str) -> Option<String> {
         let full = format!("_xlnm.{name}");
         for d in self.ws.defined_names() {
             if d.name() == full || d.name() == name {
-                return split_refs(&d.address());
+                return Some(d.address());
             }
         }
         // Names of the workbook that point at this sheet.
@@ -607,21 +640,45 @@ impl<'a> Sheet<'a> {
             if (d.name() == full || d.name() == name) && d.has_local_sheet_id() {
                 let idx = d.local_sheet_id() as usize;
                 if self.b.wb.sheet_collection().get(idx).is_some_and(|s| s.name() == self.name) {
-                    return split_refs(&d.address());
+                    return Some(d.address());
                 }
             }
         }
-        Vec::new()
+        None
     }
 
     /// The print areas, or else the used range (cells with a value, fill or
-    /// border, merged cells, pictures and charts).
+    /// border, merged cells, tables, pictures and charts). A print area of
+    /// whole columns or rows ends where the used range does, as in Excel.
     fn areas(&self, anchors: &[Anchor]) -> Vec<Area> {
-        let refs = self.defined("Print_Area");
-        let areas: Vec<Area> = refs.iter().filter_map(|r| parse_area(r, 16384, 1048576)).collect();
-        if !areas.is_empty() {
-            return areas;
+        let used = self.used(anchors);
+        let Some(addr) = self.defined("Print_Area") else { return used.into_iter().collect() };
+        let areas: Vec<Area> = if addr.contains('(') {
+            // A formula such as OFFSET($A$1,0,0,COUNTA($A:$A),7).
+            super::xlsx_calc::eval_area(self.b, &self.name, &addr).into_iter().collect()
+        } else {
+            split_refs(&addr).iter().filter_map(|r| parse_area(r, 16384, 1048576)).collect()
+        };
+        if areas.is_empty() {
+            return used.into_iter().collect();
         }
+        let Some(u) = used else { return Vec::new() };
+        areas
+            .into_iter()
+            .filter_map(|mut a| {
+                if a.1 == 1 && a.3 == 1048576 {
+                    a.3 = u.3;
+                }
+                if a.0 == 1 && a.2 == 16384 {
+                    a.2 = u.2;
+                }
+                (a.0 <= a.2 && a.1 <= a.3).then_some(a)
+            })
+            .collect()
+    }
+
+    /// The range of what shows on paper (see areas).
+    fn used(&self, anchors: &[Anchor]) -> Option<Area> {
         let mut a: Option<Area> = None;
         let mut add = |c: u32, r: u32| {
             a = Some(match a {
@@ -635,6 +692,10 @@ impl<'a> Sheet<'a> {
                 add(co.col_num(), co.row_num());
             }
         }
+        for t in super::xlsx_table::areas(self.ws) {
+            add(t.0, t.1);
+            add(t.2, t.3);
+        }
         for m in &self.merges {
             if self.val(m.0, m.1) != Val::Empty {
                 add(m.0, m.1);
@@ -647,7 +708,7 @@ impl<'a> Sheet<'a> {
                 add(c2, r2);
             }
         }
-        a.into_iter().collect()
+        a
     }
 
     /// The cells an anchor covers (1-based).
@@ -697,7 +758,7 @@ impl<'a> Sheet<'a> {
     /// The print titles: rows and columns.
     fn titles(&self) -> (Option<Seg>, Option<Seg>) {
         let (mut rows, mut cols) = (None, None);
-        for r in self.defined("Print_Titles") {
+        for r in self.defined("Print_Titles").map(|a| split_refs(&a)).unwrap_or_default() {
             let Some(a) = parse_area(&r, 16384, 1048576) else { continue };
             if a.0 == 1 && a.2 == 16384 {
                 rows = Some((a.1, a.3));
@@ -1222,19 +1283,25 @@ fn side_css(sh: &Sheet, st: &Style, side: &str) -> Option<String> {
         _ => b.bottom(),
     };
     let style = bd.border_style();
-    let color = bd.color().as_ref().and_then(|c| css_color(c, sh.theme)).unwrap_or_else(|| "#000".into());
+    let color = bd.color().as_ref().and_then(|c| sh.color(c)).unwrap_or_else(|| "#000".into());
     border_css(style, &color)
 }
 
-fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4]) -> CellCss {
+/// The CSS of a border side of a table style.
+fn table_side_css(sh: &Sheet, s: &Side) -> Option<String> {
+    let color = s.color.as_ref().and_then(|c| sh.color(c)).unwrap_or_else(|| "#000".into());
+    border_css(&s.style, &color)
+}
+
+fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table: Option<&Overlay>) -> CellCss {
     let mut td = String::new();
     let mut div = String::new();
-    let fill = sh.fill(st);
+    let fill = sh.fill(st).or_else(|| if sh.mono { None } else { table.and_then(|t| t.fill.as_ref()).and_then(|c| css_color(c, sh.theme)) });
     let mut bg: Vec<String> = Vec::new();
     if let Some(b) = st.borders() {
         let ds = b.diagonal().border_style();
         if (b.diagonal_up() || b.diagonal_down()) && !ds.is_empty() && ds != "none" {
-            let color = b.diagonal().color().as_ref().and_then(|c| css_color(c, sh.theme)).unwrap_or_else(|| "#000".into());
+            let color = b.diagonal().color().as_ref().and_then(|c| sh.color(c)).unwrap_or_else(|| "#000".into());
             let line = |dir: &str| format!("linear-gradient(to {dir},transparent calc(50% - .5pt),{color} calc(50% - .5pt),{color} calc(50% + .5pt),transparent calc(50% + .5pt))");
             if b.diagonal_up() {
                 bg.push(line("top left"));
@@ -1255,6 +1322,7 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4]) -> Ce
             let _ = write!(td, "border-{side}:{v};");
         }
     }
+    let (mut bold, mut italic, mut color) = (false, false, None);
     if let Some(f) = st.font() {
         let name = if f.name().is_empty() { sh.font.0.as_str() } else { f.name() };
         let size = if f.size() == 0.0 { sh.font.1 } else { f.size() };
@@ -1264,12 +1332,8 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4]) -> Ce
         if size != sh.font.1 {
             let _ = write!(div, "font-size:{}pt;", n(size));
         }
-        if f.bold() {
-            div.push_str("font-weight:bold;");
-        }
-        if f.italic() {
-            div.push_str("font-style:italic;");
-        }
+        bold = f.bold();
+        italic = f.italic();
         let u = f.font_underline().val().value_string();
         let mut deco = Vec::new();
         if u != "none" && !u.is_empty() {
@@ -1284,11 +1348,29 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4]) -> Ce
                 div.push_str("text-decoration-style:double;");
             }
         }
-        if let Some(c) = css_color(f.color(), sh.theme)
-            && c != "#000000"
+        color = css_color(f.color(), sh.theme);
+    }
+    // A table style shows where the cell has the plain font.
+    if let Some(t) = table {
+        bold |= t.bold == Some(true);
+        italic |= t.italic == Some(true);
+        if color.as_deref().is_none_or(|c| c == "#000000")
+            && let Some(c) = t.color.as_ref().and_then(|c| css_color(c, sh.theme))
         {
-            let _ = write!(div, "color:{c};");
+            color = Some(c);
         }
+    }
+    if bold {
+        div.push_str("font-weight:bold;");
+    }
+    if italic {
+        div.push_str("font-style:italic;");
+    }
+    if let Some(c) = color
+        && c != "#000000"
+        && !sh.mono
+    {
+        let _ = write!(div, "color:{c};");
     }
     let code = format_code(st.number_format());
     let fc = match val {
@@ -1296,7 +1378,9 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4]) -> Ce
         Val::Text(_) => format_color(&code, None),
         _ => None,
     };
-    if let Some(c) = fc {
+    if let Some(c) = fc
+        && !sh.mono
+    {
         let _ = write!(div, "color:{c};");
     }
     let (mut h, mut v, mut wrap, mut rot, mut indent) = (String::from("general"), String::from("bottom"), false, 0, 0);
@@ -1381,7 +1465,9 @@ fn cell_html(sh: &Sheet, col: u32, row: u32, val: &Val, wrap: bool) -> String {
                     "subscript" => css.push_str("vertical-align:sub;font-size:smaller;"),
                     _ => {}
                 }
-                if let Some(c) = css_color(f.color(), sh.theme) {
+                if let Some(c) = css_color(f.color(), sh.theme)
+                    && !sh.mono
+                {
                     let _ = write!(css, "color:{c};");
                 }
             }
@@ -1441,13 +1527,18 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
             let st_of = |c: u32, r: u32| sh.cells.get(&(c, r)).map(|x| x.style());
             let default_style = Style::default();
             let st = st_of(vc, vr).or_else(|| sh.ws.row_dimension(r).map(|x| x.style())).unwrap_or(&default_style);
-            let side = |cc: u32, rr: u32, s: &str| st_of(cc, rr).and_then(|x| side_css(sh, x, s));
+            let side = |cc: u32, rr: u32, s: &str| {
+                st_of(cc, rr).and_then(|x| side_css(sh, x, s)).or_else(|| {
+                    let i = ["top", "right", "bottom", "left"].iter().position(|x| *x == s)?;
+                    sh.table.get(&(cc, rr))?.sides[i].as_ref().and_then(|t| table_side_css(sh, t))
+                })
+            };
             let sides = match merge {
                 Some(m) => [side(m.0, m.1, "top"), side(m.2, m.1, "right"), side(m.0, m.3, "bottom"), side(m.0, m.1, "left")],
                 None => [side(c, r, "top"), side(c, r, "right"), side(c, r, "bottom"), side(c, r, "left")],
             };
             let val = sh.val(vc, vr);
-            let css = cell_css(sh, st, &val, sides);
+            let css = cell_css(sh, st, &val, sides, sh.table.get(&(vc, vr)));
             let class = classes.class(&css.td, &css.div);
             out.push_str("<td");
             if !class.is_empty() {
@@ -1516,6 +1607,9 @@ mod tests {
         assert_eq!(parse_area("Sheet1!$1:$2", 16384, 1048576), Some((1, 1, 16384, 2)));
         assert_eq!(parse_area("Sheet1!$A:$B", 16384, 1048576), Some((1, 1, 2, 1048576)));
         assert_eq!(parse_area("B3", 16384, 1048576), Some((2, 3, 2, 3)));
+        // Pieces of a formula split at its commas are not areas (row 0 used to overflow).
+        assert_eq!(parse_area("0", 16384, 1048576), None);
+        assert_eq!(parse_area("A0", 16384, 1048576), None);
         assert_eq!(split_refs("'a,b'!$A$1:$B$2,'a,b'!$D$1:$E$2"), vec!["'a,b'!$A$1:$B$2", "'a,b'!$D$1:$E$2"]);
     }
 

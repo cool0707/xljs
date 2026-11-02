@@ -81,6 +81,21 @@ ok(!/>J\d/.test(ph), "hidden column");
 equal(pages(pb.sheet("一覧").toHtml({ scale: 100 })) > 3, true, "options win over the sheet's fit to page");
 await pb.toPdf("print.pdf");
 
+// Table styles, black and white, print areas by formulas (testdata/xlsx/make_tables.py).
+const tb = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "tables.xlsx"));
+const th = tb.sheet("テーブル").toHtml();
+ok(th.includes("background-color:#DDEBF7"), "header fill of the custom table style");
+ok(th.includes("0.75pt solid #808080") && th.includes("0.5pt solid #808080"), "borders of the custom table style (thin, hair inside)");
+ok(/font-weight:bold[^}]*color:#FFFFFF|color:#FFFFFF[^}]*font-weight:bold/.test(th) || th.includes("font-weight:bold;color:#FFFFFF"), "TableStyleMedium2: white bold header");
+const mono = tb.sheet("白黒").toHtml();
+ok(mono.includes(">塗り<") && !mono.includes("#FFC000"), "black and white: no fills");
+const dyn = tb.sheet("可変範囲").toHtml();
+ok(dyn.includes(">見出し<") && dyn.includes(">80<") && !dyn.includes(">外<"), "OFFSET print area: A1:C8");
+equal(dyn.match(/<tr /g).length, 8, "OFFSET print area: 8 rows");
+const cols = tb.sheet("列指定").toHtml();
+equal(pages(cols), 1, "whole columns end at the used range");
+equal(cols.match(/<tr /g).length, 10, "whole columns: 10 rows");
+
 // Shapes, text boxes, lines, groups and a freeform (testdata/xlsx/make_shapes.py).
 const sh = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "shapes.xlsx")).sheets[0].toHtml();
 for (const t of ["テキストボックスの文字", "太字で赤", "角丸", "楕円", "ここに注意", "四角", "ひし形", "縦書きの文字"]) ok(sh.includes(`>${t}<`), t);

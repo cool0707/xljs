@@ -444,6 +444,8 @@ fn matches(v: &V, crit: &V) -> bool {
 }
 
 fn call(name: &str, args: Vec<V>) -> V {
+    // Functions newer than Excel 2007 are saved as _xlfn.NAME.
+    let name = name.strip_prefix("_XLFN.").unwrap_or(name);
     let r = (|| -> std::result::Result<V, String> {
         let arg = |i: usize| args.get(i).cloned().unwrap_or(V::Empty);
         Ok(match name {
@@ -487,6 +489,40 @@ fn call(name: &str, args: Vec<V>) -> V {
                 V::Err(_) => arg(1),
                 v => v,
             },
+            "IFNA" => match arg(0) {
+                V::Err(e) if e == "#N/A" => arg(1),
+                v => v,
+            },
+            "MATCH" => {
+                let look = arg(0);
+                if let V::Err(e) = &look {
+                    return Err(e.clone());
+                }
+                let kind = if args.len() > 2 { arg(2).num()? } else { 1.0 };
+                let same = |v: &V| matches!((v, &look), (V::Num(_), V::Num(_)) | (V::Str(_), V::Str(_)) | (V::Bool(_), V::Bool(_)));
+                let is = |v: &V, op: &str| matches!(compare(v, &look, op), V::Bool(true));
+                // Excel searches sorted data by halves; on sorted data that is the
+                // last value <= (or >=) the one looked up, which is also what
+                // MATCH(10^10, B:B) is used for: the last number.
+                let mut found = None;
+                for (i, v) in arg(1).flat().iter().enumerate() {
+                    if !same(v) {
+                        continue;
+                    }
+                    if kind == 0.0 {
+                        if is(v, "=") {
+                            found = Some(i);
+                            break;
+                        }
+                    } else if is(v, if kind > 0.0 { "<=" } else { ">=" }) {
+                        found = Some(i);
+                    }
+                }
+                match found {
+                    Some(i) => V::Num(i as f64 + 1.0),
+                    None => return Err("#N/A".into()),
+                }
+            }
             "AND" => V::Bool(args.iter().flat_map(|a| a.flat()).filter(|v| !matches!(v, V::Empty)).map(|v| v.truthy()).collect::<std::result::Result<Vec<_>, _>>()?.iter().all(|b| *b)),
             "OR" => V::Bool(args.iter().flat_map(|a| a.flat()).filter(|v| !matches!(v, V::Empty)).map(|v| v.truthy()).collect::<std::result::Result<Vec<_>, _>>()?.iter().any(|b| *b)),
             "NOT" => V::Bool(!arg(0).truthy()?),
@@ -567,6 +603,53 @@ pub fn calc_cell(b: &Book, sheet: &str, r: &str) -> Result<String> {
         V::Range(_) => "#VALUE!".into(),
         other => other.text().unwrap_or_default(),
     })
+}
+
+/// The cells a reference formula points at, such as a dynamic print area
+/// `OFFSET(Sheet1!$A$1,0,0,MAX(...),7)` or a plain `Sheet1!$A$1:$G$40`
+/// (1-based: c1, r1, c2, r2). None when it is something else or out of the sheet.
+pub fn eval_area(b: &Book, sheet: &str, formula: &str) -> Option<(u32, u32, u32, u32)> {
+    let toks = tokenize(formula.trim().trim_start_matches('=')).ok()?;
+    let range = |r: &str| -> Option<(u32, u32, u32, u32)> {
+        let r = r.rsplit_once('!').map(|x| x.1).unwrap_or(r).replace('$', "").to_uppercase();
+        let (a, z) = r.split_once(':').unwrap_or((&r, &r));
+        let (c1, r1) = parse_ref(a).ok()?;
+        let (c2, r2) = parse_ref(z).ok()?;
+        Some((c1.min(c2), r1.min(r2), c1.max(c2), r1.max(r2)))
+    };
+    match toks.as_slice() {
+        [Tok::Ref(r)] => range(r),
+        [Tok::Name(n), Tok::LParen, Tok::Ref(r), Tok::Comma, ..] if n == "OFFSET" => {
+            let base = range(r)?;
+            let mut ev = Ev { b, sheet: sheet.to_string(), toks: toks.clone(), pos: 4, depth: 0 };
+            let mut nums: Vec<Option<f64>> = Vec::new();
+            loop {
+                if matches!(ev.peek(), Some(Tok::Comma) | Some(Tok::RParen)) {
+                    nums.push(None);
+                } else {
+                    nums.push(Some(ev.expr().ok()?.num().ok()?.trunc()));
+                }
+                match ev.next() {
+                    Some(Tok::Comma) => continue,
+                    Some(Tok::RParen) => break,
+                    _ => return None,
+                }
+            }
+            if ev.pos != toks.len() || nums.len() < 2 || nums.len() > 4 {
+                return None;
+            }
+            let at = |i: usize| nums.get(i).copied().flatten();
+            let c1 = base.0 as f64 + at(1).unwrap_or(0.0);
+            let r1 = base.1 as f64 + at(0).unwrap_or(0.0);
+            let h = at(2).unwrap_or((base.3 - base.1 + 1) as f64);
+            let w = at(3).unwrap_or((base.2 - base.0 + 1) as f64);
+            if c1 < 1.0 || r1 < 1.0 || h < 1.0 || w < 1.0 || c1 + w - 1.0 > 16384.0 || r1 + h - 1.0 > 1048576.0 {
+                return None;
+            }
+            Some((c1 as u32, r1 as u32, (c1 + w - 1.0) as u32, (r1 + h - 1.0) as u32))
+        }
+        _ => None,
+    }
 }
 
 /// A computed number as text (no binary noise: 15 significant digits).

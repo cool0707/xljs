@@ -21,6 +21,7 @@ pub(crate) mod xlsx;
 mod xlsx_chart;
 mod xlsx_outline;
 mod xlsx_print;
+mod xlsx_table;
 mod xlsx_shape;
 mod xlsx_style;
 
