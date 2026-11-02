@@ -8,8 +8,9 @@
 (async () => {
   const wv = window.chrome && window.chrome.webview;
   const $ = (id) => document.getElementById(id);
-  // ?autorun (tests): run at once, close at the end and tell Go how far the
-  // page got (in the trace of a test that hangs).
+  // ?autorun (tests): run without pausing and tell Go how far the page got
+  // (in the trace of a test that hangs). The window closes at the end of a
+  // run (the host closes it too).
   const autorun = new URLSearchParams(location.search).has("autorun");
   const note = (text) => {
     if (autorun && wv) wv.postMessage("trace:" + text);
@@ -28,11 +29,11 @@
   const fail = (text) => {
     setStatus("xljs: " + String(text).split("\n")[0], "error");
     showError(String(text));
-    // The run cannot go on: Go ends it with this error instead of waiting
-    // (and with ?autorun the window closes, as at the end of a run).
+    // The run cannot go on: Go ends it with this error instead of waiting,
+    // and the window closes, as at the end of a run.
     if (wv && !failed) {
       wv.postMessage("call:" + JSON.stringify({ op: "fail", error: String(text) }));
-      if (autorun) wv.postMessage("close");
+      wv.postMessage("close");
     }
     failed = true;
   };
@@ -49,11 +50,7 @@
         } else {
           setStatus(fmt(L.finished, detail.code), "ok");
         }
-        $("close").textContent = L.close;
-        $("close").hidden = false;
-        $("close").onclick = () => wv.postMessage("close");
-        $("close").focus();
-        if (autorun) wv.postMessage("close");
+        wv.postMessage("close");
         break;
     }
   }

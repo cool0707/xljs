@@ -122,7 +122,6 @@
     "debug.running": "Running…",
     "debug.finished": "Finished (exit code {0})",
     "debug.failed": "Failed (exit code {0})",
-    "debug.close": "Close",
     "debug.aborted": "The debugger window was closed; the script was stopped",
     "debug.reloaded": "The debugger window was reloaded; close it and start xljs --debug again",
     "ui.copy": "Copy",
