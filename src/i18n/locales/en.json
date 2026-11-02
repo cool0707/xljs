@@ -528,6 +528,7 @@
     "pdf.badOptions": "the options of toPdf / toHtml must be an object",
     "pdf.noSheet": "sheet {0} does not exist",
     "pdf.badNumber": "{0}: invalid number",
+    "pdf.badSkipBlank": "skipBlankPages: must be true, false or \"values\"",
     "pdf.chartUnsupported": "Chart \"{0}\" cannot be drawn: {1}",
     "pdf.expectedHtml": "htmlToPdf: the HTML must be a string",
     "pdfdoc.invalid": "cannot read the PDF: {0}",

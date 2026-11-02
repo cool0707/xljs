@@ -3126,6 +3126,11 @@
     if (o.blackAndWhite !== undefined && o.blackAndWhite !== null) r.blackAndWhite = !!o.blackAndWhite;
     if (o.centerHorizontally !== undefined && o.centerHorizontally !== null) r.centerHorizontally = !!o.centerHorizontally;
     if (o.charts === false) r.charts = false;
+    if (o.skipBlankPages !== undefined && o.skipBlankPages !== null && o.skipBlankPages !== false) {
+      if (o.skipBlankPages === true) r.skipBlankPages = 1;
+      else if (o.skipBlankPages === "values") r.skipBlankPages = 2;
+      else throw new TypeError(T("pdf.badSkipBlank"));
+    }
     return r;
   }
 

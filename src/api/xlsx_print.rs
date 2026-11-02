@@ -126,6 +126,9 @@ pub struct PrintOptions {
     /// Draw the charts (default true).
     pub charts: Option<bool>,
     pub title: String,
+    /// Leave out pages that print nothing: 1 = no values, fills, borders or
+    /// objects; 2 = no values or objects (only fills and borders). 0 = keep all.
+    pub skip_blank_pages: u8,
     /// Only work out how the pages are cut (PrintOut::sheets); no HTML.
     #[serde(skip)]
     pub layout_only: bool,
@@ -138,6 +141,8 @@ pub struct AreaPages {
     pub range: String,
     pub across: usize,
     pub down: usize,
+    /// The pages printed (across × down less the blank pages left out).
+    pub pages: usize,
 }
 
 /// How the pages of a sheet are cut (book.printPages).
@@ -1105,9 +1110,9 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
         page_css.push_str(&page_rule(&page_name, &sh, &setup, &file, &dir, &now));
         let mut info = SheetPages { sheet: name.clone(), pages: 0, across: 0, down: 0, scale: 100.0, areas: Vec::new() };
         for area in areas {
-            let (a, scale) = sheet_pages(&sh, &setup, area, &objects, &page_name, &mut classes, if o.layout_only { None } else { Some(&mut body) });
-            pages += a.across * a.down;
-            info.pages += a.across * a.down;
+            let (a, scale) = sheet_pages(&sh, &setup, area, &objects, &page_name, &mut classes, o.skip_blank_pages, if o.layout_only { None } else { Some(&mut body) });
+            pages += a.pages;
+            info.pages += a.pages;
             info.across = info.across.max(a.across);
             info.down += a.down;
             if info.areas.is_empty() {
@@ -1218,7 +1223,8 @@ fn page_rule(name: &str, sh: &Sheet, s: &Setup, file: &str, dir: &str, now: &(St
 
 /// Writes the pages of one area of a sheet (only works them out when out is
 /// None); returns how they are cut and the scale.
-fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, String)], page: &str, classes: &mut Classes, out: Option<&mut String>) -> (AreaPages, f64) {
+#[allow(clippy::too_many_arguments)]
+fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, String)], page: &str, classes: &mut Classes, skip_blank: u8, out: Option<&mut String>) -> (AreaPages, f64) {
     let (c1, r1, c2, r2) = area;
     let (title_rows, title_cols) = sh.titles();
     let sum = |a: u32, b: u32, f: &dyn Fn(u32) -> f64| (a..=b).map(f).sum::<f64>();
@@ -1244,12 +1250,6 @@ fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, St
     let scale = (scale * s.zoom).clamp(0.01, 4.0);
     let col_segs = split(c1, c2, &|c| sh.w(c), avail_w / scale, tc_w, title_cols.map(|t| t.1).unwrap_or(0), &col_breaks);
     let row_segs = split(r1, r2, &|r| sh.h(r), avail_h / scale, tr_h, title_rows.map(|t| t.1).unwrap_or(0), &row_breaks);
-    let cut = AreaPages {
-        range: format!("{}{}:{}{}", super::xlsx::column_name(c1 as i64).unwrap_or_default(), r1, super::xlsx::column_name(c2 as i64).unwrap_or_default(), r2),
-        across: col_segs.len(),
-        down: row_segs.len(),
-    };
-    let Some(out) = out else { return (cut, scale) };
     let mut order = Vec::new();
     if s.over_then_down {
         for rs in &row_segs {
@@ -1264,6 +1264,16 @@ fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, St
             }
         }
     }
+    if skip_blank > 0 {
+        order.retain(|&(cs, rs)| !blank_page(sh, cs, rs, objects, skip_blank == 2));
+    }
+    let cut = AreaPages {
+        range: format!("{}{}:{}{}", super::xlsx::column_name(c1 as i64).unwrap_or_default(), r1, super::xlsx::column_name(c2 as i64).unwrap_or_default(), r2),
+        across: col_segs.len(),
+        down: row_segs.len(),
+        pages: order.len(),
+    };
+    let Some(out) = out else { return (cut, scale) };
     let [mt, mr, mb, ml] = s.margins;
     let style = format!(
         "page:{page};--w:{}pt;--h:{}pt;--pw:{}pt;--ph:{}pt;--m:{}pt {}pt {}pt {}pt;align-items:{};justify-content:{}",
@@ -1322,6 +1332,66 @@ fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, St
         out.push_str("</div>\n</section>\n");
     }
     (cut, scale)
+}
+
+/// Whether the body of a page (columns cs, rows rs; not the print titles)
+/// prints nothing: no values and no pictures, shapes or charts, and unless
+/// values_only, no fills or borders either. Text of only spaces is no value.
+fn blank_page(sh: &Sheet, cs: Seg, rs: Seg, objects: &[(Anchor, String, String)], values_only: bool) -> bool {
+    let (bx0, by0) = (sh.x0(cs.0 - 1), sh.y0(rs.0 - 1));
+    let (bw, bh) = (sh.x0(cs.1) - bx0, sh.y0(rs.1) - by0);
+    for (an, _, _) in objects {
+        if let Some((x, y, w, h)) = sh.anchor_rect(an) {
+            let (x, y) = (x - bx0, y - by0);
+            if x < bw && y < bh && x + w > 0.0 && y + h > 0.0 {
+                return false;
+            }
+        }
+    }
+    let line = |b: &umya_spreadsheet::Border| {
+        let s = b.border_style();
+        !s.is_empty() && s != "none"
+    };
+    for r in rs.0..=rs.1 {
+        if sh.h(r) <= 0.0 {
+            continue;
+        }
+        for c in cs.0..=cs.1 {
+            if sh.w(c) <= 0.0 {
+                continue;
+            }
+            // A merged cell shows its value on every page it is cut into.
+            let (vc, vr) = match sh.merge_at.get(&(c, r)) {
+                Some(i) => (sh.merges[*i].0, sh.merges[*i].1),
+                None => (c, r),
+            };
+            match sh.val(vc, vr) {
+                Val::Empty => {}
+                Val::Text(t) if t.trim().is_empty() => {}
+                _ => return false,
+            }
+            if values_only {
+                continue;
+            }
+            let st = sh.cells.get(&(c, r)).map(|x| x.style()).or_else(|| sh.ws.row_dimension(r).map(|x| x.style()));
+            if let Some(st) = st {
+                if sh.fill(st).is_some() {
+                    return false;
+                }
+                if let Some(b) = st.borders()
+                    && ([b.left(), b.right(), b.top(), b.bottom()].into_iter().any(line) || ((b.diagonal_up() || b.diagonal_down()) && line(b.diagonal())))
+                {
+                    return false;
+                }
+            }
+            if let Some(t) = sh.table.get(&(c, r))
+                && ((t.fill.is_some() && !sh.mono) || t.sides.iter().any(|x| x.is_some()))
+            {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// The CSS of a cell: (td: fill and borders, div: font and alignment).
@@ -1724,7 +1794,7 @@ pub(super) fn install(n: &super::N) {
         let out = super::xlsx::with_book(h, a, |b| workbook_html(b, &o).map_err(|e| a.throw(&e)))?;
         a.ret(serde_json::json!({ "html": out.html, "charts": out.charts, "pages": out.pages }).to_string())
     });
-    // xlsxPrintPages(book, optionsJSON) -> JSON [{ sheet, pages, across, down, scale, areas: [{ range, across, down }] }]
+    // xlsxPrintPages(book, optionsJSON) -> JSON [{ sheet, pages, across, down, scale, areas: [{ range, across, down, pages }] }]
     n.set("xlsxPrintPages", |h, a| {
         let mut o: PrintOptions = serde_json::from_str(&a.str(1)).map_err(|e| a.throw(&crate::Error::from(e)))?;
         o.layout_only = true;

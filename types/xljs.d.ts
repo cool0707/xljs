@@ -1646,7 +1646,7 @@ declare global {
   interface PrintPages {
     /** シート名 */
     sheet: string;
-    /** ページ数 */
+    /** ページ数（skipBlankPages で飛ばしたページは数えない。そのときは across × down より少ない） */
     pages: number;
     /** 横のページ数（印刷範囲が複数あるときはいちばん多いもの） */
     across: number;
@@ -1654,8 +1654,8 @@ declare global {
     down: number;
     /** 印刷の倍率（%。シートの拡大縮小・「次のページ数に合わせて印刷」・options の scale と zoom を反映したもの） */
     scale: number;
-    /** 印刷範囲ごとの分かれ方（range は "A1:K48" の形） */
-    areas: { range: string; across: number; down: number }[];
+    /** 印刷範囲ごとの分かれ方（range は "A1:K48" の形。pages は skipBlankPages で飛ばした残りのページ数） */
+    areas: { range: string; across: number; down: number; pages: number }[];
   }
 
   /** toPdf / toHtml のオプション。省略した項目はシートのページ設定に従う */
@@ -1689,6 +1689,12 @@ declare global {
     centerHorizontally?: boolean;
     /** false でグラフを描かない */
     charts?: boolean;
+    /**
+     * 空のページを出さない。true: 値・塗り・罫線・画像・図形・グラフのどれもないページを飛ばす。
+     * "values": 値も画像・図形・グラフもないページを飛ばす（罫線や塗りだけのページも飛ばす）。
+     * 印刷タイトルの行・列と枠線は数えない。空白だけの文字列は値がないとみなす。ページ番号（&P / &N）は残ったページで数える
+     */
+    skipBlankPages?: boolean | "values";
     /** PDF の文書のタイトル（既定: ファイル名） */
     title?: string;
   }

@@ -528,6 +528,7 @@
     "pdf.badOptions": "toPdf / toHtml のオプションはオブジェクトで指定してください",
     "pdf.noSheet": "シート {0} はありません",
     "pdf.badNumber": "{0}: 数値が正しくありません",
+    "pdf.badSkipBlank": "skipBlankPages: true、false、\"values\" のいずれかを指定してください",
     "pdf.chartUnsupported": "グラフ「{0}」は描けません: {1}",
     "pdf.expectedHtml": "htmlToPdf: HTML は文字列で指定してください",
     "pdfdoc.invalid": "PDF を読み込めません: {0}",
