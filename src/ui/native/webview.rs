@@ -421,6 +421,9 @@ fn data_folder() -> (String, bool) {
 /// (a browser with other options cannot share it).
 fn environment_options(folder: &str, debugger_profile: bool, debugger_window: bool) -> ICoreWebView2EnvironmentOptions {
     let options = CoreWebView2EnvironmentOptions::default();
+    // Sign in to Microsoft sites (the Copilot chat of the development mode)
+    // with the account the user signed in to Windows with, as Edge does.
+    unsafe { options.set_allow_single_sign_on_using_os_primary_account(true) };
     if debugger_profile {
         if debugger_window {
             crate::ui::devtools::prepare(folder);
