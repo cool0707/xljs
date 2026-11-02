@@ -150,8 +150,9 @@ impl Session {
         }
     }
 
-    /// Ends the run: what the script left open is closed and the page shows
-    /// the result. The debugger window stays open until the user closes it.
+    /// Ends the run: what the script left open is closed, and so is the
+    /// debugger window with its developer tools (the result is reported as
+    /// in a run without the debugger).
     fn finish(&self, host: &Host, code: i32, err: Option<String>) {
         if self.done.get() {
             return;
@@ -162,9 +163,14 @@ impl Session {
         *self.err.borrow_mut() = err.clone();
         host.cleanup();
         self.post(json!({"ev": "done", "code": code, "error": err.unwrap_or_default()}).to_string());
+        let w = self.window.borrow().clone();
+        if let Some(w) = w {
+            w.close();
+        }
     }
 
-    /// The debugger window has closed. A script still running is stopped.
+    /// The debugger window has closed (also when its developer tools were
+    /// closed, see WindowOptions::dev_tools). A script still running is stopped.
     fn closed(&self, host: &Host) {
         if self.done.get() {
             return;

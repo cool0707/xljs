@@ -122,7 +122,6 @@
     "debug.running": "実行中…",
     "debug.finished": "終了しました（終了コード {0}）",
     "debug.failed": "エラーで終了しました（終了コード {0}）",
-    "debug.close": "閉じる",
     "debug.aborted": "デバッグウィンドウが閉じられたため、スクリプトを中止しました",
     "debug.reloaded": "デバッグウィンドウが再読み込みされました。閉じてから xljs --debug をやり直してください",
     "ui.copy": "コピー",

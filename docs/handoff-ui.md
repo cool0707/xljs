@@ -331,6 +331,10 @@ cross-origin isolated）。最初は同期 XHR を WebResourceRequested の defe
   デバッグウィンドウは開いたらすぐ実行する（実行ボタン・チェックボックスはない。常に最初の行で止まる。`?autorun` のテストでは止まらない）。
   その時点では開発者ツールがまだワーカーに接続しておらず `debugger` が効かないので、フラグ（モジュールローダーが `globalThis.__xljsBreakCheck` に聞く。
   `web/debug.js` の `breakChecker`）は 20ms ずつ眠りながら true を返し続け、前回から 200ms 以上空いたら（＝デバッガで止まっていた）、または 15 秒たったら false を返す。
+- 終了（Rust 版）: スクリプトが終わったら（`exit()`・エラーを含む）デバッグウィンドウを閉じ、開発者ツールも一緒に閉じる（結果は通常の実行と同じく CLI が出す）。
+  逆に開発者ツールを閉じたらデバッグウィンドウも閉じ、実行中のスクリプトは中止（終了コード 130）。WebView2 には開発者ツールが閉じたイベントがないので、
+  `WindowOptions::dev_tools` のウィンドウはタイマー（200ms）でブラウザプロセスのトップレベルウィンドウのうちタイトルにページのファイル名（`debug.html`）を含むものを探し、
+  一度見つかってから無くなったら `WM_CLOSE` する（`src/ui/native/webview.rs` の `watch_dev_tools`）。一時停止中に閉じると、検知までの間はスクリプトが少し進むことがある。
 - 制約: native 呼び出しごとに往復があるので遅い／V8 と goja の差（ブラウザの API が見える）／エディタ一体型ではない。
 - テスト: Linux は `fakeDebugUI`（goja がページ役）で全結合テストをこの経路でも実行（`TestScriptsInDebugger` ほか）。
   Windows CI は `TestWebViewIsolated`（COOP/COEP、SharedArrayBuffer、ワーカーの Atomics.wait）と `TestDebuggerWindow`（実ウィンドウで自動実行）。
