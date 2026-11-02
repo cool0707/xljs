@@ -3988,6 +3988,18 @@
       });
     }
     /**
+     * Registers fn as an SQL function for the statements of this script: SELECT calc(price) FROM ...
+     * The arguments arrive as numbers, strings (dates as text), Uint8Array or null; the result is stored like a parameter.
+     * It cannot be used in the definitions of tables, views, triggers or indexes (other connections do not have it),
+     * nor in statements that change a shared database. options: { deterministic }
+     */
+    function(name, options, fn) {
+      if (typeof options === "function") [fn, options] = [options, fn];
+      if (typeof fn !== "function") throw new TypeError(T("engine.callbackNotFunction"));
+      native.sqliteFunction(this._h, String(name), fn, !!(options && options.deterministic));
+      return this;
+    }
+    /**
      * Inserts rows (objects, or arrays with options.columns) in one transaction and returns their number.
      * A missing table is created with columns typed from the values. options: { columns, replace, ignore, create = true }
      */
@@ -4002,7 +4014,14 @@
         if (!cols) cols = exists ? this.columns(name).map((c) => c.name).slice(0, rows[0].length) : rows[0].map((_, i) => `列${i + 1}`);
         data = rows.map((r) => cols.map((_, i) => sqlValue(r[i])));
       } else {
-        if (!cols) cols = keysOf(rows);
+        if (!cols) {
+          cols = keysOf(rows);
+          // Rows read back from the table carry its generated columns, which take no values.
+          if (exists) {
+            const generated = new Set(this.values("SELECT name FROM pragma_table_xinfo(?) WHERE hidden IN (2, 3)", name).map((r) => r[0]));
+            cols = cols.filter((c) => !generated.has(c));
+          }
+        }
         data = rows.map((r) => cols.map((c) => sqlValue(r == null ? null : r[c])));
       }
       const verb = options.replace ? "INSERT OR REPLACE" : options.ignore ? "INSERT OR IGNORE" : "INSERT";

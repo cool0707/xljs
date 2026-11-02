@@ -105,6 +105,8 @@ db.insert("受注", rowsFromExcel, { replace: true });            // まとめ�
 db.transaction(() => { /* 例外なら取り消し。async 不可 */ });
 ```
 
+SQL では Excel 互換の関数（`ROUNDHALF`（Excel の ROUND）・`ROUNDUP`・`ROUNDDOWN`・`LEFT`・`TEXT`・`EOMONTH`・`DATEDIF` など）が生成列でも使える。`db.function(name, fn)` で JS の関数も呼べるが、クエリ専用（テーブル・ビューの定義、共有モードの更新には使えない）。
+
 ## 進捗（フォームなしのとき。キャンセルでスクリプトが終わる）
 
 ```js

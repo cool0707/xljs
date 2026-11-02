@@ -19,8 +19,10 @@
 //!
 //! See docs/sqlite-design.md.
 
+pub mod excel;
 pub mod lock;
 mod repair;
+mod script;
 pub mod share;
 
 use std::path::{Path, PathBuf};
@@ -30,6 +32,7 @@ use rusqlite::types::Value;
 use rusqlite::{Connection, OpenFlags};
 
 pub use repair::{Report, check_file, repair};
+pub use script::{Call, ScriptFn, with_calls};
 use share::{LogStmt, Sidecar};
 
 use crate::{Error, Result, err};
@@ -100,6 +103,8 @@ pub struct Db {
     /// Local mode: the connection.
     conn: Option<Connection>,
     txn: Option<Txn>,
+    /// The SQL functions of the script (registered on every connection).
+    fns: Vec<ScriptFn>,
     /// Whether the last failure was a damaged database.
     pub corrupt: bool,
     pub closed: bool,
@@ -199,6 +204,7 @@ pub(crate) fn connect(path: &Path, readonly: bool, create: bool, shared: bool, t
         pragmas.push_str(" PRAGMA synchronous=EXTRA; PRAGMA cell_size_check=ON;");
     }
     conn.execute_batch(&pragmas).map_err(sql_error)?;
+    excel::register(&conn).map_err(sql_error)?;
     Ok(conn)
 }
 
@@ -220,7 +226,7 @@ impl Db {
                 Err(e) => return Err(e),
             }
         }
-        let mut db = Db { path, opts, side, conn: None, txn: None, corrupt: false, closed: false };
+        let mut db = Db { path, opts, side, conn: None, txn: None, fns: Vec::new(), corrupt: false, closed: false };
         if let Some(side) = &db.side {
             let _lock = side.lock(&db.path, !db.opts.readonly, db.opts.timeout)?;
             let conn = db.connect()?;
@@ -248,7 +254,51 @@ impl Db {
     }
 
     fn connect(&self) -> Result<Connection> {
-        connect(&self.path, self.opts.readonly, self.opts.create, self.side.is_some(), self.opts.timeout)
+        let conn = connect(&self.path, self.opts.readonly, self.opts.create, self.side.is_some(), self.opts.timeout)?;
+        for f in &self.fns {
+            script::register(&conn, f).map_err(sql_error)?;
+        }
+        Ok(conn)
+    }
+
+    /// Adds an SQL function of the script (see script.rs) or replaces the
+    /// one with the same name: the id of the function replaced.
+    pub fn add_function(&mut self, f: ScriptFn) -> Result<Option<u64>> {
+        self.check_open()?;
+        if !script::valid_name(&f.name) {
+            return Err(err!("sqlite.functionName", f.name));
+        }
+        let lower = f.name.to_lowercase();
+        let old = self.fns.iter().position(|g| g.name.to_lowercase() == lower);
+        if old.is_none() {
+            // Functions of SQLite and of xljs (excel.rs) keep their names.
+            let taken = self.read(|db, conn| {
+                conn.query_row("SELECT count(*) > 0 FROM pragma_function_list WHERE name = ?", [&lower], |r| r.get::<_, bool>(0)).map_err(|e| db.fail(e))
+            })?;
+            if taken {
+                return Err(err!("sqlite.functionTaken", f.name));
+            }
+        }
+        for conn in [self.conn.as_ref(), self.txn.as_ref().and_then(|t| t.conn.as_ref())].into_iter().flatten() {
+            script::register(conn, &f).map_err(sql_error)?;
+        }
+        Ok(match old {
+            Some(i) => Some(std::mem::replace(&mut self.fns[i], f).id),
+            None => {
+                self.fns.push(f);
+                None
+            }
+        })
+    }
+
+    /// The ids of the SQL functions of the script.
+    pub fn function_ids(&self) -> Vec<u64> {
+        self.fns.iter().map(|f| f.id).collect()
+    }
+
+    /// Whether changes go into a change log (shared mode with backups).
+    fn logged(&self) -> bool {
+        self.side.is_some() && self.opts.keep > 0
     }
 
     pub fn shared(&self) -> bool {
@@ -403,6 +453,7 @@ impl Db {
 
     /// Runs a query: its rows (at most limit).
     pub fn query(&mut self, sql: &str, params: &Params, limit: Option<usize>) -> Result<Rows> {
+        script::check_schema_sql(sql, &self.fns)?;
         // Statements that change something (INSERT ... RETURNING) need the
         // write lock and go into the change log.
         let ro = self.read(|db, conn| {
@@ -419,6 +470,7 @@ impl Db {
         self.write(|db| {
             let conn: *const Connection = db.cur();
             let mut st = unsafe { &*conn }.prepare(sql).map_err(|e| db.fail(e))?;
+            let _logged = script::Logged::set(db.logged());
             let (rows, bound) = run_query(&mut st, params, limit).map_err(|e| db.note(e))?;
             db.log(sql, bound, false);
             Ok(rows)
@@ -428,12 +480,14 @@ impl Db {
     /// Runs a statement: (changes, last insert rowid).
     pub fn run(&mut self, sql: &str, params: &Params) -> Result<(u64, i64)> {
         self.check_open()?;
+        script::check_schema_sql(sql, &self.fns)?;
         self.write(|db| {
             let conn: *const Connection = db.cur();
             let conn = unsafe { &*conn };
             let mut st = conn.prepare(sql).map_err(|e| db.fail(e))?;
             let ro = st.readonly();
             let bound = bind(&mut st, params)?;
+            let _logged = script::Logged::set(!ro && db.logged());
             let mut rows = st.raw_query();
             loop {
                 match rows.next() {
@@ -453,8 +507,10 @@ impl Db {
     /// Runs several statements separated by semicolons (without values).
     pub fn exec(&mut self, sql: &str) -> Result<()> {
         self.check_open()?;
+        script::check_schema_sql(sql, &self.fns)?;
         self.write(|db| {
             let conn: *const Connection = db.cur();
+            let _logged = script::Logged::set(db.logged());
             unsafe { &*conn }.execute_batch(sql).map_err(|e| db.fail(e))?;
             db.log(sql, Vec::new(), true);
             Ok(())
@@ -476,6 +532,7 @@ impl Db {
         self.write(|db| {
             let conn: *const Connection = db.cur();
             let mut st = unsafe { &*conn }.prepare(&sql).map_err(|e| db.fail(e))?;
+            let _logged = script::Logged::set(db.logged());
             for row in rows {
                 let p = Params::Pos(row);
                 let bound = bind(&mut st, &p)?;
