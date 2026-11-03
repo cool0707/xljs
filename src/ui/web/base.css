@@ -67,8 +67,8 @@
    logo's green, dark enough for white text (light) and black text (dark).
    Script windows (forms, tables, charts) keep the blue. */
 :root.xljs-app {
-  --accent: #0b8457;
-  --accent-hover: #096f49;
+  --accent: #069c66;
+  --accent-hover: #058a5a;
   --accent-fg: #ffffff;
   --sel: #d1f0e0;
 }
