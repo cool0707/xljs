@@ -28,7 +28,7 @@
   };
 
   const css = `
-:root { --xljs-titlebar-height: 32px; }
+:root { --xljs-titlebar-height: 40px; }
 .xljs-titlebar {
   flex: none; display: flex; align-items: stretch; height: var(--xljs-titlebar-height);
   margin: 0; padding: 0; box-sizing: border-box; position: relative; z-index: 2147483000;
@@ -39,11 +39,11 @@
 }
 :root.xljs-inactive .xljs-titlebar .xljs-tb-title, :root.xljs-inactive .xljs-titlebar .xljs-tb-btn { opacity: .55; }
 .xljs-tb-title {
-  flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 0 12px;
-  overflow: hidden; white-space: nowrap;
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 14px;
+  overflow: hidden; white-space: nowrap; font-size: 20px; line-height: 1.2;
 }
 .xljs-tb-title span { overflow: hidden; text-overflow: ellipsis; }
-.xljs-tb-title i { color: var(--xljs-titlebar-accent, #005fb8); font-size: 14px; }
+.xljs-tb-title i { flex: none; margin: 0; color: var(--xljs-titlebar-accent, #1261d1); font-size: 18px; text-align: center; }
 [data-xljs-titlebar] { app-region: drag; -webkit-app-region: drag; }
 [data-xljs-titlebar] button, [data-xljs-titlebar] input, [data-xljs-titlebar] select, [data-xljs-titlebar] a,
 [data-xljs-titlebar] [data-xljs-window], .xljs-tb-btn { app-region: no-drag; -webkit-app-region: no-drag; }
@@ -58,7 +58,7 @@
 .xljs-tb-btn.xljs-tb-close:active { background: #c84031; color: #fff; }
 @media (prefers-color-scheme: dark) {
   .xljs-titlebar { background: var(--xljs-titlebar-bg, #202020); color: var(--xljs-titlebar-fg, #f3f3f3); }
-  .xljs-tb-title i { color: var(--xljs-titlebar-accent, #4cc2ff); }
+  .xljs-tb-title i { color: var(--xljs-titlebar-accent, #43a2fa); }
   .xljs-tb-btn:hover { background: var(--xljs-titlebar-hover, rgba(255, 255, 255, .08)); }
   .xljs-tb-btn:active { background: var(--xljs-titlebar-active, rgba(255, 255, 255, .05)); }
 }`;

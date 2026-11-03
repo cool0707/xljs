@@ -121,7 +121,7 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
     exe のリソースのアイコンは変えない。ドロップしたフォルダは `{"$attach"}` の復元時に `FileSystemDirectoryHandle` にする。
   - 自前のタイトルバー（`titleBar: "custom"` / `@titlebar custom`、Rust 版で追加）: `WindowOptions.custom_title_bar` / `title_icon`。
     Native は WM_NCCALCSIZE で上端（キャプションと上の枠）をクライアント領域にし（左右下の枠はリサイズ用に残す。最大化中は画面外の枠分を除く）、
-    高さに `TITLE_BAR_HEIGHT`（32px）を足す。`web/titlebar.js` を設定（タイトル・アイコン・文言）付きで全ページに注入し、`<body>` の先頭にバーを差し込む
+    高さに `TITLE_BAR_HEIGHT`（40px）を足す。`web/titlebar.js` を設定（タイトル・アイコン・文言）付きで全ページに注入し、`<body>` の先頭にバーを差し込む
     （`[data-xljs-titlebar]` があればそれを使う）。移動は `ICoreWebView2Settings9::SetIsNonClientRegionSupportEnabled` ＋ CSS `app-region: drag`、
     古いランタイムではページの mousedown → `"\x01window:drag"` → `WM_NCLBUTTONDOWN(HTCAPTION)`。ボタンは `"\x01window:minimize|maximize|close"`
     （スクリプトを経由せず UI スレッドで処理）。最大化・アクティブの状態は WM_SIZE / WM_ACTIVATE で `ExecuteScript("__xljsTitleBarState(...)")`。
