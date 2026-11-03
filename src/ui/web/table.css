@@ -1,9 +1,9 @@
-:root { --row-h: 26px; --head-h: 32px; }
+:root { --row-h: 28px; --head-h: 32px; }
 .toolbar {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-s);
   align-items: center;
-  padding: 8px 12px;
+  padding: var(--sp-m) var(--sp-l);
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
@@ -11,11 +11,12 @@
 #count { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; font-variant-numeric: tabular-nums; }
 .toolbar button { flex: none; white-space: nowrap; }
 .spacer { flex: 1; }
+footer { padding: var(--sp-m) var(--sp-l); }
 #grid {
   flex: 1;
   overflow: auto;
   position: relative;
-  background: var(--panel);
+  background: var(--bg);
   outline: none;
   font-variant-numeric: tabular-nums;
 }
@@ -30,15 +31,15 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--bg);
+  background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 #head.trow { height: var(--head-h); }
-#head .cell { line-height: var(--head-h); font-size: inherit; font-weight: normal; }
+#head .cell { line-height: var(--head-h); font-size: inherit; font-weight: 600; color: var(--muted); }
 #body { position: relative; }
 #rows { position: absolute; top: 0; left: 0; min-width: 100%; }
 .cell {
-  padding: 0 8px;
+  padding: 0 var(--sp-m);
   line-height: var(--row-h);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -49,10 +50,10 @@
 }
 .trow .cell:last-child { border-right: none; }
 .num { text-align: right; }
-.gutter { color: var(--muted); text-align: right; font-weight: normal; background: var(--bg); }
-#head .cell { position: relative; padding-right: 18px; }
+.gutter { color: var(--muted); text-align: right; font-weight: normal; background: var(--panel); }
+#head .cell { position: relative; padding-right: 24px; }
 #head .cell:not(.gutter):hover { background: var(--hover); }
-#head .sort { position: absolute; right: 8px; font-size: 10px; color: var(--muted); }
+#head .sort { position: absolute; right: var(--sp-s); font-size: 10px; color: var(--muted); }
 #head .grip { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 2; }
 #rows .trow:nth-child(even) { background: var(--alt); }
 #rows .trow:hover { background: var(--hover); }
@@ -62,7 +63,7 @@
 #rows .trow.cur.sel { outline: none; }
 #grid:focus #rows .trow.cur { box-shadow: inset 2px 0 0 var(--accent); }
 .null { color: var(--muted); }
-#empty { padding: 24px; color: var(--muted); text-align: center; }
+#empty { padding: var(--sp-xxl); color: var(--muted); text-align: center; }
 .measure { position: absolute; top: 0; left: 0; visibility: hidden; white-space: nowrap; }
 .measure .cell { display: inline-block; overflow: visible; }
-.measure.head .cell { padding-right: 18px; }
+.measure.head .cell { padding-right: 24px; }

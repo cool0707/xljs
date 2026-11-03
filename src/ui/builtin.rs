@@ -19,7 +19,7 @@ const TITLE_BAR_SCRIPT: &str = include_str!("web/titlebar.js");
 
 /// The height of the custom title bar in logical pixels
 /// (--xljs-titlebar-height in web/titlebar.js).
-pub const TITLE_BAR_HEIGHT: i64 = 32;
+pub const TITLE_BAR_HEIGHT: i64 = 40;
 
 /// The script that puts the custom title bar into every page of a window
 /// with WindowOptions::custom_title_bar. non_client tells whether the

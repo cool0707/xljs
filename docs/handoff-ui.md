@@ -37,6 +37,14 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
 - **フェーズ 2（`ui.form` / `ui.table`）: 実装済み**（ブランチ `ccr-374d7106-mw1l5b`）。
   - 組み込みページ: `internal/ui/web/`（`form.html` `table.html`＋`bridge.js` `base.css`）を `ui.BuiltinFS` として埋め込み、
     `https://app.xljs/_xljs/` で配信（`api.windowAssets` がスクリプトのアセットと重ねる）。ライト/ダーク対応。
+  - 見た目（Rust 版で shadcn/ui 風に変更）: `base.css` の `:root` の変数が配色（zinc 系のニュートラル＋アクセントの青）・
+    コントロールの高さ（`--control-h`。ボタン・入力欄・セレクトで共通、開発モードは 28px）・角丸（`--radius`、枠は
+    `--radius-box`＝最大 10px、チェックボックスは `--radius-check`）を持つ。チェックボックス・ラジオ・セレクト・進捗バーは
+    `appearance: none` で描き直し、フォーカスはアクセントの枠＋薄いリング。タブは下線式。
+    余白は Fluent UI の段階（`--sp-xxs`〜`--sp-xxl`＝2・4・8・12・16・20・24px）だけを使う。ページの周り・節の間は 24、
+    項目の間は 16、入力欄とボタンの間は 8、入力欄と補足・エラーの間は 4。本文は 14px/20px、補足は 12px/16px、表の行は 28px。
+    xljs 自身の画面（開発モード・デバッガ。`<html class="xljs-app">`）はアクセントがロゴの緑（ライト `#069c66`、ダーク `#34c27e`）。
+    フォームの `accent` / `background` / `radius` オプションは `form.js` の `applyColors` がこれらの変数を上書きする。
   - 振り分け: `UI.SupportsWindows()` が true（Native）ならスクリプト（prelude）が組み込みページを `appOpen` で開いて
     JSON メッセージで操作する。false（console/mock）なら `UI.Form` / `UI.Table`（JSON で受け渡し）。
   - `appOpen` は `onMessage(msg, files)` と `post` / `isClosed` / `cancelRequested` / `clearCancel` を持つ（フェーズ 3 の土台）。
@@ -113,7 +121,7 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
     exe のリソースのアイコンは変えない。ドロップしたフォルダは `{"$attach"}` の復元時に `FileSystemDirectoryHandle` にする。
   - 自前のタイトルバー（`titleBar: "custom"` / `@titlebar custom`、Rust 版で追加）: `WindowOptions.custom_title_bar` / `title_icon`。
     Native は WM_NCCALCSIZE で上端（キャプションと上の枠）をクライアント領域にし（左右下の枠はリサイズ用に残す。最大化中は画面外の枠分を除く）、
-    高さに `TITLE_BAR_HEIGHT`（32px）を足す。`web/titlebar.js` を設定（タイトル・アイコン・文言）付きで全ページに注入し、`<body>` の先頭にバーを差し込む
+    高さに `TITLE_BAR_HEIGHT`（40px）を足す。`web/titlebar.js` を設定（タイトル・アイコン・文言）付きで全ページに注入し、`<body>` の先頭にバーを差し込む
     （`[data-xljs-titlebar]` があればそれを使う）。移動は `ICoreWebView2Settings9::SetIsNonClientRegionSupportEnabled` ＋ CSS `app-region: drag`、
     古いランタイムではページの mousedown → `"\x01window:drag"` → `WM_NCLBUTTONDOWN(HTCAPTION)`。ボタンは `"\x01window:minimize|maximize|close"`
     （スクリプトを経由せず UI スレッドで処理）。最大化・アクティブの状態は WM_SIZE / WM_ACTIVATE で `ExecuteScript("__xljsTitleBarState(...)")`。

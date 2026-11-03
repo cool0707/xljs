@@ -1634,6 +1634,19 @@
     return { light: c, dark: c };
   }
 
+  /**
+   * A form's radius option: the corners of its buttons, inputs and boxes.
+   * A number of pixels or "none" | "small" | "medium" | "large" | "full".
+   * Returns a CSS length ("" for the default).
+   */
+  function formRadius(v) {
+    if (v === undefined || v === null || v === "") return "";
+    const names = { none: 0, small: 4, medium: 6, large: 10, full: 9999 };
+    const px = typeof v === "number" ? v : Object.prototype.hasOwnProperty.call(names, v) ? names[v] : NaN;
+    if (!Number.isFinite(px) || px < 0) throw new TypeError(T("form.badRadius", String(v)));
+    return Math.min(px, 9999) + "px";
+  }
+
   function faClass(icon) {
     if (icon === undefined || icon === null || icon === "") return "";
     const words = String(icon).trim().split(/\s+/).filter((w) => /^[\w-]+$/.test(w));
@@ -1978,7 +1991,7 @@
       noSubmit: options.submit === false && buttons.length > 0,
       titleBar: customTitleBar(options.titleBar), icon: faClass(options.icon), submitIcon: faClass(options.submitIcon),
       accent: themeColor(options.accent, "form.badAccent"), background: themeColor(options.background, "form.badBackground"),
-      key, tabs, tabIcons, groups, buttons,
+      radius: formRadius(options.radius), key, tabs, tabIcons, groups, buttons,
     };
     if (native.devPreview) return formPreview(o, fields, wire);
     return native.supportsWindows ? formWindow(o, fields, wire, options) : formPrompt(o, fields, wire, options);
@@ -2109,25 +2122,25 @@
   }
 
   function formSize(o, fields, hasRun, options) {
-    let h = 100;
-    if (o.description) h += 14 + 21 * Math.min(8, o.description.split("\n").reduce((n, l) => n + 1 + Math.floor(l.length / 40), 0));
+    let h = 120;
+    if (o.description) h += 20 + 20 * Math.min(8, o.description.split("\n").reduce((n, l) => n + 1 + Math.floor(l.length / 40), 0));
     // Fields above the tabs, plus the tallest tab.
     const heights = o.tabs.map(() => 0);
     let common = 0;
     for (const f of fields) {
-      let fh = 10 + (f.type === "textarea" ? 10 + 21 * (f.rows || 4) : f.type === "files" ? 10 + 21 * Math.max(3, f.rows || 3)
-        : f.type === "table" ? 34 + 27 * tableLines(f) : f.type === "chart" ? 10 + chartHeight(f)
+      let fh = 16 + (f.type === "textarea" ? 12 + 20 * (f.rows || 4) : f.type === "files" ? 12 + 20 * Math.max(3, f.rows || 3)
+        : f.type === "table" ? 36 + 29 * tableLines(f) : f.type === "chart" ? 12 + chartHeight(f)
           : f.type === "checkbox" || f.type === "radio" ? 28 : 32);
       if (f.help) fh += 20;
       if (f.tab >= 0) heights[f.tab] += fh;
       else common += fh;
     }
     for (const g of o.groups) {
-      const gh = 40 + (g.help ? 20 : 0); // the heading
+      const gh = 56 + (g.help ? 24 : 0); // the heading
       if (g.tab >= 0) heights[g.tab] += gh;
       else common += gh;
     }
-    h += common + (o.tabs.length ? 48 + Math.max(...heights) : 0);
+    h += common + (o.tabs.length ? 80 + Math.max(...heights) : 0);
     if (hasRun) h += 240;
     return {
       width: Number(options.width) || 600,
@@ -2146,7 +2159,7 @@
   function formInit(o, fields, wire) {
     return {
       type: "init", description: o.description, texts: formTexts(),
-      submit: o.submit, submitIcon: o.submitIcon, accent: o.accent, background: o.background, tabs: o.tabs, tabIcons: o.tabIcons,
+      submit: o.submit, submitIcon: o.submitIcon, accent: o.accent, background: o.background, radius: o.radius, tabs: o.tabs, tabIcons: o.tabIcons,
       groups: o.groups,
       noSubmit: o.noSubmit, buttons: o.buttons.map((b) => b.label), buttonIcons: o.buttons.map((b) => b.icon),
       buttonTooltips: o.buttons.map((b) => b.tooltip),

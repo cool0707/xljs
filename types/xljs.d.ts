@@ -457,6 +457,11 @@ declare global {
      * （ダークの配色で明るい背景色ならライトの配色に）切り替える。コンソール・モックでは無視
      */
     background?: string | { light?: string; dark?: string };
+    /**
+     * 角丸の大きさ（ボタン・入力欄・タブ・表などの角）。ピクセル数か "none"（0）・"small"（4）・"medium"（6。既定）・
+     * "large"（10）・"full"（ボタンと入力欄を丸く。表などの枠は 10 まで）。コンソール・モックでは無視
+     */
+    radius?: number | "none" | "small" | "medium" | "large" | "full";
   }
 
   // ------------------------------------------------------------------ ui.table
@@ -722,7 +727,7 @@ declare global {
     /**
      * "custom" にすると OS のタイトルバーを隠し、ページの <body> の先頭に自前のタイトルバー（icon とタイトル、最小化・最大化・閉じるボタン）を差し込む。
      * ページに data-xljs-titlebar 属性の要素があれば差し込まずにそれをタイトルバーにする（ドラッグで移動。中の data-xljs-window="minimize" / "maximize" / "close" のボタンでウィンドウを操作）。
-     * width / height はタイトルバー（32px）を除いた大きさ。既定は "system"。メインウィンドウはメタデータの @titlebar custom
+     * width / height はタイトルバー（40px）を除いた大きさ。既定は "system"。メインウィンドウはメタデータの @titlebar custom
      */
     titleBar?: "system" | "custom";
     /** 自前のタイトルバーでタイトルの前に出す Font Awesome のアイコン（"table" や "fa-regular fa-calendar"）。titleBar が "system" なら無視 */

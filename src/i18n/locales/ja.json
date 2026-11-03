@@ -480,6 +480,7 @@
     "form.badTab": "{0} 番目のタブは { label, fields } の形で指定してください",
     "form.badButton": "ui.form: {0} 番目のボタンに onClick を指定してください",
     "form.badAccent": "ui.form: accent には \"#c42b1c\" のような CSS の色か { light, dark } を指定してください（\"{0}\"）",
+    "form.badRadius": "ui.form: radius にはピクセル数か \"none\"・\"small\"・\"medium\"・\"large\"・\"full\" を指定してください（\"{0}\"）",
     "form.badBackground": "ui.form: background には \"#fff8e1\" のような CSS の色か { light, dark } を指定してください（\"{0}\"）",
     "form.noButton": "ui.form: ボタン \"{0}\" がありません",
     "form.noField": "フォームに項目 \"{0}\" がありません",

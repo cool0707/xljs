@@ -49,7 +49,7 @@ function init(m) {
   fields = m.fields || [];
   chartTexts = m.chartTexts || {};
   lang = m.lang || "ja";
-  applyColors(m.accent || {}, m.background || {});
+  applyColors(m.accent || {}, m.background || {}, m.radius || "");
   if (m.description) {
     $("description").textContent = m.description;
     $("description").hidden = false;
@@ -119,7 +119,7 @@ function init(m) {
 // title bar's) background per theme; a dark background in the light theme
 // (or a light one in the dark theme) takes the other theme's text, input and
 // border colors so the page stays readable. An unknown color keeps the default.
-function applyColors(accent, background) {
+function applyColors(accent, background, radius) {
   const luminance = (c) => {
     const probe = document.body.appendChild(el("span", { hidden: true }));
     probe.style.color = c;
@@ -134,25 +134,31 @@ function applyColors(accent, background) {
     const mix = dark ? "black" : "white";
     return `--accent: ${c}; --accent-hover: color-mix(in srgb, ${c} 88%, ${mix});` +
       ` --accent-fg: ${luminance(c) > 0.18 ? "#000000" : "#ffffff"}; --xljs-titlebar-accent: ${c};` +
-      ` --sel: color-mix(in srgb, ${c} ${dark ? "45%" : "22%"}, ${dark ? "#202020" : "white"});`;
+      ` --sel: color-mix(in srgb, ${c} ${dark ? "45%" : "22%"}, ${dark ? "#18181b" : "white"});`;
   };
   // The text and control colors of base.css for a light and a dark background.
   const palettes = {
-    light: { fg: "#1b1b1b", muted: "#616161", border: "#d1d1d1", input: "#ffffff", panel: "#ffffff", alt: "#fafafa" },
-    dark: { fg: "#f3f3f3", muted: "#ababab", border: "#474747", input: "#1f1f1f", panel: "#2b2b2b", alt: "#2f2f2f" },
+    light: { fg: "#18181b", muted: "#71717a", border: "#e4e4e7", inputBorder: "#d4d4d8", input: "#ffffff" },
+    dark: { fg: "#fafafa", muted: "#a1a1aa", border: "#2e2e33", inputBorder: "#3f3f46", input: "#1c1c20" },
   };
   const backgroundVars = (c, dark) => {
     if (!valid(c)) return "";
     const darkBg = luminance(c) <= 0.18;
     const p = palettes[darkBg ? "dark" : "light"];
+    // The footer, table heads, striped rows and the tab bar: tints of the background.
+    const tint = (k) => `color-mix(in srgb, ${c} ${k}, ${p.fg})`;
     let vars = `--bg: ${c}; --xljs-titlebar-bg: ${c}; --xljs-titlebar-fg: ${p.fg};` +
-      ` --hover: color-mix(in srgb, ${c} ${darkBg ? "88%" : "92%"}, ${p.fg});`;
+      ` --hover: ${tint(darkBg ? "88%" : "94%")}; --subtle: ${tint(darkBg ? "88%" : "94%")};` +
+      ` --panel: ${tint(darkBg ? "95%" : "98%")}; --alt: ${tint(darkBg ? "97%" : "98.5%")};`;
     if (darkBg !== dark) {
-      vars += ` --fg: ${p.fg}; --muted: ${p.muted}; --border: ${p.border}; --input: ${p.input};` +
-        ` --panel: ${p.panel}; --alt: ${p.alt}; --sel-fg: ${darkBg ? "#ffffff" : "#000000"}; color-scheme: ${darkBg ? "dark" : "light"};`;
+      vars += ` --fg: ${p.fg}; --muted: ${p.muted}; --border: ${p.border}; --input-border: ${p.inputBorder}; --input: ${p.input};` +
+        ` --sel-fg: ${p.fg}; color-scheme: ${darkBg ? "dark" : "light"};`;
     }
     return vars;
   };
+  // The radius option: the corners of buttons, inputs and boxes (a CSS length; "" keeps the default).
+  if (radius && CSS.supports("border-radius", radius)) document.documentElement.style.setProperty("--radius", radius);
+  else document.documentElement.style.removeProperty("--radius");
   const light = backgroundVars(background.light, false) + " " + accentVars(accent.light, false);
   const dark = backgroundVars(background.dark, true) + " " + accentVars(accent.dark, true);
   let css = "";
@@ -336,7 +342,7 @@ function tableControl(f, id) {
   const all = el("input", { type: "checkbox", tabIndex: -1 });
   const wrap = el("div", { className: "ftable" + (edit ? " editable" : ""), id, tabIndex: 0 }, el("table", {}, head, body));
   const list = el("ul", { className: "cell-errors", hidden: true });
-  wrap.style.maxHeight = (30 + 27 * (f.rows || 8)) + "px";
+  wrap.style.maxHeight = (32 + 29 * (f.rows || 8)) + "px";
 
   function header() {
     head.textContent = "";
