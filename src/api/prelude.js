@@ -2140,7 +2140,7 @@
       if (g.tab >= 0) heights[g.tab] += gh;
       else common += gh;
     }
-    h += common + (o.tabs.length ? 62 + Math.max(...heights) : 0);
+    h += common + (o.tabs.length ? 60 + Math.max(...heights) : 0);
     if (hasRun) h += 240;
     return {
       width: Number(options.width) || 600,

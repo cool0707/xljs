@@ -3,34 +3,21 @@ main { flex: 1; overflow: auto; padding: 16px 20px 8px; }
 #description { margin: 0 0 14px; white-space: pre-wrap; }
 .fields { display: grid; grid-template-columns: max-content 1fr; gap: 12px 16px; align-items: start; }
 #fields:empty { display: none; }
-/* Tabs: a segmented control; the active tab is raised. */
-#tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  width: fit-content;
-  max-width: 100%;
-  margin: 16px 0 14px;
-  padding: 3px;
-  border-radius: var(--radius);
-  background: var(--subtle);
-}
+#tabs { display: flex; flex-wrap: wrap; gap: 2px; margin: 14px 0 12px; border-bottom: 1px solid var(--border); }
 #fields:empty + #tabs { margin-top: 0; }
 .tab {
   min-width: 0;
-  min-height: calc(var(--control-h) - 6px);
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: max(0px, calc(var(--radius) - 2px));
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
   background: transparent;
   box-shadow: none;
-  color: var(--muted);
+  margin-bottom: -1px;
 }
-.tab:hover:not(:disabled) { background: transparent; color: var(--fg); }
-.tab.active, .tab.active:hover:not(:disabled) { background: var(--input); border-color: var(--border); color: var(--fg); box-shadow: var(--shadow); }
-.tab .icon { color: inherit; }
-.tab.active .icon { color: var(--accent); }
-.tab.has-error::after { content: "●"; margin-left: 2px; font-size: 10px; color: var(--error); }
+.tab:hover:not(:disabled) { background: var(--hover); }
+.tab.active { border-bottom-color: var(--accent); color: var(--accent); }
+.tab.has-error::after { content: " ●"; color: var(--error); }
 /* A group: a heading over its fields, which line up with the fields around it. */
 .group { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; gap: 12px 16px; align-items: start; margin-top: 8px; }
 .group-head {
@@ -103,7 +90,7 @@ main { flex: 1; overflow: auto; padding: 16px 20px 8px; }
 .cell-errors li { cursor: pointer; }
 .cell-errors li:hover { text-decoration: underline; }
 .cell-errors li.more { cursor: default; text-decoration: none; color: var(--muted); }
-.lbl { padding-top: 6px; max-width: 14em; font-weight: 600; }
+.lbl { padding-top: 6px; max-width: 14em; }
 .lbl .req { color: var(--error); margin-left: 2px; }
 .ctl { min-width: 0; }
 .row { display: flex; gap: 8px; align-items: flex-start; }

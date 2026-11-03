@@ -10,8 +10,8 @@
   --border: #e4e4e7;
   --input-border: #d4d4d8;
   --input: #ffffff;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
+  --accent: #1261d1;
+  --accent-hover: #0e54b8;
   --accent-fg: #ffffff;
   --error: #dc2626;
   --ok: #16a34a;
@@ -41,9 +41,9 @@
     --border: #2e2e33;
     --input-border: #3f3f46;
     --input: #1c1c20;
-    --accent: #3b82f6;
-    --accent-hover: #2563eb;
-    --accent-fg: #ffffff;
+    --accent: #43a2fa;
+    --accent-hover: #3592e8;
+    --accent-fg: #000000;
     --error: #f87171;
     --ok: #4ade80;
     --hover: #27272a;
@@ -85,7 +85,6 @@ button {
   border-radius: var(--radius);
   background: var(--input);
   box-shadow: var(--shadow);
-  font-weight: 600;
   white-space: nowrap;
   cursor: default;
   transition: background-color .12s, border-color .12s, box-shadow .12s;
