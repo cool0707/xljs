@@ -41,6 +41,8 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
     コントロールの高さ（`--control-h`。ボタン・入力欄・セレクトで共通、開発モードは 28px）・角丸（`--radius`、枠は
     `--radius-box`＝最大 10px、チェックボックスは `--radius-check`）を持つ。チェックボックス・ラジオ・セレクト・進捗バーは
     `appearance: none` で描き直し、フォーカスはアクセントの枠＋薄いリング。タブは下線式。
+    余白は Fluent UI の段階（`--sp-xxs`〜`--sp-xxl`＝2・4・8・12・16・20・24px）だけを使う。ページの周り・節の間は 24、
+    項目の間は 16、入力欄とボタンの間は 8、入力欄と補足・エラーの間は 4。本文は 14px/20px、補足は 12px/16px、表の行は 32px。
     フォームの `accent` / `background` / `radius` オプションは `form.js` の `applyColors` がこれらの変数を上書きする。
   - 振り分け: `UI.SupportsWindows()` が true（Native）ならスクリプト（prelude）が組み込みページを `appOpen` で開いて
     JSON メッセージで操作する。false（console/mock）なら `UI.Form` / `UI.Table`（JSON で受け渡し）。

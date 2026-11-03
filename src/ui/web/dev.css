@@ -51,8 +51,8 @@ i + span { margin-left: 6px; }
 #toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 10px;
+  gap: var(--sp-m);
+  padding: var(--sp-s) var(--sp-m);
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   flex-wrap: wrap;
@@ -90,8 +90,8 @@ body.dragging { cursor: col-resize; }
 body.dragging iframe { pointer-events: none; }
 
 .bar {
-  display: flex; align-items: center; gap: 6px;
-  padding: 5px 8px;
+  display: flex; align-items: center; gap: var(--sp-s);
+  padding: var(--sp-xs) var(--sp-s);
   border-bottom: 1px solid var(--border);
   background: var(--panel);
   min-height: 36px;
@@ -174,7 +174,7 @@ body.dragging iframe { pointer-events: none; }
 .output .err { color: var(--error); }
 #status.ok { color: var(--ok); }
 #status.error { color: var(--error); }
-footer { padding: 4px 12px; }
+footer { padding: var(--sp-xs) var(--sp-m); }
 
 .wizard { max-width: 860px; }
 .wizard section { margin: 0 0 18px; }

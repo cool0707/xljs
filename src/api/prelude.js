@@ -2122,25 +2122,25 @@
   }
 
   function formSize(o, fields, hasRun, options) {
-    let h = 100;
-    if (o.description) h += 14 + 21 * Math.min(8, o.description.split("\n").reduce((n, l) => n + 1 + Math.floor(l.length / 40), 0));
+    let h = 120;
+    if (o.description) h += 20 + 20 * Math.min(8, o.description.split("\n").reduce((n, l) => n + 1 + Math.floor(l.length / 40), 0));
     // Fields above the tabs, plus the tallest tab.
     const heights = o.tabs.map(() => 0);
     let common = 0;
     for (const f of fields) {
-      let fh = 12 + (f.type === "textarea" ? 12 + 21 * (f.rows || 4) : f.type === "files" ? 12 + 21 * Math.max(3, f.rows || 3)
-        : f.type === "table" ? 32 + 29 * tableLines(f) : f.type === "chart" ? 10 + chartHeight(f)
+      let fh = 16 + (f.type === "textarea" ? 12 + 20 * (f.rows || 4) : f.type === "files" ? 12 + 20 * Math.max(3, f.rows || 3)
+        : f.type === "table" ? 40 + 33 * tableLines(f) : f.type === "chart" ? 12 + chartHeight(f)
           : f.type === "checkbox" || f.type === "radio" ? 28 : 32);
-      if (f.help) fh += 22;
+      if (f.help) fh += 20;
       if (f.tab >= 0) heights[f.tab] += fh;
       else common += fh;
     }
     for (const g of o.groups) {
-      const gh = 46 + (g.help ? 20 : 0); // the heading
+      const gh = 56 + (g.help ? 24 : 0); // the heading
       if (g.tab >= 0) heights[g.tab] += gh;
       else common += gh;
     }
-    h += common + (o.tabs.length ? 60 + Math.max(...heights) : 0);
+    h += common + (o.tabs.length ? 80 + Math.max(...heights) : 0);
     if (hasRun) h += 240;
     return {
       width: Number(options.width) || 600,

@@ -1,37 +1,56 @@
-main { flex: 1; overflow: auto; padding: 16px 20px 8px; }
-.icon { margin-right: .4em; }
-#description { margin: 0 0 14px; white-space: pre-wrap; }
-.fields { display: grid; grid-template-columns: max-content 1fr; gap: 12px 16px; align-items: start; }
+/* Spacing comes from base.css's --sp-* scale: 24 around the page and
+   between sections, 16 between fields, 8 between a control and its
+   button, 4 between a control and its help or error. */
+main { padding: var(--sp-xxl) var(--sp-xxl) var(--sp-xxl); }
+#description { margin: 0 0 var(--sp-xl); white-space: pre-wrap; }
+.fields { display: grid; grid-template-columns: max-content 1fr; gap: var(--sp-l) var(--sp-l); align-items: start; }
 #fields:empty { display: none; }
-#tabs { display: flex; flex-wrap: wrap; gap: 2px; margin: 14px 0 12px; border-bottom: 1px solid var(--border); }
+
+/* Tabs: underlined; the line is a rounded bar inside the tab. */
+#tabs { display: flex; flex-wrap: wrap; gap: var(--sp-xs); margin: var(--sp-xxl) 0 var(--sp-l); border-bottom: 1px solid var(--border); }
 #fields:empty + #tabs { margin-top: 0; }
 .tab {
+  position: relative;
   min-width: 0;
-  padding: 0 14px;
+  min-height: 40px;
+  padding: 0 var(--sp-m);
   border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
+  border-radius: var(--radius-check) var(--radius-check) 0 0;
   background: transparent;
   box-shadow: none;
-  margin-bottom: -1px;
+}
+.tab::before {
+  content: "";
+  position: absolute;
+  left: var(--sp-m);
+  right: var(--sp-m);
+  bottom: -1px;
+  height: 3px;
+  border-radius: 3px;
+  background: transparent;
 }
 .tab:hover:not(:disabled) { background: var(--hover); }
-.tab.active { border-bottom-color: var(--accent); color: var(--accent); }
-.tab.has-error::after { content: " ●"; color: var(--error); }
+.tab:hover:not(:disabled)::before { background: var(--input-border); }
+.tab.active { color: var(--accent); }
+.tab.active::before, .tab.active:hover::before { background: var(--accent); }
+.tab.has-error::after { content: "●"; margin-left: var(--sp-xs); font-size: 10px; color: var(--error); }
+
 /* A group: a heading over its fields, which line up with the fields around it. */
-.group { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; gap: 12px 16px; align-items: start; margin-top: 8px; }
+.group { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; gap: var(--sp-l) var(--sp-l); align-items: start; margin-top: var(--sp-s); }
+.fields > .group:first-child { margin-top: 0; }
 .group-head {
   grid-column: 1 / -1;
   margin: 0;
-  padding-bottom: 6px;
+  padding-bottom: var(--sp-s);
   border-bottom: 1px solid var(--border);
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 22px;
   font-weight: 600;
 }
 .group-head .icon { color: var(--accent); }
-.group-help { grid-column: 1 / -1; margin-top: -8px; color: var(--muted); font-size: 12px; white-space: pre-wrap; }
-.lbl.wide, .ctl.wide { grid-column: 1 / -1; }
-.lbl.wide { padding-top: 0; max-width: none; }
+.group-help { grid-column: 1 / -1; margin-top: calc(var(--sp-s) - var(--sp-l)); color: var(--muted); font-size: 12px; line-height: 16px; white-space: pre-wrap; }
+
+/* Tables (table fields). */
 .ftable {
   overflow: auto;
   border: 1px solid var(--border);
@@ -43,7 +62,7 @@ main { flex: 1; overflow: auto; padding: 16px 20px 8px; }
 }
 .ftable:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
 .ftable table { border-collapse: collapse; min-width: 100%; }
-.ftable th, .ftable td { height: 28px; padding: 0 8px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.ftable th, .ftable td { height: 32px; padding: 0 var(--sp-m); border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
 .ftable th {
   position: sticky;
   top: 0;
@@ -57,7 +76,7 @@ main { flex: 1; overflow: auto; padding: 16px 20px 8px; }
 }
 .ftable th[data-sort=asc]::after { content: " ▲"; font-size: 10px; }
 .ftable th[data-sort=desc]::after { content: " ▼"; font-size: 10px; }
-.ftable th.sel, .ftable td.sel { width: 30px; padding: 0 0 0 8px; }
+.ftable th.sel, .ftable td.sel { width: 32px; padding: 0 0 0 var(--sp-m); }
 .ftable td.num { text-align: right; }
 .ftable tbody tr:last-child td { border-bottom: 0; }
 .ftable tbody tr:hover { background: var(--hover); }
@@ -65,13 +84,13 @@ main { flex: 1; overflow: auto; padding: 16px 20px 8px; }
 .ftable tr.empty td { color: var(--muted); text-align: center; }
 .invalid .ftable { border-color: var(--error); }
 /* Editable cells: borderless inputs that show their border on focus. */
-.ftable td.edit { padding: 0 2px; }
+.ftable td.edit { padding: 0 var(--sp-xs); }
 .ctl .ftable td.edit input, .ctl .ftable td.edit select {
   width: 100%;
   min-width: 7em;
-  height: 24px;
+  height: 26px;
   min-height: 0;
-  padding: 0 6px;
+  padding: 0 var(--sp-s);
   border: 1px solid transparent;
   border-radius: var(--radius-check);
   background-color: transparent;
@@ -86,43 +105,49 @@ main { flex: 1; overflow: auto; padding: 16px 20px 8px; }
 .ctl .ftable td.edit :is(input, select):focus { border-color: var(--accent); background-color: var(--input); outline: none; }
 .ctl .ftable td.bad :is(input, select), .ctl .ftable td.bad:not(.edit) { border-color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
 .ftable tbody tr.bad-row > td:first-child { box-shadow: inset 3px 0 var(--error); }
-.cell-errors { margin: 4px 0 0; padding: 0; list-style: none; color: var(--error); font-size: 12px; }
+.cell-errors { margin: var(--sp-xs) 0 0; padding: 0; list-style: none; color: var(--error); font-size: 12px; line-height: 16px; }
 .cell-errors li { cursor: pointer; }
 .cell-errors li:hover { text-decoration: underline; }
 .cell-errors li.more { cursor: default; text-decoration: none; color: var(--muted); }
-.lbl { padding-top: 6px; max-width: 14em; }
-.lbl .req { color: var(--error); margin-left: 2px; }
+/* A field: its label beside the control, centered on the control's first line. */
+.lbl { padding-top: calc((var(--control-h) - 20px) / 2); max-width: 14em; }
+.lbl .req { color: var(--error); margin-left: var(--sp-xxs); }
+.lbl.wide, .ctl.wide { grid-column: 1 / -1; }
+.lbl.wide { padding-top: 0; margin-bottom: calc(var(--sp-s) - var(--sp-l)); max-width: none; }
 .ctl { min-width: 0; }
-.row { display: flex; gap: 8px; align-items: flex-start; }
+.row { display: flex; gap: var(--sp-s); align-items: flex-start; }
 .row > input, .row > textarea { flex: 1; min-width: 0; }
-.help { color: var(--muted); font-size: 12px; margin-top: 4px; }
-.err { color: var(--error); font-size: 12px; margin-top: 4px; }
+.help, .err { margin-top: var(--sp-xs); font-size: 12px; line-height: 16px; }
+.help { color: var(--muted); }
+.err { color: var(--error); }
 .invalid :is(input, select, textarea):not([type=checkbox]):not([type=radio]) { border-color: var(--error); }
 .invalid :is(input, select, textarea):focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 25%, transparent); }
 select.empty { color: var(--muted); }
 select.empty option:not(.placeholder) { color: var(--fg); }
-.choices { display: flex; flex-wrap: wrap; gap: 6px 18px; padding-top: 6px; }
-.choices label, .check { display: inline-flex; align-items: center; gap: 8px; }
-.check { padding-top: 6px; }
+.choices { display: flex; flex-wrap: wrap; gap: var(--sp-s) var(--sp-xxl); padding-top: calc((var(--control-h) - 20px) / 2); }
+.choices label, .check { display: inline-flex; align-items: center; gap: var(--sp-s); }
+.check { padding-top: calc((var(--control-h) - 20px) / 2); }
 .drop.over input, .drop.over textarea { border-color: var(--accent); border-style: dashed; background-color: color-mix(in srgb, var(--accent) 6%, var(--input)); }
-.files { display: flex; flex-direction: column; gap: 6px; }
+.files { display: flex; flex-direction: column; gap: var(--sp-s); }
 .files button { width: 100%; }
-.files textarea { min-height: 4.6em; white-space: pre; }
-#form-error { margin: 12px 0 0; white-space: pre-wrap; }
-#run { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
-.run-head { display: flex; gap: 12px; }
+.files textarea { min-height: calc(var(--control-h) * 2 + var(--sp-s)); white-space: pre; }
+#form-error { margin: var(--sp-l) 0 0; white-space: pre-wrap; }
+
+/* The run (onSubmit): progress and log below the form. */
+#run { margin-top: var(--sp-xxl); padding-top: var(--sp-l); border-top: 1px solid var(--border); }
+.run-head { display: flex; gap: var(--sp-m); }
 #run-message { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #run-count { color: var(--muted); font-variant-numeric: tabular-nums; }
-#run progress { margin: 8px 0; }
+#run progress { margin: var(--sp-s) 0 var(--sp-m); }
 #log {
-  margin: 8px 0 0;
-  padding: 6px 8px;
+  margin: 0;
+  padding: var(--sp-s) var(--sp-m);
   height: 140px;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-box);
   background: var(--panel);
-  font: 12px/1.5 var(--mono);
+  font: 12px/18px var(--mono);
   white-space: pre-wrap;
   word-break: break-all;
 }

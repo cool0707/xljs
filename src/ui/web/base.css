@@ -26,6 +26,14 @@
   --radius-box: min(var(--radius), 10px);
   --radius-check: min(var(--radius), 4px);
   --control-h: 32px;
+  /* Spacing (after Fluent UI's scale): use these, not other sizes. */
+  --sp-xxs: 2px;
+  --sp-xs: 4px;
+  --sp-s: 8px;
+  --sp-m: 12px;
+  --sp-l: 16px;
+  --sp-xl: 20px;
+  --sp-xxl: 24px;
   --font: "Yu Gothic UI", "Meiryo UI", "Segoe UI", system-ui, sans-serif;
   --mono: "BIZ UDGothic", Consolas, "MS Gothic", monospace;
   --xljs-titlebar-bg: var(--bg);
@@ -58,7 +66,7 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
-  font: 14px/1.5 var(--font);
+  font: 14px/20px var(--font);
   background: var(--bg);
   color: var(--fg);
   display: flex;
@@ -77,10 +85,10 @@ button {
   align-items: center;
   justify-content: center;
   gap: 0;
-  min-width: 80px;
+  min-width: 96px;
   min-height: var(--control-h);
   margin: 0;
-  padding: 0 14px;
+  padding: 0 var(--sp-m);
   border: 1px solid var(--input-border);
   border-radius: var(--radius);
   background: var(--input);
@@ -93,7 +101,7 @@ button:hover:not(:disabled) { background: var(--hover); }
 button:disabled { opacity: .5; }
 button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
 button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
-button.small { min-width: 0; padding: 0 12px; }
+button.small { min-width: 0; }
 
 /* ---- text inputs */
 input[type=text], input[type=password], input[type=number], input[type=date], input[type=month],
@@ -182,13 +190,13 @@ progress:indeterminate::-webkit-progress-bar {
 
 footer {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-s);
   align-items: center;
-  padding: 12px 20px;
+  padding: var(--sp-l) var(--sp-xxl);
   border-top: 1px solid var(--border);
   background: var(--panel);
 }
 footer .status { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .error-text { color: var(--error); }
-main { flex: 1; overflow: auto; padding: 18px 20px 10px; }
-.icon { margin-right: .4em; }
+main { flex: 1; overflow: auto; padding: var(--sp-xxl); }
+.icon { margin-right: 6px; }
