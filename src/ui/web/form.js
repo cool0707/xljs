@@ -342,7 +342,7 @@ function tableControl(f, id) {
   const all = el("input", { type: "checkbox", tabIndex: -1 });
   const wrap = el("div", { className: "ftable" + (edit ? " editable" : ""), id, tabIndex: 0 }, el("table", {}, head, body));
   const list = el("ul", { className: "cell-errors", hidden: true });
-  wrap.style.maxHeight = (34 + 33 * (f.rows || 8)) + "px";
+  wrap.style.maxHeight = (32 + 29 * (f.rows || 8)) + "px";
 
   function header() {
     head.textContent = "";

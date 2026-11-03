@@ -2129,7 +2129,7 @@
     let common = 0;
     for (const f of fields) {
       let fh = 16 + (f.type === "textarea" ? 12 + 20 * (f.rows || 4) : f.type === "files" ? 12 + 20 * Math.max(3, f.rows || 3)
-        : f.type === "table" ? 40 + 33 * tableLines(f) : f.type === "chart" ? 12 + chartHeight(f)
+        : f.type === "table" ? 36 + 29 * tableLines(f) : f.type === "chart" ? 12 + chartHeight(f)
           : f.type === "checkbox" || f.type === "radio" ? 28 : 32);
       if (f.help) fh += 20;
       if (f.tab >= 0) heights[f.tab] += fh;

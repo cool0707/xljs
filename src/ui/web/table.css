@@ -1,4 +1,4 @@
-:root { --row-h: 32px; --head-h: 32px; }
+:root { --row-h: 28px; --head-h: 32px; }
 .toolbar {
   display: flex;
   gap: var(--sp-s);
