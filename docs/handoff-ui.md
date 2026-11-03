@@ -37,6 +37,11 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
 - **フェーズ 2（`ui.form` / `ui.table`）: 実装済み**（ブランチ `ccr-374d7106-mw1l5b`）。
   - 組み込みページ: `internal/ui/web/`（`form.html` `table.html`＋`bridge.js` `base.css`）を `ui.BuiltinFS` として埋め込み、
     `https://app.xljs/_xljs/` で配信（`api.windowAssets` がスクリプトのアセットと重ねる）。ライト/ダーク対応。
+  - 見た目（Rust 版で shadcn/ui 風に変更）: `base.css` の `:root` の変数が配色（zinc 系のニュートラル＋アクセントの青）・
+    コントロールの高さ（`--control-h`。ボタン・入力欄・セレクトで共通、開発モードは 28px）・角丸（`--radius`、枠は
+    `--radius-box`＝最大 10px、チェックボックスは `--radius-check`）を持つ。チェックボックス・ラジオ・セレクト・進捗バーは
+    `appearance: none` で描き直し、フォーカスはアクセントの枠＋薄いリング。タブは区切られたボタン群（セグメント）。
+    フォームの `accent` / `background` / `radius` オプションは `form.js` の `applyColors` がこれらの変数を上書きする。
   - 振り分け: `UI.SupportsWindows()` が true（Native）ならスクリプト（prelude）が組み込みページを `appOpen` で開いて
     JSON メッセージで操作する。false（console/mock）なら `UI.Form` / `UI.Table`（JSON で受け渡し）。
   - `appOpen` は `onMessage(msg, files)` と `post` / `isClosed` / `cancelRequested` / `clearCancel` を持つ（フェーズ 3 の土台）。

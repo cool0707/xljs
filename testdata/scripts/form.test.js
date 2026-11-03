@@ -164,4 +164,6 @@ await rejects(() => ui.form({ fields: [], accent: "red; } body { display: none" 
 await rejects(() => ui.form({ fields: [], accent: { light: 12 } }), /accent/);
 await rejects(() => ui.form({ fields: [], background: "red; } body { display: none" }), /background/);
 await rejects(() => ui.form({ fields: [], background: { dark: 12 } }), /background/);
+await rejects(() => ui.form({ fields: [], radius: "round" }), /radius/);
+await rejects(() => ui.form({ fields: [], radius: -1 }), /radius/);
 console.log("form ok");

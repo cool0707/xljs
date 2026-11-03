@@ -1,9 +1,9 @@
-:root { --row-h: 26px; --head-h: 32px; }
+:root { --row-h: 28px; --head-h: 34px; }
 .toolbar {
   display: flex;
   gap: 8px;
   align-items: center;
-  padding: 8px 12px;
+  padding: 10px 12px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
@@ -15,7 +15,7 @@
   flex: 1;
   overflow: auto;
   position: relative;
-  background: var(--panel);
+  background: var(--bg);
   outline: none;
   font-variant-numeric: tabular-nums;
 }
@@ -30,11 +30,11 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  background: var(--bg);
+  background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 #head.trow { height: var(--head-h); }
-#head .cell { line-height: var(--head-h); font-size: inherit; font-weight: normal; }
+#head .cell { line-height: var(--head-h); font-size: inherit; font-weight: 600; color: var(--muted); }
 #body { position: relative; }
 #rows { position: absolute; top: 0; left: 0; min-width: 100%; }
 .cell {
@@ -49,7 +49,7 @@
 }
 .trow .cell:last-child { border-right: none; }
 .num { text-align: right; }
-.gutter { color: var(--muted); text-align: right; font-weight: normal; background: var(--bg); }
+.gutter { color: var(--muted); text-align: right; font-weight: normal; background: var(--panel); }
 #head .cell { position: relative; padding-right: 18px; }
 #head .cell:not(.gutter):hover { background: var(--hover); }
 #head .sort { position: absolute; right: 8px; font-size: 10px; color: var(--muted); }

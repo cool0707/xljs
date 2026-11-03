@@ -480,6 +480,7 @@
     "form.badTab": "tab {0} must be an object like { label, fields }",
     "form.badButton": "ui.form: button {0} needs onClick",
     "form.badAccent": "ui.form: accent must be a CSS color like \"#c42b1c\" or { light, dark } (got \"{0}\")",
+    "form.badRadius": "ui.form: radius must be a number of pixels or \"none\", \"small\", \"medium\", \"large\" or \"full\" (got \"{0}\")",
     "form.badBackground": "ui.form: background must be a CSS color like \"#fff8e1\" or { light, dark } (got \"{0}\")",
     "form.noButton": "ui.form: no button \"{0}\"",
     "form.noField": "the form has no field \"{0}\"",

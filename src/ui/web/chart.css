@@ -1,5 +1,5 @@
 /* Charts (chart.html, chart fields of forms, xljs.chart). */
-body.chart-page { margin: 0; height: 100vh; display: flex; flex-direction: column; background: var(--panel); }
+body.chart-page { margin: 0; height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
 body.chart-page .xljs-chart { flex: 1; min-height: 0; padding: 8px; box-sizing: border-box; }
 .xljs-chart { position: relative; }
 .xljs-chart.xljs-gantt { overflow: auto; }

@@ -5,7 +5,7 @@ h1 { margin: 0 0 8px; font-size: 16px; font-weight: 600; overflow: hidden; text-
   margin: 12px 0 0;
   padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-box);
   background: var(--input);
   font: 12px/1.5 var(--mono);
   white-space: pre-wrap;
