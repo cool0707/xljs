@@ -12,6 +12,7 @@ pub(crate) mod numfmt;
 mod pdf;
 mod sqlite;
 mod xlsx_calc;
+mod xlsx_cellimage;
 pub(crate) mod gopath;
 pub(crate) mod js;
 pub mod remote;
