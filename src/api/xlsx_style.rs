@@ -49,6 +49,7 @@ struct AlignSpec {
     horizontal: Option<String>,
     vertical: Option<String>,
     wrap: Option<bool>,
+    shrink: Option<bool>,
     indent: Option<i64>,
     rotation: Option<i64>,
 }
@@ -227,6 +228,7 @@ pub fn parse_style(x: &Value) -> Result<StyleSpec> {
             horizontal: opt_s(&al, "horizontal"),
             vertical: opt_s(&al, "vertical"),
             wrap: opt_b(&al, "wrap"),
+            shrink: opt_b(&al, "shrink"),
             indent: opt_i(&al, "indent"),
             rotation: opt_i(&al, "rotation"),
         };
@@ -432,6 +434,9 @@ fn apply(st: &mut Style, sp: &StyleSpec, sides: Option<&Sides>, default_font: &(
         }
         if let Some(w) = a.wrap {
             al.set_wrap_text(w);
+        }
+        if let Some(v) = a.shrink {
+            al.set_shrink_to_fit(v);
         }
         if let Some(i) = a.indent {
             al.set_indent(i.max(0) as u32);
@@ -689,6 +694,7 @@ fn style_object<'js>(ctx: &rquickjs::Ctx<'js>, st: &Style, df: &(String, f64)) -
                     ("horizontal", s(h)),
                     ("vertical", s(vv)),
                     ("wrap", Some(v(ctx, a.wrap_text()))),
+                    ("shrink", Some(v(ctx, a.shrink_to_fit()))),
                     ("indent", Some(v(ctx, a.indent() as f64))),
                     ("rotation", Some(v(ctx, a.text_rotation() as f64))),
                 ],

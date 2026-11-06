@@ -48,6 +48,9 @@ equal(b("A2").top.color, "#FF0000");
 // Alignment, rotation, wrap.
 ws.style("C1", { alignment: { horizontal: "right", vertical: "middle", wrap: true, indent: 2, rotation: 45 } });
 deepEqual(ws.cell("C1").getStyle().alignment, { horizontal: "right", vertical: "center", wrap: true, indent: 2, rotation: 45 });
+// Shrink to fit.
+ws.style("C2", { alignment: { shrink: true } });
+deepEqual(ws.cell("C2").getStyle().alignment, { shrink: true });
 
 // Values keep their types after styling; dates keep a date format.
 ws.setValue("D1", new Date(2026, 0, 2));
@@ -90,4 +93,5 @@ throws(() => ws.style("1A:B", { bold: true }), /セル範囲/);
 wb.save("styled.xlsx");
 const back = workbooks.open("styled.xlsx");
 equal(back.sheet("table").cell("A1").getStyle().fill, "#DDEBF7");
+equal(back.sheet("s").cell("C2").getStyle().alignment.shrink, true, "shrink to fit survives saving");
 console.log("style ok");

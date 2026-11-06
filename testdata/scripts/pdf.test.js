@@ -156,6 +156,18 @@ ok(!/<div data-n[^>]*><span class="xljs-shrink"/.test(kh), "a shrunk number is n
 ok(zoom("前") > 0.15 && zoom("前") < 0.35, "rich text is shrunk by its larger runs: " + zoom("前"));
 ok(!/xljs-shrink[^>]*>折り返す/.test(kh), "wrapped text is not shrunk");
 ok(/width:42pt;height:15pt"><span class="xljs-shrink" style="zoom:[0-9.]+">とても/.test(kh), "shrunk text does not run into the next cell");
+// Set by a script, and kept when the book is saved and opened again.
+const sb = workbooks.create();
+const ss = sb.addSheet("s");
+ss.setColumnWidth("A", 8);
+ss.setValue("A1", "スクリプトで縮小する長い文字列");
+ss.style("A1", { alignment: { shrink: true } });
+ok(/xljs-shrink[^>]*>スクリプト/.test(ss.toHtml()), "shrink set by a script is printed");
+const kb = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "richtext.xlsx"));
+kb.save("shrink-saved.xlsx");
+const kh2 = workbooks.open("shrink-saved.xlsx").sheet("縮小").toHtml();
+ok(/xljs-shrink[^>]*>とても長い/.test(kh2), "shrink to fit survives saving");
+equal(workbooks.open("shrink-saved.xlsx").sheets[0].getValue("B1"), "前インライン後", "inline rich text survives saving");
 
 // Shapes, text boxes, lines, groups and a freeform (testdata/xlsx/make_shapes.py).
 const sh = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "shapes.xlsx")).sheets[0].toHtml();
