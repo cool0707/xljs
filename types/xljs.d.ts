@@ -1038,6 +1038,8 @@ declare global {
     copy(from: PathLike, to: PathLike): void;
     cwd(): string;
     chdir(path: PathLike): void;
+    /** デスクトップ・ドキュメントなどのフォルダのパス（OneDrive などへの移動も反映） */
+    knownFolder(name: WellKnownDirectory): string;
   }
   const fs: Fs;
 
@@ -1069,6 +1071,51 @@ declare global {
     openExternal(url: string): void;
     /** URL なら openExternal、それ以外は openPath */
     open(target: PathLike): void;
+    /**
+     * ショートカット（.lnk）を作る・編集する。target が URL なら .url（インターネットショートカット）。
+     * 名前が .lnk / .url で終わらなければ付け足す。書いたファイルのパスを返す（失敗は例外）。
+     * operation: "create"（既定。指定した項目だけで作り直す）、"update"（既存のショートカットの指定した項目だけ変える）、
+     * "replace"（既存のショートカットを作り直す）
+     * @example shell.writeShortcutLink(path.join(fs.knownFolder("desktop"), "売上"), { target: "\\\\server\\共有\\売上.xlsx" })
+     */
+    writeShortcutLink(path: PathLike, options: ShortcutOptions): string;
+    writeShortcutLink(path: PathLike, operation: "create" | "update" | "replace", options: ShortcutOptions): string;
+    /** ショートカット（.lnk / .url）を読む。リンク先は target（環境変数は展開済み） */
+    readShortcutLink(path: PathLike): ShortcutDetails;
+  }
+  interface ShortcutOptions {
+    /** リンク先（ファイル・フォルダ・URL）。相対パスはカレントディレクトリから。"%SystemRoot%\\..." は展開せずに保存する */
+    target?: PathLike;
+    /** 引数 */
+    args?: string;
+    /** 作業フォルダー */
+    cwd?: PathLike;
+    /** コメント */
+    description?: string;
+    /** アイコンのファイル（.ico・.exe・.dll） */
+    icon?: PathLike;
+    /** アイコンの番号（既定 0） */
+    iconIndex?: number;
+    /** 実行時の大きさ（既定 "normal"） */
+    windowState?: "normal" | "maximized" | "minimized";
+    /** ショートカットキー（"Ctrl+Alt+K" など。"" でなし） */
+    hotkey?: string;
+    /** 管理者として実行 */
+    runAsAdmin?: boolean;
+  }
+  interface ShortcutDetails {
+    target: string;
+    args: string;
+    cwd: string;
+    description: string;
+    icon: string;
+    iconIndex: number;
+    windowState: "normal" | "maximized" | "minimized";
+    /** "Ctrl+Alt+K" など（なしは ""） */
+    hotkey: string;
+    runAsAdmin: boolean;
+    /** 読んだファイルの絶対パス（.lnk / .url を補ったときはそれを付けたもの） */
+    path: string;
   }
   const shell: Shell;
 

@@ -772,6 +772,8 @@
     copy: (from, to) => native.fsCopy(toPath(from), toPath(to)),
     cwd: () => native.fsCwd(),
     chdir: (p) => native.fsChdir(toPath(p)),
+    /** The path of a known folder ("desktop", "documents", ...; null for other names). */
+    knownFolder: (name) => native.knownFolder(String(name)) || null,
   };
   defineGlobal("fs", fsObj);
 
@@ -890,6 +892,20 @@
       if (!isURL(url)) throw new TypeError(T("shell.expectedURL", url));
       native.shellOpen(String(url));
     },
+  };
+  // Shortcuts (.lnk, and .url for URLs): Electron's readShortcutLink /
+  // writeShortcutLink. Paths may be handles; "%VAR%" in target, cwd and
+  // icon stay unexpanded (the shortcut expands them when it is opened).
+  const linkPath = (x) => (typeof x === "string" ? x : toPath(x));
+  shellObj.readShortcutLink = (p) => JSON.parse(native.shellReadShortcut(toPath(p)));
+  shellObj.writeShortcutLink = (p, operation, options) => {
+    if (operation !== null && typeof operation === "object") [operation, options] = ["create", operation];
+    const o = Object.assign({}, options || {});
+    for (const k of ["target", "cwd", "icon"]) if (o[k] !== undefined && o[k] !== null) o[k] = linkPath(o[k]);
+    for (const k of ["args", "description", "windowState", "hotkey"]) if (o[k] !== undefined && o[k] !== null) o[k] = String(o[k]);
+    if (o.iconIndex !== undefined && o.iconIndex !== null) o.iconIndex = Math.trunc(Number(o.iconIndex)) || 0;
+    if (o.runAsAdmin !== undefined && o.runAsAdmin !== null) o.runAsAdmin = !!o.runAsAdmin;
+    return native.shellWriteShortcut(toPath(p), operation === undefined || operation === null ? "create" : String(operation), JSON.stringify(o));
   };
   shellObj.showInFolder = shellObj.showItemInFolder;
   shellObj.open = (target) => (isURL(target) ? shellObj.openExternal(target) : shellObj.openPath(target));

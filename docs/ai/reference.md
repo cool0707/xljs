@@ -108,6 +108,8 @@ description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows �
 | `shell.showItemInFolder(p)` | エクスプローラーでファイルを選択した状態で開く（配列で複数可） |
 | `shell.openPath(p)` | 既定のアプリで開く（.xlsx なら Excel、フォルダならエクスプローラー） |
 | `shell.openExternal(url)` | ブラウザで開く |
+| `shell.writeShortcutLink(p, [op], { target, args, cwd, description, icon, iconIndex, windowState, hotkey, runAsAdmin })` | ショートカット（.lnk。URL なら .url）を作る・編集する。op は "create"（既定）/ "update"（指定した項目だけ変更）/ "replace"。書いたパスを返す |
+| `shell.readShortcutLink(p)` | ショートカットを読む（`target` がリンク先。ほかは上と同じ項目） |
 
 ### ad（Active Directory。ドメイン参加の Windows のみ）
 
