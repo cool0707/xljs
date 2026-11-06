@@ -1,6 +1,6 @@
 """Builds richtext.xlsx: cells with several fonts in one cell (rich text) and
 cells shrunk to fit (sheet 縮小) for the tests of the print layout
-(src/api/xlsx_print.rs) and of reading inline strings (src/api/xlsx.rs).
+(src/api/xlsx_print.rs) and of reading inline strings (umya-spreadsheet).
 Run with openpyxl: python3 testdata/xlsx/make_richtext.py
 
 openpyxl writes rich text as inline strings (t="inlineStr"); Excel writes

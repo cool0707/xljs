@@ -38,21 +38,14 @@ pub struct RawPrint {
     pub hidden: bool,
     /// pageSetup blackAndWhite: printed without colors.
     pub black_and_white: bool,
-    /// Cells (column, row) whose style says "shrink to fit" (alignment
-    /// shrinkToFit, which umya-spreadsheet does not keep).
-    pub shrink: HashSet<(u32, u32)>,
 }
 
 /// Reads the page setup of every sheet of an xlsx file (see RawPrint).
 pub fn collect_raw(data: &[u8]) -> HashMap<String, RawPrint> {
     let mut out = HashMap::new();
-    let shrink_xfs = super::xlsx::zip_part(data, "xl/styles.xml").map(|b| shrink_styles(&b)).unwrap_or_default();
     for_each_sheet(data, |s, name, xml| {
         let mut r = raw_print(xml);
         r.hidden = matches!(s.attr("state"), Some("hidden" | "veryHidden"));
-        if !shrink_xfs.is_empty() {
-            r.shrink = styled_cells(xml, &shrink_xfs);
-        }
         out.insert(name.to_string(), r);
     });
     out
@@ -82,41 +75,6 @@ pub(super) fn for_each_sheet(data: &[u8], mut f: impl FnMut(&super::xlsx_chart::
     }
 }
 
-/// The indexes of the cell formats (cellXfs) of styles.xml with shrinkToFit.
-fn shrink_styles(xml: &[u8]) -> HashSet<usize> {
-    let Some(ss) = parse(xml) else { return HashSet::new() };
-    let Some(xfs) = ss.child("cellXfs") else { return HashSet::new() };
-    xfs.all("xf")
-        .enumerate()
-        .filter(|(_, x)| x.child("alignment").and_then(|a| a.attr("shrinkToFit")).is_some_and(|v| v == "1" || v == "true"))
-        .map(|(i, _)| i)
-        .collect()
-}
-
-/// The cells of a sheet's XML whose style (s) is one of xfs.
-fn styled_cells(xml: &[u8], xfs: &HashSet<usize>) -> HashSet<(u32, u32)> {
-    static CELL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"<c\b([^>]*)>"#).unwrap());
-    static ATTR: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"\b([rs])="([^"]*)""#).unwrap());
-    let s = String::from_utf8_lossy(xml);
-    let mut out = HashSet::new();
-    for c in CELL.captures_iter(&s) {
-        let (mut r, mut st) = (None, None);
-        for a in ATTR.captures_iter(&c[1]) {
-            match &a[1] {
-                "r" => r = Some(a[2].to_string()),
-                _ => st = a[2].parse::<usize>().ok(),
-            }
-        }
-        if let (Some(r), Some(st)) = (r, st)
-            && xfs.contains(&st)
-            && let Ok(pos) = super::xlsx::parse_ref(&r)
-        {
-            out.insert(pos);
-        }
-    }
-    out
-}
-
 /// The page setup of a sheet's XML. Only the elements before sheetData and
 /// after it matter, so the cells are skipped with a plain search.
 fn raw_print(xml: &[u8]) -> RawPrint {
@@ -137,7 +95,6 @@ fn raw_print(xml: &[u8]) -> RawPrint {
         grid_lines: on(attr("printOptions", "gridLines")),
         hidden: false,
         black_and_white: on(attr("pageSetup", "blackAndWhite")),
-        shrink: HashSet::new(),
     }
 }
 
@@ -517,8 +474,6 @@ struct Sheet<'a> {
     table: HashMap<(u32, u32), Overlay>,
     /// Printed in black and white (no fills, black text and lines).
     mono: bool,
-    /// The cells shrunk to fit (RawPrint::shrink).
-    shrink: HashSet<(u32, u32)>,
     /// The cells that show a picture placed in a cell (xlsx_calc::cell_image).
     images: HashMap<(u32, u32), usize>,
 }
@@ -614,7 +569,6 @@ impl<'a> Sheet<'a> {
             font,
             table: super::xlsx_table::overlays(ws, &b.table_styles),
             mono: b.print.get(name).is_some_and(|p| p.black_and_white),
-            shrink: b.print.get(name).map(|p| p.shrink.clone()).unwrap_or_default(),
             images,
         })
     }
@@ -1829,7 +1783,7 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
             let val = sh.val(vc, vr);
             let css = cell_css(sh, st, &val, sides, sh.table.get(&(vc, vr)));
             // Shrink to fit (Excel leaves it out for wrapped and rotated text).
-            let shrink = sh.shrink.contains(&(vc, vr)) && !css.wrap && !css.rotated;
+            let shrink = st.alignment().is_some_and(|a| a.shrink_to_fit()) && !css.wrap && !css.rotated;
             let class = classes.class(&css.td, &css.div);
             out.push_str("<td");
             if !class.is_empty() {
