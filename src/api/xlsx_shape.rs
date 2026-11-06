@@ -171,9 +171,16 @@ fn group_html(ctx: &Ctx, g: &Node, x: &Xfrm, w: f64, h: f64) -> String {
 }
 
 fn picture_html(ctx: &Ctx, pic: &Node, x: &Xfrm) -> String {
-    let Some(id) = pic.find("blip").and_then(|b| b.attr("embed")) else { return String::new() };
-    let Some((_, part)) = ctx.rels.get(id) else { return String::new() };
-    let Some(data) = ctx.parts.files.get(part) else { return String::new() };
+    // An SVG picture is a PNG fallback in a:blip (rendered small, at the
+    // picture's size on screen) with the SVG itself in the blip's extension
+    // (asvg:svgBlip); use the SVG so that it stays sharp in a PDF.
+    let blip = pic.find("blip");
+    let found = |b: Option<&Node>| {
+        let id = b?.attr("embed")?;
+        let (_, part) = ctx.rels.get(id)?;
+        Some((part, ctx.parts.files.get(part)?))
+    };
+    let Some((part, data)) = found(blip.and_then(|b| b.find("svgBlip"))).or_else(|| found(blip)) else { return String::new() };
     let lower = part.to_lowercase();
     let mime = match lower.rsplit('.').next().unwrap_or("") {
         "png" => "image/png",
@@ -183,11 +190,51 @@ fn picture_html(ctx: &Ctx, pic: &Node, x: &Xfrm) -> String {
         "jpg" | "jpeg" => "image/jpeg",
         _ => return String::new(), // EMF/WMF: browsers cannot show them
     };
+    let svg;
+    let data = if mime == "image/svg+xml" {
+        svg = svg_stretched(data);
+        svg.as_slice()
+    } else {
+        data.as_slice()
+    };
     let flip = if x.flip_h || x.flip_v { format!("transform:scale({},{});", if x.flip_h { -1 } else { 1 }, if x.flip_v { -1 } else { 1 }) } else { String::new() };
     format!(
         "<img alt=\"\" src=\"data:{mime};base64,{}\" style=\"position:absolute;inset:0;width:100%;height:100%;{flip}\">",
         base64::engine::general_purpose::STANDARD.encode(data)
     )
+}
+
+/// An SVG that fills the picture's box as Excel draws it: stretched
+/// (preserveAspectRatio="none") and scaled (a viewBox from width and height
+/// when it has none; without one a browser draws it at its own size).
+fn svg_stretched(data: &[u8]) -> Vec<u8> {
+    let s = String::from_utf8_lossy(data);
+    let Some(start) = s.match_indices("<svg").map(|(i, _)| i).find(|&i| s[i + 4..].starts_with(|c: char| c.is_whitespace() || c == '>' || c == '/')) else {
+        return data.to_vec();
+    };
+    let Some(len) = s[start..].find('>') else { return data.to_vec() };
+    let mut end = start + len;
+    if s[..end].ends_with('/') {
+        end -= 1;
+    }
+    let tag = &s[start..end];
+    let attr = |name: &str| {
+        let i = tag.match_indices(name).map(|(i, _)| i).find(|&i| tag[..i].ends_with(char::is_whitespace) && tag[i + name.len()..].trim_start().starts_with('='))?;
+        let rest = tag[i + name.len()..].trim_start()[1..].trim_start();
+        let q = rest.chars().next().filter(|c| *c == '"' || *c == '\'')?;
+        rest[1..].split(q).next()
+    };
+    let mut add = String::new();
+    if attr("viewBox").is_none() {
+        let size = |name| attr(name).and_then(|v| v.trim().trim_end_matches("px").trim().parse::<f64>().ok()).filter(|v| *v > 0.0);
+        if let (Some(w), Some(h)) = (size("width"), size("height")) {
+            let _ = write!(add, " viewBox=\"0 0 {} {}\"", n(w), n(h));
+        }
+    }
+    if attr("preserveAspectRatio").is_none() {
+        add.push_str(" preserveAspectRatio=\"none\"");
+    }
+    format!("{}{add}{}", &s[..end], &s[end..]).into_bytes()
 }
 
 /// A fill or line color: "none", a color, or None (not said).
@@ -796,5 +843,37 @@ mod tests {
         tail.insert("adj2".to_string(), 100000.0);
         assert_eq!(preset_path("wedgeRectCallout", 120.0, 60.0, &tail).unwrap().0, "M0,0 L120,0 L120,60 L50,60 L30,90 L20,60 L0,60 L0,0 Z");
         assert_eq!(preset_path("wedgeRectCallout", 120.0, 60.0, &none).unwrap().0.matches('M').count(), 1);
+    }
+
+    /// An SVG picture is drawn from the SVG, not from its PNG fallback.
+    #[test]
+    fn svg_picture() {
+        let svg = br#"<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" width="20px" height="10"><rect width="20" height="10"/></svg>"#;
+        let files = HashMap::from([
+            ("xl/media/image1.png".to_string(), b"PNG".to_vec()),
+            ("xl/media/image2.svg".to_string(), svg.to_vec()),
+        ]);
+        let parts = ChartParts { files };
+        let ids = std::cell::Cell::new(0);
+        let rels = HashMap::from([
+            ("rId1".to_string(), ("image".to_string(), "xl/media/image1.png".to_string())),
+            ("rId2".to_string(), ("image".to_string(), "xl/media/image2.svg".to_string())),
+        ]);
+        let ctx = Ctx { parts: &parts, rels, theme: HashMap::new(), font: ("Calibri".into(), 11.0), ids: &ids };
+        let pic = super::super::xlsx_chart::parse(
+            br#"<xdr:pic xmlns:xdr="x" xmlns:a="a" xmlns:r="r" xmlns:asvg="s"><xdr:blipFill><a:blip r:embed="rId1"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip r:embed="rId2"/></a:ext></a:extLst></a:blip></xdr:blipFill></xdr:pic>"#,
+        )
+        .unwrap();
+        let html = picture_html(&ctx, &pic, &Xfrm::default());
+        let b64 = html.split("base64,").nth(1).unwrap().split('"').next().unwrap();
+        let out = String::from_utf8(base64::engine::general_purpose::STANDARD.decode(b64).unwrap()).unwrap();
+        assert!(html.contains("data:image/svg+xml;"), "{html}");
+        assert!(out.contains(r#"height="10" viewBox="0 0 20 10" preserveAspectRatio="none"><rect"#), "{out}");
+        // Without the extension: the PNG.
+        let pic = super::super::xlsx_chart::parse(br#"<xdr:pic xmlns:xdr="x" xmlns:a="a" xmlns:r="r"><a:blip r:embed="rId1"/></xdr:pic>"#).unwrap();
+        assert!(picture_html(&ctx, &pic, &Xfrm::default()).contains("data:image/png;"));
+        // An SVG that says how to fit is kept as it is.
+        let keep = br#"<svg viewBox="0 0 1 1" preserveAspectRatio="xMidYMid"/>"#;
+        assert_eq!(svg_stretched(keep), keep.to_vec());
     }
 }
