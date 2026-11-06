@@ -3,13 +3,15 @@ import { ok, equal, throws } from "./_assert.js";
 // Tests run in an empty temporary directory.
 fs.writeText("売上.xlsx", "x");
 const file = fs.file("売上.xlsx");
+// Windows gives the target with long names (TEMP may be "C:\Users\RUNNER~1\...").
+const isFile = (p) => path.basename(p) === "売上.xlsx" && path.isAbsolute(p) && fs.exists(p);
 
 // create: ".lnk" is added; paths may be handles.
 const p = shell.writeShortcutLink("売上へのリンク", { target: file, args: "/r", description: "集計表", hotkey: "ctrl+alt+u", windowState: "maximized" });
 ok(p.endsWith("売上へのリンク.lnk"), p);
 ok(fs.exists(p));
 let d = shell.readShortcutLink("売上へのリンク");
-equal(d.target, file.path);
+ok(isFile(d.target), d.target);
 equal(d.args, "/r");
 equal(d.description, "集計表");
 equal(d.hotkey, "Ctrl+Alt+U");
@@ -24,13 +26,13 @@ d = shell.readShortcutLink(fs.file(p));
 equal(d.args, "");
 equal(d.description, "集計表");
 equal(d.runAsAdmin, true);
-equal(d.icon, file.path);
+ok(isFile(d.icon), d.icon);
 equal(d.iconIndex, 3);
 
 // replace starts over (the shortcut must exist).
 shell.writeShortcutLink(p, "replace", { target: "売上.xlsx" });
 d = shell.readShortcutLink(p);
-equal(d.target, file.path);
+ok(isFile(d.target), d.target);
 equal(d.description, "");
 equal(d.hotkey, "");
 throws(() => shell.writeShortcutLink("ない.lnk", "update", { args: "x" }), /ない\.lnk/);

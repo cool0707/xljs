@@ -141,6 +141,23 @@ fn lnk_id_list() {
     assert_eq!(l.args, "x");
 }
 
+/// The temporary directory with its long name: Windows gives the targets
+/// of shortcuts with long names (the CI's TEMP is "C:\Users\RUNNER~1\...").
+fn tempdir() -> std::path::PathBuf {
+    let dir = crate::testutil::tempdir();
+    #[cfg(windows)]
+    unsafe {
+        use windows::Win32::Storage::FileSystem::GetLongPathNameW;
+        let short = windows::core::HSTRING::from(dir.as_os_str());
+        let mut buf = vec![0u16; 1024];
+        let n = GetLongPathNameW(&short, Some(&mut buf)) as usize;
+        if n > 0 && n < buf.len() {
+            return std::path::PathBuf::from(String::from_utf16_lossy(&buf[..n]));
+        }
+    }
+    dir
+}
+
 fn cd(dir: &std::path::Path) -> impl Drop {
     struct Back(std::path::PathBuf);
     impl Drop for Back {
@@ -156,7 +173,7 @@ fn cd(dir: &std::path::Path) -> impl Drop {
 #[test]
 fn write_and_read() {
     let _g = crate::test_lang("en");
-    let dir = crate::testutil::tempdir();
+    let dir = tempdir();
     let _back = cd(&dir);
     std::fs::write("a.txt", "x").unwrap();
     let abs = |p: &str| std::path::absolute(p).unwrap().to_string_lossy().into_owned();
@@ -213,7 +230,7 @@ fn write_and_read() {
 #[test]
 fn url_files() {
     let _g = crate::test_lang("en");
-    let dir = crate::testutil::tempdir();
+    let dir = tempdir();
     let _back = cd(&dir);
     let c = Changes { target: Some("https://example.com/a?b=1".into()), ..Default::default() };
     let p = write("サイト", Operation::Create, &c).unwrap();
@@ -246,7 +263,7 @@ fn windows_agrees_with_the_format() {
     if wine() {
         return;
     }
-    let dir = crate::testutil::tempdir();
+    let dir = tempdir();
     let target = dir.join("売上 2026.xlsx");
     std::fs::write(&target, "x").unwrap();
     let l = Link { target: target.to_string_lossy().into_owned(), cwd: dir.to_string_lossy().into_owned(), ..sample() };
