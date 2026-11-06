@@ -424,6 +424,9 @@ enum Val {
     Text(String),
     Bool(bool),
     Error(String),
+    /// A picture placed in the cell, or one a formula gives (index in
+    /// Book::cell_images).
+    Image(usize),
 }
 
 /// A rectangle of cells (1-based, inclusive): c1, r1, c2, r2.
@@ -516,6 +519,8 @@ struct Sheet<'a> {
     mono: bool,
     /// The cells shrunk to fit (RawPrint::shrink).
     shrink: HashSet<(u32, u32)>,
+    /// The cells that show a picture placed in a cell (xlsx_calc::cell_image).
+    images: HashMap<(u32, u32), usize>,
 }
 
 impl<'a> Sheet<'a> {
@@ -566,6 +571,20 @@ impl<'a> Sheet<'a> {
             let co = c.coordinate();
             cells.insert((co.col_num(), co.row_num()), c);
         }
+        // Pictures in cells, and formulas that refer to them.
+        let mut images = HashMap::new();
+        if !b.cell_images.images.is_empty() {
+            for (&(col, row), c) in &cells {
+                let maybe = match c.raw_value() {
+                    CellRawValue::Error(_) => true,
+                    CellRawValue::Empty => c.is_formula(),
+                    _ => false,
+                };
+                if maybe && let Some(i) = super::xlsx_calc::cell_image(b, name, col, row) {
+                    images.insert((col, row), i);
+                }
+            }
+        }
         let mut merges = Vec::new();
         let mut merge_at = HashMap::new();
         for m in ws.merge_cells() {
@@ -596,6 +615,7 @@ impl<'a> Sheet<'a> {
             table: super::xlsx_table::overlays(ws, &b.table_styles),
             mono: b.print.get(name).is_some_and(|p| p.black_and_white),
             shrink: b.print.get(name).map(|p| p.shrink.clone()).unwrap_or_default(),
+            images,
         })
     }
 
@@ -636,6 +656,9 @@ impl<'a> Sheet<'a> {
 
     fn val(&self, col: u32, row: u32) -> Val {
         let Some(c) = self.cells.get(&(col, row)) else { return Val::Empty };
+        if let Some(i) = self.images.get(&(col, row)) {
+            return Val::Image(*i);
+        }
         let num = |f: f64| -> Val {
             let nf = c.style().number_format();
             let code = format_code(nf);
@@ -1062,6 +1085,7 @@ body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .xljs-sheet table{border-collapse:collapse;table-layout:fixed}
 .xljs-sheet td{padding:0;position:relative;overflow:visible}
 .xljs-sheet td>div{position:absolute;top:0;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;box-sizing:border-box;padding:0 1.5pt;white-space:pre;line-height:normal}
+.xljs-sheet td>div>img.xljs-cell-image{flex:1 1 0;min-height:0;width:100%;object-fit:contain;padding:1.5pt 0;box-sizing:border-box}
 .xljs-sheet.grid td{border:0.5pt solid #c8c8c8}
 .xljs-objs{position:absolute;overflow:hidden;pointer-events:none}
 .xljs-objs>*{position:absolute}
@@ -1577,7 +1601,7 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table
     let halign = match h.as_str() {
         "general" | "" => match val {
             Val::Num(..) => "right",
-            Val::Bool(_) | Val::Error(_) => "center",
+            Val::Bool(_) | Val::Error(_) | Val::Image(_) => "center",
             _ => "left",
         },
         "center" | "centerContinuous" => "center",
@@ -1643,7 +1667,30 @@ fn cell_html(sh: &Sheet, col: u32, row: u32, val: &Val, wrap: bool) -> String {
         Val::Text(s) => line(s),
         Val::Bool(b) => (if *b { "TRUE" } else { "FALSE" }).into(),
         Val::Error(e) => esc(e),
+        Val::Image(_) => String::new(), // page_table draws it
     }
+}
+
+/// A picture placed in a cell: as large as the cell lets it be with its
+/// shape kept, where the cell's alignment puts it (centered unless the
+/// cell says left or right; at the bottom unless it says top or center).
+fn image_html(sh: &Sheet, i: usize, st: &Style, halign: &str) -> String {
+    let Some(img) = sh.b.cell_images.images.get(i) else { return String::new() };
+    let Some(mime) = img.mime else { return String::new() };
+    let x = match halign {
+        "left" | "right" => halign,
+        _ => "center",
+    };
+    let y = match st.alignment().map(|a| a.vertical().value_string()).unwrap_or("bottom") {
+        "top" => "top",
+        "center" | "justify" | "distributed" => "center",
+        _ => "bottom",
+    };
+    format!(
+        "<img class=\"xljs-cell-image\" alt=\"{}\" src=\"data:{mime};base64,{}\" style=\"object-position:{x} {y}\">",
+        esc(&img.alt),
+        base64::engine::general_purpose::STANDARD.encode(&img.data)
+    )
 }
 
 /// The CSS of a rich text run's font.
@@ -1723,7 +1770,7 @@ fn text_width(sh: &Sheet, col: u32, row: u32, val: &Val, st: &Style) -> f64 {
             .sum();
     }
     let text = match val {
-        Val::Empty => return 0.0,
+        Val::Empty | Val::Image(_) => return 0.0,
         Val::Num(_, s) | Val::Text(s) | Val::Error(s) => s.as_str(),
         Val::Bool(b) => if *b { "TRUE" } else { "FALSE" },
     };
@@ -1824,6 +1871,11 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                 // data-n: a number that does not fit is shown as ### (print-page.js measures it).
                 let num = if matches!(val, Val::Num(..)) && !css.rotated && !shrink { " data-n" } else { "" };
                 let _ = write!(out, "<div{num} style=\"left:{}pt;width:{}pt;height:{}pt\">", n(-left), n(w + left + right), n(h));
+                if let Val::Image(i) = val {
+                    out.push_str(&image_html(sh, i, st, &css.halign));
+                    out.push_str("</div></td>");
+                    continue;
+                }
                 let mut text = cell_html(sh, vc, vr, &val, css.wrap);
                 if shrink {
                     // A rough guess from the characters; print-page.js measures the text.

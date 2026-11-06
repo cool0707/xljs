@@ -103,6 +103,8 @@ await xljs.htmlToPdf("<h1>報告書</h1>", "報告書.pdf", { paper: "A4" }); //
   PDF にするときは `print-page.js` の `shrinkToFit` が実際の幅を測って倍率を直す。折り返し・回転のセルでは縮小しない（Excel と同じ）。
   縮小するセルは隣へはみ出さず、数値も `###` にしない。
 - 数式で値の保存がないセル（スクリプトで書いた数式）は `xlsx_calc` で計算する。
+- セルに配置した画像（後述）は `<div>` の中の `<img class="xljs-cell-image">`。セルの大きさに縦横比を保って収め（`object-fit:contain`）、
+  位置はセルの配置（横は標準・中央 → 中央、左・右はそのまま。縦は下が既定、上・中央）で `object-position`。代替テキストは `alt`。
 - 結合セルはページの中で `colspan` / `rowspan`。ページの境目をまたぐ結合はページごとに切る。
 - 画像・図形・グラフはアンカー（two-cell / one-cell / absolute）からシート上の位置を求め、重なるすべてのページに置いて本体の範囲で切る（ページをまたぐ図は分かれて出る）。
   重なり順は描画（drawing）の順。
@@ -125,6 +127,21 @@ umya-spreadsheet の図形のモデルは一部しか持たないので使わな
 | 印刷しないもの | 非表示（`cNvPr hidden`）と「オブジェクトを印刷する」をオフにしたもの（`clientData fPrintsWithSheet="0"`） |
 - 画面で開いたとき（`@media screen`）はページを灰色の背景の上に用紙の大きさで並べる（`toHtml` の確認用）。
 
+### セルに配置した画像（`src/api/xlsx_cellimage.rs`）
+
+Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は読まない（セルはエラー `#VALUE!` になる）。ブックを開いたときに読んでおく（`Book::cell_images`）。
+
+- セル: `<c r="B2" t="e" vm="1"><v>#VALUE!</v></c>`。`vm`（1 から）→ `xl/metadata.xml` の `valueMetadata` の `bk` → `rc t`（`XLRICHVALUE` の `metadataType`）`v`
+  → `futureMetadata name="XLRICHVALUE"` の `bk` → `xlrd:rvb i` → `xl/richData/rdrichvalue.xml` の `rv`。`rv` の値はその構造（`rdrichvaluestructure.xml` の `s`）のキーの順で、
+  `_rvRel:LocalImageIdentifier` が `richValueRel.xml` の `rel` の位置（→ そのリレーションの `xl/media/*`）、`Text` が代替テキスト。
+  部品はブックのリレーションの種類（`sheetMetadata` `rdRichValue` `rdRichValueStructure` `richValueRel`）から探す（名前の大文字・小文字は問わない）。
+- `IMAGE("https://…")`（構造 `_webImage`）は画像がファイルにないので空欄にする（`#VALUE!` は出さない）。EMF/WMF も空欄。
+- 画像として扱うのは、開いたときに `vm` があり、いまの値がエラーのままのセル（スクリプトが値を書いたら画像ではない）。位置で持っているので、行・列の挿入・削除はずれる（`shrink` と同じ）。
+- **参照するセル**: Excel は `=B2` のセルにも `vm` を付けて保存するので、それはそのまま画像（保存された結果を使う。ほかの数式と同じ）。
+  `vm` のない数式（スクリプトで書いた数式、`vm` を書かないツールが保存した数式）は `xlsx_calc` で評価し、結果が画像なら画像（`xlsx_calc::cell_image`）。
+  計算の値 `V::Image` は参照・`IF`・`IFERROR`・`INDEX`・`VLOOKUP` / `HLOOKUP`・`XLOOKUP`（完全一致）をそのまま通り、数値・文字列として使うと `#VALUE!`（`=B2&""` など。Excel と同じ）。
+- 保存（`book.save`）では umya がリッチ値の部品を書かないので画像は消える（セルは `#VALUE!`）。
+
 ## 3. PDF にする（`Ui::print_pdf`、`src/ui/native/webview.rs`、`src/ui/web/print.html` / `print-page.js`）
 
 1. prelude の `printToPdf`: `xlsxPrintHtml` でレイアウト、`sheet.charts[i]` から `ChartSpec`（描けないグラフは `{ error }`）を作り、
@@ -144,7 +161,7 @@ umya-spreadsheet の図形のモデルは一部しか持たないので使わな
 ## 4. できないこと・違い
 
 - 条件付き書式、SmartArt、ワードアートの効果、図形の影・3-D・グラデーション（最初の色で塗る）・パターン、よく使うもの以外の既定の図形の形（四角になる）、
-  画像のトリミング、EMF/WMF の画像、コメント、フォームのコントロール、ヘッダー/フッターの画像、先頭ページ・偶数ページ用のヘッダー。
+  画像のトリミング、EMF/WMF の画像、Web の画像（`IMAGE` 関数）、コメント、フォームのコントロール、ヘッダー/フッターの画像、先頭ページ・偶数ページ用のヘッダー。
 - 塗りのパターン（単色以外は前景色で塗る）、グラデーションの塗り。
 - 先頭ページ番号（`firstPageNumber`）、行列番号の印刷、簡易印刷、印刷の品質。白黒印刷は塗りと色を消すだけ（画像・図形はそのまま）。
 - 印刷ダイアログでだけ選んだ拡大縮小（「シートを 1 ページに印刷」など。保存されないもの）は分からないので、Excel の PDF とページ数が違うことがある。
@@ -161,7 +178,9 @@ umya-spreadsheet の図形のモデルは一部しか持たないので使わな
   ヘッダー/フッター・改ページ・画像・グラフ・非表示の列とシート・印刷範囲・B5）、`testdata/xlsx/tables.xlsx`（`make_tables.py`。
   独自のテーブルスタイル（styles.xml に足す）と TableStyleMedium2・白黒印刷・OFFSET の印刷範囲・列全体の印刷範囲）、`testdata/xlsx/shapes.xlsx`（`make_shapes.py`。openpyxl の
   出力に描画の XML を足す: テキストボックス・既定のスタイルの図形・吹き出し・矢印・星（回転）・矢印付きの線・破線のカギ線コネクタ（反転）・グループ・
-  フリーフォーム・縦書き・非表示・印刷しない図形）、mock のログ。デバッガ経由でも同じ（`scripts_in_debugger`）。
+  フリーフォーム・縦書き・非表示・印刷しない図形）、`testdata/xlsx/cellimages.xlsx`（`make_cellimages.py`。openpyxl の出力にリッチ値の部品を足す:
+  セルに配置した PNG・JPEG・代替テキスト付き、同じシートと別のシートから参照するセル（`vm` あり・なし）。スクリプトで書いた `=`・`IF`・`XLOOKUP`・`VLOOKUP`・`INDEX` の参照、
+  `&` で `#VALUE!`、画像に値を上書きしたとき）、mock のログ。デバッガ経由でも同じ（`scripts_in_debugger`）。
 - `src/ui/native/tests.rs`（Windows CI）: `print_page_draws_charts_hidden`（見えないウィンドウで縦棒とガントが描けること）、
   `print_pdf_writes_a_file`（`print.xlsx` を PDF にしてファイルができること）。
 - 見た目は Playwright の Chromium で `print.html` に偽の `chrome.webview` を付けて `init` を送り、`page.pdf({ preferCSSPageSize: true })` →

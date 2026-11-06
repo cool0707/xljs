@@ -16,6 +16,9 @@ enum V {
     Empty,
     Err(String),
     Range(Vec<Vec<V>>),
+    /// A picture placed in a cell (index in Book::cell_images). Excel gives
+    /// #VALUE! when it is used as a number or text.
+    Image(usize),
 }
 
 impl V {
@@ -27,6 +30,7 @@ impl V {
             V::Str(s) => s.trim().parse::<f64>().map_err(|_| "#VALUE!".to_string()),
             V::Err(e) => Err(e.clone()),
             V::Range(r) => r.first().and_then(|row| row.first()).map(|v| v.num()).unwrap_or(Ok(0.0)),
+            V::Image(_) => Err("#VALUE!".into()),
         }
     }
     fn text(&self) -> std::result::Result<String, String> {
@@ -37,6 +41,7 @@ impl V {
             V::Empty => Ok(String::new()),
             V::Err(e) => Err(e.clone()),
             V::Range(r) => r.first().and_then(|row| row.first()).map(|v| v.text()).unwrap_or(Ok(String::new())),
+            V::Image(_) => Err("#VALUE!".into()),
         }
     }
     fn truthy(&self) -> std::result::Result<bool, String> {
@@ -342,6 +347,13 @@ impl<'a> Ev<'a> {
     fn cell(&mut self, sheet: &str, col: u32, row: u32) -> Result<V> {
         let ws = self.b.sheet(sheet)?;
         let Some(c) = ws.cell((col, row)) else { return Ok(V::Empty) };
+        // A picture placed in the cell (or a formula Excel saved with one)
+        // reads as #VALUE!; a value written over it since is no picture.
+        if matches!(c.raw_value(), CellRawValue::Error(_))
+            && let Some(i) = self.b.cell_images.at(sheet, col, row)
+        {
+            return Ok(V::Image(i));
+        }
         if c.is_formula() && matches!(c.raw_value(), CellRawValue::Empty) {
             if self.depth >= MAX_DEPTH {
                 return Ok(V::Err("#REF!".into()));
@@ -362,6 +374,33 @@ impl<'a> Ev<'a> {
     }
 }
 
+/// The position (0-based) of look in list, as MATCH finds it: kind 0 the
+/// first equal value; 1 (-1) the last value <= (>=) it. Excel searches
+/// sorted data by halves; on sorted data that is the last value <= (or >=)
+/// the one looked up, which is also what MATCH(10^10, B:B) is used for: the
+/// last number.
+fn lookup(look: &V, list: &[V], kind: f64) -> std::result::Result<usize, String> {
+    if let V::Err(e) = look {
+        return Err(e.clone());
+    }
+    let same = |v: &V| matches!((v, look), (V::Num(_), V::Num(_)) | (V::Str(_), V::Str(_)) | (V::Bool(_), V::Bool(_)));
+    let is = |v: &V, op: &str| matches!(compare(v, look, op), V::Bool(true));
+    let mut found = None;
+    for (i, v) in list.iter().enumerate() {
+        if !same(v) {
+            continue;
+        }
+        if kind == 0.0 {
+            if is(v, "=") {
+                return Ok(i);
+            }
+        } else if is(v, if kind > 0.0 { "<=" } else { ">=" }) {
+            found = Some(i);
+        }
+    }
+    found.ok_or_else(|| "#N/A".into())
+}
+
 fn arith(a: &V, b: &V, f: impl Fn(f64, f64) -> std::result::Result<f64, String>) -> V {
     match (a.num(), b.num()) {
         (Ok(x), Ok(y)) => match f(x, y) {
@@ -377,6 +416,7 @@ fn compare(a: &V, b: &V, op: &str) -> V {
     use std::cmp::Ordering;
     let ord = match (a, b) {
         (V::Err(e), _) | (_, V::Err(e)) => return V::Err(e.clone()),
+        (V::Image(_), _) | (_, V::Image(_)) => return V::Err("#VALUE!".into()),
         (V::Str(x), V::Str(y)) => x.to_lowercase().cmp(&y.to_lowercase()),
         (V::Str(_), _) => Ordering::Greater,
         (_, V::Str(_)) => Ordering::Less,
@@ -494,33 +534,63 @@ fn call(name: &str, args: Vec<V>) -> V {
                 v => v,
             },
             "MATCH" => {
-                let look = arg(0);
-                if let V::Err(e) = &look {
-                    return Err(e.clone());
-                }
                 let kind = if args.len() > 2 { arg(2).num()? } else { 1.0 };
-                let same = |v: &V| matches!((v, &look), (V::Num(_), V::Num(_)) | (V::Str(_), V::Str(_)) | (V::Bool(_), V::Bool(_)));
-                let is = |v: &V, op: &str| matches!(compare(v, &look, op), V::Bool(true));
-                // Excel searches sorted data by halves; on sorted data that is the
-                // last value <= (or >=) the one looked up, which is also what
-                // MATCH(10^10, B:B) is used for: the last number.
-                let mut found = None;
-                for (i, v) in arg(1).flat().iter().enumerate() {
-                    if !same(v) {
-                        continue;
-                    }
-                    if kind == 0.0 {
-                        if is(v, "=") {
-                            found = Some(i);
-                            break;
-                        }
-                    } else if is(v, if kind > 0.0 { "<=" } else { ">=" }) {
-                        found = Some(i);
-                    }
+                V::Num(lookup(&arg(0), &arg(1).flat(), kind)? as f64 + 1.0)
+            }
+            "INDEX" => {
+                let rows = match arg(0) {
+                    V::Range(r) => r,
+                    v => vec![vec![v]],
+                };
+                let (mut r, mut c) = (arg(1).num()? as usize, if args.len() > 2 { arg(2).num()? as usize } else { 0 });
+                // INDEX(A1:E1, 3): the third of a single row.
+                if args.len() <= 2 && rows.len() == 1 {
+                    (r, c) = (1, r);
                 }
-                match found {
-                    Some(i) => V::Num(i as f64 + 1.0),
-                    None => return Err("#N/A".into()),
+                let c = c.max(1);
+                match rows.get(r.wrapping_sub(1)).and_then(|row| row.get(c - 1)) {
+                    Some(v) if r >= 1 => v.clone(),
+                    _ => return Err("#REF!".into()),
+                }
+            }
+            "VLOOKUP" | "HLOOKUP" => {
+                let rows = match arg(1) {
+                    V::Range(r) => r,
+                    v => vec![vec![v]],
+                };
+                let n = arg(2).num()? as usize;
+                let approx = if args.len() > 3 { arg(3).truthy()? } else { true };
+                let v = name == "VLOOKUP";
+                let keys: Vec<V> = if v { rows.iter().map(|r| r.first().cloned().unwrap_or(V::Empty)).collect() } else { rows.first().cloned().unwrap_or_default() };
+                let i = lookup(&arg(0), &keys, if approx { 1.0 } else { 0.0 })?;
+                let got = if v { rows.get(i).and_then(|r| r.get(n.wrapping_sub(1))) } else { rows.get(n.wrapping_sub(1)).and_then(|r| r.get(i)) };
+                match got {
+                    Some(x) if n >= 1 => x.clone(),
+                    _ => return Err("#REF!".into()),
+                }
+            }
+            "XLOOKUP" => {
+                // Exact matches only (match_mode and search_mode are not used).
+                match lookup(&arg(0), &arg(1).flat(), 0.0) {
+                    Err(e) if e == "#N/A" && args.len() > 3 && !matches!(arg(3), V::Empty) => arg(3),
+                    Err(e) => return Err(e),
+                    Ok(i) => {
+                        let ret = match arg(2) {
+                            V::Range(r) => r,
+                            v => vec![vec![v]],
+                        };
+                        // A lookup column gives the row i of the result, a lookup row its column i.
+                        let column = match arg(1) {
+                            V::Range(r) => r.len() > 1 || r.first().is_some_and(|x| x.len() == 1),
+                            _ => true,
+                        };
+                        let got = if column {
+                            ret.get(i).map(|r| if r.len() == 1 { r[0].clone() } else { V::Range(vec![r.clone()]) })
+                        } else {
+                            ret.first().and_then(|r| r.get(i)).cloned()
+                        };
+                        got.ok_or_else(|| "#VALUE!".to_string())?
+                    }
                 }
             }
             "AND" => V::Bool(args.iter().flat_map(|a| a.flat()).filter(|v| !matches!(v, V::Empty)).map(|v| v.truthy()).collect::<std::result::Result<Vec<_>, _>>()?.iter().all(|b| *b)),
@@ -600,9 +670,36 @@ pub fn calc_cell(b: &Book, sheet: &str, r: &str) -> Result<String> {
     Ok(match v {
         V::Num(n) => fmt_calc(n),
         V::Err(e) => e,
-        V::Range(_) => "#VALUE!".into(),
+        V::Range(_) | V::Image(_) => "#VALUE!".into(),
         other => other.text().unwrap_or_default(),
     })
+}
+
+/// The picture a cell shows: one placed in it, or what its formula gives
+/// (`=B2`, `=Sheet1!B2`, `=IF(...,B2)`, `=XLOOKUP(...)`), also for a formula
+/// written by a script that has no saved result. None when it shows none.
+pub fn cell_image(b: &Book, sheet: &str, col: u32, row: u32) -> Option<usize> {
+    if b.cell_images.images.is_empty() {
+        return None;
+    }
+    let c = b.sheet(sheet).ok()?.cell((col, row))?;
+    match c.raw_value() {
+        CellRawValue::Error(_) => {
+            if let Some(i) = b.cell_images.at(sheet, col, row) {
+                return Some(i);
+            }
+        }
+        CellRawValue::Empty => {}
+        _ => return None,
+    }
+    if !c.is_formula() {
+        return None;
+    }
+    let mut ev = Ev { b, sheet: sheet.to_string(), toks: tokenize(c.formula()).ok()?, pos: 0, depth: 0 };
+    match ev.expr() {
+        Ok(V::Image(i)) if ev.pos >= ev.toks.len() => Some(i),
+        _ => None,
+    }
 }
 
 /// The cells a reference formula points at, such as a dynamic print area

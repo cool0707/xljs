@@ -41,6 +41,8 @@ pub struct Book {
     pub print: std::collections::HashMap<String, super::xlsx_print::RawPrint>,
     /// The workbook's own table styles (tableStyles in styles.xml) by name.
     pub table_styles: std::collections::HashMap<String, super::xlsx_table::StyleDef>,
+    /// The pictures placed in cells (empty for a new workbook).
+    pub cell_images: super::xlsx_cellimage::CellImages,
 }
 
 pub(crate) fn zerr(e: impl std::fmt::Display) -> Error {
@@ -55,7 +57,7 @@ impl Book {
     fn new(wb: Workbook, path: String, styles_xml: Option<&[u8]>) -> Book {
         let default_font = styles_xml.and_then(first_font).unwrap_or(("Calibri".into(), 11.0));
         let date1904 = false; // see read_date1904
-        Book { wb, path, date1904, fresh: false, formulas: false, closed: false, default_font, font_changed: false, charts: None, print: Default::default(), table_styles: Default::default() }
+        Book { wb, path, date1904, fresh: false, formulas: false, closed: false, default_font, font_changed: false, charts: None, print: Default::default(), table_styles: Default::default(), cell_images: Default::default() }
     }
 
     pub fn sheet(&self, name: &str) -> Result<&Worksheet> {
@@ -171,6 +173,7 @@ pub fn open_bytes(data: &[u8], path: String) -> Result<Book> {
     b.date1904 = read_date1904(data);
     b.charts = Some(super::xlsx_chart::ChartParts::collect(data));
     b.print = super::xlsx_print::collect_raw(data);
+    b.cell_images = super::xlsx_cellimage::CellImages::collect(data);
     Ok(b)
 }
 

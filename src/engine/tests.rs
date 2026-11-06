@@ -97,6 +97,7 @@ fn check_script_output(name: &str, r: &Res) -> Vec<String> {
                 "見積.pdf\", 1 pages, 0/0 charts)",
                 "hello.pdf\", 0 pages, 0/0 charts)",
                 "print.pdf\", 4 pages, 1/1 charts)",
+                "cellimages.pdf\", 2 pages, 0/0 charts)",
             ],
             "mock log",
         ),
