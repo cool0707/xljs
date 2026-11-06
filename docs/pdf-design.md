@@ -121,7 +121,7 @@ umya-spreadsheet の図形のモデルは一部しか持たないので使わな
 | 文字（`txBody`） | 段落ごとの揃え、ランの大きさ・太字・斜体・下線・取り消し線・色・フォント（`ea` / `latin`。`+mn-ea` などはブックの既定のフォント）、改行、箇条書きの文字。`bodyPr` の内側の余白・上下の位置・折り返しなし・縦書き。色の既定は `fontRef` |
 | 回転・反転 | 回転は外側の `div` の `transform`（文字も一緒に回る）、反転は SVG の形だけ |
 | グループ（`grpSp`） | 子の位置を子の座標（`chOff` / `chExt`）からグループの枠の割合にして置く（入れ子も） |
-| 画像（`pic`） | `blip` の画像を data URL で（PNG・JPEG・GIF・BMP・SVG。EMF/WMF は描けないので出さない） |
+| 画像（`pic`） | `blip` の画像を data URL で（PNG・JPEG・GIF・BMP・SVG。EMF/WMF は描けないので出さない）。SVG の画像は `blip` が画面の大きさの PNG の代替画像なので、拡張（`extLst` の `asvg:svgBlip`）の SVG を使う（PDF でも線のまま）。Excel と同じく枠いっぱいに伸ばす（`preserveAspectRatio` がなければ `none`、`viewBox` がなければ `width` / `height` から） |
 | 印刷しないもの | 非表示（`cNvPr hidden`）と「オブジェクトを印刷する」をオフにしたもの（`clientData fPrintsWithSheet="0"`） |
 - 画面で開いたとき（`@media screen`）はページを灰色の背景の上に用紙の大きさで並べる（`toHtml` の確認用）。
 
