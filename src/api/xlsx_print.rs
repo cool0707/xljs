@@ -38,31 +38,81 @@ pub struct RawPrint {
     pub hidden: bool,
     /// pageSetup blackAndWhite: printed without colors.
     pub black_and_white: bool,
+    /// Cells (column, row) whose style says "shrink to fit" (alignment
+    /// shrinkToFit, which umya-spreadsheet does not keep).
+    pub shrink: HashSet<(u32, u32)>,
 }
 
 /// Reads the page setup of every sheet of an xlsx file (see RawPrint).
 pub fn collect_raw(data: &[u8]) -> HashMap<String, RawPrint> {
     let mut out = HashMap::new();
-    let Ok(mut zr) = zip::ZipArchive::new(Cursor::new(data)) else { return out };
+    let shrink_xfs = super::xlsx::zip_part(data, "xl/styles.xml").map(|b| shrink_styles(&b)).unwrap_or_default();
+    for_each_sheet(data, |s, name, xml| {
+        let mut r = raw_print(xml);
+        r.hidden = matches!(s.attr("state"), Some("hidden" | "veryHidden"));
+        if !shrink_xfs.is_empty() {
+            r.shrink = styled_cells(xml, &shrink_xfs);
+        }
+        out.insert(name.to_string(), r);
+    });
+    out
+}
+
+/// Calls f with the `<sheet>` element of workbook.xml, the name and the XML
+/// of every worksheet of an xlsx file.
+pub(super) fn for_each_sheet(data: &[u8], mut f: impl FnMut(&super::xlsx_chart::Node, &str, &[u8])) {
+    let Ok(mut zr) = zip::ZipArchive::new(Cursor::new(data)) else { return };
     let mut read = |name: &str| -> Option<Vec<u8>> {
         let mut f = zr.by_name(name).ok()?;
         let mut b = Vec::new();
         f.read_to_end(&mut b).ok()?;
         Some(b)
     };
-    let Some(wb) = read("xl/workbook.xml").and_then(|b| parse(&b)) else { return out };
+    let Some(wb) = read("xl/workbook.xml").and_then(|b| parse(&b)) else { return };
     let rels: HashMap<String, String> = read("xl/_rels/workbook.xml.rels")
         .and_then(|b| parse(&b))
         .map(|r| r.all("Relationship").filter_map(|x| Some((x.attr("Id")?.to_string(), resolve("xl", x.attr("Target")?)))).collect())
         .unwrap_or_default();
-    let Some(sheets) = wb.child("sheets") else { return out };
+    let Some(sheets) = wb.child("sheets") else { return };
     for s in sheets.all("sheet") {
         let (Some(name), Some(id)) = (s.attr("name"), s.attr("id")) else { continue };
         let Some(part) = rels.get(id) else { continue };
         let Some(xml) = read(part) else { continue };
-        let mut r = raw_print(&xml);
-        r.hidden = matches!(s.attr("state"), Some("hidden" | "veryHidden"));
-        out.insert(name.to_string(), r);
+        f(s, name, &xml);
+    }
+}
+
+/// The indexes of the cell formats (cellXfs) of styles.xml with shrinkToFit.
+fn shrink_styles(xml: &[u8]) -> HashSet<usize> {
+    let Some(ss) = parse(xml) else { return HashSet::new() };
+    let Some(xfs) = ss.child("cellXfs") else { return HashSet::new() };
+    xfs.all("xf")
+        .enumerate()
+        .filter(|(_, x)| x.child("alignment").and_then(|a| a.attr("shrinkToFit")).is_some_and(|v| v == "1" || v == "true"))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The cells of a sheet's XML whose style (s) is one of xfs.
+fn styled_cells(xml: &[u8], xfs: &HashSet<usize>) -> HashSet<(u32, u32)> {
+    static CELL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"<c\b([^>]*)>"#).unwrap());
+    static ATTR: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"\b([rs])="([^"]*)""#).unwrap());
+    let s = String::from_utf8_lossy(xml);
+    let mut out = HashSet::new();
+    for c in CELL.captures_iter(&s) {
+        let (mut r, mut st) = (None, None);
+        for a in ATTR.captures_iter(&c[1]) {
+            match &a[1] {
+                "r" => r = Some(a[2].to_string()),
+                _ => st = a[2].parse::<usize>().ok(),
+            }
+        }
+        if let (Some(r), Some(st)) = (r, st)
+            && xfs.contains(&st)
+            && let Ok(pos) = super::xlsx::parse_ref(&r)
+        {
+            out.insert(pos);
+        }
     }
     out
 }
@@ -87,6 +137,7 @@ fn raw_print(xml: &[u8]) -> RawPrint {
         grid_lines: on(attr("printOptions", "gridLines")),
         hidden: false,
         black_and_white: on(attr("pageSetup", "blackAndWhite")),
+        shrink: HashSet::new(),
     }
 }
 
@@ -463,6 +514,8 @@ struct Sheet<'a> {
     table: HashMap<(u32, u32), Overlay>,
     /// Printed in black and white (no fills, black text and lines).
     mono: bool,
+    /// The cells shrunk to fit (RawPrint::shrink).
+    shrink: HashSet<(u32, u32)>,
 }
 
 impl<'a> Sheet<'a> {
@@ -542,6 +595,7 @@ impl<'a> Sheet<'a> {
             font,
             table: super::xlsx_table::overlays(ws, &b.table_styles),
             mono: b.print.get(name).is_some_and(|p| p.black_and_white),
+            shrink: b.print.get(name).map(|p| p.shrink.clone()).unwrap_or_default(),
         })
     }
 
@@ -1566,46 +1620,21 @@ fn cell_html(sh: &Sheet, col: u32, row: u32, val: &Val, wrap: bool) -> String {
         && let Some(c) = sh.cells.get(&(col, row))
         && let CellRawValue::RichText(rt) = c.raw_value()
     {
-        let mut out = String::new();
+        // One element around the runs: the cell's div is a column flex box,
+        // where every run would be a line of its own.
+        let mut out = String::from("<span>");
         for el in rt.rich_text_elements() {
-            let mut css = String::new();
-            if let Some(f) = el.run_properties() {
-                if !f.name().is_empty() && f.name() != sh.font.0 {
-                    let _ = write!(css, "font-family:{};", font_family(f.name()));
-                }
-                if f.size() > 0.0 {
-                    let _ = write!(css, "font-size:{}pt;", n(f.size()));
-                }
-                if f.bold() {
-                    css.push_str("font-weight:bold;");
-                }
-                if f.italic() {
-                    css.push_str("font-style:italic;");
-                }
-                let u = f.font_underline().val().value_string();
-                if u != "none" && !u.is_empty() {
-                    css.push_str("text-decoration:underline;");
-                }
-                if f.strikethrough() {
-                    css.push_str("text-decoration:line-through;");
-                }
-                match f.vertical_text_alignment().val().value_string() {
-                    "superscript" => css.push_str("vertical-align:super;font-size:smaller;"),
-                    "subscript" => css.push_str("vertical-align:sub;font-size:smaller;"),
-                    _ => {}
-                }
-                if let Some(c) = css_color(f.color(), sh.theme)
-                    && !sh.mono
-                {
-                    let _ = write!(css, "color:{c};");
-                }
-            }
+            // A run without properties has the cell's font. Properties
+            // describe the whole font of the run (Excel writes them all), so
+            // what they leave out is off rather than the cell's.
+            let css = el.run_properties().map(|f| run_css(sh, f)).unwrap_or_default();
             if css.is_empty() {
                 out.push_str(&line(el.text()));
             } else {
-                let _ = write!(out, "<span style=\"{css}\">{}</span>", line(el.text()));
+                let _ = write!(out, "<span style=\"{}\">{}</span>", esc(&css), line(el.text()));
             }
         }
+        out.push_str("</span>");
         return out;
     }
     match val {
@@ -1615,6 +1644,90 @@ fn cell_html(sh: &Sheet, col: u32, row: u32, val: &Val, wrap: bool) -> String {
         Val::Bool(b) => (if *b { "TRUE" } else { "FALSE" }).into(),
         Val::Error(e) => esc(e),
     }
+}
+
+/// The CSS of a rich text run's font.
+fn run_css(sh: &Sheet, f: &umya_spreadsheet::Font) -> String {
+    let mut css = String::new();
+    if !f.name().is_empty() {
+        let _ = write!(css, "font-family:{};", font_family(f.name()));
+    }
+    if f.size() > 0.0 {
+        let _ = write!(css, "font-size:{}pt;", n(f.size()));
+    }
+    css.push_str(if f.bold() { "font-weight:bold;" } else { "font-weight:normal;" });
+    css.push_str(if f.italic() { "font-style:italic;" } else { "font-style:normal;" });
+    let u = f.font_underline().val().value_string();
+    let mut deco = Vec::new();
+    if u != "none" && !u.is_empty() {
+        deco.push("underline");
+    }
+    if f.strikethrough() {
+        deco.push("line-through");
+    }
+    if deco.is_empty() {
+        css.push_str("text-decoration:none;");
+    } else {
+        let _ = write!(css, "text-decoration:{};", deco.join(" "));
+        if u.starts_with("double") {
+            css.push_str("text-decoration-style:double;");
+        }
+    }
+    match f.vertical_text_alignment().val().value_string() {
+        "superscript" => css.push_str("vertical-align:super;font-size:smaller;"),
+        "subscript" => css.push_str("vertical-align:sub;font-size:smaller;"),
+        _ => {}
+    }
+    if !sh.mono {
+        if let Some(c) = css_color(f.color(), sh.theme) {
+            let _ = write!(css, "color:{c};");
+        } else if f.color().automatic() {
+            css.push_str("color:#000000;");
+        }
+    }
+    css
+}
+
+/// About how wide the text of a cell is in points (shrink to fit): full-width
+/// characters an em, digits half of one, separators less and the others a
+/// little over half.
+fn text_width(sh: &Sheet, col: u32, row: u32, val: &Val, st: &Style) -> f64 {
+    use unicode_width::UnicodeWidthChar;
+    let (mut size, mut bold) = (sh.font.1, false);
+    if let Some(f) = st.font() {
+        if f.size() > 0.0 {
+            size = f.size();
+        }
+        bold = f.bold();
+    }
+    let ems = |s: &str| -> f64 { s.chars().filter(|c| *c != '\n' && *c != '\r').map(|c| match c {
+                _ if c.width() == Some(2) => 1.0,
+                '0'..='9' => 0.5,
+                ',' | '.' | ':' | ';' | ' ' | '\'' | '|' | 'i' | 'l' => 0.28,
+                _ => 0.55,
+            })
+            .sum()
+    };
+    let bolder = |b: bool| if b { 1.05 } else { 1.0 };
+    if let Val::Text(_) = val
+        && let Some(c) = sh.cells.get(&(col, row))
+        && let CellRawValue::RichText(rt) = c.raw_value()
+    {
+        return rt
+            .rich_text_elements()
+            .iter()
+            .map(|el| match el.run_properties() {
+                Some(f) => ems(el.text()) * (if f.size() > 0.0 { f.size() } else { size }) * bolder(f.bold()),
+                None => ems(el.text()) * size * bolder(bold),
+            })
+            .sum();
+    }
+    let text = match val {
+        Val::Empty => return 0.0,
+        Val::Num(_, s) | Val::Text(s) | Val::Error(s) => s.as_str(),
+        Val::Bool(b) => if *b { "TRUE" } else { "FALSE" },
+    };
+    ems(text) * size * bolder(bold)
 }
 
 /// Writes the table of the cells cols × rows (sheet numbers, in order).
@@ -1668,6 +1781,8 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
             };
             let val = sh.val(vc, vr);
             let css = cell_css(sh, st, &val, sides, sh.table.get(&(vc, vr)));
+            // Shrink to fit (Excel leaves it out for wrapped and rotated text).
+            let shrink = sh.shrink.contains(&(vc, vr)) && !css.wrap && !css.rotated;
             let class = classes.class(&css.td, &css.div);
             out.push_str("<td");
             if !class.is_empty() {
@@ -1685,7 +1800,7 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                 let h: f64 = rows[ri..ri + rspan].iter().map(|r| sh.h(*r)).sum();
                 // Text overflows into the empty cells beside it, as in Excel.
                 let (mut left, mut right) = (0.0, 0.0);
-                if matches!(val, Val::Text(_)) && merge.is_none() && !css.wrap && !css.rotated {
+                if matches!(val, Val::Text(_)) && merge.is_none() && !css.wrap && !css.rotated && !shrink {
                     let grow = |dir: i64| -> f64 {
                         let mut s = 0.0;
                         let mut i = ci as i64 + dir;
@@ -1707,9 +1822,16 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                     }
                 }
                 // data-n: a number that does not fit is shown as ### (print-page.js measures it).
-                let num = if matches!(val, Val::Num(..)) && !css.rotated { " data-n" } else { "" };
+                let num = if matches!(val, Val::Num(..)) && !css.rotated && !shrink { " data-n" } else { "" };
                 let _ = write!(out, "<div{num} style=\"left:{}pt;width:{}pt;height:{}pt\">", n(-left), n(w + left + right), n(h));
-                let text = cell_html(sh, vc, vr, &val, css.wrap);
+                let mut text = cell_html(sh, vc, vr, &val, css.wrap);
+                if shrink {
+                    // A rough guess from the characters; print-page.js measures the text.
+                    let room = w - 3.0 - st.alignment().map(|a| a.indent() as f64 * sh.mdw * 1.4 * 0.75).unwrap_or(0.0);
+                    let wide = text_width(sh, vc, vr, &val, st);
+                    let zoom = if wide > room && room > 0.0 { (room / wide).max(0.05) } else { 1.0 };
+                    text = format!("<span class=\"xljs-shrink\" style=\"zoom:{}\">{text}</span>", n(zoom));
+                }
                 if css.rotated && st.alignment().map(|a| a.text_rotation()).unwrap_or(0) != 255 {
                     let rot = st.alignment().map(|a| a.text_rotation()).unwrap_or(0);
                     let deg = if rot <= 90 { -(rot as f64) } else { rot as f64 - 90.0 };

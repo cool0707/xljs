@@ -132,6 +132,31 @@ const cols = tb.sheet("列指定").toHtml();
 equal(pages(cols), 1, "whole columns end at the used range");
 equal(cols.match(/<tr /g).length, 10, "whole columns: 10 rows");
 
+// Several fonts in one cell (testdata/xlsx/make_richtext.py).
+const rb = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "richtext.xlsx")).sheets[0];
+equal(rb.getValue("B1"), "前インライン後", "inline rich text: the text of every run");
+const rh = rb.toHtml();
+const span = (t) => (rh.match(new RegExp(`<span style="([^"]*)">${t}</span>`)) ?? [])[1] ?? "";
+ok(rh.includes("><span>通常<span"), "a run without properties has the cell's font");
+ok(span("赤で大きく").includes("font-size:16pt") && span("赤で大きく").includes("color:#FF0000"), "red and larger: " + span("赤で大きく"));
+ok(span("太字青").includes("font-family:&quot;ＭＳ Ｐゴシック&quot;") && span("太字青").includes("color:#0000FF"), "the font name is escaped: " + span("太字青"));
+ok(span("細字").includes("font-weight:normal") && span("細字").includes("font-size:11pt"), "a run is not bold in a bold cell: " + span("細字"));
+ok(span("下線").includes("text-decoration:underline") && span("取消").includes("text-decoration:line-through"), "underline and strike");
+ok(span("2").includes("vertical-align:super") && span("斜体").includes("font-style:italic"), "superscript and italic");
+ok(span("インライン").includes("font-size:18pt") && span("インライン").includes("color:#0070C0"), "inline rich text: " + span("インライン"));
+ok(!rb.toHtml({ blackAndWhite: true }).includes("color:#FF0000"), "black and white: no colors of runs");
+
+// Shrink to fit (the sheet 縮小 of richtext.xlsx).
+const kh = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "richtext.xlsx")).sheet("縮小").toHtml();
+const zoom = (t) => Number((kh.match(new RegExp(`<span class="xljs-shrink" style="zoom:([0-9.]+)">(<span>)?${t}`)) ?? [])[1]);
+ok(zoom("とても長い") > 0.15 && zoom("とても長い") < 0.35, "long text is shrunk: " + zoom("とても長い"));
+equal(zoom("短い"), 1, "short text keeps its size");
+ok(zoom("1,234,567,890,123") > 0.35 && zoom("1,234,567,890,123") < 0.6, "numbers are shrunk: " + zoom("1,234,567,890,123"));
+ok(!/<div data-n[^>]*><span class="xljs-shrink"/.test(kh), "a shrunk number is not shown as ###");
+ok(zoom("前") > 0.15 && zoom("前") < 0.35, "rich text is shrunk by its larger runs: " + zoom("前"));
+ok(!/xljs-shrink[^>]*>折り返す/.test(kh), "wrapped text is not shrunk");
+ok(/width:42pt;height:15pt"><span class="xljs-shrink" style="zoom:[0-9.]+">とても/.test(kh), "shrunk text does not run into the next cell");
+
 // Shapes, text boxes, lines, groups and a freeform (testdata/xlsx/make_shapes.py).
 const sh = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "shapes.xlsx")).sheets[0].toHtml();
 for (const t of ["テキストボックスの文字", "太字で赤", "角丸", "楕円", "ここに注意", "四角", "ひし形", "縦書きの文字"]) ok(sh.includes(`>${t}<`), t);
