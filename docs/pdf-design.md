@@ -145,7 +145,7 @@ umya-spreadsheet の図形のモデルは一部しか持たないので使わな
 
 - 条件付き書式、SmartArt、ワードアートの効果、図形の影・3-D・グラデーション（最初の色で塗る）・パターン、よく使うもの以外の既定の図形の形（四角になる）、
   画像のトリミング、EMF/WMF の画像、コメント、フォームのコントロール、ヘッダー/フッターの画像、先頭ページ・偶数ページ用のヘッダー。
-- 縮小して全体を表示（shrink to fit）、`#####` の表示（数値が入りきらない）、塗りのパターン（単色以外は前景色で塗る）、グラデーションの塗り。
+- 塗りのパターン（単色以外は前景色で塗る）、グラデーションの塗り。
 - 先頭ページ番号（`firstPageNumber`）、行列番号の印刷、簡易印刷、印刷の品質。白黒印刷は塗りと色を消すだけ（画像・図形はそのまま）。
 - 印刷ダイアログでだけ選んだ拡大縮小（「シートを 1 ページに印刷」など。保存されないもの）は分からないので、Excel の PDF とページ数が違うことがある。
 - Excel 2016 以降のグラフ（chartEx）やレーダーなど `sheet.charts` で描けないもの（枠の中に理由を書く）。
@@ -166,3 +166,17 @@ umya-spreadsheet の図形のモデルは一部しか持たないので使わな
   `print_pdf_writes_a_file`（`print.xlsx` を PDF にしてファイルができること）。
 - 見た目は Playwright の Chromium で `print.html` に偽の `chrome.webview` を付けて `init` を送り、`page.pdf({ preferCSSPageSize: true })` →
   `pdftoppm` で画像にして確認した（`Page.printToPDF` と同じ経路）。
+
+## 6. 残務
+
+umya-spreadsheet（3.1）の制約で残っているもの。いずれライブラリをフォークするなどして対応する。
+
+- **縮小して全体を表示（`shrinkToFit`）の保持と設定**: umya の `Alignment` にこの属性がなく、読み込みでも保存でも落ちる。
+  - 印刷は開くときに styles.xml とシートの XML から集めた `RawPrint::shrink`（セルの位置）で対応しているが、位置で持っているので
+    スクリプトで行・列の挿入や削除をすると印刷の縮小がずれる。
+  - xljs で開いて保存したブックからは縮小の指定が消える。
+  - `types/xljs.d.ts` の `AlignmentSpec.shrink` は型にあるだけで、`style({ alignment: { shrink: true } })` は効かない
+    （`xlsx_style.rs` の `AlignSpec` に項目がない）。`getStyle` も返さない。
+  - フォーク後は `Alignment` に `shrink_to_fit` を足して読み書きし、`RawPrint::shrink` をやめてセルのスタイルから読む。
+- **インライン文字列のリッチテキスト**: umya は `t="inlineStr"` の `<r>` の文字を最後のランしか残さない。開くときに
+  `xlsx.rs` の `inline_rich_text` でシートの XML から読み直して補っている。フォーク後は umya 側で直してこの処理を消す。
