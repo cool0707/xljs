@@ -81,6 +81,36 @@ fn console_form_tables_and_tabs() {
 }
 
 #[test]
+fn console_form_new_kinds() {
+    let _l = lock_lang("ja");
+    let out = SharedBuf::default();
+    // checkboxes: a bad choice, then numbers; then by labels; combobox: free text and a label; tags; dateRange.
+    let input = ["9", "1,3", "総務;経理", "名古屋", "東京", "a; b", "2026-04-01", "", ""].join("\n");
+    let c = console(&input, &out);
+    let opts = vec![opt("営業"), opt("総務"), opt("経理")];
+    let o = FormOptions {
+        fields: vec![
+            FormField { label: "注意".into(), value: json!("1 行目\n2 行目"), ..field("n", "", "note") },
+            FormField { options: opts.clone(), value: json!(["総務"]), ..field("a", "部署", "checkboxes") },
+            FormField { options: opts.clone(), ..field("b", "部署 2", "checkboxes") },
+            FormField { options: vec![opt("東京")], custom: true, ..field("c", "都市", "combobox") },
+            FormField { options: vec![opt("東京")], custom: true, ..field("d", "都市 2", "combobox") },
+            field("t", "語", "tags"),
+            FormField { value: json!(["", "2026-04-30"]), ..field("r", "期間", "dateRange") },
+        ],
+        ..Default::default()
+    };
+    let v = c.form(&o).unwrap_or_else(|| panic!("cancelled:\n{}", out.text()));
+    assert_eq!(
+        Value::Object(v),
+        json!({"a": ["営業", "経理"], "b": ["総務", "経理"], "c": "名古屋", "d": "東京", "t": ["a", "b"], "r": ["2026-04-01", "2026-04-30"]})
+    );
+    for s in ["* 注意\n  1 行目\n  2 行目\n", " *2) 総務", "番号（カンマ区切り、なしは「-」） [2]: ", "1 から 3 までの番号", "  終了 [2026-04-30]: "] {
+        assert!(out.text().contains(s), "output does not contain {s:?}:\n{}", out.text());
+    }
+}
+
+#[test]
 fn console_form_buttons() {
     let _l = lock_lang("ja");
     let out = SharedBuf::default();

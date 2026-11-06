@@ -37,7 +37,9 @@ pub(crate) fn form(c: &Console, o: &FormOptions) -> Option<Map<String, Value>> {
         if !f.error.is_empty() {
             c.w(&format!("! {}: {}\n", field_label(f), f.error));
         }
-        if f.kind == "table" && f.select == SELECT_NONE {
+        if f.kind == "note" {
+            show_note(c, f);
+        } else if f.kind == "table" && f.select == SELECT_NONE {
             c.w(&format!("{}\n", field_label(f)));
             c.w(&render_table(&f.columns, &f.rows));
         } else {
@@ -124,19 +126,21 @@ fn ask_field(c: &Console, f: &FormField) -> Option<Value> {
             return Some(json!(is_yes(&line)));
         }
         "select" | "radio" => return ask_choice(c, &label, &f.options, &cur),
+        "combobox" => return ask_choice_or_text(c, &label, &f.options, &cur),
+        "checkboxes" => return ask_choices(c, &label, &f.options, &f.value),
+        "dateRange" => return ask_range(c, &label, &f.value),
+        "tags" => {
+            label += &t!("ui.multipleHint");
+            let line = c.prompt("", &label, &cur)?;
+            return Some(split_list(&line));
+        }
         "table" => return ask_rows(c, &label, f),
         "password" => return c.read_password(&label, &cur),
         "files" => {
             label += &filter_hint(&accept_filters(&f.accept));
             label += &t!("ui.multipleHint");
             let line = c.prompt("", &label, &cur)?;
-            let out: Vec<Value> = line
-                .split(';')
-                .map(|p| p.trim().trim_matches('"').to_string())
-                .filter(|p| !p.is_empty())
-                .map(Value::String)
-                .collect();
-            return Some(Value::Array(out));
+            return Some(split_list(&line));
         }
         "file" | "saveFile" => label += &filter_hint(&accept_filters(&f.accept)),
         _ => {}
@@ -146,6 +150,98 @@ fn ask_field(c: &Console, f: &FormField) -> Option<Value> {
         line = line.trim().trim_matches('"').to_string();
     }
     Some(Value::String(line))
+}
+
+/// "a; b" as ["a", "b"] (quotes around an item are dropped).
+fn split_list(line: &str) -> Value {
+    Value::Array(
+        line.split(';')
+            .map(|p| p.trim().trim_matches('"').to_string())
+            .filter(|p| !p.is_empty())
+            .map(Value::String)
+            .collect(),
+    )
+}
+
+/// Prints a note field: its heading (if any) and its text.
+fn show_note(c: &Console, f: &FormField) {
+    let text = value_string(&f.value);
+    if !f.label.is_empty() {
+        c.w(&format!("* {}\n", f.label));
+    }
+    for line in text.lines() {
+        c.w(&format!("  {line}\n"));
+    }
+}
+
+/// Asks for the start and the end of a dateRange field; the value is [from, to].
+fn ask_range(c: &Console, label: &str, value: &Value) -> Option<Value> {
+    let cur = |i: usize| value.get(i).map(value_string).unwrap_or_default();
+    c.w(&format!("{label}\n"));
+    let from = c.prompt("", &format!("  {}", t!("form.rangeFrom")), &cur(0))?;
+    let to = c.prompt("", &format!("  {}", t!("form.rangeTo")), &cur(1))?;
+    Some(json!([from.trim(), to.trim()]))
+}
+
+/// Lists the options of a checkboxes field and asks for the numbers of
+/// those to check ("1,3"; "-" for none); the value is their values.
+fn ask_choices(c: &Console, label: &str, opts: &[FormOption], value: &Value) -> Option<Value> {
+    let on: Vec<String> = value.as_array().map(|a| a.iter().map(value_string).collect()).unwrap_or_default();
+    c.w(&format!("{label}\n"));
+    let mut def = Vec::new();
+    for (i, o) in opts.iter().enumerate() {
+        let mark = if on.contains(&o.value) {
+            def.push((i + 1).to_string());
+            "*"
+        } else {
+            " "
+        };
+        c.w(&format!(" {mark}{}) {}\n", i + 1, o.label));
+    }
+    loop {
+        let line = c.prompt("", &t!("ui.checkboxesPick"), &def.join(","))?;
+        match line.trim() {
+            "" => return Some(json!(on)),
+            "-" => return Some(json!([])),
+            line => {
+                // Numbers, or values or labels separated by ";".
+                let picked: Option<Vec<String>> = match parse_selection(line, opts.len()) {
+                    Some(sel) => Some(sel.into_iter().map(|n| opts[n as usize].value.clone()).collect()),
+                    None => line
+                        .split(';')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(|s| opts.iter().find(|o| s == o.value || s == o.label).map(|o| o.value.clone()))
+                        .collect(),
+                };
+                match picked {
+                    Some(v) => return Some(json!(v)),
+                    None => c.w(&format!("! {}\n", t!("ui.badChoice", opts.len()))),
+                }
+            }
+        }
+    }
+}
+
+/// Like ask_choice, but text that is not an option is taken as it is.
+fn ask_choice_or_text(c: &Console, label: &str, opts: &[FormOption], cur: &str) -> Option<Value> {
+    c.w(&format!("{label}\n"));
+    for (i, o) in opts.iter().enumerate() {
+        let mark = if o.value == cur { "*" } else { " " };
+        c.w(&format!(" {mark}{}) {}\n", i + 1, o.label));
+    }
+    let line = c.prompt("", &t!("ui.choose"), cur)?;
+    let line = line.trim();
+    if line == cur {
+        return Some(Value::String(cur.to_string()));
+    }
+    if let Ok(n) = line.parse::<usize>()
+        && n >= 1
+        && n <= opts.len()
+    {
+        return Some(Value::String(opts[n - 1].value.clone()));
+    }
+    Some(Value::String(opts.iter().find(|o| line == o.label).map_or(line.to_string(), |o| o.value.clone())))
 }
 
 /// Shows a table field and asks for the numbers of the rows to select; the

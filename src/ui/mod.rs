@@ -273,11 +273,15 @@ pub struct FormField {
     pub name: String,
     pub label: String,
     /// text, password, number, date, month, time, select, radio, checkbox,
-    /// textarea, file, files, folder, saveFile, table
+    /// textarea, file, files, folder, saveFile, table, and checkboxes
+    /// (several options), combobox (an option or any text), tags (a list of
+    /// strings), dateRange (two dates) and note (text shown, no value)
     #[serde(rename = "type")]
     pub kind: String,
     pub options: Vec<FormOption>,
     pub required: bool,
+    /// combobox: a value that is not among the options is accepted as typed.
+    pub custom: bool,
     pub placeholder: String,
     pub help: String,
     pub accept: Vec<String>,

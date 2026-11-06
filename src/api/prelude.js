@@ -1490,7 +1490,16 @@
   }
 
   const FIELD_TYPES = ["text", "password", "number", "date", "month", "time", "select", "radio", "checkbox",
-    "textarea", "file", "files", "folder", "saveFile", "table", "chart"];
+    "textarea", "file", "files", "folder", "saveFile", "table", "chart",
+    "switch", "checkboxes", "segmented", "combobox", "slider", "dateRange", "tags", "note"];
+
+  /** Field types whose wire value is a list of strings (segmented too with multiple: true). */
+  const LIST_TYPES = ["checkboxes", "tags"];
+  const isList = (f) => LIST_TYPES.includes(f.type) || (f.type === "segmented" && f.multiple);
+
+  /** Looks of a note field and of buttons. */
+  const NOTE_VARIANTS = ["info", "success", "warning", "error"];
+  const BUTTON_VARIANTS = ["default", "primary", "destructive", "ghost"];
 
   /** Types of editable table cells. */
   const CELL_TYPES = ["text", "number", "date", "month", "time", "select", "checkbox"];
@@ -1664,27 +1673,39 @@
     const options = Array.from(f.options || []).map((o) => (o !== null && typeof o === "object"
       ? { value: String(o.value), label: String(o.label === undefined ? o.value : o.label) }
       : { value: String(o), label: String(o) }));
-    if ((type === "select" || type === "radio") && !options.length) throw new TypeError(T("form.noOptions", name));
+    if (["select", "radio", "checkboxes", "segmented"].includes(type) && !options.length) throw new TypeError(T("form.noOptions", name));
+    if (type === "combobox" && !options.length && !f.allowCustom) throw new TypeError(T("form.noOptions", name));
+    const variant = f.variant === undefined || f.variant === null || f.variant === "" ? "info" : String(f.variant);
+    if (type === "note" && !NOTE_VARIANTS.includes(variant)) throw new TypeError(T("form.badNoteVariant", name, variant));
     const accept = (typeof f.accept === "string" ? [f.accept] : Array.from(f.accept || []))
       .map((a) => String(a).replace(/^\*/, "")).map((a) => (a.startsWith(".") ? a : "." + a).toLowerCase());
     const num = (v) => (v === undefined || v === null || v === "" ? null : Number(v));
     const table = type === "table" ? formTable(f, f.rows, f.columns) : null;
     const chart = type === "chart" ? chartOf(f.chart || { data: [] }) : null;
+    // A slider always has a range (0 to 100 by default).
+    const slider = type === "slider";
+    const maxLength = Number(f.maxLength);
     return {
       name, type, options, accept, table, chart, tab, group, columns: f.columns,
+      multiple: type === "segmented" && !!f.multiple, custom: type === "combobox" && !!f.allowCustom,
+      variant: type === "note" ? variant : "",
+      prefix: f.prefix === undefined || f.prefix === null ? "" : String(f.prefix),
+      suffix: f.suffix === undefined || f.suffix === null ? "" : String(f.suffix),
+      maxLength: Number.isFinite(maxLength) && maxLength > 0 ? Math.floor(maxLength) : 0,
       tableSpec: { selectable: f.selectable, editable: f.editable, validateRow: f.validateRow },
-      label: f.label === undefined ? name : String(f.label),
+      // A note shows no label unless it is given.
+      label: f.label === undefined ? (type === "note" ? "" : name) : String(f.label),
       icon: faClass(f.icon),
       required: !!f.required,
       placeholder: f.placeholder ? String(f.placeholder) : "",
       help: f.help ? String(f.help) : "",
       tooltip: f.tooltip ? String(f.tooltip) : "",
-      min: num(f.min), max: num(f.max), step: f.step === undefined ? null : f.step,
+      min: num(f.min) ?? (slider ? 0 : null), max: num(f.max) ?? (slider ? 100 : null), step: f.step === undefined ? null : f.step,
       rows: type === "table" || type === "chart" ? Number(f.height) || 0 : Number(f.rows) || 0,
       pattern: f.pattern === undefined || f.pattern === null || f.pattern === "" ? null
         : f.pattern instanceof RegExp ? f.pattern : new RegExp("^(?:" + f.pattern + ")$"),
       patternMessage: f.patternMessage ? String(f.patternMessage) : "",
-      remember: f.remember !== false && type !== "password" && type !== "table" && type !== "chart",
+      remember: f.remember !== false && !["password", "table", "chart", "note"].includes(type),
       validate: typeof f.validate === "function" ? f.validate : null,
       onChange: typeof f.onChange === "function" ? f.onChange : null,
       default: f.default,
@@ -1695,8 +1716,16 @@
 
   function toWire(f, v) {
     v = plainDate(v);
-    if (f.type === "checkbox") return !!v;
+    if (f.type === "checkbox" || f.type === "switch") return !!v;
     if (f.type === "chart") return null;
+    if (isList(f)) return [v].flat().filter((x) => x !== null && x !== undefined && x !== "").map((x) => String(x));
+    if (f.type === "dateRange") {
+      // { from, to } or [from, to]; each a Date or "YYYY-MM-DD".
+      const [a, b] = v === null || v === undefined ? [] : Array.isArray(v) ? v : [v.from, v.to];
+      const day = (d) => (d = plainDate(d), d === null || d === undefined ? "" : d instanceof Date ? (isNaN(d) ? "" : ymd(d)) : String(d));
+      return [day(a), day(b)];
+    }
+    if (f.type === "slider" && (v === null || v === undefined || v === "")) return String(f.min);
     if (f.type === "table") {
       // Selected rows: the rows themselves or their indices.
       const n = f.table.data.length;
@@ -1721,19 +1750,55 @@
     .map((s) => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean);
 
   function wireEmpty(f, w) {
-    if (f.type === "checkbox") return w !== true && w !== "true";
-    if (f.type === "files") return wireList(w).length === 0;
+    if (f.type === "checkbox" || f.type === "switch") return w !== true && w !== "true";
+    if (f.type === "files" || isList(f)) return wireList(w).length === 0;
+    if (f.type === "dateRange") return wireRange(w).every((s) => s === "");
     if (f.type === "table") return !Array.isArray(w) || w.length === 0;
     return wireStr(w).trim() === "";
   }
 
   /** Fields without a value: tables only shown, and charts (but editable Gantt charts, whose value is their rows). */
-  const noValue = (f) => (f.type === "table" && !f.table.select && !f.table.edit) || (f.type === "chart" && !f.chart.editable);
+  const noValue = (f) => (f.type === "table" && !f.table.select && !f.table.edit) || (f.type === "chart" && !f.chart.editable) || f.type === "note";
+
+  /** The two dates of a dateRange wire value: [from, to] (or "from/to"), as trimmed strings. */
+  const wireRange = (w) => {
+    const [a, b] = Array.isArray(w) ? w : wireStr(w).split("/");
+    return [wireStr(a).trim(), wireStr(b).trim()];
+  };
+
+  /** A local date for "YYYY-MM-DD" (or with slashes), or null. */
+  function parseDay(s) {
+    const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(wireStr(s).trim().replace(/\//g, "-"));
+    if (!m) return null;
+    const d = new Date(+m[1], +m[2] - 1, +m[3]);
+    return d.getMonth() === +m[2] - 1 ? d : null;
+  }
+
+  /** Characters of a string (surrogate pairs count once), for maxLength. */
+  const charCount = (s) => Array.from(s).length;
 
   function fromWire(f, w) {
     switch (f.type) {
       case "chart": return f.chart.data.slice();
-      case "checkbox": return w === true || w === "true";
+      case "checkbox": case "switch": return w === true || w === "true";
+      case "checkboxes": case "segmented": {
+        if (!f.multiple && f.type === "segmented") return wireStr(w);
+        // In the order of the options.
+        const on = new Set(wireList(w));
+        return f.options.filter((o) => on.has(o.value)).map((o) => o.value);
+      }
+      case "tags": return Array.from(new Set(wireList(w)));
+      case "combobox": {
+        // An option's label stands for its value.
+        const t = wireStr(w);
+        if (f.options.some((o) => o.value === t)) return t;
+        const o = f.options.find((x) => x.label === t.trim());
+        return o ? o.value : t;
+      }
+      case "dateRange": {
+        const [a, b] = wireRange(w);
+        return a === "" && b === "" ? null : { from: parseDay(a), to: parseDay(b) };
+      }
       case "files": return wireList(w).map((p) => new FileSystemFileHandle(p));
       case "table": {
         if (!f.table.select) return f.table.data.slice(); // editable: all rows
@@ -1743,18 +1808,13 @@
       }
       case "file": case "saveFile": { const p = wireStr(w).trim(); return p ? new FileSystemFileHandle(p) : null; }
       case "folder": { const p = wireStr(w).trim(); return p ? new FileSystemDirectoryHandle(p) : null; }
-      case "number": {
+      case "number": case "slider": {
         // Full-width digits and thousands separators as typed in Japanese.
         const s = wireStr(w).trim().replace(/[０-９．，－＋]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
           .replace(/^(?=[+-]?[\d,]+(\.\d*)?$)([+-]?)(\d{1,3}(,\d{3})+)/, (m) => m.replace(/,/g, ""));
         return s === "" ? null : Number(s);
       }
-      case "date": {
-        const m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(wireStr(w).trim().replace(/\//g, "-"));
-        if (!m) return null;
-        const d = new Date(+m[1], +m[2] - 1, +m[3]);
-        return d.getMonth() === +m[2] - 1 ? d : null;
-      }
+      case "date": return parseDay(w);
       case "month": case "time": { const s = wireStr(w).trim(); return s === "" ? null : s; }
     }
     return wireStr(w);
@@ -1762,10 +1822,13 @@
 
   /** Message for a wire value of a field or an editable cell that does not pass its checks ("" if it does). */
   function checkValue(f, w, v) {
-    if (wireEmpty(f, w)) return f.required ? T(f.type === "table" ? "form.selectRow" : "form.required") : "";
+    if (wireEmpty(f, w)) {
+      if (!f.required) return "";
+      return T(f.type === "table" ? "form.selectRow" : f.type === "checkboxes" || f.type === "segmented" ? "form.chooseOne" : "form.required");
+    }
     let e = "";
     switch (f.type) {
-      case "number":
+      case "number": case "slider":
         if (!isFinite(v)) e = T("form.notNumber");
         else if (f.min !== null && v < f.min) e = T("form.min", f.min);
         else if (f.max !== null && v > f.max) e = T("form.max", f.max);
@@ -1774,10 +1837,27 @@
       case "month": if (!/^\d{4}-\d{2}$/.test(v)) e = T("form.notMonth"); break;
       case "time": if (!/^\d{1,2}:\d{2}(:\d{2})?$/.test(v)) e = T("form.notTime"); break;
       case "select": case "radio": if (!f.options.some((o) => o.value === v)) e = T("form.badOption"); break;
+      case "combobox": if (!f.custom && !f.options.some((o) => o.value === v)) e = T("form.badOption"); break;
+      case "segmented": case "checkboxes":
+        if (isList(f) ? wireList(w).some((x) => !f.options.some((o) => o.value === x)) : !f.options.some((o) => o.value === v)) e = T("form.badOption");
+        break;
+      case "tags": {
+        if (f.pattern) { const bad = v.find((x) => !f.pattern.test(x)); if (bad !== undefined) e = (f.patternMessage || T("form.pattern")) + ": " + bad; }
+        if (!e && f.maxLength) { const long = v.find((x) => charCount(x) > f.maxLength); if (long !== undefined) e = T("form.maxLength", f.maxLength) + ": " + long; }
+        return e;
+      }
+      case "dateRange": {
+        const [a, b] = wireRange(w);
+        if (a === "" || b === "") e = T("form.rangeIncomplete");
+        else if (!v.from || !v.to) e = T("form.notDate");
+        else if (v.from > v.to) e = T("form.rangeOrder");
+        break;
+      }
       case "file": if (!fsObj.isFile(v)) e = T("form.fileNotFound", v.path); break;
       case "files": { const bad = v.find((h) => !fsObj.isFile(h)); if (bad) e = T("form.fileNotFound", bad.path); break; }
       case "folder": if (!fsObj.isDirectory(v)) e = T("form.folderNotFound", v.path); break;
     }
+    if (!e && f.maxLength && typeof v === "string" && charCount(v) > f.maxLength) e = T("form.maxLength", f.maxLength);
     if (!e && f.pattern && typeof v === "string" && !f.pattern.test(v)) e = f.patternMessage || T("form.pattern");
     return e;
   }
@@ -1831,7 +1911,7 @@
    * passes): its checks and its own validate, not the form's validate.
    */
   async function checkField(fields, f, wire) {
-    if ((f.type === "table" && !f.table.select) || f.type === "chart") return ""; // cells are checked on their own
+    if ((f.type === "table" && !f.table.select) || f.type === "chart" || f.type === "note") return ""; // cells are checked on their own
     const w = wire[f.name], v = fromWire(f, w);
     const e = checkValue(f, w, v) || (f.validate ? await f.validate(v, rawValues(fields, wire)) : "");
     return e ? String(e) : "";
@@ -1936,6 +2016,8 @@
       running: T("form.running"), done: T("form.done"), aborted: T("form.aborted"), failed: T("form.failed"),
       openFolder: T("form.openFolder"), noRows: T("table.empty"),
       cellError: T("form.cellError"), rowError: T("form.rowError"), moreErrors: T("form.moreErrors"),
+      moreActions: T("form.moreActions"), removeTag: T("form.removeTag"), addTag: T("form.addTag"),
+      rangeFrom: T("form.rangeFrom"), rangeTo: T("form.rangeTo"), noMatch: T("form.noMatch"),
     };
   }
 
@@ -1950,7 +2032,10 @@
           if (!Array.isArray(f.fields) && f.fields !== undefined) throw new TypeError(T("form.badGroup", String(f.group)));
           // at: the index of its first field (where the group starts on the page).
           const g = groups.length;
-          groups.push({ label: String(f.group ?? ""), icon: faClass(f.icon), help: f.help ? String(f.help) : "", tab, at: fields.length });
+          groups.push({
+            label: String(f.group ?? ""), icon: faClass(f.icon), help: f.help ? String(f.help) : "", tab, at: fields.length,
+            collapsible: !!(f.collapsible || f.collapsed), collapsed: !!f.collapsed,
+          });
           for (const x of Array.from(f.fields || [])) {
             if (x && typeof x === "object" && "group" in x) throw new TypeError(T("form.nestedGroup", String(x.group)));
             fields.push(normField(x, fields.length, tab, g));
@@ -1976,14 +2061,32 @@
     const wire = {};
     for (const f of fields) wire[f.name] = f.remember && f.name in remembered ? remembered[f.name] : toWire(f, f.default);
     // Buttons beside the submit button; each runs its onClick like onSubmit.
-    const buttons = Array.from(options.buttons || []).map((b, k) => {
-      if (!b || typeof b !== "object" || typeof b.onClick !== "function") throw new TypeError(T("form.badButton", k + 1));
+    // A button's menu (a split button, or a menu button without onClick) holds more of them.
+    const button = (b, label, menu) => {
+      const variant = b.variant === undefined || b.variant === null || b.variant === "" ? "default" : String(b.variant);
+      if (!BUTTON_VARIANTS.includes(variant)) throw new TypeError(T("form.badVariant", label, variant));
       return {
-        label: b.label === undefined ? String(k + 1) : String(b.label), icon: faClass(b.icon),
-        tooltip: b.tooltip ? String(b.tooltip) : "",
-        onClick: b.onClick, validate: b.validate !== false, close: !!b.close,
+        label, icon: faClass(b.icon), tooltip: b.tooltip ? String(b.tooltip) : "", variant,
+        confirm: b.confirm ? String(b.confirm) : "",
+        onClick: typeof b.onClick === "function" ? b.onClick : null, validate: b.validate !== false, close: !!b.close, menu,
       };
+    };
+    const buttons = Array.from(options.buttons || []).map((b, k) => {
+      if (!b || typeof b !== "object") throw new TypeError(T("form.badButton", k + 1));
+      const label = b.label === undefined ? String(k + 1) : String(b.label);
+      const menu = Array.from(b.menu || []).map((x, j) => {
+        if (!x || typeof x !== "object" || typeof x.onClick !== "function") throw new TypeError(T("form.badMenuItem", label, j + 1));
+        return button(x, x.label === undefined ? String(j + 1) : String(x.label), []);
+      });
+      if (typeof b.onClick !== "function" && !menu.length) throw new TypeError(T("form.badButton", k + 1));
+      return button(b, label, menu);
     });
+    // What can be pressed, in order: the buttons with onClick and the items of their menus ("label ▸ item").
+    const actions = [];
+    for (const b of buttons) {
+      if (b.onClick) actions.push(b);
+      for (const x of b.menu) actions.push(Object.assign({}, x, { path: b.label + " ▸ " + x.label }));
+    }
     const o = {
       title: options.title === undefined ? title() : String(options.title),
       description: options.description ? String(options.description) : "",
@@ -1991,7 +2094,7 @@
       noSubmit: options.submit === false && buttons.length > 0,
       titleBar: customTitleBar(options.titleBar), icon: faClass(options.icon), submitIcon: faClass(options.submitIcon),
       accent: themeColor(options.accent, "form.badAccent"), background: themeColor(options.background, "form.badBackground"),
-      radius: formRadius(options.radius), key, tabs, tabIcons, groups, buttons,
+      radius: formRadius(options.radius), key, tabs, tabIcons, groups, buttons, actions,
     };
     if (native.devPreview) return formPreview(o, fields, wire);
     return native.supportsWindows ? formWindow(o, fields, wire, options) : formPrompt(o, fields, wire, options);
@@ -2021,9 +2124,9 @@
       for (const f of fields) if (f.chart) printChart(f.chart);
       const spec = {
         title: o.title, description: o.description, error,
-        submit: o.noSubmit ? "" : o.submit || T("form.ok"), buttons: o.buttons.map((b) => b.label),
+        submit: o.noSubmit ? "" : o.submit || T("form.ok"), buttons: o.actions.map((b) => b.path || b.label),
         fields: fields.filter((f) => !f.chart).map((f) => Object.assign({
-          name: f.name, label: f.label, type: f.type, options: f.options, required: f.required,
+          name: f.name, label: promptLabel(f), type: promptType(f), options: f.options, required: f.required, custom: f.custom,
           placeholder: f.placeholder, help: f.help, accept: f.accept, value: wire[f.name], error: errors[f.name] || "",
           tab: f.tab >= 0 ? o.tabs[f.tab] : "",
           group: f.group >= 0 ? o.groups[f.group].label : "", groupHelp: f.group >= 0 ? o.groups[f.group].help : "",
@@ -2037,12 +2140,14 @@
       if (r === null) return result;
       const answer = JSON.parse(r);
       // "$button": the index or label of the button pressed (none: the submit button).
-      let b = o.noSubmit ? o.buttons[0] : null;
+      // The items of the buttons' menus are listed after their button ("label ▸ item"; the item's label alone also works).
+      let b = o.noSubmit ? o.actions[0] : null;
       if ("$button" in answer) {
         const x = answer.$button;
         delete answer.$button;
         if (x !== null && x !== undefined) {
-          b = typeof x === "number" ? o.buttons[x] : o.buttons.find((y) => y.label === String(x));
+          b = typeof x === "number" ? o.actions[x]
+            : o.actions.find((y) => y.path === String(x)) || o.actions.find((y) => y.label === String(x));
           if (!b) throw new TypeError(T("form.noButton", x));
         }
       }
@@ -2078,6 +2183,7 @@
       errors = c.errors || {};
       error = c.error || "";
       if (!c.values) continue;
+      if (b && b.confirm && !native.uiConfirm(o.title, b.confirm)) continue;
       if (!b || b.validate || b.close) result = c.values;
       const handler = b ? b.onClick : options.onSubmit;
       if (typeof handler === "function") {
@@ -2092,6 +2198,26 @@
       }
       if (!b || b.close) return result;
     }
+  }
+
+  /**
+   * The type of a field for the console and the mock: the new kinds of
+   * input map to the ones they look like (a switch is a checkbox).
+   */
+  function promptType(f) {
+    switch (f.type) {
+      case "switch": return "checkbox";
+      case "slider": return "number";
+      case "segmented": return f.multiple ? "checkboxes" : "radio";
+      case "combobox": return f.custom ? "combobox" : "select";
+    }
+    return f.type;
+  }
+
+  /** A field's label for the console and the mock, with its unit ("金額 (円)"). */
+  function promptLabel(f) {
+    const unit = [f.prefix, f.suffix].filter(Boolean).join(" … ");
+    return unit ? `${f.label} (${unit})` : f.label;
   }
 
   /** A chart of a form for the console and the mock: as a table. */
@@ -2128,10 +2254,13 @@
     const heights = o.tabs.map(() => 0);
     let common = 0;
     for (const f of fields) {
+      if (f.group >= 0 && o.groups[f.group].collapsed) continue; // opened by the user
+      const lines = (t) => String(t || "").split("\n").reduce((n, l) => n + 1 + Math.floor(l.length / 40), 0);
       let fh = 16 + (f.type === "textarea" ? 12 + 20 * (f.rows || 4) : f.type === "files" ? 12 + 20 * Math.max(3, f.rows || 3)
         : f.type === "table" ? 36 + 29 * tableLines(f) : f.type === "chart" ? 12 + chartHeight(f)
-          : f.type === "checkbox" || f.type === "radio" ? 28 : 32);
-      if (f.help) fh += 20;
+          : f.type === "note" ? 24 + 20 * (lines(wireStr(f.default)) + (f.label ? 1 : 0))
+            : ["checkbox", "radio", "switch", "checkboxes"].includes(f.type) ? 28 : 32);
+      if (f.help || f.maxLength) fh += 20;
       if (f.tab >= 0) heights[f.tab] += fh;
       else common += fh;
     }
@@ -2163,11 +2292,21 @@
       groups: o.groups,
       noSubmit: o.noSubmit, buttons: o.buttons.map((b) => b.label), buttonIcons: o.buttons.map((b) => b.icon),
       buttonTooltips: o.buttons.map((b) => b.tooltip),
+      // Only when used, so that forms without them send what they did.
+      buttonVariants: o.buttons.some((b) => b.variant !== "default") ? o.buttons.map((b) => b.variant) : undefined,
+      buttonMenus: o.buttons.some((b) => b.menu.length || !b.onClick)
+        ? o.buttons.map((b) => ({
+          split: !!b.onClick,
+          items: b.menu.map((x) => ({ label: x.label, icon: x.icon, tooltip: x.tooltip, variant: x.variant })),
+        }))
+        : undefined,
       fields: fields.map((f) => ({
         name: f.name, label: f.label, icon: f.icon, type: f.type, options: f.options, required: f.required,
         placeholder: f.placeholder, help: f.help, tooltip: f.tooltip, change: !!f.onChange,
         accept: f.accept, min: f.min, max: f.max, step: f.step,
         rows: f.type === "table" ? tableLines(f) : f.rows, value: wire[f.name], tab: f.tab, group: f.group,
+        multiple: f.multiple || undefined, custom: f.custom || undefined, variant: f.variant || undefined,
+        prefix: f.prefix || undefined, suffix: f.suffix || undefined, maxLength: f.maxLength || undefined,
         table: f.table ? Object.assign({ select: f.table.select, editable: editWire(f.table) || undefined }, tableWire(f.table)) : undefined,
         chart: f.chart ? Object.assign({ height: chartHeight(f) }, chartInit(f.chart)) : undefined,
       })),
@@ -2262,9 +2401,10 @@
             break;
           }
           case "submit": {
-            // button: the index of the button pressed (none: the submit button).
-            const b = typeof m.button === "number" ? o.buttons[m.button] : null;
-            if (b === undefined || (!b && o.noSubmit) || running) return;
+            // button: the index of the button pressed (none: the submit button); item: the index in its menu.
+            const top = typeof m.button === "number" ? o.buttons[m.button] : null;
+            const b = top && typeof m.item === "number" ? top.menu[m.item] : top;
+            if (b === undefined || (b && !b.onClick) || (!b && o.noSubmit) || running) return;
             await editQueue;
             takeValues(m);
             const c = await pressValues(o, b, fields, wire, options);
@@ -2272,6 +2412,11 @@
             if (!c.values) {
               page.send({ type: "errors", errors: c.errors, error: c.error });
               for (const [name, errors] of Object.entries(c.cells || {})) page.send({ type: "cellErrors", field: name, errors });
+              return;
+            }
+            // confirm: asked once the values pass; "no" goes back to the form.
+            if (b && b.confirm && !native.uiConfirm(o.title, b.confirm)) {
+              if (!page.n.isClosed()) page.send({ type: "errors", errors: {}, error: "" });
               return;
             }
             if (!b || b.validate || b.close) result = c.values;
