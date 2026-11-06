@@ -163,7 +163,8 @@ pub fn open_bytes(data: &[u8], path: String) -> Result<Book> {
     if data.starts_with(&[0xD0, 0xCF, 0x11, 0xE0]) {
         return Err(Error::msg("the encrypted file is not supported"));
     }
-    let wb = umya_spreadsheet::reader::xlsx::read_reader(Cursor::new(data), true).map_err(zerr)?;
+    let mut wb = umya_spreadsheet::reader::xlsx::read_reader(Cursor::new(data), true).map_err(zerr)?;
+    inline_rich_text(&mut wb, data);
     let styles = zip_part(data, "xl/styles.xml");
     let mut b = Book::new(wb, path, styles.as_deref());
     b.table_styles = styles.as_deref().map(super::xlsx_table::custom_styles).unwrap_or_default();
@@ -171,6 +172,81 @@ pub fn open_bytes(data: &[u8], path: String) -> Result<Book> {
     b.charts = Some(super::xlsx_chart::ChartParts::collect(data));
     b.print = super::xlsx_print::collect_raw(data);
     Ok(b)
+}
+
+/// Rich text in inline strings (`<c t="inlineStr"><is><r>...`, as openpyxl
+/// writes it): umya-spreadsheet keeps only the text of the last run, so the
+/// runs are read here and set on the cells.
+fn inline_rich_text(wb: &mut Workbook, data: &[u8]) {
+    static CELL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?s)<c\b[^>/]*\bt="inlineStr"[^>/]*>.*?</c>"#).unwrap());
+    let mut found = Vec::new();
+    super::xlsx_print::for_each_sheet(data, |_, name, xml| {
+        let s = String::from_utf8_lossy(xml);
+        if !s.contains("inlineStr") {
+            return;
+        }
+        for m in CELL.find_iter(&s) {
+            if !m.as_str().contains("<r>") && !m.as_str().contains("<r ") {
+                continue;
+            }
+            let Some(c) = super::xlsx_chart::parse(m.as_str().as_bytes()) else { continue };
+            let (Some(r), Some(is)) = (c.attr("r"), c.child("is")) else { continue };
+            let Ok(pos) = parse_ref(r) else { continue };
+            let mut rt = umya_spreadsheet::RichText::default();
+            for run in is.all("r") {
+                let mut el = umya_spreadsheet::TextElement::default();
+                el.set_text(run.child("t").map(|t| t.text.as_str()).unwrap_or(""));
+                if let Some(p) = run.child("rPr") {
+                    el.set_run_properties(run_font(p));
+                }
+                rt.add_rich_text_elements(el);
+            }
+            if !rt.rich_text_elements().is_empty() {
+                found.push((name.to_string(), pos, rt));
+            }
+        }
+    });
+    for (name, pos, rt) in found {
+        if let Ok(ws) = wb.sheet_by_name_mut(&name) {
+            ws.cell_mut(pos).set_rich_text(rt);
+        }
+    }
+}
+
+/// The font of a run's `<rPr>`.
+fn run_font(p: &super::xlsx_chart::Node) -> umya_spreadsheet::Font {
+    let mut f = umya_spreadsheet::Font::default();
+    let val = |name: &str| p.child(name).map(|c| c.attr("val").unwrap_or(""));
+    let on = |name: &str| val(name).is_some_and(|v| !matches!(v, "0" | "false"));
+    if let Some(v) = val("rFont").or_else(|| val("name")) {
+        f.set_name(v);
+    }
+    if let Some(v) = val("sz").and_then(|v| v.parse().ok()) {
+        f.set_size(v);
+    }
+    f.set_bold(on("b"));
+    f.set_italic(on("i"));
+    f.set_strikethrough(on("strike"));
+    if let Some(v) = val("u") {
+        f.set_underline(if v.is_empty() { "single" } else { v });
+    }
+    if let Some(v) = val("vertAlign").and_then(|v| v.parse().ok()) {
+        f.vertical_text_alignment_mut().set_val(v);
+    }
+    if let Some(c) = p.child("color") {
+        let color = f.color_mut();
+        if let Some(v) = c.attr("rgb") {
+            color.set_argb_str(v);
+        } else if let Some(v) = c.attr("theme").and_then(|v| v.parse().ok()) {
+            color.set_theme_index(v);
+        } else if let Some(v) = c.attr("indexed").and_then(|v| v.parse().ok()) {
+            color.set_indexed(v);
+        }
+        if let Some(v) = c.attr("tint").and_then(|v| v.parse().ok()) {
+            color.set_tint(v);
+        }
+    }
+    f
 }
 
 // ---- cell names ----

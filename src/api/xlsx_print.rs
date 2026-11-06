@@ -43,28 +43,36 @@ pub struct RawPrint {
 /// Reads the page setup of every sheet of an xlsx file (see RawPrint).
 pub fn collect_raw(data: &[u8]) -> HashMap<String, RawPrint> {
     let mut out = HashMap::new();
-    let Ok(mut zr) = zip::ZipArchive::new(Cursor::new(data)) else { return out };
+    for_each_sheet(data, |s, name, xml| {
+        let mut r = raw_print(xml);
+        r.hidden = matches!(s.attr("state"), Some("hidden" | "veryHidden"));
+        out.insert(name.to_string(), r);
+    });
+    out
+}
+
+/// Calls f with the `<sheet>` element of workbook.xml, the name and the XML
+/// of every worksheet of an xlsx file.
+pub(super) fn for_each_sheet(data: &[u8], mut f: impl FnMut(&super::xlsx_chart::Node, &str, &[u8])) {
+    let Ok(mut zr) = zip::ZipArchive::new(Cursor::new(data)) else { return };
     let mut read = |name: &str| -> Option<Vec<u8>> {
         let mut f = zr.by_name(name).ok()?;
         let mut b = Vec::new();
         f.read_to_end(&mut b).ok()?;
         Some(b)
     };
-    let Some(wb) = read("xl/workbook.xml").and_then(|b| parse(&b)) else { return out };
+    let Some(wb) = read("xl/workbook.xml").and_then(|b| parse(&b)) else { return };
     let rels: HashMap<String, String> = read("xl/_rels/workbook.xml.rels")
         .and_then(|b| parse(&b))
         .map(|r| r.all("Relationship").filter_map(|x| Some((x.attr("Id")?.to_string(), resolve("xl", x.attr("Target")?)))).collect())
         .unwrap_or_default();
-    let Some(sheets) = wb.child("sheets") else { return out };
+    let Some(sheets) = wb.child("sheets") else { return };
     for s in sheets.all("sheet") {
         let (Some(name), Some(id)) = (s.attr("name"), s.attr("id")) else { continue };
         let Some(part) = rels.get(id) else { continue };
         let Some(xml) = read(part) else { continue };
-        let mut r = raw_print(&xml);
-        r.hidden = matches!(s.attr("state"), Some("hidden" | "veryHidden"));
-        out.insert(name.to_string(), r);
+        f(s, name, &xml);
     }
-    out
 }
 
 /// The page setup of a sheet's XML. Only the elements before sheetData and
@@ -1566,46 +1574,21 @@ fn cell_html(sh: &Sheet, col: u32, row: u32, val: &Val, wrap: bool) -> String {
         && let Some(c) = sh.cells.get(&(col, row))
         && let CellRawValue::RichText(rt) = c.raw_value()
     {
-        let mut out = String::new();
+        // One element around the runs: the cell's div is a column flex box,
+        // where every run would be a line of its own.
+        let mut out = String::from("<span>");
         for el in rt.rich_text_elements() {
-            let mut css = String::new();
-            if let Some(f) = el.run_properties() {
-                if !f.name().is_empty() && f.name() != sh.font.0 {
-                    let _ = write!(css, "font-family:{};", font_family(f.name()));
-                }
-                if f.size() > 0.0 {
-                    let _ = write!(css, "font-size:{}pt;", n(f.size()));
-                }
-                if f.bold() {
-                    css.push_str("font-weight:bold;");
-                }
-                if f.italic() {
-                    css.push_str("font-style:italic;");
-                }
-                let u = f.font_underline().val().value_string();
-                if u != "none" && !u.is_empty() {
-                    css.push_str("text-decoration:underline;");
-                }
-                if f.strikethrough() {
-                    css.push_str("text-decoration:line-through;");
-                }
-                match f.vertical_text_alignment().val().value_string() {
-                    "superscript" => css.push_str("vertical-align:super;font-size:smaller;"),
-                    "subscript" => css.push_str("vertical-align:sub;font-size:smaller;"),
-                    _ => {}
-                }
-                if let Some(c) = css_color(f.color(), sh.theme)
-                    && !sh.mono
-                {
-                    let _ = write!(css, "color:{c};");
-                }
-            }
+            // A run without properties has the cell's font. Properties
+            // describe the whole font of the run (Excel writes them all), so
+            // what they leave out is off rather than the cell's.
+            let css = el.run_properties().map(|f| run_css(sh, f)).unwrap_or_default();
             if css.is_empty() {
                 out.push_str(&line(el.text()));
             } else {
-                let _ = write!(out, "<span style=\"{css}\">{}</span>", line(el.text()));
+                let _ = write!(out, "<span style=\"{}\">{}</span>", esc(&css), line(el.text()));
             }
         }
+        out.push_str("</span>");
         return out;
     }
     match val {
@@ -1615,6 +1598,48 @@ fn cell_html(sh: &Sheet, col: u32, row: u32, val: &Val, wrap: bool) -> String {
         Val::Bool(b) => (if *b { "TRUE" } else { "FALSE" }).into(),
         Val::Error(e) => esc(e),
     }
+}
+
+/// The CSS of a rich text run's font.
+fn run_css(sh: &Sheet, f: &umya_spreadsheet::Font) -> String {
+    let mut css = String::new();
+    if !f.name().is_empty() {
+        let _ = write!(css, "font-family:{};", font_family(f.name()));
+    }
+    if f.size() > 0.0 {
+        let _ = write!(css, "font-size:{}pt;", n(f.size()));
+    }
+    css.push_str(if f.bold() { "font-weight:bold;" } else { "font-weight:normal;" });
+    css.push_str(if f.italic() { "font-style:italic;" } else { "font-style:normal;" });
+    let u = f.font_underline().val().value_string();
+    let mut deco = Vec::new();
+    if u != "none" && !u.is_empty() {
+        deco.push("underline");
+    }
+    if f.strikethrough() {
+        deco.push("line-through");
+    }
+    if deco.is_empty() {
+        css.push_str("text-decoration:none;");
+    } else {
+        let _ = write!(css, "text-decoration:{};", deco.join(" "));
+        if u.starts_with("double") {
+            css.push_str("text-decoration-style:double;");
+        }
+    }
+    match f.vertical_text_alignment().val().value_string() {
+        "superscript" => css.push_str("vertical-align:super;font-size:smaller;"),
+        "subscript" => css.push_str("vertical-align:sub;font-size:smaller;"),
+        _ => {}
+    }
+    if !sh.mono {
+        if let Some(c) = css_color(f.color(), sh.theme) {
+            let _ = write!(css, "color:{c};");
+        } else if f.color().automatic() {
+            css.push_str("color:#000000;");
+        }
+    }
+    css
 }
 
 /// Writes the table of the cells cols × rows (sheet numbers, in order).
