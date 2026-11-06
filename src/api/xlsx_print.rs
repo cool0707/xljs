@@ -38,14 +38,21 @@ pub struct RawPrint {
     pub hidden: bool,
     /// pageSetup blackAndWhite: printed without colors.
     pub black_and_white: bool,
+    /// Cells (column, row) whose style says "shrink to fit" (alignment
+    /// shrinkToFit, which umya-spreadsheet does not keep).
+    pub shrink: HashSet<(u32, u32)>,
 }
 
 /// Reads the page setup of every sheet of an xlsx file (see RawPrint).
 pub fn collect_raw(data: &[u8]) -> HashMap<String, RawPrint> {
     let mut out = HashMap::new();
+    let shrink_xfs = super::xlsx::zip_part(data, "xl/styles.xml").map(|b| shrink_styles(&b)).unwrap_or_default();
     for_each_sheet(data, |s, name, xml| {
         let mut r = raw_print(xml);
         r.hidden = matches!(s.attr("state"), Some("hidden" | "veryHidden"));
+        if !shrink_xfs.is_empty() {
+            r.shrink = styled_cells(xml, &shrink_xfs);
+        }
         out.insert(name.to_string(), r);
     });
     out
@@ -75,6 +82,41 @@ pub(super) fn for_each_sheet(data: &[u8], mut f: impl FnMut(&super::xlsx_chart::
     }
 }
 
+/// The indexes of the cell formats (cellXfs) of styles.xml with shrinkToFit.
+fn shrink_styles(xml: &[u8]) -> HashSet<usize> {
+    let Some(ss) = parse(xml) else { return HashSet::new() };
+    let Some(xfs) = ss.child("cellXfs") else { return HashSet::new() };
+    xfs.all("xf")
+        .enumerate()
+        .filter(|(_, x)| x.child("alignment").and_then(|a| a.attr("shrinkToFit")).is_some_and(|v| v == "1" || v == "true"))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The cells of a sheet's XML whose style (s) is one of xfs.
+fn styled_cells(xml: &[u8], xfs: &HashSet<usize>) -> HashSet<(u32, u32)> {
+    static CELL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"<c\b([^>]*)>"#).unwrap());
+    static ATTR: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"\b([rs])="([^"]*)""#).unwrap());
+    let s = String::from_utf8_lossy(xml);
+    let mut out = HashSet::new();
+    for c in CELL.captures_iter(&s) {
+        let (mut r, mut st) = (None, None);
+        for a in ATTR.captures_iter(&c[1]) {
+            match &a[1] {
+                "r" => r = Some(a[2].to_string()),
+                _ => st = a[2].parse::<usize>().ok(),
+            }
+        }
+        if let (Some(r), Some(st)) = (r, st)
+            && xfs.contains(&st)
+            && let Ok(pos) = super::xlsx::parse_ref(&r)
+        {
+            out.insert(pos);
+        }
+    }
+    out
+}
+
 /// The page setup of a sheet's XML. Only the elements before sheetData and
 /// after it matter, so the cells are skipped with a plain search.
 fn raw_print(xml: &[u8]) -> RawPrint {
@@ -95,6 +137,7 @@ fn raw_print(xml: &[u8]) -> RawPrint {
         grid_lines: on(attr("printOptions", "gridLines")),
         hidden: false,
         black_and_white: on(attr("pageSetup", "blackAndWhite")),
+        shrink: HashSet::new(),
     }
 }
 
@@ -471,6 +514,8 @@ struct Sheet<'a> {
     table: HashMap<(u32, u32), Overlay>,
     /// Printed in black and white (no fills, black text and lines).
     mono: bool,
+    /// The cells shrunk to fit (RawPrint::shrink).
+    shrink: HashSet<(u32, u32)>,
 }
 
 impl<'a> Sheet<'a> {
@@ -550,6 +595,7 @@ impl<'a> Sheet<'a> {
             font,
             table: super::xlsx_table::overlays(ws, &b.table_styles),
             mono: b.print.get(name).is_some_and(|p| p.black_and_white),
+            shrink: b.print.get(name).map(|p| p.shrink.clone()).unwrap_or_default(),
         })
     }
 
@@ -1642,6 +1688,48 @@ fn run_css(sh: &Sheet, f: &umya_spreadsheet::Font) -> String {
     css
 }
 
+/// About how wide the text of a cell is in points (shrink to fit): full-width
+/// characters an em, digits half of one, separators less and the others a
+/// little over half.
+fn text_width(sh: &Sheet, col: u32, row: u32, val: &Val, st: &Style) -> f64 {
+    use unicode_width::UnicodeWidthChar;
+    let (mut size, mut bold) = (sh.font.1, false);
+    if let Some(f) = st.font() {
+        if f.size() > 0.0 {
+            size = f.size();
+        }
+        bold = f.bold();
+    }
+    let ems = |s: &str| -> f64 { s.chars().filter(|c| *c != '\n' && *c != '\r').map(|c| match c {
+                _ if c.width() == Some(2) => 1.0,
+                '0'..='9' => 0.5,
+                ',' | '.' | ':' | ';' | ' ' | '\'' | '|' | 'i' | 'l' => 0.28,
+                _ => 0.55,
+            })
+            .sum()
+    };
+    let bolder = |b: bool| if b { 1.05 } else { 1.0 };
+    if let Val::Text(_) = val
+        && let Some(c) = sh.cells.get(&(col, row))
+        && let CellRawValue::RichText(rt) = c.raw_value()
+    {
+        return rt
+            .rich_text_elements()
+            .iter()
+            .map(|el| match el.run_properties() {
+                Some(f) => ems(el.text()) * (if f.size() > 0.0 { f.size() } else { size }) * bolder(f.bold()),
+                None => ems(el.text()) * size * bolder(bold),
+            })
+            .sum();
+    }
+    let text = match val {
+        Val::Empty => return 0.0,
+        Val::Num(_, s) | Val::Text(s) | Val::Error(s) => s.as_str(),
+        Val::Bool(b) => if *b { "TRUE" } else { "FALSE" },
+    };
+    ems(text) * size * bolder(bold)
+}
+
 /// Writes the table of the cells cols × rows (sheet numbers, in order).
 fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out: &mut String) {
     let total: f64 = cols.iter().map(|c| sh.w(*c)).sum();
@@ -1693,6 +1781,8 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
             };
             let val = sh.val(vc, vr);
             let css = cell_css(sh, st, &val, sides, sh.table.get(&(vc, vr)));
+            // Shrink to fit (Excel leaves it out for wrapped and rotated text).
+            let shrink = sh.shrink.contains(&(vc, vr)) && !css.wrap && !css.rotated;
             let class = classes.class(&css.td, &css.div);
             out.push_str("<td");
             if !class.is_empty() {
@@ -1710,7 +1800,7 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                 let h: f64 = rows[ri..ri + rspan].iter().map(|r| sh.h(*r)).sum();
                 // Text overflows into the empty cells beside it, as in Excel.
                 let (mut left, mut right) = (0.0, 0.0);
-                if matches!(val, Val::Text(_)) && merge.is_none() && !css.wrap && !css.rotated {
+                if matches!(val, Val::Text(_)) && merge.is_none() && !css.wrap && !css.rotated && !shrink {
                     let grow = |dir: i64| -> f64 {
                         let mut s = 0.0;
                         let mut i = ci as i64 + dir;
@@ -1732,9 +1822,16 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                     }
                 }
                 // data-n: a number that does not fit is shown as ### (print-page.js measures it).
-                let num = if matches!(val, Val::Num(..)) && !css.rotated { " data-n" } else { "" };
+                let num = if matches!(val, Val::Num(..)) && !css.rotated && !shrink { " data-n" } else { "" };
                 let _ = write!(out, "<div{num} style=\"left:{}pt;width:{}pt;height:{}pt\">", n(-left), n(w + left + right), n(h));
-                let text = cell_html(sh, vc, vr, &val, css.wrap);
+                let mut text = cell_html(sh, vc, vr, &val, css.wrap);
+                if shrink {
+                    // A rough guess from the characters; print-page.js measures the text.
+                    let room = w - 3.0 - st.alignment().map(|a| a.indent() as f64 * sh.mdw * 1.4 * 0.75).unwrap_or(0.0);
+                    let wide = text_width(sh, vc, vr, &val, st);
+                    let zoom = if wide > room && room > 0.0 { (room / wide).max(0.05) } else { 1.0 };
+                    text = format!("<span class=\"xljs-shrink\" style=\"zoom:{}\">{text}</span>", n(zoom));
+                }
                 if css.rotated && st.alignment().map(|a| a.text_rotation()).unwrap_or(0) != 255 {
                     let rot = st.alignment().map(|a| a.text_rotation()).unwrap_or(0);
                     let deg = if rot <= 90 { -(rot as f64) } else { rot as f64 - 90.0 };

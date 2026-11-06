@@ -1,6 +1,7 @@
-"""Builds richtext.xlsx: cells with several fonts in one cell (rich text) for
-the tests of the print layout (src/api/xlsx_print.rs) and of reading inline
-strings (src/api/xlsx.rs). Run with openpyxl: python3 testdata/xlsx/make_richtext.py
+"""Builds richtext.xlsx: cells with several fonts in one cell (rich text) and
+cells shrunk to fit (sheet 縮小) for the tests of the print layout
+(src/api/xlsx_print.rs) and of reading inline strings (src/api/xlsx.rs).
+Run with openpyxl: python3 testdata/xlsx/make_richtext.py
 
 openpyxl writes rich text as inline strings (t="inlineStr"); Excel writes
 shared strings with every property of a run's font. A1:A3 are moved to the
@@ -9,7 +10,7 @@ import io, os, re, zipfile
 from openpyxl import Workbook
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.cell.text import InlineFont
-from openpyxl.styles import Font
+from openpyxl.styles import Alignment, Font
 
 wb = Workbook()
 ws = wb.active
@@ -21,6 +22,20 @@ ws["A3"] = "placeholder"
 ws["B1"] = CellRichText("前", TextBlock(InlineFont(rFont="ＭＳ 明朝", sz=18, color="FF0070C0", u="single"), "インライン"), "後")
 ws.column_dimensions["A"].width = 30
 ws.column_dimensions["B"].width = 30
+
+# Shrink to fit: a column 8 characters wide.
+sk = wb.create_sheet("縮小")
+sk.column_dimensions["A"].width = 8
+sk["A1"] = "とても長い文字列を縮小して表示"
+sk["A2"] = "短い"
+sk["A3"] = 1234567890123
+sk["A3"].number_format = "#,##0"
+sk["A4"] = "折り返すので縮小しない長い文字列"
+sk["A4"].alignment = Alignment(shrink_to_fit=True, wrap_text=True)
+sk["A5"] = CellRichText("前", TextBlock(InlineFont(sz=20, color="FFFF0000"), "大きな赤い文字"), "後")
+for r in (1, 2, 3, 5):
+    sk.cell(r, 1).alignment = Alignment(shrink_to_fit=True)
+sk["B1"] = "隣"
 
 def run(text, sz=11, font="游ゴシック", color='<color theme="1"/>', extra=""):
     return (f'<r><rPr>{extra}<sz val="{sz}"/>{color}<rFont val="{font}"/><family val="3"/>'

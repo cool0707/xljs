@@ -69,6 +69,24 @@ function hashNumbers() {
   }
 }
 
+/**
+ * "Shrink to fit": the text of the cell is made smaller (zoom) until it fits
+ * the width of its cell. The layout guessed a zoom from the characters; here
+ * the text is measured.
+ */
+function shrinkToFit() {
+  const range = document.createRange();
+  for (const s of document.querySelectorAll(".xljs-sheet .xljs-shrink")) {
+    const d = s.parentElement;
+    const cs = getComputedStyle(d);
+    const room = d.getBoundingClientRect().width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    s.style.zoom = "1";
+    range.selectNodeContents(s);
+    const wide = range.getBoundingClientRect().width;
+    s.style.zoom = wide > room && room > 0 ? String(Math.max(0.05, (room / wide) * 0.98)) : "1";
+  }
+}
+
 /** Draws the charts into their boxes; resolves when they are drawn. */
 async function drawCharts(charts, m) {
   const boxes = Array.from(document.querySelectorAll(".xljs-print-chart[data-chart]"));
@@ -104,6 +122,7 @@ host.on(async (m) => {
     place(m.html);
     if (document.fonts && document.fonts.ready) await Promise.race([document.fonts.ready, wait(3000)]);
     await Promise.all(Array.from(document.images).map((img) => (img.complete ? null : new Promise((r) => { img.onload = img.onerror = r; }))));
+    shrinkToFit();
     hashNumbers();
     await drawCharts(m.charts || [], m);
     host.send({ type: "rendered", charts: document.querySelectorAll(".xljs-print-chart.xljs-chart").length, drawn: drawnCharts() });

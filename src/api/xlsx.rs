@@ -141,7 +141,7 @@ fn set_first_font(styles: &str, name: &str, size: f64) -> String {
 }
 
 /// Reads the bytes of a part of an xlsx file.
-fn zip_part(data: &[u8], name: &str) -> Option<Vec<u8>> {
+pub(super) fn zip_part(data: &[u8], name: &str) -> Option<Vec<u8>> {
     let mut zr = zip::ZipArchive::new(Cursor::new(data)).ok()?;
     let mut f = zr.by_name(name).ok()?;
     let mut b = Vec::new();
