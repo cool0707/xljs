@@ -88,7 +88,9 @@ pub fn load(path: &str) -> Result<Link> {
         buf.fill(0);
         let mut index = 0;
         if sl.GetIconLocation(&mut buf, &mut index).is_ok() {
-            l.icon = wide_str(&buf);
+            // Windows keeps "C:\Windows\..." as "%SystemRoot%\..."; scripts get
+            // the path, as for the target.
+            l.icon = super::expand_env(&wide_str(&buf));
             l.icon_index = index;
         }
         l.show = sl.GetShowCmd().map(|s| s.0 as u32).unwrap_or(super::SW_SHOWNORMAL);

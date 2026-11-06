@@ -1080,7 +1080,7 @@ declare global {
      */
     writeShortcutLink(path: PathLike, options: ShortcutOptions): string;
     writeShortcutLink(path: PathLike, operation: "create" | "update" | "replace", options: ShortcutOptions): string;
-    /** ショートカット（.lnk / .url）を読む。リンク先は target（環境変数は展開済み） */
+    /** ショートカット（.lnk / .url）を読む。リンク先は target（target と icon の環境変数は展開済み） */
     readShortcutLink(path: PathLike): ShortcutDetails;
   }
   interface ShortcutOptions {

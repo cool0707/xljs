@@ -86,7 +86,7 @@ fn lnk_round_trip() {
     let got = lnk::parse(&b).unwrap();
     unsafe { std::env::remove_var("XLJS_LNK_TEST") };
     assert_eq!(got.target, "C:\\Win\\notepad.exe");
-    assert_eq!(got.icon, "%XLJS_LNK_TEST%\\a.ico");
+    assert_eq!(got.icon, "C:\\Win\\a.ico");
     assert_eq!(lnk::parse(&b).unwrap().target, "%XLJS_LNK_TEST%\\notepad.exe");
 
     assert!(lnk::parse(b"[InternetShortcut]\r\n").is_none());

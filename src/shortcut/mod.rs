@@ -253,6 +253,33 @@ fn save_lnk(p: &str, l: &Link, _prev: Option<&Link>) -> Result<()> {
     std::fs::write(p, lnk::build(l)).map_err(|e| Error::path("open", p, e))
 }
 
+/// Replaces "%NAME%" with the variable's value (unknown names stay).
+pub(crate) fn expand_env(s: &str) -> String {
+    let mut out = String::new();
+    let mut rest = s;
+    while let Some(i) = rest.find('%') {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 1..];
+        match after.find('%') {
+            Some(j) if j > 0 => match std::env::var(&after[..j]) {
+                Ok(v) => {
+                    out.push_str(&v);
+                    rest = &after[j + 1..];
+                }
+                Err(_) => {
+                    out.push_str(&rest[i..i + 2 + j]);
+                    rest = &after[j + 1..];
+                }
+            },
+            _ => {
+                out.push('%');
+                rest = after;
+            }
+        }
+    }
+    out + rest
+}
+
 // ---------------------------------------------------------------- window state
 
 pub fn parse_window_state(s: &str) -> Result<u32> {

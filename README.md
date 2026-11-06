@@ -442,7 +442,7 @@ shell.writeShortcutLink(path.join(desktop, "売上集計.lnk"), "update", { targ
 for (const h of fs.dir(desktop).walk({ glob: "*.lnk" })) console.log(h.name, shell.readShortcutLink(h).target);
 ```
 
-Electron の `shell.readShortcutLink` / `shell.writeShortcutLink` と同じ形です（`windowState` `hotkey` `runAsAdmin` と .url は xljs の追加）。`writeShortcutLink` は書いたファイルのパスを返し、失敗すると例外を投げます。リンク先の `%SystemRoot%` などの環境変数はそのまま保存され、読み取ると展開された値が返ります。
+Electron の `shell.readShortcutLink` / `shell.writeShortcutLink` と同じ形です（`windowState` `hotkey` `runAsAdmin` と .url は xljs の追加）。`writeShortcutLink` は書いたファイルのパスを返し、失敗すると例外を投げます。リンク先・アイコンの `%SystemRoot%` などの環境変数はそのまま保存され、読み取ると展開された値が返ります（Windows はアイコンの `C:\Windows\...` を `%SystemRoot%\...` として保存しますが、読み取ると元のパスになります）。
 
 ### Active Directory（`ad`）
 

@@ -126,13 +126,13 @@ pub fn parse(b: &[u8]) -> Option<Link> {
         let sig = r.u32(at + 4)?;
         match sig {
             ENVIRONMENT_BLOCK if flags & HAS_EXP_STRING != 0 => env_target = block_string(&r, at)?,
-            ICON_ENVIRONMENT_BLOCK if flags & HAS_EXP_ICON != 0 => l.icon = block_string(&r, at)?,
+            ICON_ENVIRONMENT_BLOCK if flags & HAS_EXP_ICON != 0 => l.icon = super::expand_env(&block_string(&r, at)?),
             _ => {}
         }
         at += size as usize;
     }
     l.target = if !env_target.is_empty() {
-        expand_env(&env_target)
+        super::expand_env(&env_target)
     } else if !info_path.is_empty() && (info_wide || id_path.is_empty()) {
         info_path
     } else if !id_path.is_empty() {
@@ -147,33 +147,6 @@ pub fn parse(b: &[u8]) -> Option<Link> {
 fn block_string(r: &Rd, at: usize) -> Option<String> {
     let w = r.wide_fixed(at + 8 + 260, 520)?;
     if !w.is_empty() { Some(w) } else { r.ansi(at + 8) }
-}
-
-/// Replaces "%NAME%" with the variable's value (unknown names stay).
-fn expand_env(s: &str) -> String {
-    let mut out = String::new();
-    let mut rest = s;
-    while let Some(i) = rest.find('%') {
-        out.push_str(&rest[..i]);
-        let after = &rest[i + 1..];
-        match after.find('%') {
-            Some(j) if j > 0 => match std::env::var(&after[..j]) {
-                Ok(v) => {
-                    out.push_str(&v);
-                    rest = &after[j + 1..];
-                }
-                Err(_) => {
-                    out.push_str(&rest[i..i + 2 + j]);
-                    rest = &after[j + 1..];
-                }
-            },
-            _ => {
-                out.push('%');
-                rest = after;
-            }
-        }
-    }
-    out + rest
 }
 
 /// The target in the link information, and whether it was in Unicode (the
