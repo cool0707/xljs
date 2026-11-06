@@ -10,13 +10,28 @@ use crate::engine::{BundleError, ScriptError};
 #[derive(Debug)]
 pub enum Error {
     /// A message from the locale files (already localized).
-    Localized { key: String, msg: String },
+    Localized {
+        key: String,
+        msg: String,
+    },
     /// A failed file operation (like Go's fs.PathError).
-    Path { op: String, path: String, source: io::Error },
+    Path {
+        op: String,
+        path: String,
+        source: io::Error,
+    },
     /// A failed operation on two paths (rename).
-    Link { op: String, old: String, new: String, source: io::Error },
+    Link {
+        op: String,
+        old: String,
+        new: String,
+        source: io::Error,
+    },
     /// An error with context in front ("Sheet1!A1: ...").
-    Context { prefix: String, inner: Box<Error> },
+    Context {
+        prefix: String,
+        inner: Box<Error>,
+    },
     Bundle(BundleError),
     Script(ScriptError),
     /// Any other message (from a library, in English).
@@ -27,17 +42,27 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 impl Error {
     pub fn localized(key: &str, msg: String) -> Self {
-        Error::Localized { key: key.to_string(), msg }
+        Error::Localized {
+            key: key.to_string(),
+            msg,
+        }
     }
     pub fn msg(s: impl Into<String>) -> Self {
         Error::Msg(s.into())
     }
     pub fn path(op: &str, path: impl Into<String>, source: io::Error) -> Self {
-        Error::Path { op: op.to_string(), path: path.into(), source }
+        Error::Path {
+            op: op.to_string(),
+            path: path.into(),
+            source,
+        }
     }
     /// Puts prefix in front of the error ("prefix: error").
     pub fn context(self, prefix: impl Into<String>) -> Self {
-        Error::Context { prefix: prefix.into(), inner: Box::new(self) }
+        Error::Context {
+            prefix: prefix.into(),
+            inner: Box::new(self),
+        }
     }
     /// The message key of a localized error.
     pub fn key(&self) -> Option<&str> {
@@ -50,7 +75,9 @@ impl Error {
     /// Whether this is (or wraps) a "file not found" error.
     pub fn is_not_found(&self) -> bool {
         match self {
-            Error::Path { source, .. } | Error::Link { source, .. } => source.kind() == io::ErrorKind::NotFound,
+            Error::Path { source, .. } | Error::Link { source, .. } => {
+                source.kind() == io::ErrorKind::NotFound
+            }
             Error::Context { inner, .. } => inner.is_not_found(),
             _ => false,
         }
@@ -72,8 +99,17 @@ impl fmt::Display for Error {
             Error::Path { op, path, source } => {
                 write!(f, "{op} {path}: {}", crate::i18n::translate_os_text(source))
             }
-            Error::Link { op, old, new, source } => {
-                write!(f, "{op} {old} {new}: {}", crate::i18n::translate_os_text(source))
+            Error::Link {
+                op,
+                old,
+                new,
+                source,
+            } => {
+                write!(
+                    f,
+                    "{op} {old} {new}: {}",
+                    crate::i18n::translate_os_text(source)
+                )
             }
             Error::Context { prefix, inner } => write!(f, "{prefix}: {inner}"),
             Error::Bundle(e) => e.fmt(f),

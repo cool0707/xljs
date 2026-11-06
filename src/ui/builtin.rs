@@ -43,7 +43,10 @@ pub fn title_bar_script(o: &super::WindowOptions, non_client: bool) -> String {
 /// A built-in file (form.html, table.html, their scripts and styles, Font
 /// Awesome Free, the debugger page) by its path under web/.
 pub fn builtin_file(name: &str) -> Option<&'static [u8]> {
-    embedded::WEB_FILES.iter().find(|(n, _)| *n == name).map(|(_, d)| *d)
+    embedded::WEB_FILES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, d)| *d)
 }
 
 /// The built-in files as an AssetFs (paths relative to web/).
@@ -52,11 +55,17 @@ pub struct BuiltinAssets;
 
 impl AssetFs for BuiltinAssets {
     fn read(&self, name: &str) -> io::Result<Vec<u8>> {
-        builtin_file(name).map(<[u8]>::to_vec).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, name.to_string()))
+        builtin_file(name)
+            .map(<[u8]>::to_vec)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, name.to_string()))
     }
     fn files(&self, root: &str) -> io::Result<Vec<String>> {
         let roots = [root.to_string()];
-        Ok(embedded::WEB_FILES.iter().map(|(n, _)| n.to_string()).filter(|n| covered(&roots, n)).collect())
+        Ok(embedded::WEB_FILES
+            .iter()
+            .map(|(n, _)| n.to_string())
+            .filter(|n| covered(&roots, n))
+            .collect())
     }
 }
 

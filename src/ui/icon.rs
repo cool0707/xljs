@@ -32,7 +32,7 @@ pub fn icon_image(data: &[u8], size: usize) -> Option<&[u8]> {
         let better = match best {
             None => true,
             Some(_) if (w >= size) != (best_w >= size) => w >= size, // big enough wins
-            Some(_) if w != best_w => (w >= size) == (w < best_w),   // smallest big enough, or largest
+            Some(_) if w != best_w => (w >= size) == (w < best_w), // smallest big enough, or largest
             Some(_) => bpp > best_bpp,
         };
         if better {

@@ -114,14 +114,20 @@ pub struct Db {
 pub(crate) fn sql_error(e: rusqlite::Error) -> Error {
     match e {
         rusqlite::Error::SqliteFailure(f, Some(m)) => {
-            if matches!(f.code, rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase) {
+            if matches!(
+                f.code,
+                rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
+            ) {
                 return corrupt(m);
             }
             Error::msg(m)
         }
         rusqlite::Error::SqliteFailure(f, None) => {
             let m = rusqlite::ffi::code_to_str(f.extended_code).to_string();
-            if matches!(f.code, rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase) {
+            if matches!(
+                f.code,
+                rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
+            ) {
                 return corrupt(m);
             }
             Error::msg(m)
@@ -172,7 +178,10 @@ pub fn is_network(path: &Path) -> bool {
     }
     let b = s.as_bytes();
     if b.len() >= 2 && b[1] == b':' {
-        let root: Vec<u16> = format!("{}:\\", b[0] as char).encode_utf16().chain([0]).collect();
+        let root: Vec<u16> = format!("{}:\\", b[0] as char)
+            .encode_utf16()
+            .chain([0])
+            .collect();
         // DRIVE_REMOTE
         return unsafe { GetDriveTypeW(PCWSTR(root.as_ptr())) } == 4;
     }
@@ -185,7 +194,13 @@ pub fn is_network(_path: &Path) -> bool {
 }
 
 /// Opens a connection to path with the settings xljs uses.
-pub(crate) fn connect(path: &Path, readonly: bool, create: bool, shared: bool, timeout: Duration) -> Result<Connection> {
+pub(crate) fn connect(
+    path: &Path,
+    readonly: bool,
+    create: bool,
+    shared: bool,
+    timeout: Duration,
+) -> Result<Connection> {
     let mut flags = OpenFlags::SQLITE_OPEN_NO_MUTEX;
     if readonly {
         flags |= OpenFlags::SQLITE_OPEN_READ_ONLY;
@@ -195,7 +210,8 @@ pub(crate) fn connect(path: &Path, readonly: bool, create: bool, shared: bool, t
             flags |= OpenFlags::SQLITE_OPEN_CREATE;
         }
     }
-    let conn = Connection::open_with_flags(path, flags).map_err(|e| sql_error(e).context(path.to_string_lossy()))?;
+    let conn = Connection::open_with_flags(path, flags)
+        .map_err(|e| sql_error(e).context(path.to_string_lossy()))?;
     conn.busy_timeout(timeout).map_err(sql_error)?;
     let mut pragmas = String::from("PRAGMA foreign_keys=ON; PRAGMA trusted_schema=OFF;");
     if shared {
@@ -214,7 +230,11 @@ impl Db {
         let path = std::path::absolute(path).map_err(|e| Error::path("open", path, e))?;
         let exists = path.exists();
         if !exists && (!opts.create || opts.readonly) {
-            return Err(Error::path("open", path.to_string_lossy(), std::io::Error::from(std::io::ErrorKind::NotFound)));
+            return Err(Error::path(
+                "open",
+                path.to_string_lossy(),
+                std::io::Error::from(std::io::ErrorKind::NotFound),
+            ));
         }
         let mut side = Sidecar::find(&path);
         if side.is_none() && opts.shared.unwrap_or_else(|| is_network(&path)) {
@@ -226,7 +246,16 @@ impl Db {
                 Err(e) => return Err(e),
             }
         }
-        let mut db = Db { path, opts, side, conn: None, txn: None, fns: Vec::new(), corrupt: false, closed: false };
+        let mut db = Db {
+            path,
+            opts,
+            side,
+            conn: None,
+            txn: None,
+            fns: Vec::new(),
+            corrupt: false,
+            closed: false,
+        };
         if let Some(side) = &db.side {
             let _lock = side.lock(&db.path, !db.opts.readonly, db.opts.timeout)?;
             let conn = db.connect()?;
@@ -235,7 +264,9 @@ impl Db {
                 // network: use a rollback journal.
                 let r = conn.query_row("PRAGMA journal_mode", [], |r| r.get::<_, String>(0));
                 let r = match r {
-                    Ok(mode) if mode.eq_ignore_ascii_case("wal") => conn.query_row("PRAGMA journal_mode=DELETE", [], |_| Ok(())),
+                    Ok(mode) if mode.eq_ignore_ascii_case("wal") => {
+                        conn.query_row("PRAGMA journal_mode=DELETE", [], |_| Ok(()))
+                    }
                     r => r.map(|_| ()),
                 };
                 if let Err(e) = r {
@@ -254,7 +285,13 @@ impl Db {
     }
 
     fn connect(&self) -> Result<Connection> {
-        let conn = connect(&self.path, self.opts.readonly, self.opts.create, self.side.is_some(), self.opts.timeout)?;
+        let conn = connect(
+            &self.path,
+            self.opts.readonly,
+            self.opts.create,
+            self.side.is_some(),
+            self.opts.timeout,
+        )?;
         for f in &self.fns {
             script::register(&conn, f).map_err(sql_error)?;
         }
@@ -273,13 +310,24 @@ impl Db {
         if old.is_none() {
             // Functions of SQLite and of xljs (excel.rs) keep their names.
             let taken = self.read(|db, conn| {
-                conn.query_row("SELECT count(*) > 0 FROM pragma_function_list WHERE name = ?", [&lower], |r| r.get::<_, bool>(0)).map_err(|e| db.fail(e))
+                conn.query_row(
+                    "SELECT count(*) > 0 FROM pragma_function_list WHERE name = ?",
+                    [&lower],
+                    |r| r.get::<_, bool>(0),
+                )
+                .map_err(|e| db.fail(e))
             })?;
             if taken {
                 return Err(err!("sqlite.functionTaken", f.name));
             }
         }
-        for conn in [self.conn.as_ref(), self.txn.as_ref().and_then(|t| t.conn.as_ref())].into_iter().flatten() {
+        for conn in [
+            self.conn.as_ref(),
+            self.txn.as_ref().and_then(|t| t.conn.as_ref()),
+        ]
+        .into_iter()
+        .flatten()
+        {
             script::register(conn, &f).map_err(sql_error)?;
         }
         Ok(match old {
@@ -330,13 +378,21 @@ impl Db {
     }
 
     fn check_open(&self) -> Result<()> {
-        if self.closed { Err(err!("sqlite.closed")) } else { Ok(()) }
+        if self.closed {
+            Err(err!("sqlite.closed"))
+        } else {
+            Ok(())
+        }
     }
 
     /// The connection for statements: the transaction's, or the local
     /// one.
     fn cur(&self) -> &Connection {
-        self.txn.as_ref().and_then(|t| t.conn.as_ref()).or(self.conn.as_ref()).expect("no connection")
+        self.txn
+            .as_ref()
+            .and_then(|t| t.conn.as_ref())
+            .or(self.conn.as_ref())
+            .expect("no connection")
     }
 
     /// Begins a transaction (a savepoint when one is open).
@@ -346,17 +402,34 @@ impl Db {
         if let Some(t) = &mut self.txn {
             let n = t.marks.len() + 1;
             t.marks.push(t.log.len());
-            let conn = t.conn.as_ref().or(self.conn.as_ref()).expect("no connection");
+            let conn = t
+                .conn
+                .as_ref()
+                .or(self.conn.as_ref())
+                .expect("no connection");
             if let Err(e) = conn.execute_batch(&format!("SAVEPOINT xljs_{n}")) {
                 self.txn.as_mut().unwrap().marks.pop();
                 return Err(self.fail(e));
             }
             return Ok(());
         }
-        let begin = if self.opts.readonly { "BEGIN" } else { "BEGIN IMMEDIATE" };
+        let begin = if self.opts.readonly {
+            "BEGIN"
+        } else {
+            "BEGIN IMMEDIATE"
+        };
         let Some(side) = &self.side else {
-            self.conn.as_ref().expect("no connection").execute_batch(begin).map_err(|e| self.fail(e))?;
-            self.txn = Some(Txn { conn: None, _lock: None, log: Vec::new(), marks: Vec::new() });
+            self.conn
+                .as_ref()
+                .expect("no connection")
+                .execute_batch(begin)
+                .map_err(|e| self.fail(e))?;
+            self.txn = Some(Txn {
+                conn: None,
+                _lock: None,
+                log: Vec::new(),
+                marks: Vec::new(),
+            });
             return Ok(());
         };
         let lock = side.lock(&self.path, !self.opts.readonly, self.opts.timeout)?;
@@ -368,7 +441,12 @@ impl Db {
             }
         }
         conn.execute_batch(begin).map_err(|e| self.fail(e))?;
-        self.txn = Some(Txn { conn: Some(conn), _lock: Some(lock), log: Vec::new(), marks: Vec::new() });
+        self.txn = Some(Txn {
+            conn: Some(conn),
+            _lock: Some(lock),
+            log: Vec::new(),
+            marks: Vec::new(),
+        });
         Ok(())
     }
 
@@ -376,14 +454,25 @@ impl Db {
     /// stays open (call rollback).
     pub fn commit(&mut self) -> Result<()> {
         self.check_open()?;
-        let Some(t) = &mut self.txn else { return Err(err!("sqlite.noTransaction")) };
+        let Some(t) = &mut self.txn else {
+            return Err(err!("sqlite.noTransaction"));
+        };
         if let n @ 1.. = t.marks.len() {
-            let conn = t.conn.as_ref().or(self.conn.as_ref()).expect("no connection");
-            conn.execute_batch(&format!("RELEASE xljs_{n}")).map_err(|e| self.fail(e))?;
+            let conn = t
+                .conn
+                .as_ref()
+                .or(self.conn.as_ref())
+                .expect("no connection");
+            conn.execute_batch(&format!("RELEASE xljs_{n}"))
+                .map_err(|e| self.fail(e))?;
             self.txn.as_mut().unwrap().marks.pop();
             return Ok(());
         }
-        let conn = t.conn.as_ref().or(self.conn.as_ref()).expect("no connection");
+        let conn = t
+            .conn
+            .as_ref()
+            .or(self.conn.as_ref())
+            .expect("no connection");
         conn.execute_batch("COMMIT").map_err(|e| self.fail(e))?;
         let t = self.txn.take().unwrap();
         if let Some(side) = &self.side
@@ -400,16 +489,27 @@ impl Db {
     /// Rolls back the innermost transaction.
     pub fn rollback(&mut self) -> Result<()> {
         self.check_open()?;
-        let Some(t) = &mut self.txn else { return Ok(()) };
+        let Some(t) = &mut self.txn else {
+            return Ok(());
+        };
         if let Some(mark) = t.marks.pop() {
             let n = t.marks.len() + 1;
             t.log.truncate(mark);
-            let conn = t.conn.as_ref().or(self.conn.as_ref()).expect("no connection");
-            conn.execute_batch(&format!("ROLLBACK TO xljs_{n}; RELEASE xljs_{n}")).map_err(|e| self.fail(e))?;
+            let conn = t
+                .conn
+                .as_ref()
+                .or(self.conn.as_ref())
+                .expect("no connection");
+            conn.execute_batch(&format!("ROLLBACK TO xljs_{n}; RELEASE xljs_{n}"))
+                .map_err(|e| self.fail(e))?;
             return Ok(());
         }
         let t = self.txn.take().unwrap();
-        let conn = t.conn.as_ref().or(self.conn.as_ref()).expect("no connection");
+        let conn = t
+            .conn
+            .as_ref()
+            .or(self.conn.as_ref())
+            .expect("no connection");
         // Fails when SQLite already rolled back (after some errors).
         let _ = conn.execute_batch("ROLLBACK");
         Ok(())
@@ -462,7 +562,9 @@ impl Db {
                 return Ok(None);
             }
             let mut st = st;
-            run_query(&mut st, params, limit).map(Some).map_err(|e| db.note(e))
+            run_query(&mut st, params, limit)
+                .map(Some)
+                .map_err(|e| db.note(e))
         })?;
         if let Some(r) = ro {
             return Ok(r.0);
@@ -511,7 +613,9 @@ impl Db {
         self.write(|db| {
             let conn: *const Connection = db.cur();
             let _logged = script::Logged::set(db.logged());
-            unsafe { &*conn }.execute_batch(sql).map_err(|e| db.fail(e))?;
+            unsafe { &*conn }
+                .execute_batch(sql)
+                .map_err(|e| db.fail(e))?;
             db.log(sql, Vec::new(), true);
             Ok(())
         })
@@ -519,7 +623,13 @@ impl Db {
 
     /// Inserts rows (values in the order of columns) in one transaction:
     /// the number of rows.
-    pub fn insert(&mut self, table: &str, columns: &[String], rows: Vec<Vec<Value>>, verb: &str) -> Result<usize> {
+    pub fn insert(
+        &mut self,
+        table: &str,
+        columns: &[String],
+        rows: Vec<Vec<Value>>,
+        verb: &str,
+    ) -> Result<usize> {
         self.check_open()?;
         let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
         let sql = format!(
@@ -548,7 +658,11 @@ impl Db {
             return;
         }
         if let Some(t) = &mut self.txn {
-            t.log.push(LogStmt { sql: sql.to_string(), params: bound.iter().map(share::value_to_json).collect(), batch });
+            t.log.push(LogStmt {
+                sql: sql.to_string(),
+                params: bound.iter().map(share::value_to_json).collect(),
+                batch,
+            });
         }
     }
 
@@ -559,7 +673,14 @@ impl Db {
 
     /// Copies the database to dest (a consistent copy while it is in use).
     pub fn backup(&mut self, dest: &str) -> Result<()> {
-        self.read(|db, conn| conn.backup(rusqlite::MAIN_DB, dest, None::<fn(rusqlite::backup::Progress)>).map_err(|e| db.fail(e).context(dest.to_string())))
+        self.read(|db, conn| {
+            conn.backup(
+                rusqlite::MAIN_DB,
+                dest,
+                None::<fn(rusqlite::backup::Progress)>,
+            )
+            .map_err(|e| db.fail(e).context(dest.to_string()))
+        })
     }
 
     /// Repairs the database (see repair.rs), closing it meanwhile.
@@ -615,8 +736,13 @@ fn bind(st: &mut rusqlite::Statement, params: &Params) -> Result<Vec<Value>> {
                     return Err(err!("sqlite.paramPositional"));
                 };
                 let bare = name.trim_start_matches([':', '@', '$', '?']);
-                let v = m.iter().find(|(k, _)| k == name || k == bare).map(|(_, v)| v.clone());
-                let Some(v) = v else { return Err(err!("sqlite.paramMissing", name)) };
+                let v = m
+                    .iter()
+                    .find(|(k, _)| k == name || k == bare)
+                    .map(|(_, v)| v.clone());
+                let Some(v) = v else {
+                    return Err(err!("sqlite.paramMissing", name));
+                };
                 out.push(v);
             }
         }
@@ -628,22 +754,38 @@ fn bind(st: &mut rusqlite::Statement, params: &Params) -> Result<Vec<Value>> {
 }
 
 /// Runs a query statement: the rows and the values bound.
-fn run_query(st: &mut rusqlite::Statement, params: &Params, limit: Option<usize>) -> Result<(Rows, Vec<Value>)> {
+fn run_query(
+    st: &mut rusqlite::Statement,
+    params: &Params,
+    limit: Option<usize>,
+) -> Result<(Rows, Vec<Value>)> {
     let bound = bind(st, params)?;
     let columns: Vec<String> = st.column_names().map(String::from).collect();
-    let decl: Vec<Option<String>> = st.columns().map(|c| c.decl_type().map(String::from)).collect();
+    let decl: Vec<Option<String>> = st
+        .columns()
+        .map(|c| c.decl_type().map(String::from))
+        .collect();
     let n = columns.len();
     let mut out = Vec::new();
     let mut rows = st.raw_query();
     while limit.is_none_or(|l| out.len() < l) {
-        let Some(r) = rows.next().map_err(sql_error)? else { break };
+        let Some(r) = rows.next().map_err(sql_error)? else {
+            break;
+        };
         let mut vals = Vec::with_capacity(n);
         for i in 0..n {
             vals.push(r.get::<_, Value>(i).map_err(sql_error)?);
         }
         out.push(vals);
     }
-    Ok((Rows { columns, decl, rows: out }, bound))
+    Ok((
+        Rows {
+            columns,
+            decl,
+            rows: out,
+        },
+        bound,
+    ))
 }
 
 #[cfg(test)]

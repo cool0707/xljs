@@ -24,7 +24,11 @@ struct PageUi {
 }
 
 impl PageUi {
-    fn new(answers: &str, log: Option<crate::ui::mock::LogSink>, pages: Vec<PageFn>) -> Arc<PageUi> {
+    fn new(
+        answers: &str,
+        log: Option<crate::ui::mock::LogSink>,
+        pages: Vec<PageFn>,
+    ) -> Arc<PageUi> {
         Arc::new(PageUi {
             m: Mock::from_json(answers, log).unwrap(),
             windows: true,
@@ -38,16 +42,30 @@ impl PageUi {
     fn open(&self, o: WindowOptions) -> crate::Result<Arc<dyn Window>> {
         self.urls.lock().unwrap().push(o.url.clone());
         let Some(run) = self.pages.lock().unwrap().pop_front() else {
-            self.failures.lock().unwrap().push(format!("unexpected window {}", o.url));
+            self.failures
+                .lock()
+                .unwrap()
+                .push(format!("unexpected window {}", o.url));
             return self.m.open_window(o);
         };
         let (tx, rx) = mpsc::channel();
-        let w = Arc::new(PageWindow { o, tx: Mutex::new(Some(tx)), closed: (Mutex::new(false), std::sync::Condvar::new()) });
-        let p = FakePage { w: w.clone(), rx, failures: self.failures.clone() };
-        self.threads.lock().unwrap().push(std::thread::spawn(move || {
-            p.send(json!({"type": "ready"}), &[]);
-            run(&p);
-        }));
+        let w = Arc::new(PageWindow {
+            o,
+            tx: Mutex::new(Some(tx)),
+            closed: (Mutex::new(false), std::sync::Condvar::new()),
+        });
+        let p = FakePage {
+            w: w.clone(),
+            rx,
+            failures: self.failures.clone(),
+        };
+        self.threads
+            .lock()
+            .unwrap()
+            .push(std::thread::spawn(move || {
+                p.send(json!({"type": "ready"}), &[]);
+                run(&p);
+            }));
         Ok(w)
     }
 
@@ -56,11 +74,17 @@ impl PageUi {
         let threads: Vec<_> = self.threads.lock().unwrap().drain(..).collect();
         for t in threads {
             if t.join().is_err() {
-                self.failures.lock().unwrap().push("a fake page panicked".into());
+                self.failures
+                    .lock()
+                    .unwrap()
+                    .push("a fake page panicked".into());
             }
         }
         if !self.pages.lock().unwrap().is_empty() {
-            self.failures.lock().unwrap().push("not every page was shown".into());
+            self.failures
+                .lock()
+                .unwrap()
+                .push("not every page was shown".into());
         }
         let f = self.failures.lock().unwrap();
         assert!(f.is_empty(), "fake pages:\n{}", f.join("\n"));
@@ -77,7 +101,8 @@ struct PageWindow {
 
 impl Window for PageWindow {
     fn post(&self, msg: String) {
-        let v: Value = serde_json::from_str(&msg).unwrap_or_else(|e| panic!("bad message {msg:?}: {e}"));
+        let v: Value =
+            serde_json::from_str(&msg).unwrap_or_else(|e| panic!("bad message {msg:?}: {e}"));
         if let Some(tx) = &*self.tx.lock().unwrap() {
             let _ = tx.send(v);
         }
@@ -109,7 +134,10 @@ impl FakePage {
     }
 
     fn send(&self, m: Value, files: &[&Path]) {
-        let files = files.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+        let files = files
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
         (self.w.o.on_message.as_ref().unwrap())(m.to_string(), files);
     }
 
@@ -140,7 +168,12 @@ impl FakePage {
 
     fn wait_closed(&self) {
         let c = self.w.closed.0.lock().unwrap();
-        let (c, _) = self.w.closed.1.wait_timeout_while(c, Duration::from_secs(5), |c| !*c).unwrap();
+        let (c, _) = self
+            .w
+            .closed
+            .1
+            .wait_timeout_while(c, Duration::from_secs(5), |c| !*c)
+            .unwrap();
         if !*c {
             self.error("window was not closed".into());
         }
@@ -185,18 +218,37 @@ fn run_pages(u: &Arc<PageUi>, name: &str, src: &str) -> Ran {
     let (o2, e2, u2) = (o.clone(), e.clone(), u.clone());
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {
-        let r = run(Options { script_path: p, ui: Some(u2), stdout: Some(out(&o2)), stderr: Some(out(&e2)), version: "test".into(), ..Default::default() });
+        let r = run(Options {
+            script_path: p,
+            ui: Some(u2),
+            stdout: Some(out(&o2)),
+            stderr: Some(out(&e2)),
+            version: "test".into(),
+            ..Default::default()
+        });
         let _ = tx.send(r.map_err(|e| e.to_string()));
     });
     let r = rx
         .recv_timeout(Duration::from_secs(20))
-        .unwrap_or_else(|_| panic!("script did not finish\nstdout:\n{}\nstderr:\n{}\nfake pages:\n{}", o.text(), e.text(), u.failures.lock().unwrap().join("\n")));
+        .unwrap_or_else(|_| {
+            panic!(
+                "script did not finish\nstdout:\n{}\nstderr:\n{}\nfake pages:\n{}",
+                o.text(),
+                e.text(),
+                u.failures.lock().unwrap().join("\n")
+            )
+        });
     u.finish();
     let (code, err) = match r {
         Ok(c) => (c, None),
         Err(e) => (1, Some(e)),
     };
-    Ran { code, err, stdout: o.text(), stderr: e.text() }
+    Ran {
+        code,
+        err,
+        stdout: o.text(),
+        stderr: e.text(),
+    }
 }
 
 /// A temporary config folder (the forms remember their values there).
@@ -228,14 +280,21 @@ fn form_and_table_windows() {
             let got = as_json(&init["fields"]);
             check!(
                 p,
-                got.contains(r#""label":"フォルダ""#) && got.contains(r#""accept":[".xlsx"]"#) && got.contains(r#""value":"顧客別""#) && got.contains(r#""value":"2026-04-01""#),
+                got.contains(r#""label":"フォルダ""#)
+                    && got.contains(r#""accept":[".xlsx"]"#)
+                    && got.contains(r#""value":"顧客別""#)
+                    && got.contains(r#""value":"2026-04-01""#),
                 "init fields = {got}"
             );
             // Icons: a bare name is the solid icon, classes are kept (bad words dropped).
             // The form icon goes to the custom title bar (not to the page).
             check!(
                 p,
-                p.w.o.custom_title_bar && p.w.o.title_icon == "fa-solid fa-table" && p.w.o.title == "窓" && init["submitIcon"] == "fa-regular fa-circle-play" && init.get("icon").is_none()
+                p.w.o.custom_title_bar
+                    && p.w.o.title_icon == "fa-solid fa-table"
+                    && p.w.o.title == "窓"
+                    && init["submitIcon"] == "fa-regular fa-circle-play"
+                    && init.get("icon").is_none()
                     && init["accent"] == json!({"light": "#c42b1c", "dark": "#c42b1c"})
                     && init["background"] == json!({"light": "oldlace", "dark": ""}),
                 "title bar = {} {:?} {:?}, submitIcon = {}",
@@ -244,30 +303,85 @@ fn form_and_table_windows() {
                 p.w.o.title,
                 init["submitIcon"]
             );
-            check!(p, got.contains(r#""icon":"fa-solid fa-folder-open""#) && got.contains(r#""icon":"fa-brands fa-windows""#), "field icons = {got}");
-            check!(p, init["texts"]["browse"] == "参照…", "texts = {}", init["texts"]);
-            p.send(json!({"type": "submit", "values": {"src": "", "n": "x"}}), &[]);
+            check!(
+                p,
+                got.contains(r#""icon":"fa-solid fa-folder-open""#)
+                    && got.contains(r#""icon":"fa-brands fa-windows""#),
+                "field icons = {got}"
+            );
+            check!(
+                p,
+                init["texts"]["browse"] == "参照…",
+                "texts = {}",
+                init["texts"]
+            );
+            p.send(
+                json!({"type": "submit", "values": {"src": "", "n": "x"}}),
+                &[],
+            );
             let e = as_json(&p.expect("errors"));
-            check!(p, e.contains(r#""src":"入力してください""#) && e.contains(r#""n":"数値を入力してください""#), "errors = {e}");
+            check!(
+                p,
+                e.contains(r#""src":"入力してください""#)
+                    && e.contains(r#""n":"数値を入力してください""#),
+                "errors = {e}"
+            );
             p.send(json!({"type": "pick", "field": "src", "value": ""}), &[]);
             let got = p.expect("picked");
-            check!(p, got["field"] == "src" && got["value"] == path(&d) && got["append"] == false, "picked = {got}");
-            p.send(json!({"type": "drop", "field": "inputs"}), &[&a_xlsx, &b_txt]);
+            check!(
+                p,
+                got["field"] == "src" && got["value"] == path(&d) && got["append"] == false,
+                "picked = {got}"
+            );
+            p.send(
+                json!({"type": "drop", "field": "inputs"}),
+                &[&a_xlsx, &b_txt],
+            );
             let got = as_json(&p.expect("picked"));
-            check!(p, got.contains(r#""append":true"#) && got.contains("a.xlsx") && !got.contains("b.txt"), "dropped = {got}");
+            check!(
+                p,
+                got.contains(r#""append":true"#)
+                    && got.contains("a.xlsx")
+                    && !got.contains("b.txt"),
+                "dropped = {got}"
+            );
             // A folder dropped on a save field keeps the file name; a file
             // replaces it (when its type is accepted); a folder on a folder
             // field is that folder.
-            p.send(json!({"type": "drop", "field": "out", "value": "集計.xlsx"}), &[&d]);
+            p.send(
+                json!({"type": "drop", "field": "out", "value": "集計.xlsx"}),
+                &[&d],
+            );
             let got = p.expect("picked");
-            check!(p, got["value"] == path(&d.join("集計.xlsx")), "folder on save field = {}", as_json(&got));
-            p.send(json!({"type": "drop", "field": "out", "value": ""}), &[&b_txt]);
-            p.send(json!({"type": "drop", "field": "out", "value": ""}), &[&a_xlsx]);
+            check!(
+                p,
+                got["value"] == path(&d.join("集計.xlsx")),
+                "folder on save field = {}",
+                as_json(&got)
+            );
+            p.send(
+                json!({"type": "drop", "field": "out", "value": ""}),
+                &[&b_txt],
+            );
+            p.send(
+                json!({"type": "drop", "field": "out", "value": ""}),
+                &[&a_xlsx],
+            );
             let got = p.expect("picked");
-            check!(p, got["value"] == path(&a_xlsx), "file on save field = {}", as_json(&got));
+            check!(
+                p,
+                got["value"] == path(&a_xlsx),
+                "file on save field = {}",
+                as_json(&got)
+            );
             p.send(json!({"type": "drop", "field": "src"}), &[&d]);
             let got = p.expect("picked");
-            check!(p, got["value"] == path(&d), "folder on folder field = {}", as_json(&got));
+            check!(
+                p,
+                got["value"] == path(&d),
+                "folder on folder field = {}",
+                as_json(&got)
+            );
             p.send(json!({"type": "submit", "values": {"src": "data", "n": "2", "mode": "商品別", "day": "2026-05-06", "inputs": ["data/a.xlsx"]}}), &[]);
             p.wait_closed();
         }),
@@ -279,10 +393,22 @@ fn form_and_table_windows() {
             let mut updates = Vec::new();
             let done = p.expect_into("done", Some(&mut updates));
             let got = as_json(&done);
-            check!(p, got == r#"{"cancelled":false,"ok":true,"output":true,"type":"done"}"#, "done = {got}");
+            check!(
+                p,
+                got == r#"{"cancelled":false,"ok":true,"output":true,"type":"done"}"#,
+                "done = {got}"
+            );
             let all = as_json(&Value::Array(updates));
-            check!(p, all.contains(r#""item 1""#) && all.contains(r#""item 3""#), "log = {all}");
-            check!(p, all.contains(r#""done":3,"message":"","total":3,"type":"progress""#), "progress = {all}");
+            check!(
+                p,
+                all.contains(r#""item 1""#) && all.contains(r#""item 3""#),
+                "log = {all}"
+            );
+            check!(
+                p,
+                all.contains(r#""done":3,"message":"","total":3,"type":"progress""#),
+                "progress = {all}"
+            );
             p.send(json!({"type": "open"}), &[]);
             p.send(json!({"type": "close"}), &[]);
             p.wait_closed();
@@ -294,7 +420,11 @@ fn form_and_table_windows() {
             p.expect("running");
             p.send(json!({"type": "cancel"}), &[]);
             let got = as_json(&p.expect("done"));
-            check!(p, got == r#"{"cancelled":true,"ok":true,"output":false,"type":"done"}"#, "done = {got}");
+            check!(
+                p,
+                got == r#"{"cancelled":true,"ok":true,"output":false,"type":"done"}"#,
+                "done = {got}"
+            );
             p.send(json!({"type": "close"}), &[]);
             p.wait_closed();
         }),
@@ -304,7 +434,11 @@ fn form_and_table_windows() {
             p.send(json!({"type": "submit", "values": {}}), &[]);
             let done = p.expect("done");
             let e = done["error"].as_str().unwrap_or("");
-            check!(p, done["ok"] == false && e.contains("Error: 失敗") && e.contains("w.js:"), "done = {done}");
+            check!(
+                p,
+                done["ok"] == false && e.contains("Error: 失敗") && e.contains("w.js:"),
+                "done = {done}"
+            );
             p.send(json!({"type": "close"}), &[]);
             p.wait_closed();
         }),
@@ -314,15 +448,31 @@ fn form_and_table_windows() {
             let cols = as_json(&init["columns"]);
             check!(
                 p,
-                cols == r#"[{"label":"名前","width":0},{"label":"数","width":0},{"label":"日","width":0}]"# && init["total"] == 3 && init["select"] == "multiple",
+                cols == r#"[{"label":"名前","width":0},{"label":"数","width":0},{"label":"日","width":0}]"#
+                    && init["total"] == 3
+                    && init["select"] == "multiple",
                 "init = {init}"
             );
             let rows = as_json(&p.expect("rows")["rows"]);
-            check!(p, rows == r#"[["a",1,"2026-04-01"],["b",2,null],["c",null,"2026-04-01 12:30:00"]]"#, "rows = {rows}");
-            p.send(json!({"type": "save", "format": "csv", "indices": [2, 0]}), &[]);
+            check!(
+                p,
+                rows == r#"[["a",1,"2026-04-01"],["b",2,null],["c",null,"2026-04-01 12:30:00"]]"#,
+                "rows = {rows}"
+            );
+            p.send(
+                json!({"type": "save", "format": "csv", "indices": [2, 0]}),
+                &[],
+            );
             let got = p.expect("saved");
-            check!(p, got["path"].as_str().unwrap_or("").ends_with("out.csv"), "saved = {got}");
-            p.send(json!({"type": "save", "format": "xlsx", "indices": null}), &[]);
+            check!(
+                p,
+                got["path"].as_str().unwrap_or("").ends_with("out.csv"),
+                "saved = {got}"
+            );
+            p.send(
+                json!({"type": "save", "format": "xlsx", "indices": null}),
+                &[],
+            );
             p.expect("saved");
             p.send(json!({"type": "ok", "indices": [0, 2, 7]}), &[]);
             p.wait_closed();
@@ -338,7 +488,11 @@ fn form_and_table_windows() {
             p.wait_closed();
         }),
     ];
-    let u = PageUi::new(r#"{"showDirectoryPicker": ["data"], "showSaveFilePicker": ["out.csv", "out.xlsx"]}"#, Some(log.sink()), pages);
+    let u = PageUi::new(
+        r#"{"showDirectoryPicker": ["data"], "showSaveFilePicker": ["out.csv", "out.xlsx"]}"#,
+        Some(log.sink()),
+        pages,
+    );
     let src = r#"
 const v = await ui.form({ title: "窓", titleBar: "custom", icon: "table", accent: " #c42b1c ", background: { light: "oldlace" }, submitIcon: "fa-regular fa-circle-play", fields: [
   { name: "src", label: "フォルダ", type: "folder", required: true, icon: "folder-open" },
@@ -378,14 +532,29 @@ console.log("6 closed");
 "#;
     let r = run_pages(&u, "w.js", src);
     std::env::set_current_dir(prev).unwrap();
-    assert!(r.code == 0 && r.err.is_none(), "exit {}: {:?}\nstdout:\n{}\nstderr:\n{}\nlog:\n{}", r.code, r.err, r.stdout, r.stderr, log.text());
+    assert!(
+        r.code == 0 && r.err.is_none(),
+        "exit {}: {:?}\nstdout:\n{}\nstderr:\n{}\nlog:\n{}",
+        r.code,
+        r.err,
+        r.stdout,
+        r.stderr,
+        log.text()
+    );
     let want = "1 data 2 商品別 6 a.xlsx\n2 3\n3 true\n5 a,c\n".to_string()
         + "csv \"名前,数,日\\r\\nc,,2026/04/01 12:30:00\\r\\na,1,2026/04/01\\r\\n\""
         + "\nxlsx 4\ndbl 1 b 数 数 2\ndbl 2 c null null undefined\n6 closed\n";
     assert_eq!(r.stdout, want);
-    assert!(log.text().contains("showItemInFolder(["), "open folder not requested:\n{}", log.text());
+    assert!(
+        log.text().contains("showItemInFolder(["),
+        "open folder not requested:\n{}",
+        log.text()
+    );
     for url in u.urls.lock().unwrap().iter() {
-        assert!(url.starts_with(&format!("{ASSET_ORIGIN}{BUILTIN_PREFIX}")), "window url {url}");
+        assert!(
+            url.starts_with(&format!("{ASSET_ORIGIN}{BUILTIN_PREFIX}")),
+            "window url {url}"
+        );
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -422,13 +591,28 @@ fn dropped_folder() {
     let u = Arc::new(AttachUi {
         m: Mock::from_json("", None).unwrap(),
         windows: false,
-        files: vec![dir.to_string_lossy().into_owned(), file.to_string_lossy().into_owned(), String::new()],
+        files: vec![
+            dir.to_string_lossy().into_owned(),
+            file.to_string_lossy().into_owned(),
+            String::new(),
+        ],
         slow: SlowUi::new(None, false),
     });
     let src = "// ==xljs==\n// @mode app\n// ==/xljs==\nexport function dropped(hs) { console.log(hs.map((h) => h && h.kind).join()); app.main.close(); }\n";
     let o = SharedBuf::default();
-    let r = run(Options { script_path: write_script("drop.js", src), ui: Some(u), stdout: Some(out(&o)), stderr: Some(quiet()), ..Default::default() });
-    assert!(matches!(r, Ok(0)) && o.text() == "directory,file,\n", "{:?} stdout {:?}", r.map_err(|e| e.to_string()), o.text());
+    let r = run(Options {
+        script_path: write_script("drop.js", src),
+        ui: Some(u),
+        stdout: Some(out(&o)),
+        stderr: Some(quiet()),
+        ..Default::default()
+    });
+    assert!(
+        matches!(r, Ok(0)) && o.text() == "directory,file,\n",
+        "{:?} stdout {:?}",
+        r.map_err(|e| e.to_string()),
+        o.text()
+    );
 }
 
 /// Runs src with the pages and checks that it ends well with stdout want.
@@ -437,7 +621,14 @@ fn form_case(name: &str, src: &str, want: &str, pages: Vec<PageFn>) {
     let _cfg = config_dir();
     let u = PageUi::new("", None, pages);
     let r = run_pages(&u, name, src);
-    assert!(r.code == 0 && r.err.is_none() && r.stdout == want, "exit {}, {:?}, stdout {:?}, want {want:?}\nstderr:\n{}", r.code, r.err, r.stdout, r.stderr);
+    assert!(
+        r.code == 0 && r.err.is_none() && r.stdout == want,
+        "exit {}, {:?}, stdout {:?}, want {want:?}\nstderr:\n{}",
+        r.code,
+        r.err,
+        r.stdout,
+        r.stderr
+    );
 }
 
 #[test]
@@ -454,15 +645,33 @@ fn form_window_tables_and_tabs() {
             r#""table":{"columns":["名前","数"],"rows":[["a",1],["b",null]],"select":"single"},"tooltip":"","type":"table","value":[1]"#,
             r#""name":"out","options":[],"placeholder":"","required":false,"rows":3,"step":null,"tab":1,"table":{"columns":[],"rows":[],"select":""}"#,
         ] {
-            check!(p, fields.contains(want), "fields do not contain {want}:\n{fields}");
+            check!(
+                p,
+                fields.contains(want),
+                "fields do not contain {want}:\n{fields}"
+            );
         }
-        p.send(json!({"type": "submit", "values": {"common": "c", "a": "x", "pick": [], "out": []}}), &[]);
+        p.send(
+            json!({"type": "submit", "values": {"common": "c", "a": "x", "pick": [], "out": []}}),
+            &[],
+        );
         let e = as_json(&p.expect("errors"));
-        check!(p, e.contains(r#""pick":"行を選択してください""#), "errors = {e}");
-        p.send(json!({"type": "submit", "values": {"common": "c", "a": "x", "pick": [0], "out": []}}), &[]);
+        check!(
+            p,
+            e.contains(r#""pick":"行を選択してください""#),
+            "errors = {e}"
+        );
+        p.send(
+            json!({"type": "submit", "values": {"common": "c", "a": "x", "pick": [0], "out": []}}),
+            &[],
+        );
         p.expect("running");
         let got = as_json(&p.expect("table"));
-        check!(p, got == r#"{"columns":["結果"],"field":"out","rows":[["a"]],"select":"","type":"table"}"#, "table = {got}");
+        check!(
+            p,
+            got == r#"{"columns":["結果"],"field":"out","rows":[["a"]],"select":"","type":"table"}"#,
+            "table = {got}"
+        );
         p.expect("done");
         p.send(json!({"type": "close"}), &[]);
         p.wait_closed();
@@ -487,24 +696,52 @@ fn form_window_buttons() {
     let pages: Vec<PageFn> = vec![
         Box::new(|p| {
             let init = p.expect("init");
-            check!(p, as_json(&init["buttons"]) == r#"["読込","確認","完了"]"# && init["noSubmit"] == false, "init = {init}");
+            check!(
+                p,
+                as_json(&init["buttons"]) == r#"["読込","確認","完了"]"#
+                    && init["noSubmit"] == false,
+                "init = {init}"
+            );
             // validate: false runs with the values as entered; ctx.setValue updates the page.
-            p.send(json!({"type": "submit", "button": 0, "values": {"n": ""}}), &[]);
+            p.send(
+                json!({"type": "submit", "button": 0, "values": {"n": ""}}),
+                &[],
+            );
             p.expect("running");
             let got = as_json(&p.expect("picked"));
-            check!(p, got == r#"{"append":false,"field":"n","quiet":true,"seq":1,"type":"picked","value":"7"}"#, "picked = {got}");
+            check!(
+                p,
+                got == r#"{"append":false,"field":"n","quiet":true,"seq":1,"type":"picked","value":"7"}"#,
+                "picked = {got}"
+            );
             p.expect("done");
             // A checked button shows the errors and runs once they are fixed; the window stays open.
-            p.send(json!({"type": "submit", "button": 1, "values": {"n": ""}}), &[]);
+            p.send(
+                json!({"type": "submit", "button": 1, "values": {"n": ""}}),
+                &[],
+            );
             let e = as_json(&p.expect("errors"));
             check!(p, e.contains(r#""n":"入力してください""#), "errors = {e}");
-            p.send(json!({"type": "submit", "button": 1, "values": {"n": "7"}}), &[]);
+            p.send(
+                json!({"type": "submit", "button": 1, "values": {"n": "7"}}),
+                &[],
+            );
             p.expect("running");
             let got = as_json(&p.expect("done"));
-            check!(p, got == r#"{"cancelled":false,"ok":true,"output":false,"type":"done"}"#, "done = {got}");
-            p.send(json!({"type": "submit", "button": 9, "values": {"n": "1"}}), &[]);
+            check!(
+                p,
+                got == r#"{"cancelled":false,"ok":true,"output":false,"type":"done"}"#,
+                "done = {got}"
+            );
+            p.send(
+                json!({"type": "submit", "button": 9, "values": {"n": "1"}}),
+                &[],
+            );
             // close: true closes the window after the run.
-            p.send(json!({"type": "submit", "button": 2, "values": {"n": "8"}}), &[]);
+            p.send(
+                json!({"type": "submit", "button": 2, "values": {"n": "8"}}),
+                &[],
+            );
             p.wait_closed();
         }),
         Box::new(|p| {
@@ -530,7 +767,12 @@ console.log("v", v.n);
 const w = await ui.form({ submit: false, fields: [], buttons: [{ label: "実行", onClick() { console.log("run"); } }] });
 console.log("w", JSON.stringify(w));
 "#;
-    form_case("buttons.js", src, "load null\ncheck 7\nfinish 8\nv 8\nrun\nw {}\n", pages);
+    form_case(
+        "buttons.js",
+        src,
+        "load null\ncheck 7\nfinish 8\nv 8\nrun\nw {}\n",
+        pages,
+    );
 }
 
 #[test]
@@ -545,17 +787,38 @@ fn form_window_editable_table() {
         );
         // The errors of the rows as shown, then of the row edited.
         let got = as_json(&p.expect("cellErrors"));
-        check!(p, got == r#"{"errors":[{"col":1,"message":"数値を入力してください","row":1},{"col":-1,"message":"2 件以上","row":1}],"field":"t","type":"cellErrors"}"#, "cellErrors = {got}");
-        p.send(json!({"type": "cell", "field": "t", "row": 1, "col": 1, "value": "y"}), &[]);
+        check!(
+            p,
+            got == r#"{"errors":[{"col":1,"message":"数値を入力してください","row":1},{"col":-1,"message":"2 件以上","row":1}],"field":"t","type":"cellErrors"}"#,
+            "cellErrors = {got}"
+        );
+        p.send(
+            json!({"type": "cell", "field": "t", "row": 1, "col": 1, "value": "y"}),
+            &[],
+        );
         let got = as_json(&p.expect("cellErrors"));
-        check!(p, got == r#"{"errors":[{"col":1,"message":"数値を入力してください","row":1},{"col":-1,"message":"2 件以上","row":1}],"field":"t","row":1,"type":"cellErrors"}"#, "cellErrors = {got}");
+        check!(
+            p,
+            got == r#"{"errors":[{"col":1,"message":"数値を入力してください","row":1},{"col":-1,"message":"2 件以上","row":1}],"field":"t","row":1,"type":"cellErrors"}"#,
+            "cellErrors = {got}"
+        );
         p.send(json!({"type": "submit", "values": {}}), &[]);
         let e = as_json(&p.expect("errors"));
-        check!(p, e.contains(r#""t":"表に 2 件のエラーがあります""#), "errors = {e}");
+        check!(
+            p,
+            e.contains(r#""t":"表に 2 件のエラーがあります""#),
+            "errors = {e}"
+        );
         p.expect("cellErrors");
         // Edits sent right before a press are applied first.
-        p.send(json!({"type": "cell", "field": "t", "row": 1, "col": 1, "value": "3"}), &[]);
-        p.send(json!({"type": "cell", "field": "t", "row": 0, "col": 2, "value": "返品"}), &[]);
+        p.send(
+            json!({"type": "cell", "field": "t", "row": 1, "col": 1, "value": "3"}),
+            &[],
+        );
+        p.send(
+            json!({"type": "cell", "field": "t", "row": 0, "col": 2, "value": "返品"}),
+            &[],
+        );
         p.send(json!({"type": "submit", "values": {}}), &[]);
         p.wait_closed();
     })];
@@ -568,7 +831,12 @@ const v = await ui.form({ fields: [{
 }]});
 console.log(JSON.stringify(v.t));
 "#;
-    form_case("edit.js", src, "[{\"名前\":\"a\",\"数\":1,\"区分\":\"返品\"},{\"名前\":\"b\",\"数\":3,\"区分\":\"売上\"}]\n", pages);
+    form_case(
+        "edit.js",
+        src,
+        "[{\"名前\":\"a\",\"数\":1,\"区分\":\"返品\"},{\"名前\":\"b\",\"数\":3,\"区分\":\"売上\"}]\n",
+        pages,
+    );
 }
 
 #[test]
@@ -576,18 +844,48 @@ fn form_window_live_checks() {
     let pages: Vec<PageFn> = vec![Box::new(|p| {
         p.expect("init");
         let check = |field: &str, values: Value, want: &str| {
-            p.send(json!({"type": "check", "field": field, "values": values}), &[]);
+            p.send(
+                json!({"type": "check", "field": field, "values": values}),
+                &[],
+            );
             let got = as_json(&p.expect("fieldError"));
             check!(p, got == want, "check {field} = {got}, want {want}");
         };
-        check("n", json!({"n": "x", "code": ""}), r#"{"error":"数値を入力してください","field":"n","type":"fieldError"}"#);
-        check("n", json!({"n": "50", "code": ""}), r#"{"error":"10 以下の値を入力してください","field":"n","type":"fieldError"}"#);
-        check("n", json!({"n": "5", "code": ""}), r#"{"error":"","field":"n","type":"fieldError"}"#);
-        check("code", json!({"n": "5", "code": "B1"}), r#"{"error":"5 で始めてください","field":"code","type":"fieldError"}"#);
-        check("code", json!({"n": "5", "code": ""}), r#"{"error":"入力してください","field":"code","type":"fieldError"}"#);
+        check(
+            "n",
+            json!({"n": "x", "code": ""}),
+            r#"{"error":"数値を入力してください","field":"n","type":"fieldError"}"#,
+        );
+        check(
+            "n",
+            json!({"n": "50", "code": ""}),
+            r#"{"error":"10 以下の値を入力してください","field":"n","type":"fieldError"}"#,
+        );
+        check(
+            "n",
+            json!({"n": "5", "code": ""}),
+            r#"{"error":"","field":"n","type":"fieldError"}"#,
+        );
+        check(
+            "code",
+            json!({"n": "5", "code": "B1"}),
+            r#"{"error":"5 で始めてください","field":"code","type":"fieldError"}"#,
+        );
+        check(
+            "code",
+            json!({"n": "5", "code": ""}),
+            r#"{"error":"入力してください","field":"code","type":"fieldError"}"#,
+        );
         // The form's validate runs only when a button is pressed.
-        check("code", json!({"n": "5", "code": "51"}), r#"{"error":"","field":"code","type":"fieldError"}"#);
-        p.send(json!({"type": "submit", "values": {"n": "5", "code": "51"}}), &[]);
+        check(
+            "code",
+            json!({"n": "5", "code": "51"}),
+            r#"{"error":"","field":"code","type":"fieldError"}"#,
+        );
+        p.send(
+            json!({"type": "submit", "values": {"n": "5", "code": "51"}}),
+            &[],
+        );
         let e = as_json(&p.expect("errors"));
         check!(p, e.contains(r#""error":"全体""#), "errors = {e}");
         p.send(json!({"type": "close"}), &[]);
@@ -616,9 +914,19 @@ fn form_window_on_change() {
     let pages: Vec<PageFn> = vec![Box::new(move |p| {
         let init = p.expect("init");
         let f = &init["fields"][0];
-        check!(p, f["tooltip"] == "売上の CSV" && f["change"] == true, "field = {}", as_json(f));
+        check!(
+            p,
+            f["tooltip"] == "売上の CSV" && f["change"] == true,
+            "field = {}",
+            as_json(f)
+        );
         let f = &init["fields"][2];
-        check!(p, f["value"] == "" && f["placeholder"] == "選んでください", "select = {}", as_json(f));
+        check!(
+            p,
+            f["value"] == "" && f["placeholder"] == "選んでください",
+            "select = {}",
+            as_json(f)
+        );
         let tips = as_json(&init["buttonTooltips"]);
         check!(p, tips == r#"["説明"]"#, "buttonTooltips = {tips}");
         // Typing (no change) does not run onChange.
@@ -630,7 +938,10 @@ fn form_window_on_change() {
         let picked = p.expect("picked");
         check!(
             p,
-            picked["field"] == "purchase" && picked["value"] == purchase.as_str() && picked["quiet"] == true && picked["seq"] == 1,
+            picked["field"] == "purchase"
+                && picked["value"] == purchase.as_str()
+                && picked["quiet"] == true
+                && picked["seq"] == 1,
             "picked = {}",
             as_json(&picked)
         );
@@ -662,22 +973,37 @@ fn chart_window() {
     let pages: Vec<PageFn> = vec![Box::new(|p| {
         let init = p.expect("init");
         let spec = as_json(&init["spec"]);
-        check!(p, init["click"] == true && init["change"] == false && init["lang"] == "ja", "init = {}", as_json(&init));
+        check!(
+            p,
+            init["click"] == true && init["change"] == false && init["lang"] == "ja",
+            "init = {}",
+            as_json(&init)
+        );
         // Dates as { $date: ms }; functions are left out.
         check!(
             p,
-            spec.contains(r#""日":{"$date":"#) && spec.contains(r#""type":"line""#) && !spec.contains("onClick"),
+            spec.contains(r#""日":{"$date":"#)
+                && spec.contains(r#""type":"line""#)
+                && !spec.contains("onClick"),
             "spec = {spec}"
         );
         check!(
             p,
-            init["texts"]["today"] == "今日" && init["texts"]["views"]["Week"] == "週" && init["texts"]["planned"] == "予定 {0}%",
+            init["texts"]["today"] == "今日"
+                && init["texts"]["views"]["Week"] == "週"
+                && init["texts"]["planned"] == "予定 {0}%",
             "texts = {}",
             as_json(&init["texts"])
         );
         p.send(json!({"type": "click", "index": 1, "series": "売上"}), &[]);
         let u = p.expect("update");
-        check!(p, u["spec"]["type"] == "column" && u["spec"]["data"].as_array().map(|a| a.len()) == Some(1), "update = {}", as_json(&u));
+        check!(
+            p,
+            u["spec"]["type"] == "column"
+                && u["spec"]["data"].as_array().map(|a| a.len()) == Some(1),
+            "update = {}",
+            as_json(&u)
+        );
         p.wait_closed();
     })];
     let src = r#"
@@ -697,19 +1023,45 @@ fn form_window_chart() {
     let pages: Vec<PageFn> = vec![Box::new(|p| {
         let init = p.expect("init");
         let f = &init["fields"][1];
-        check!(p, f["type"] == "chart" && f["chart"]["height"] == 250 && f["chart"]["change"] == true, "field = {}", as_json(f));
-        check!(p, init["chartTexts"]["days"] == "{0}日", "chartTexts = {}", as_json(&init["chartTexts"]));
+        check!(
+            p,
+            f["type"] == "chart" && f["chart"]["height"] == 250 && f["chart"]["change"] == true,
+            "field = {}",
+            as_json(f)
+        );
+        check!(
+            p,
+            init["chartTexts"]["days"] == "{0}日",
+            "chartTexts = {}",
+            as_json(&init["chartTexts"])
+        );
         // A task dragged by two days, then a click.
         let (s, e) = (1_794_268_800_000_i64, 1_794_700_800_000_i64);
         p.send(json!({"type": "chartChange", "field": "g", "index": 0, "changes": {"start": {"$date": s}, "end": {"$date": e}}}), &[]);
-        p.send(json!({"type": "chartChange", "field": "g", "index": 0, "changes": {"progress": 0.5}}), &[]);
+        p.send(
+            json!({"type": "chartChange", "field": "g", "index": 0, "changes": {"progress": 0.5}}),
+            &[],
+        );
         p.send(json!({"type": "chartClick", "field": "g", "index": 0}), &[]);
         let err = p.expect("fieldError");
-        check!(p, err["field"] == "g" && err["error"].as_str().unwrap_or("").contains("クリック"), "fieldError = {}", as_json(&err));
-        p.send(json!({"type": "submit", "values": {"a": "x", "g": null}}), &[]);
+        check!(
+            p,
+            err["field"] == "g" && err["error"].as_str().unwrap_or("").contains("クリック"),
+            "fieldError = {}",
+            as_json(&err)
+        );
+        p.send(
+            json!({"type": "submit", "values": {"a": "x", "g": null}}),
+            &[],
+        );
         p.expect("running");
         let c = p.expect("chart");
-        check!(p, c["field"] == "g" && c["spec"]["view"] == "week" && c["spec"]["type"] == "gantt", "chart = {}", as_json(&c));
+        check!(
+            p,
+            c["field"] == "g" && c["spec"]["view"] == "week" && c["spec"]["type"] == "gantt",
+            "chart = {}",
+            as_json(&c)
+        );
         p.expect("done");
         p.send(json!({"type": "close"}), &[]);
         p.wait_closed();
@@ -727,5 +1079,10 @@ const v = await ui.form({
 });
 console.log(v.a, v.g.length, v.g[0].開始.getTime() === 1794268800000, v.g[0].進捗);
 "#;
-    form_case("chartform.js", src, "change start,end true\nchange progress true\nx 1 true 0.5\n", pages);
+    form_case(
+        "chartform.js",
+        src,
+        "change start,end true\nchange progress true\nx 1 true 0.5\n",
+        pages,
+    );
 }

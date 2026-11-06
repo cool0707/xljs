@@ -7,7 +7,9 @@ use crate::meta::Meta;
 use crate::{Error, Result};
 
 /// The extensions of the files the development mode edits.
-pub const TEXT_EXTS: &[&str] = &["js", "mjs", "cjs", "ts", "mts", "json", "html", "htm", "css", "txt", "md"];
+pub const TEXT_EXTS: &[&str] = &[
+    "js", "mjs", "cjs", "ts", "mts", "json", "html", "htm", "css", "txt", "md",
+];
 
 /// The extensions of scripts: a downloaded script may replace one with
 /// another of these (an AI often answers .js for a .ts file).
@@ -28,7 +30,10 @@ pub struct Project {
 }
 
 pub(crate) fn ext_of(name: &str) -> String {
-    Path::new(name).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default()
+    Path::new(name)
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
 }
 
 pub(crate) fn is_script(name: &str) -> bool {
@@ -42,7 +47,10 @@ fn is_text(name: &str) -> bool {
 /// The name without the extension and without the suffix that browsers
 /// add to a name that is already taken ("main (1).js" → "main").
 pub(crate) fn base_stem(name: &str) -> String {
-    let stem = Path::new(name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = Path::new(name)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let t = stem.trim_end();
     if let Some(open) = t.rfind('(')
         && t.ends_with(')')
@@ -65,7 +73,10 @@ impl Project {
 
     /// The entry script relative to the folder.
     pub fn entry_name(&self) -> String {
-        self.entry.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+        self.entry
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default()
     }
 
     /// The absolute path of a file given relative to the folder (slashes);
@@ -96,18 +107,30 @@ impl Project {
         if let Ok(rd) = std::fs::read_dir(&self.dir) {
             for e in rd.flatten() {
                 let name = e.file_name().to_string_lossy().into_owned();
-                if e.file_type().map(|t| t.is_file()).unwrap_or(false) && is_text(&name) && !name.starts_with('.') && name != "jsconfig.json" && name != "xljs.d.ts" {
+                if e.file_type().map(|t| t.is_file()).unwrap_or(false)
+                    && is_text(&name)
+                    && !name.starts_with('.')
+                    && name != "jsconfig.json"
+                    && name != "xljs.d.ts"
+                {
                     rest.push(name);
                 }
             }
         }
         for root in self.meta.asset_roots() {
             let base = self.dir.join(&root);
-            for e in walkdir::WalkDir::new(&base).into_iter().filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.')).flatten().take(2000) {
+            for e in walkdir::WalkDir::new(&base)
+                .into_iter()
+                .filter_entry(|e| !e.file_name().to_string_lossy().starts_with('.'))
+                .flatten()
+                .take(2000)
+            {
                 if !e.file_type().is_file() {
                     continue;
                 }
-                let Ok(rel) = e.path().strip_prefix(&self.dir) else { continue };
+                let Ok(rel) = e.path().strip_prefix(&self.dir) else {
+                    continue;
+                };
                 let rel = rel.to_string_lossy().replace('\\', "/");
                 if is_text(&rel) && !rel.split('/').any(|p| p == "node_modules") {
                     rest.push(rel);
@@ -134,10 +157,22 @@ impl Project {
             let e = ext_of(f);
             e == ext || (is_script(f) && SCRIPT_EXTS.contains(&ext.as_str()))
         };
-        let file_stem = |f: &str| Path::new(f).file_stem().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let file_stem = |f: &str| {
+            Path::new(f)
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_lowercase())
+                .unwrap_or_default()
+        };
         // The same name (an exact extension first).
         for exact in [true, false] {
-            if let Some(f) = files.iter().find(|f| file_stem(f) == stem && if exact { ext_of(f) == ext } else { same_kind(f) }) {
+            if let Some(f) = files.iter().find(|f| {
+                file_stem(f) == stem
+                    && if exact {
+                        ext_of(f) == ext
+                    } else {
+                        same_kind(f)
+                    }
+            }) {
                 return Some(f.clone());
             }
         }

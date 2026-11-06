@@ -69,13 +69,20 @@ struct Request {
 }
 
 fn session(host: &Host) -> Option<Rc<Session>> {
-    host.ext.borrow().clone().and_then(|e| e.downcast::<Session>().ok())
+    host.ext
+        .borrow()
+        .clone()
+        .and_then(|e| e.downcast::<Session>().ok())
 }
 
 /// Cuts s for the trace.
 fn short(s: &str) -> String {
     let c: Vec<char> = s.chars().collect();
-    if c.len() > 100 { format!("{}…", c[..100].iter().collect::<String>()) } else { s.to_string() }
+    if c.len() > 100 {
+        format!("{}…", c[..100].iter().collect::<String>())
+    } else {
+        s.to_string()
+    }
 }
 
 fn error_response(msg: &str) -> String {
@@ -136,7 +143,11 @@ impl Session {
     /// Ends the run when the page is idle (it has handled every event) and
     /// nothing but the debugger window is pending.
     fn check(&self, host: &Host) {
-        if self.done.get() || self.idle_at.get() < 0 || self.idle_at.get() != self.remote.sent() as i64 || !host.lp.shared.idle(1) {
+        if self.done.get()
+            || self.idle_at.get() < 0
+            || self.idle_at.get() != self.remote.sent() as i64
+            || !host.lp.shared.idle(1)
+        {
             return;
         }
         let failure = self.failure.borrow().clone();
@@ -162,7 +173,9 @@ impl Session {
         (self.trace)(format!("finish {code} {}", err.as_deref().unwrap_or("")));
         *self.err.borrow_mut() = err.clone();
         host.cleanup();
-        self.post(json!({"ev": "done", "code": code, "error": err.unwrap_or_default()}).to_string());
+        self.post(
+            json!({"ev": "done", "code": code, "error": err.unwrap_or_default()}).to_string(),
+        );
         let w = self.window.borrow().clone();
         if let Some(w) = w {
             w.close();
@@ -202,18 +215,26 @@ impl Session {
             // The bundle's module loader: not the script's code.
             UNMAPPED.to_string()
         });
-        let msg: String = msg.split_inclusive('\n').filter(|l| !l.contains(UNMAPPED)).collect();
+        let msg: String = msg
+            .split_inclusive('\n')
+            .filter(|l| !l.contains(UNMAPPED))
+            .collect();
         let msg = EVAL_FRAME.replace_all(&msg, "at $1");
         let msg = PAGE_FRAME.replace_all(&msg, "");
         i18n::text(&clean_stack(&msg))
     }
 }
 
-
-static BUNDLE_FRAME: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(&format!(r"[^\s(]*{}:(\d+):(\d+)", regex::escape(&format!("{BUILTIN_PREFIX}debug/bundle.js")))).unwrap());
+static BUNDLE_FRAME: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
+        r"[^\s(]*{}:(\d+):(\d+)",
+        regex::escape(&format!("{BUILTIN_PREFIX}debug/bundle.js"))
+    ))
+    .unwrap()
+});
 // The worker evaluates the bundle: its top level shows as "eval".
-static EVAL_FRAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"at eval \(([^()\s]+)\)").unwrap());
+static EVAL_FRAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"at eval \(([^()\s]+)\)").unwrap());
 static PAGE_FRAME: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
         r"(?m)^\s*at .*{}(?:debug\.js|debug-page\.js|debug-worker\.js|debug/prelude\.js).*$\n?",
@@ -233,7 +254,10 @@ impl AssetFs for DebugAssets {
         }
         match name.strip_prefix(BUILTIN_PREFIX) {
             Some(rest) => BuiltinAssets.read(rest),
-            None => Err(std::io::Error::new(std::io::ErrorKind::NotFound, name.to_string())),
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                name.to_string(),
+            )),
         }
     }
     fn files(&self, root: &str) -> std::io::Result<Vec<String>> {
@@ -243,7 +267,10 @@ impl AssetFs for DebugAssets {
 
 fn debug_assets(code: &[u8]) -> DebugAssets {
     let mut m = MemAssets::new();
-    m.insert(format!("{BUILTIN_PREFIX}debug/prelude.js"), format!("{PRELUDE_PREFIX}{}", prelude_source()));
+    m.insert(
+        format!("{BUILTIN_PREFIX}debug/prelude.js"),
+        format!("{PRELUDE_PREFIX}{}", prelude_source()),
+    );
     let mut b = BUNDLE_PREFIX.as_bytes().to_vec();
     b.extend_from_slice(code);
     m.insert(format!("{BUILTIN_PREFIX}debug/bundle.js"), b);
@@ -259,7 +286,8 @@ pub(super) fn run(o: &Options, env: Env, code: Vec<u8>) -> Result<i32> {
     env.debug = true;
     let host = Rc::new(Host::new(env, None));
     let res = ctx.with(|ctx| -> Result<i32> {
-        host.install_loop(&ctx).map_err(|e| err!("engine.internalError", e))?;
+        host.install_loop(&ctx)
+            .map_err(|e| err!("engine.internalError", e))?;
         let remote = Remote::new(&ctx, &host).map_err(|e| err!("engine.internalError", e))?;
         let s = Rc::new(Session {
             remote: remote.clone(),
@@ -357,7 +385,9 @@ pub(super) fn run(o: &Options, env: Env, code: Vec<u8>) -> Result<i32> {
             w.post(ev);
         });
         if let Err(e) = host.lp.run(&ctx, &host) {
-            return Err(Error::Script(ScriptError { message: super::describe_error(&ctx, e) }));
+            return Err(Error::Script(ScriptError {
+                message: super::describe_error(&ctx, e),
+            }));
         }
         let code = s.code.get();
         let err = s.err.borrow().clone();

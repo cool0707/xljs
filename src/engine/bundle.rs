@@ -66,7 +66,13 @@ pub fn bundle_with(entry: &str, with_sources: bool) -> Result<Vec<u8>> {
     std::fs::metadata(&abs).map_err(|e| Error::path("open", entry, e))?;
     let abs = normalize(&abs);
     let root = abs.parent().map(Path::to_path_buf).unwrap_or_default();
-    let mut b = Bundler { root, with_sources, modules: Vec::new(), ids: HashMap::new(), errors: Vec::new() };
+    let mut b = Bundler {
+        root,
+        with_sources,
+        modules: Vec::new(),
+        ids: HashMap::new(),
+        errors: Vec::new(),
+    };
     let entry_id = b.add(&abs, true);
     if !b.errors.is_empty() {
         return Err(Error::Bundle(BundleError { messages: b.errors }));
@@ -95,8 +101,15 @@ fn line_col(src: &str, offset: usize) -> (usize, usize, String) {
     let line = before.matches('\n').count() + 1;
     let start = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
     let col = src[start..offset].chars().count();
-    let end = src[offset..].find('\n').map(|i| offset + i).unwrap_or(src.len());
-    (line, col, src[start..end].trim_end_matches('\r').to_string())
+    let end = src[offset..]
+        .find('\n')
+        .map(|i| offset + i)
+        .unwrap_or(src.len());
+    (
+        line,
+        col,
+        src[start..end].trim_end_matches('\r').to_string(),
+    )
 }
 
 impl Bundler {
@@ -112,7 +125,10 @@ impl Bundler {
             let (line, col, line_text) = line_col(src, o);
             (file.to_string(), line, col, line_text)
         });
-        self.errors.push(BundleMessage { location: loc, text });
+        self.errors.push(BundleMessage {
+            location: loc,
+            text,
+        });
     }
 
     /// Adds the module at path (once) and returns its id.
@@ -123,15 +139,29 @@ impl Bundler {
         let id = self.display(path);
         self.ids.insert(path.to_path_buf(), id.clone());
         let src = match std::fs::read(path) {
-            Ok(b) => String::from_utf8_lossy(b.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&b)).into_owned(),
+            Ok(b) => {
+                String::from_utf8_lossy(b.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(&b)).into_owned()
+            }
             Err(e) => {
-                self.errors.push(BundleMessage { location: None, text: crate::i18n::error(&Error::path("open", id.clone(), e)) });
+                self.errors.push(BundleMessage {
+                    location: None,
+                    text: crate::i18n::error(&Error::path("open", id.clone(), e)),
+                });
                 return id;
             }
         };
-        let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let ext = path
+            .extension()
+            .map(|e| e.to_string_lossy().to_lowercase())
+            .unwrap_or_default();
         let idx = self.modules.len();
-        self.modules.push(Module { id: id.clone(), kind: Kind::Esm, code: String::new(), map: None, deps: BTreeMap::new() });
+        self.modules.push(Module {
+            id: id.clone(),
+            kind: Kind::Esm,
+            code: String::new(),
+            map: None,
+            deps: BTreeMap::new(),
+        });
         match ext.as_str() {
             "json" => match serde_json::from_str::<serde_json::Value>(&src) {
                 Ok(v) => {
@@ -155,7 +185,11 @@ impl Bundler {
     fn add_script(&mut self, idx: usize, path: &Path, id: &str, src: &str, ext: &str, entry: bool) {
         let alloc = Allocator::default();
         let ts = matches!(ext, "ts" | "mts" | "cts");
-        let mut source_type = if ts { SourceType::ts() } else { SourceType::mjs() };
+        let mut source_type = if ts {
+            SourceType::ts()
+        } else {
+            SourceType::mjs()
+        };
         if ext == "cjs" || ext == "cts" {
             source_type = source_type.with_commonjs(true);
         }
@@ -190,7 +224,9 @@ impl Bundler {
             }
         }
         let mut program = ret.program;
-        let sem = SemanticBuilder::new().with_check_syntax_error(true).build(&program);
+        let sem = SemanticBuilder::new()
+            .with_check_syntax_error(true)
+            .build(&program);
         if !sem.diagnostics.is_empty() {
             for d in sem.diagnostics.iter() {
                 let off = d.labels.first().map(|l| l.offset() as usize);
@@ -219,7 +255,8 @@ impl Bundler {
         if cjs {
             deps = require_calls(src);
         } else {
-            let (static_deps, dynamic_deps) = ModuleRunnerTransform::new().transform(&alloc, &mut program, scoping);
+            let (static_deps, dynamic_deps) =
+                ModuleRunnerTransform::new().transform(&alloc, &mut program, scoping);
             for d in static_deps.iter().chain(dynamic_deps.iter()) {
                 if let Some(s) = d.as_str() {
                     deps.push(s.to_string());
@@ -256,7 +293,10 @@ impl Bundler {
                 }
                 None if cjs => {} // a require() that is never reached, e.g. of a Node.js module
                 None => {
-                    let off = spans.get(&spec).copied().or_else(|| src.find(&format!("\"{spec}\"")).or_else(|| src.find(&format!("'{spec}'"))));
+                    let off = spans.get(&spec).copied().or_else(|| {
+                        src.find(&format!("\"{spec}\""))
+                            .or_else(|| src.find(&format!("'{spec}'")))
+                    });
                     self.error(id, src, off, format!("Could not resolve \"{spec}\""));
                 }
             }
@@ -270,7 +310,12 @@ impl Bundler {
         if spec.starts_with("node:") {
             return None;
         }
-        if spec.starts_with("./") || spec.starts_with("../") || spec.starts_with('/') || spec == "." || spec == ".." {
+        if spec.starts_with("./")
+            || spec.starts_with("../")
+            || spec.starts_with('/')
+            || spec == "."
+            || spec == ".."
+        {
             return resolve_path(&normalize(&dir.join(spec)));
         }
         if Path::new(spec).is_absolute() {
@@ -303,7 +348,11 @@ impl Bundler {
             code.push_str(s);
             *line += s.matches('\n').count() as u32;
         };
-        push(&mut code, &format!("(async ({EXPORTS_PARAM}) => {{ const __xljs_m = Object.create(null);\n"), &mut line);
+        push(
+            &mut code,
+            &format!("(async ({EXPORTS_PARAM}) => {{ const __xljs_m = Object.create(null);\n"),
+            &mut line,
+        );
         for m in &self.modules {
             let deps = serde_json::to_string(&m.deps).unwrap();
             let key = serde_json::to_string(&m.id).unwrap();
@@ -311,7 +360,9 @@ impl Bundler {
                 Kind::Esm => {
                     push(
                         &mut code,
-                        &format!("__xljs_m[{key}] = [0, {deps}, async function (__vite_ssr_import__, __vite_ssr_dynamic_import__, __vite_ssr_exports__, __vite_ssr_exportAll__, __vite_ssr_import_meta__) {{ \"use strict\";\n"),
+                        &format!(
+                            "__xljs_m[{key}] = [0, {deps}, async function (__vite_ssr_import__, __vite_ssr_dynamic_import__, __vite_ssr_exports__, __vite_ssr_exportAll__, __vite_ssr_import_meta__) {{ \"use strict\";\n"
+                        ),
                         &mut line,
                     );
                     if let Some(map) = &m.map {
@@ -321,7 +372,13 @@ impl Bundler {
                     push(&mut code, "\n}];\n", &mut line);
                 }
                 Kind::Cjs => {
-                    push(&mut code, &format!("__xljs_m[{key}] = [1, {deps}, function (module, exports, require) {{\n"), &mut line);
+                    push(
+                        &mut code,
+                        &format!(
+                            "__xljs_m[{key}] = [1, {deps}, function (module, exports, require) {{\n"
+                        ),
+                        &mut line,
+                    );
                     if let Some(map) = &m.map {
                         maps.push((map, line));
                     }
@@ -329,15 +386,29 @@ impl Bundler {
                     push(&mut code, "\n}];\n", &mut line);
                 }
                 Kind::Json | Kind::Text => {
-                    push(&mut code, &format!("__xljs_m[{key}] = [2, {{}}, {}];\n", m.code), &mut line);
+                    push(
+                        &mut code,
+                        &format!("__xljs_m[{key}] = [2, {{}}, {}];\n", m.code),
+                        &mut line,
+                    );
                 }
             }
         }
         push(&mut code, RUNTIME, &mut line);
-        push(&mut code, &format!("return __xljs_load({}, {EXPORTS_PARAM});\n}})", serde_json::to_string(entry).unwrap()), &mut line);
+        push(
+            &mut code,
+            &format!(
+                "return __xljs_load({}, {EXPORTS_PARAM});\n}})",
+                serde_json::to_string(entry).unwrap()
+            ),
+            &mut line,
+        );
         let map = ConcatSourceMapBuilder::from_sourcemaps(&maps).into_sourcemap();
         code.push_str("\n//# sourceMappingURL=data:application/json;base64,");
-        code.push_str(&base64::Engine::encode(&base64::engine::general_purpose::STANDARD, map.to_json_string()));
+        code.push_str(&base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            map.to_json_string(),
+        ));
         code.push('\n');
         code
     }
@@ -354,7 +425,9 @@ const BREAK_FLAG: &str = "__xljsBreak";
 /// true until the debugger has stopped there, so that the script waits for
 /// the developer tools to attach (see breakCheck in web/debug.js).
 fn insert_break<'a>(alloc: &'a Allocator, program: &mut oxc::ast::ast::Program<'a>) {
-    use oxc::ast::ast::{Declaration, ExportDefaultDeclarationKind, Expression, IdentifierName, Statement};
+    use oxc::ast::ast::{
+        Declaration, ExportDefaultDeclarationKind, Expression, IdentifierName, Statement,
+    };
     use oxc::ast::builder::AstBuilder;
     let runs = |st: &Statement| match st {
         Statement::ImportDeclaration(_)
@@ -363,16 +436,33 @@ fn insert_break<'a>(alloc: &'a Allocator, program: &mut oxc::ast::ast::Program<'
         | Statement::ExportFromDeclaration(_)
         | Statement::FunctionDeclaration(_)
         | Statement::EmptyStatement(_) => false,
-        Statement::ExportDeclaration(d) => !matches!(d.declaration, Declaration::FunctionDeclaration(_)) && !d.declaration.is_type(),
-        Statement::ExportDefaultDeclaration(d) => !matches!(d.declaration, ExportDefaultDeclarationKind::FunctionDeclaration(_)) && !d.declaration.is_typescript_syntax(),
+        Statement::ExportDeclaration(d) => {
+            !matches!(d.declaration, Declaration::FunctionDeclaration(_))
+                && !d.declaration.is_type()
+        }
+        Statement::ExportDefaultDeclaration(d) => {
+            !matches!(
+                d.declaration,
+                ExportDefaultDeclarationKind::FunctionDeclaration(_)
+            ) && !d.declaration.is_typescript_syntax()
+        }
         _ => !st.is_typescript_syntax(),
     };
-    let Some(i) = program.body.iter().position(runs) else { return };
+    let Some(i) = program.body.iter().position(runs) else {
+        return;
+    };
     let span = oxc::span::GetSpan::span(&program.body[i]);
     let b = AstBuilder::new(alloc);
     let flag = IdentifierName::new(span, BREAK_FLAG, &b);
-    let test = Expression::new_static_member_expression(span, Expression::new_import_meta(span, &b), flag, false, &b);
-    let stmt = Statement::new_while_statement(span, test, Statement::new_debugger_statement(span, &b), &b);
+    let test = Expression::new_static_member_expression(
+        span,
+        Expression::new_import_meta(span, &b),
+        flag,
+        false,
+        &b,
+    );
+    let stmt =
+        Statement::new_while_statement(span, test, Statement::new_debugger_statement(span, &b), &b);
     program.body.insert(i, stmt);
 }
 
@@ -444,7 +534,11 @@ fn line_offset(src: &str, line: usize, col: usize) -> usize {
     let mut off = 0;
     for (i, l) in src.split('\n').enumerate() {
         if i + 1 == line {
-            return off + l.char_indices().nth(col.saturating_sub(1)).map(|(i, _)| i).unwrap_or(l.len());
+            return off
+                + l.char_indices()
+                    .nth(col.saturating_sub(1))
+                    .map(|(i, _)| i)
+                    .unwrap_or(l.len());
         }
         off += l.len() + 1;
     }
@@ -458,9 +552,13 @@ fn looks_commonjs(src: &str) -> bool {
 
 /// The string arguments of require() calls.
 fn require_calls(src: &str) -> Vec<String> {
-    static RE: std::sync::LazyLock<regex::Regex> =
-        std::sync::LazyLock::new(|| regex::Regex::new(r#"\brequire\s*\(\s*(?:"([^"]+)"|'([^']+)')\s*\)"#).unwrap());
-    let mut out: Vec<String> = RE.captures_iter(src).filter_map(|c| c.get(1).or(c.get(2)).map(|m| m.as_str().to_string())).collect();
+    static RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r#"\brequire\s*\(\s*(?:"([^"]+)"|'([^']+)')\s*\)"#).unwrap()
+    });
+    let mut out: Vec<String> = RE
+        .captures_iter(src)
+        .filter_map(|c| c.get(1).or(c.get(2)).map(|m| m.as_str().to_string()))
+        .collect();
     out.sort();
     out.dedup();
     out
@@ -503,22 +601,26 @@ fn resolve_path(p: &Path) -> Option<PathBuf> {
 /// Resolves a package folder (and a subpath) with its package.json:
 /// "exports" (conditions import, default), "module", "main".
 fn resolve_package(pkg: &Path, sub: Option<&str>) -> Option<PathBuf> {
-    let json: serde_json::Value =
-        std::fs::read_to_string(pkg.join("package.json")).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+    let json: serde_json::Value = std::fs::read_to_string(pkg.join("package.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
     let key = match sub {
         Some(s) => format!("./{s}"),
         None => ".".to_string(),
     };
     if let Some(exports) = json.get("exports") {
         let target = match exports {
-            serde_json::Value::Object(m) if m.keys().any(|k| k.starts_with('.')) => m.get(&key).cloned().or_else(|| {
-                // "./*" patterns
-                m.iter().find_map(|(k, v)| {
-                    let (pre, post) = k.split_once('*')?;
-                    let mid = key.strip_prefix(pre)?.strip_suffix(post)?;
-                    Some(replace_star(v, mid))
+            serde_json::Value::Object(m) if m.keys().any(|k| k.starts_with('.')) => {
+                m.get(&key).cloned().or_else(|| {
+                    // "./*" patterns
+                    m.iter().find_map(|(k, v)| {
+                        let (pre, post) = k.split_once('*')?;
+                        let mid = key.strip_prefix(pre)?.strip_suffix(post)?;
+                        Some(replace_star(v, mid))
+                    })
                 })
-            }),
+            }
             other if key == "." => Some(other.clone()),
             _ => None,
         };
@@ -544,8 +646,14 @@ fn resolve_package(pkg: &Path, sub: Option<&str>) -> Option<PathBuf> {
 fn replace_star(v: &serde_json::Value, mid: &str) -> serde_json::Value {
     match v {
         serde_json::Value::String(s) => serde_json::Value::String(s.replace('*', mid)),
-        serde_json::Value::Object(m) => serde_json::Value::Object(m.iter().map(|(k, v)| (k.clone(), replace_star(v, mid))).collect()),
-        serde_json::Value::Array(a) => serde_json::Value::Array(a.iter().map(|v| replace_star(v, mid)).collect()),
+        serde_json::Value::Object(m) => serde_json::Value::Object(
+            m.iter()
+                .map(|(k, v)| (k.clone(), replace_star(v, mid)))
+                .collect(),
+        ),
+        serde_json::Value::Array(a) => {
+            serde_json::Value::Array(a.iter().map(|v| replace_star(v, mid)).collect())
+        }
         x => x.clone(),
     }
 }
@@ -558,9 +666,10 @@ fn conditional(v: &serde_json::Value) -> Option<String> {
         serde_json::Value::Object(m) => {
             for (k, t) in m {
                 if matches!(k.as_str(), "import" | "default" | "module")
-                    && let Some(s) = conditional(t) {
-                        return Some(s);
-                    }
+                    && let Some(s) = conditional(t)
+                {
+                    return Some(s);
+                }
             }
             None
         }

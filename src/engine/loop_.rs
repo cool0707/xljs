@@ -78,8 +78,19 @@ impl Loop {
         }
     }
 
-    pub fn add_timer<'js>(&self, ctx: &Ctx<'js>, func: Function<'js>, delay: f64, repeat: bool, args: Vec<Value<'js>>) -> i64 {
-        let delay = if delay.is_nan() || delay < 0.0 { 0.0 } else { delay };
+    pub fn add_timer<'js>(
+        &self,
+        ctx: &Ctx<'js>,
+        func: Function<'js>,
+        delay: f64,
+        repeat: bool,
+        args: Vec<Value<'js>>,
+    ) -> i64 {
+        let delay = if delay.is_nan() || delay < 0.0 {
+            0.0
+        } else {
+            delay
+        };
         let mut d = Duration::from_secs_f64(delay / 1000.0);
         if repeat && d < Duration::from_millis(1) {
             d = Duration::from_millis(1);
@@ -110,7 +121,11 @@ impl Loop {
     }
 
     fn next_timer(&self) -> Option<(i64, Instant)> {
-        self.timers.borrow().iter().min_by(|a, b| (a.1.when, a.1.seq).cmp(&(b.1.when, b.1.seq))).map(|(id, t)| (*id, t.when))
+        self.timers
+            .borrow()
+            .iter()
+            .min_by(|a, b| (a.1.when, a.1.seq).cmp(&(b.1.when, b.1.seq)))
+            .map(|(id, t)| (*id, t.when))
     }
 
     /// Processes timers and posted callbacks until nothing is left or the
@@ -166,9 +181,15 @@ impl Loop {
             }
             let (func, args) = {
                 let mut timers = self.timers.borrow_mut();
-                let Some(t) = timers.get_mut(&id) else { continue };
+                let Some(t) = timers.get_mut(&id) else {
+                    continue;
+                };
                 let func = t.func.clone().restore(ctx)?;
-                let args: Vec<Value> = t.args.iter().map(|a| a.clone().restore(ctx)).collect::<rquickjs::Result<_>>()?;
+                let args: Vec<Value> = t
+                    .args
+                    .iter()
+                    .map(|a| a.clone().restore(ctx))
+                    .collect::<rquickjs::Result<_>>()?;
                 if t.repeat {
                     self.seq.set(self.seq.get() + 1);
                     t.seq = self.seq.get();
@@ -194,11 +215,19 @@ impl Loop {
         }
         match timeout {
             None => {
-                let st = self.shared.cv.wait_while(st, |s| s.posted.is_empty() && s.pending > 0).unwrap();
+                let st = self
+                    .shared
+                    .cv
+                    .wait_while(st, |s| s.posted.is_empty() && s.pending > 0)
+                    .unwrap();
                 !st.posted.is_empty()
             }
             Some(d) => {
-                let (st, _) = self.shared.cv.wait_timeout_while(st, d, |s| s.posted.is_empty()).unwrap();
+                let (st, _) = self
+                    .shared
+                    .cv
+                    .wait_timeout_while(st, d, |s| s.posted.is_empty())
+                    .unwrap();
                 !st.posted.is_empty()
             }
         }

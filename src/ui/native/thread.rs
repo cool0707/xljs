@@ -28,7 +28,12 @@ fn drain() {
     }
 }
 
-unsafe extern "system" fn dispatch_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn dispatch_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     if msg == WM_RUN_QUEUED {
         drain();
         return LRESULT(0);
@@ -53,8 +58,23 @@ pub(crate) fn new_ui_thread() -> Arc<dyn UiThread> {
             };
             RegisterClassExW(&wc) != 0
         });
-        match CreateWindowExW(Default::default(), w!("xljsDispatch"), None, Default::default(), 0, 0, 0, 0, Some(HWND_MESSAGE), None, Some(hinst.into()), None) {
-            Ok(hwnd) => Arc::new(WinThread { hwnd: hwnd.0 as isize }),
+        match CreateWindowExW(
+            Default::default(),
+            w!("xljsDispatch"),
+            None,
+            Default::default(),
+            0,
+            0,
+            0,
+            0,
+            Some(HWND_MESSAGE),
+            None,
+            Some(hinst.into()),
+            None,
+        ) {
+            Ok(hwnd) => Arc::new(WinThread {
+                hwnd: hwnd.0 as isize,
+            }),
             Err(_) => Arc::new(ChanThread::default()),
         }
     }
@@ -64,7 +84,12 @@ impl UiThread for WinThread {
     fn post(&self, f: Job) {
         QUEUE.lock().unwrap().push_back(f);
         unsafe {
-            let _ = PostMessageW(Some(HWND(self.hwnd as *mut _)), WM_RUN_QUEUED, WPARAM(0), LPARAM(0));
+            let _ = PostMessageW(
+                Some(HWND(self.hwnd as *mut _)),
+                WM_RUN_QUEUED,
+                WPARAM(0),
+                LPARAM(0),
+            );
         }
     }
 

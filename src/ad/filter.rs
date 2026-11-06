@@ -67,8 +67,15 @@ pub enum Filter {
 /// accepted too.
 pub fn parse(s: &str) -> Result<Filter> {
     let t = s.trim();
-    let src = if t.starts_with('(') { t.to_string() } else { format!("({t})") };
-    let mut p = Parser { s: src.as_bytes(), i: 0 };
+    let src = if t.starts_with('(') {
+        t.to_string()
+    } else {
+        format!("({t})")
+    };
+    let mut p = Parser {
+        s: src.as_bytes(),
+        i: 0,
+    };
     let f = p.filter().ok_or_else(|| err!("ad.badFilter", s))?;
     if p.i != p.s.len() {
         return Err(err!("ad.badFilter", s));
@@ -81,7 +88,11 @@ pub fn parse(s: &str) -> Result<Filter> {
 pub fn normalize(s: &str) -> Result<String> {
     parse(s)?;
     let t = s.trim();
-    Ok(if t.starts_with('(') { t.to_string() } else { format!("({t})") })
+    Ok(if t.starts_with('(') {
+        t.to_string()
+    } else {
+        format!("({t})")
+    })
 }
 
 struct Parser<'a> {
@@ -206,7 +217,10 @@ impl Parser<'_> {
                 b'\\' => {
                     let h = self.s.get(self.i + 1..self.i + 3)?;
                     let h = std::str::from_utf8(h).ok()?;
-                    parts.last_mut().unwrap().push(u8::from_str_radix(h, 16).ok()?);
+                    parts
+                        .last_mut()
+                        .unwrap()
+                        .push(u8::from_str_radix(h, 16).ok()?);
                     self.i += 3;
                 }
                 c => {
@@ -247,8 +261,12 @@ pub mod eval {
             Filter::And(v) => v.iter().all(|f| matches(f, e)),
             Filter::Or(v) => v.iter().any(|f| matches(f, e)),
             Filter::Not(f) => !matches(f, e),
-            Filter::Present(a) => a == "*" || !e.values(a).is_empty() || a.eq_ignore_ascii_case("objectClass"),
-            Filter::Equal(a, v) | Filter::Approx(a, v) => e.values(a).iter().any(|x| x == v || lower(x) == lower(v)),
+            Filter::Present(a) => {
+                a == "*" || !e.values(a).is_empty() || a.eq_ignore_ascii_case("objectClass")
+            }
+            Filter::Equal(a, v) | Filter::Approx(a, v) => {
+                e.values(a).iter().any(|x| x == v || lower(x) == lower(v))
+            }
             Filter::Substr(a, parts) => e.values(a).iter().any(|x| substr(&lower(x), parts)),
             Filter::Ge(a, v) => e.values(a).iter().any(|x| match (num(x), num(v)) {
                 (Some(x), Some(v)) => x >= v,
@@ -261,7 +279,13 @@ pub mod eval {
             Filter::Ext(a, rule, v) => match rule.as_str() {
                 RULE_AND | RULE_OR => {
                     let Some(mask) = num(v) else { return false };
-                    e.values(a).iter().filter_map(|x| num(x)).any(|x| if rule == RULE_AND { x & mask == mask } else { x & mask != 0 })
+                    e.values(a).iter().filter_map(|x| num(x)).any(|x| {
+                        if rule == RULE_AND {
+                            x & mask == mask
+                        } else {
+                            x & mask != 0
+                        }
+                    })
                 }
                 RULE_CHAIN => e.in_chain(a, v),
                 _ => false,
@@ -272,7 +296,10 @@ pub mod eval {
     fn substr(x: &str, parts: &[Vec<u8>]) -> bool {
         let parts: Vec<String> = parts.iter().map(|p| lower(p)).collect();
         let (first, last) = (&parts[0], &parts[parts.len() - 1]);
-        if !x.starts_with(first.as_str()) || x.len() < first.len() + last.len() || !x.ends_with(last.as_str()) {
+        if !x.starts_with(first.as_str())
+            || x.len() < first.len() + last.len()
+            || !x.ends_with(last.as_str())
+        {
             return false;
         }
         let mut rest = &x[first.len()..x.len() - last.len()];
@@ -302,10 +329,22 @@ mod tests {
     #[test]
     fn parses() {
         let _g = crate::test_lang("ja");
-        assert_eq!(parse("cn=a").unwrap(), Filter::Equal("cn".into(), b"a".to_vec()));
+        assert_eq!(
+            parse("cn=a").unwrap(),
+            Filter::Equal("cn".into(), b"a".to_vec())
+        );
         assert_eq!(parse("(cn=*)").unwrap(), Filter::Present("cn".into()));
-        assert_eq!(parse("(cn=山*田)").unwrap(), Filter::Substr("cn".into(), vec!["山".as_bytes().to_vec(), "田".as_bytes().to_vec()]));
-        assert_eq!(parse("(cn=a\\2a)").unwrap(), Filter::Equal("cn".into(), b"a*".to_vec()));
+        assert_eq!(
+            parse("(cn=山*田)").unwrap(),
+            Filter::Substr(
+                "cn".into(),
+                vec!["山".as_bytes().to_vec(), "田".as_bytes().to_vec()]
+            )
+        );
+        assert_eq!(
+            parse("(cn=a\\2a)").unwrap(),
+            Filter::Equal("cn".into(), b"a*".to_vec())
+        );
         assert_eq!(
             parse("(&(objectCategory=person)(!(userAccountControl:1.2.840.113556.1.4.803:=2))(lockoutTime>=1))").unwrap(),
             Filter::And(vec![
@@ -314,10 +353,22 @@ mod tests {
                 Filter::Ge("lockoutTime".into(), b"1".to_vec()),
             ])
         );
-        for bad in ["", "(cn=a", "(cn=a))", "(&)", "(=a)", "(cn~a)", "cn=(a)", "(cn=\\zz)"] {
+        for bad in [
+            "",
+            "(cn=a",
+            "(cn=a))",
+            "(&)",
+            "(=a)",
+            "(cn~a)",
+            "cn=(a)",
+            "(cn=\\zz)",
+        ] {
             let e = parse(bad).unwrap_err().to_string();
             assert!(e.contains("検索条件"), "{bad}: {e}");
         }
-        assert_eq!(normalize(" mail=*@example.com ").unwrap(), "(mail=*@example.com)");
+        assert_eq!(
+            normalize(" mail=*@example.com ").unwrap(),
+            "(mail=*@example.com)"
+        );
     }
 }

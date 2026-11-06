@@ -37,7 +37,9 @@ fn try_open(path: &Path, write: bool) -> io::Result<Option<File>> {
     let mut o = OpenOptions::new();
     o.read(true);
     if write {
-        o.write(true).access_mode(GENERIC_READ | GENERIC_WRITE).share_mode(0);
+        o.write(true)
+            .access_mode(GENERIC_READ | GENERIC_WRITE)
+            .share_mode(0);
     } else {
         o.access_mode(GENERIC_READ).share_mode(FILE_SHARE_READ);
     }
@@ -48,7 +50,12 @@ fn try_open(path: &Path, write: bool) -> io::Result<Option<File>> {
         Err(e) if e.kind() == io::ErrorKind::NotFound => {
             // The lock file went missing: create it (sharing everything,
             // so that this cannot get in anybody's way) and try again.
-            match OpenOptions::new().write(true).create(true).share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE).open(path) {
+            match OpenOptions::new()
+                .write(true)
+                .create(true)
+                .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+                .open(path)
+            {
                 Ok(_) => Ok(None),
                 Err(e) if matches!(e.raw_os_error(), Some(32) | Some(33)) => Ok(None),
                 Err(e) => Err(e),
@@ -60,8 +67,17 @@ fn try_open(path: &Path, write: bool) -> io::Result<Option<File>> {
 
 #[cfg(not(windows))]
 fn try_open(path: &Path, write: bool) -> io::Result<Option<File>> {
-    let f = OpenOptions::new().read(true).write(true).create(true).truncate(false).open(path)?;
-    let r = if write { f.try_lock() } else { f.try_lock_shared() };
+    let f = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)?;
+    let r = if write {
+        f.try_lock()
+    } else {
+        f.try_lock_shared()
+    };
     match r {
         Ok(()) => Ok(Some(f)),
         Err(std::fs::TryLockError::WouldBlock) => Ok(None),
@@ -87,7 +103,10 @@ pub fn acquire(path: &Path, write: bool, timeout: Duration) -> Result<Lock, Lock
         crate::engine::watchdog::waited();
         // A little jitter so that clients waiting together do not retry in
         // step.
-        let jitter = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.subsec_nanos() as u64 % 20).unwrap_or(0);
+        let jitter = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as u64 % 20)
+            .unwrap_or(0);
         std::thread::sleep(Duration::from_millis(pause + jitter));
         pause = (pause * 3 / 2).min(250);
     }
@@ -101,7 +120,13 @@ pub fn ensure(path: &PathBuf) -> io::Result<()> {
     #[cfg(windows)]
     {
         use std::os::windows::fs::OpenOptionsExt;
-        match OpenOptions::new().write(true).create(true).truncate(false).share_mode(3).open(path) {
+        match OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .share_mode(3)
+            .open(path)
+        {
             Ok(_) => Ok(()),
             Err(e) if matches!(e.raw_os_error(), Some(32) | Some(33)) => Ok(()),
             Err(e) => Err(e),
@@ -109,7 +134,12 @@ pub fn ensure(path: &PathBuf) -> io::Result<()> {
     }
     #[cfg(not(windows))]
     {
-        OpenOptions::new().write(true).create(true).truncate(false).open(path).map(|_| ())
+        OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)
+            .map(|_| ())
     }
 }
 

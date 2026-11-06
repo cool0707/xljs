@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use super::{ConsoleState, pack_output, pack_script, start};
-use crate::ui::{Choice, FileFilter, PickerOptions, Ui};
 use crate::t;
+use crate::ui::{Choice, FileFilter, PickerOptions, Ui};
 
 // What the start screen offers, in its order.
 const LAUNCH_RUN: i64 = 0;
@@ -22,8 +22,17 @@ const ICON_VBA: &[u8] = include_bytes!("icons/vba.ico");
 /// asks whether to run, debug or pack a script, to open the development
 /// mode, or to extract the VBA code of macro workbooks, and asks for the
 /// files.
-pub(super) fn launch(con: &ConsoleState, u: Arc<dyn Ui>, explicit_lang: bool, stop: &super::Stop) -> i32 {
-    let choice = |label: &str, note: &str, icon: &[u8]| Choice { label: t!(label), note: t!(note), icon: icon.to_vec() };
+pub(super) fn launch(
+    con: &ConsoleState,
+    u: Arc<dyn Ui>,
+    explicit_lang: bool,
+    stop: &super::Stop,
+) -> i32 {
+    let choice = |label: &str, note: &str, icon: &[u8]| Choice {
+        label: t!(label),
+        note: t!(note),
+        icon: icon.to_vec(),
+    };
     let choices = [
         choice("cli.launchRun", "cli.launchRunNote", ICON_RUN),
         choice("cli.launchDebug", "cli.launchDebugNote", ICON_DEBUG),
@@ -37,13 +46,17 @@ pub(super) fn launch(con: &ConsoleState, u: Arc<dyn Ui>, explicit_lang: bool, st
     };
     match c {
         LAUNCH_RUN | LAUNCH_DEBUG => {
-            let Some(script) = pick_script(&*u, &t!("cli.selectScript")) else { return 0 };
+            let Some(script) = pick_script(&*u, &t!("cli.selectScript")) else {
+                return 0;
+            };
             let debug = if c == LAUNCH_DEBUG { "script" } else { "" };
             start(con, u, vec![script], explicit_lang, debug, stop)
         }
         LAUNCH_DEV => super::dev(con, u, String::new(), explicit_lang),
         LAUNCH_PACK => {
-            let Some(script) = pick_script(&*u, &t!("cli.selectScriptToPack")) else { return 0 };
+            let Some(script) = pick_script(&*u, &t!("cli.selectScriptToPack")) else {
+                return 0;
+            };
             launch_pack_script(con, &*u, &script)
         }
         LAUNCH_VBA => {
@@ -52,7 +65,10 @@ pub(super) fn launch(con: &ConsoleState, u: Arc<dyn Ui>, explicit_lang: bool, st
                 multiple: true,
                 filters: vec![FileFilter {
                     description: t!("cli.macroBooks"),
-                    patterns: super::vba::MACRO_PATTERNS.iter().map(|s| s.to_string()).collect(),
+                    patterns: super::vba::MACRO_PATTERNS
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect(),
                 }],
                 ..Default::default()
             });
@@ -69,7 +85,10 @@ pub(super) fn launch(con: &ConsoleState, u: Arc<dyn Ui>, explicit_lang: bool, st
 fn pick_script(u: &dyn Ui, title: &str) -> Option<String> {
     let paths = u.open_files(&PickerOptions {
         title: title.to_string(),
-        filters: vec![FileFilter { description: t!("cli.scripts"), patterns: vec!["*.js".into(), "*.mjs".into(), "*.ts".into()] }],
+        filters: vec![FileFilter {
+            description: t!("cli.scripts"),
+            patterns: vec!["*.js".into(), "*.mjs".into(), "*.ts".into()],
+        }],
         ..Default::default()
     });
     paths.into_iter().next()
@@ -82,9 +101,18 @@ fn launch_pack_script(con: &ConsoleState, u: &dyn Ui, script: &str) -> i32 {
     let abs = std::path::absolute(&out).unwrap_or_else(|_| out.clone().into());
     let Some(out) = u.save_file(&PickerOptions {
         title: t!("cli.packSaveTitle"),
-        start_in: abs.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
-        suggested_name: abs.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
-        filters: vec![FileFilter { description: t!("cli.programs"), patterns: vec!["*.exe".into()] }],
+        start_in: abs
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        suggested_name: abs
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+        filters: vec![FileFilter {
+            description: t!("cli.programs"),
+            patterns: vec!["*.exe".into()],
+        }],
         ..Default::default()
     }) else {
         return 0;

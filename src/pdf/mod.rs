@@ -71,16 +71,21 @@ fn f(v: f64) -> String {
 /// The attributes page inherits, from its parents (nearest first).
 fn inherited(doc: &Document, page: ObjectId) -> Vec<(&'static [u8], Object)> {
     let mut out = Vec::new();
-    let Ok(d) = doc.get_dictionary(page) else { return out };
+    let Ok(d) = doc.get_dictionary(page) else {
+        return out;
+    };
     let mut cur = d.get(b"Parent").ok().and_then(|p| p.as_reference().ok());
     let mut seen = HashSet::new();
     while let Some(id) = cur {
         if !seen.insert(id) || seen.len() > 64 {
             break;
         }
-        let Ok(node) = doc.get_dictionary(id) else { break };
+        let Ok(node) = doc.get_dictionary(id) else {
+            break;
+        };
         for k in INHERITED {
-            if !d.has(k) && !out.iter().any(|(x, _)| *x == k)
+            if !d.has(k)
+                && !out.iter().any(|(x, _)| *x == k)
                 && let Ok(v) = node.get(k)
             {
                 out.push((k, v.clone()));
@@ -180,11 +185,20 @@ pub fn parse_color(s: &str) -> Option<[f64; 3]> {
     let s = s.trim().to_ascii_lowercase();
     let hex = |h: &str| -> Option<[f64; 3]> {
         let v: Vec<u8> = match h.len() {
-            3 => h.chars().map(|c| c.to_digit(16).map(|d| (d * 17) as u8)).collect::<Option<_>>()?,
-            6 => (0..3).map(|i| u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).ok()).collect::<Option<_>>()?,
+            3 => h
+                .chars()
+                .map(|c| c.to_digit(16).map(|d| (d * 17) as u8))
+                .collect::<Option<_>>()?,
+            6 => (0..3)
+                .map(|i| u8::from_str_radix(&h[i * 2..i * 2 + 2], 16).ok())
+                .collect::<Option<_>>()?,
             _ => return None,
         };
-        Some([v[0] as f64 / 255.0, v[1] as f64 / 255.0, v[2] as f64 / 255.0])
+        Some([
+            v[0] as f64 / 255.0,
+            v[1] as f64 / 255.0,
+            v[2] as f64 / 255.0,
+        ])
     };
     if let Some(h) = s.strip_prefix('#') {
         return hex(h);
@@ -226,12 +240,16 @@ impl FontList {
         if self.files.len() <= k {
             self.files.resize(k + 1, None);
         }
-        self.files[k].get_or_insert_with(|| resolve_font(&self.names[k])).clone()
+        self.files[k]
+            .get_or_insert_with(|| resolve_font(&self.names[k]))
+            .clone()
     }
 
     /// The first font that exists (fonts_for checked there is one).
     fn first(&mut self) -> Arc<FontFile> {
-        (0..self.names.len()).find_map(|k| self.get(k)).expect("a font")
+        (0..self.names.len())
+            .find_map(|k| self.get(k))
+            .expect("a font")
     }
 
     /// The font with a glyph for c (or else the first font's .notdef), the
@@ -244,7 +262,10 @@ impl FontList {
         });
         let (f, gid) = found.unwrap_or_else(|| (self.first(), 0));
         let face = f.face();
-        let adv = face.glyph_hor_advance(ttf_parser::GlyphId(gid)).unwrap_or(0) as f64 / face.units_per_em() as f64;
+        let adv = face
+            .glyph_hor_advance(ttf_parser::GlyphId(gid))
+            .unwrap_or(0) as f64
+            / face.units_per_em() as f64;
         (f, gid, adv)
     }
 }
@@ -285,24 +306,48 @@ impl PdfDoc {
     }
 
     fn with(doc: Document, root: ObjectId, pages: Vec<ObjectId>, path: String) -> PdfDoc {
-        PdfDoc { doc, path, pages, root, fonts: Vec::new(), wrapped: HashSet::new(), restructured: false, closed: false }
+        PdfDoc {
+            doc,
+            path,
+            pages,
+            root,
+            fonts: Vec::new(),
+            wrapped: HashSet::new(),
+            restructured: false,
+            closed: false,
+        }
     }
 
     /// Reads a PDF file's bytes (password: of an encrypted file; the copy
     /// in memory, and so the saved file, is not encrypted).
     pub fn open(data: &[u8], password: &str, path: String) -> Result<PdfDoc> {
-        if !data.starts_with(b"%PDF") && !data[..data.len().min(1024)].windows(4).any(|w| w == b"%PDF") {
+        if !data.starts_with(b"%PDF")
+            && !data[..data.len().min(1024)]
+                .windows(4)
+                .any(|w| w == b"%PDF")
+        {
             return Err(err!("pdfdoc.notPdf"));
         }
-        let opts = LoadOptions { password: (!password.is_empty()).then(|| password.to_string()), ..Default::default() };
+        let opts = LoadOptions {
+            password: (!password.is_empty()).then(|| password.to_string()),
+            ..Default::default()
+        };
         let mut doc = Document::load_mem_with_options(data, opts).map_err(|e| match e {
             lopdf::Error::InvalidPassword => err!("pdfdoc.badPassword"),
             e => lerr(e),
         })?;
         if doc.trailer.has(b"Encrypt") {
-            return Err(if password.is_empty() { err!("pdfdoc.password") } else { err!("pdfdoc.badPassword") });
+            return Err(if password.is_empty() {
+                err!("pdfdoc.password")
+            } else {
+                err!("pdfdoc.badPassword")
+            });
         }
-        let root = doc.catalog().and_then(|c| c.get(b"Pages")).and_then(|p| p.as_reference()).map_err(lerr)?;
+        let root = doc
+            .catalog()
+            .and_then(|c| c.get(b"Pages"))
+            .and_then(|p| p.as_reference())
+            .map_err(lerr)?;
         let pages: Vec<ObjectId> = doc.get_pages().into_values().collect();
         // Flatten the page tree.
         for &p in &pages {
@@ -346,15 +391,28 @@ impl PdfDoc {
                 return None;
             }
             let v: Vec<f64> = a.iter().map(|o| num(o, doc)).collect::<Option<_>>()?;
-            Some([v[0].min(v[2]), v[1].min(v[3]), v[0].max(v[2]), v[1].max(v[3])])
+            Some([
+                v[0].min(v[2]),
+                v[1].min(v[3]),
+                v[0].max(v[2]),
+                v[1].max(v[3]),
+            ])
         };
         let mb = read(b"MediaBox").unwrap_or([0.0, 0.0, 595.276, 841.89]);
         let b = match read(b"CropBox") {
             // The crop box within the media box.
-            Some(c) => [c[0].max(mb[0]), c[1].max(mb[1]), c[2].min(mb[2]), c[3].min(mb[3])],
+            Some(c) => [
+                c[0].max(mb[0]),
+                c[1].max(mb[1]),
+                c[2].min(mb[2]),
+                c[3].min(mb[3]),
+            ],
             None => mb,
         };
-        let rot = d.and_then(|d| d.get(b"Rotate").ok()).and_then(|o| num(o, doc)).unwrap_or(0.0) as i64;
+        let rot = d
+            .and_then(|d| d.get(b"Rotate").ok())
+            .and_then(|o| num(o, doc))
+            .unwrap_or(0.0) as i64;
         (b, rot.rem_euclid(360) / 90 * 90)
     }
 
@@ -363,7 +421,11 @@ impl PdfDoc {
         let (w, h) = (b[2] - b[0], b[3] - b[1]);
         let (w, h) = if rot % 180 == 0 { (w, h) } else { (h, w) };
         let r = |v: f64| (v / MM * 10.0).round() / 10.0;
-        PageInfo { width: r(w), height: r(h), rotation: rot }
+        PageInfo {
+            width: r(w),
+            height: r(h),
+            rotation: rot,
+        }
     }
 
     /// Copies pages (of src, in this order) into this document before the
@@ -375,7 +437,9 @@ impl PdfDoc {
         let mut queue: VecDeque<(ObjectId, ObjectId)> = VecDeque::new();
         let mut out = Vec::new();
         for &pid in pages {
-            let Ok(d) = src.get_dictionary(pid) else { continue };
+            let Ok(d) = src.get_dictionary(pid) else {
+                continue;
+            };
             let mut d = d.clone();
             for (k, v) in inherited(src, pid) {
                 d.set(k, v);
@@ -385,7 +449,14 @@ impl PdfDoc {
             }
             let id = self.doc.new_object_id();
             map.insert(pid, id);
-            let obj = copy_obj(Object::Dictionary(d), src, &src_pages, &mut map, &mut queue, &mut self.doc);
+            let obj = copy_obj(
+                Object::Dictionary(d),
+                src,
+                &src_pages,
+                &mut map,
+                &mut queue,
+                &mut self.doc,
+            );
             self.doc.objects.insert(id, obj);
             out.push(id);
         }
@@ -404,7 +475,15 @@ impl PdfDoc {
     pub fn insert_blank(&mut self, at: usize, w: f64, h: f64) {
         let mut d = Dictionary::new();
         d.set("Type", name("Page"));
-        d.set("MediaBox", Object::Array(vec![Object::Integer(0), Object::Integer(0), Object::Real(w as f32), Object::Real(h as f32)]));
+        d.set(
+            "MediaBox",
+            Object::Array(vec![
+                Object::Integer(0),
+                Object::Integer(0),
+                Object::Real(w as f32),
+                Object::Real(h as f32),
+            ]),
+        );
         d.set("Resources", Dictionary::new());
         let id = self.doc.add_object(d);
         let at = at.min(self.pages.len());
@@ -416,8 +495,20 @@ impl PdfDoc {
     /// Removes the pages at these indexes.
     pub fn remove_pages(&mut self, idx: &[usize]) {
         let drop: HashSet<usize> = idx.iter().copied().collect();
-        let removed: Vec<ObjectId> = self.pages.iter().enumerate().filter(|(i, _)| drop.contains(i)).map(|(_, p)| *p).collect();
-        self.pages = self.pages.iter().enumerate().filter(|(i, _)| !drop.contains(i)).map(|(_, p)| *p).collect();
+        let removed: Vec<ObjectId> = self
+            .pages
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| drop.contains(i))
+            .map(|(_, p)| *p)
+            .collect();
+        self.pages = self
+            .pages
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !drop.contains(i))
+            .map(|(_, p)| *p)
+            .collect();
         for p in removed {
             // Links (outlines) may still point at it, but it is no longer a page of the tree.
             if let Ok(d) = self.doc.get_dictionary_mut(p) {
@@ -444,19 +535,36 @@ impl PdfDoc {
     fn fonts_for(names: &[String]) -> Result<FontList> {
         if names.is_empty() {
             let names = font::default_names();
-            let mut list = FontList { names, files: Vec::new() };
+            let mut list = FontList {
+                names,
+                files: Vec::new(),
+            };
             if (0..list.names.len()).all(|k| list.get(k).is_none()) {
                 return Err(err!("pdfdoc.noDefaultFont"));
             }
             return Ok(list);
         }
-        let files = names.iter().map(|n| resolve_font(n).map(|f| Some(Some(f))).ok_or_else(|| err!("pdfdoc.noFont", n))).collect::<Result<_>>()?;
-        Ok(FontList { names: names.to_vec(), files })
+        let files = names
+            .iter()
+            .map(|n| {
+                resolve_font(n)
+                    .map(|f| Some(Some(f)))
+                    .ok_or_else(|| err!("pdfdoc.noFont", n))
+            })
+            .collect::<Result<_>>()?;
+        Ok(FontList {
+            names: names.to_vec(),
+            files,
+        })
     }
 
     /// The (unsealed) FontUse of a face.
     fn font_use(&mut self, file: &Arc<FontFile>) -> usize {
-        if let Some(i) = self.fonts.iter().position(|u| !u.sealed && Arc::ptr_eq(&u.file, file)) {
+        if let Some(i) = self
+            .fonts
+            .iter()
+            .position(|u| !u.sealed && Arc::ptr_eq(&u.file, file))
+        {
             return i;
         }
         let id = self.doc.new_object_id();
@@ -483,13 +591,23 @@ impl PdfDoc {
         };
         let d = self.doc.get_dictionary_mut(page).map_err(lerr)?;
         d.set("Resources", res);
-        let Ok(Object::Dictionary(r)) = d.get_mut(b"Resources") else { unreachable!() };
-        let Ok(Object::Dictionary(s)) = r.get_mut(key) else { unreachable!() };
+        let Ok(Object::Dictionary(r)) = d.get_mut(b"Resources") else {
+            unreachable!()
+        };
+        let Ok(Object::Dictionary(s)) = r.get_mut(key) else {
+            unreachable!()
+        };
         Ok(s)
     }
 
     /// Puts obj into the page's resources under key, returning its name.
-    fn add_resource(&mut self, page: ObjectId, key: &[u8], prefix: &str, obj: Object) -> Result<String> {
+    fn add_resource(
+        &mut self,
+        page: ObjectId,
+        key: &[u8],
+        prefix: &str,
+        obj: Object,
+    ) -> Result<String> {
         let sub = self.own_resource(page, key)?;
         if let Some((k, _)) = sub.iter().find(|(_, v)| **v == obj) {
             return Ok(String::from_utf8_lossy(k).into_owned());
@@ -512,9 +630,17 @@ impl PdfDoc {
         let first = self.wrapped.insert(page);
         let mut content = content;
         let mut items = Vec::new();
-        let old = self.doc.get_dictionary(page).map_err(lerr)?.get(b"Contents").ok().cloned();
+        let old = self
+            .doc
+            .get_dictionary(page)
+            .map_err(lerr)?
+            .get(b"Contents")
+            .ok()
+            .cloned();
         if first {
-            let q = self.doc.add_object(Stream::new(Dictionary::new(), b"q\n".to_vec()));
+            let q = self
+                .doc
+                .add_object(Stream::new(Dictionary::new(), b"q\n".to_vec()));
             items.push(Object::Reference(q));
             content.splice(0..0, b"Q\n".iter().copied());
         }
@@ -523,9 +649,14 @@ impl PdfDoc {
             Some((r @ Object::Reference(_), _)) => items.push(r.clone()),
             _ => {}
         }
-        let id = self.doc.add_object(font::compressed(Dictionary::new(), content));
+        let id = self
+            .doc
+            .add_object(font::compressed(Dictionary::new(), content));
         items.push(Object::Reference(id));
-        self.doc.get_dictionary_mut(page).map_err(lerr)?.set("Contents", Object::Array(items));
+        self.doc
+            .get_dictionary_mut(page)
+            .map_err(lerr)?
+            .set("Contents", Object::Array(items));
         Ok(())
     }
 
@@ -584,7 +715,14 @@ impl PdfDoc {
         };
         let (mx, my) = (o.margin[0] * MM, o.margin[1] * MM);
         let (ax, ha) = match (o.x, o.right) {
-            (Some(x), _) => (x * MM, if o.position.is_some() { ph } else { o.align.unwrap_or_default() }),
+            (Some(x), _) => (
+                x * MM,
+                if o.position.is_some() {
+                    ph
+                } else {
+                    o.align.unwrap_or_default()
+                },
+            ),
             (None, Some(r)) => (w - r * MM, Align::Right),
             (None, None) if o.position.is_some() => match ph {
                 Align::Left => (mx, ph),
@@ -624,7 +762,15 @@ impl PdfDoc {
         let align = o.align.unwrap_or(ha);
 
         let mut s = String::from("q\n");
-        s.push_str(&format!("{} {} {} {} {} {} cm\n", f(m[0]), f(m[1]), f(m[2]), f(m[3]), f(m[4]), f(m[5])));
+        s.push_str(&format!(
+            "{} {} {} {} {} {} cm\n",
+            f(m[0]),
+            f(m[1]),
+            f(m[2]),
+            f(m[3]),
+            f(m[4]),
+            f(m[5])
+        ));
         if o.opacity < 1.0 {
             let a = o.opacity.clamp(0.0, 1.0);
             let mut gs = Dictionary::new();
@@ -637,9 +783,24 @@ impl PdfDoc {
         if o.rotate != 0.0 {
             let (sn, cs) = o.rotate.to_radians().sin_cos();
             // Around the point the text is placed by.
-            s.push_str(&format!("1 0 0 1 {} {} cm\n{} {} {} {} 0 0 cm\n1 0 0 1 {} {} cm\n", f(ax), f(ay), f(cs), f(sn), f(-sn), f(cs), f(-ax), f(-ay)));
+            s.push_str(&format!(
+                "1 0 0 1 {} {} cm\n{} {} {} {} 0 0 cm\n1 0 0 1 {} {} cm\n",
+                f(ax),
+                f(ay),
+                f(cs),
+                f(sn),
+                f(-sn),
+                f(cs),
+                f(-ax),
+                f(-ay)
+            ));
         }
-        s.push_str(&format!("{} {} {} rg\nBT\n", f(color[0]), f(color[1]), f(color[2])));
+        s.push_str(&format!(
+            "{} {} {} rg\nBT\n",
+            f(color[0]),
+            f(color[1]),
+            f(color[2])
+        ));
         let mut names: HashMap<usize, String> = HashMap::new();
         for (k, (runs, lw)) in lines.iter().enumerate() {
             let base = top - ascent - lh * k as f64;
@@ -652,13 +813,23 @@ impl PdfDoc {
                 let fname = match names.get(u) {
                     Some(n) => n.clone(),
                     None => {
-                        let n = self.add_resource(page, b"Font", "XljsF", Object::Reference(self.fonts[*u].id))?;
+                        let n = self.add_resource(
+                            page,
+                            b"Font",
+                            "XljsF",
+                            Object::Reference(self.fonts[*u].id),
+                        )?;
                         names.insert(*u, n.clone());
                         n
                     }
                 };
                 let hex: String = cids.iter().map(|c| format!("{c:04X}")).collect();
-                s.push_str(&format!("/{fname} {} Tf\n1 0 0 1 {} {} Tm\n<{hex}> Tj\n", f(size), f(x), f(base)));
+                s.push_str(&format!(
+                    "/{fname} {} Tf\n1 0 0 1 {} {} Tm\n<{hex}> Tj\n",
+                    f(size),
+                    f(x),
+                    f(base)
+                ));
                 x += self.fonts[*u].run_width(cids) * size / 1000.0;
             }
         }
@@ -688,7 +859,9 @@ impl PdfDoc {
         self.finish()?;
         self.doc.prune_objects();
         let mut out = Vec::new();
-        self.doc.save_to(&mut out).map_err(|e| err!("pdfdoc.invalid", e.to_string()))?;
+        self.doc
+            .save_to(&mut out)
+            .map_err(|e| err!("pdfdoc.invalid", e.to_string()))?;
         Ok(out)
     }
 }
@@ -709,9 +882,15 @@ fn copy_obj(
             if let Some(n) = map.get(&id) {
                 return Object::Reference(*n);
             }
-            let Ok(target) = src.get_object(id) else { return Object::Null };
+            let Ok(target) = src.get_object(id) else {
+                return Object::Null;
+            };
             let ty = match target {
-                Object::Dictionary(d) => d.get(b"Type").ok().and_then(|t| t.as_name().ok()).map(<[u8]>::to_vec),
+                Object::Dictionary(d) => d
+                    .get(b"Type")
+                    .ok()
+                    .and_then(|t| t.as_name().ok())
+                    .map(<[u8]>::to_vec),
                 _ => None,
             };
             if src_pages.contains(&id) || matches!(ty.as_deref(), Some(b"Pages" | b"Catalog")) {
@@ -722,7 +901,11 @@ fn copy_obj(
             queue.push_back((id, n));
             Object::Reference(n)
         }
-        Object::Array(a) => Object::Array(a.into_iter().map(|o| copy_obj(o, src, src_pages, map, queue, dst)).collect()),
+        Object::Array(a) => Object::Array(
+            a.into_iter()
+                .map(|o| copy_obj(o, src, src_pages, map, queue, dst))
+                .collect(),
+        ),
         Object::Dictionary(d) => Object::Dictionary(copy_dict(d, src, src_pages, map, queue, dst)),
         Object::Stream(mut s) => {
             s.dict = copy_dict(std::mem::take(&mut s.dict), src, src_pages, map, queue, dst);

@@ -26,7 +26,9 @@ fn bytes(s: &str) -> Vec<u8> {
         return value::guid_bytes(x).expect("bad guid in the fake directory");
     }
     if let Some(x) = s.strip_prefix("hex:") {
-        return (0..x.len() / 2).map(|i| u8::from_str_radix(&x[i * 2..i * 2 + 2], 16).unwrap()).collect();
+        return (0..x.len() / 2)
+            .map(|i| u8::from_str_radix(&x[i * 2..i * 2 + 2], 16).unwrap())
+            .collect();
     }
     s.as_bytes().to_vec()
 }
@@ -45,17 +47,26 @@ fn entry(dn: &str, attrs: &J) -> Entry {
             (k.clone(), vals)
         })
         .collect();
-    Entry { dn: dn.into(), attrs }
+    Entry {
+        dn: dn.into(),
+        attrs,
+    }
 }
 
 static DATA: LazyLock<Data> = LazyLock::new(|| {
-    let src = std::fs::read_to_string(crate::testutil::repo_path("testdata/ad/directory.json")).unwrap();
+    let src =
+        std::fs::read_to_string(crate::testutil::repo_path("testdata/ad/directory.json")).unwrap();
     let j: J = serde_json::from_str(&src).unwrap();
     Data {
         root: entry("", &j["rootDSE"]),
         user: j["self"]["user"].as_str().unwrap().into(),
         computer: j["self"]["computer"].as_str().unwrap().into(),
-        entries: j["entries"].as_array().unwrap().iter().map(|e| entry(e["dn"].as_str().unwrap(), &e["attrs"])).collect(),
+        entries: j["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| entry(e["dn"].as_str().unwrap(), &e["attrs"]))
+            .collect(),
     }
 });
 
@@ -63,7 +74,11 @@ fn values(e: &Entry, attr: &str) -> Vec<Vec<u8>> {
     if attr.eq_ignore_ascii_case("distinguishedName") {
         return vec![e.dn.clone().into_bytes()];
     }
-    e.attrs.iter().filter(|(k, _)| k.eq_ignore_ascii_case(attr)).flat_map(|(_, v)| v.clone()).collect()
+    e.attrs
+        .iter()
+        .filter(|(k, _)| k.eq_ignore_ascii_case(attr))
+        .flat_map(|(_, v)| v.clone())
+        .collect()
 }
 
 fn find(dn: &str) -> Option<&'static Entry> {
@@ -79,7 +94,10 @@ impl Subject for Subj<'_> {
     fn in_chain(&self, attr: &str, dn: &[u8]) -> bool {
         let target = String::from_utf8_lossy(dn).to_lowercase();
         let mut seen = Vec::new();
-        let mut todo: Vec<String> = values(self.0, attr).iter().map(|v| String::from_utf8_lossy(v).into_owned()).collect();
+        let mut todo: Vec<String> = values(self.0, attr)
+            .iter()
+            .map(|v| String::from_utf8_lossy(v).into_owned())
+            .collect();
         while let Some(g) = todo.pop() {
             if g.to_lowercase() == target {
                 return true;
@@ -88,7 +106,11 @@ impl Subject for Subj<'_> {
                 continue;
             }
             if let Some(e) = find(&g) {
-                todo.extend(values(e, attr).iter().map(|v| String::from_utf8_lossy(v).into_owned()));
+                todo.extend(
+                    values(e, attr)
+                        .iter()
+                        .map(|v| String::from_utf8_lossy(v).into_owned()),
+                );
             }
             seen.push(g);
         }
@@ -111,10 +133,16 @@ fn select(e: &Entry, attrs: &[String]) -> Entry {
     let attrs = e
         .attrs
         .iter()
-        .filter(|(k, _)| attrs.iter().any(|a| a.eq_ignore_ascii_case(k)) || (all && !k.starts_with("msDS-User-Account-Control-Computed")))
+        .filter(|(k, _)| {
+            attrs.iter().any(|a| a.eq_ignore_ascii_case(k))
+                || (all && !k.starts_with("msDS-User-Account-Control-Computed"))
+        })
         .cloned()
         .collect();
-    Entry { dn: e.dn.clone(), attrs }
+    Entry {
+        dn: e.dn.clone(),
+        attrs,
+    }
 }
 
 pub struct Fake;
@@ -127,7 +155,11 @@ pub fn open(server: &str) -> Result<Box<dyn Directory>> {
 }
 
 pub fn self_dn(computer: bool) -> Result<String> {
-    Ok(if computer { DATA.computer.clone() } else { DATA.user.clone() })
+    Ok(if computer {
+        DATA.computer.clone()
+    } else {
+        DATA.user.clone()
+    })
 }
 
 impl Directory for Fake {

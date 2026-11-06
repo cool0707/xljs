@@ -15,13 +15,17 @@ impl Mapper {
     /// The source map at the end of a bundle.
     pub fn from_bundle(code: &str) -> Option<Mapper> {
         let i = code.rfind(MARKER)?;
-        let data = base64::engine::general_purpose::STANDARD.decode(code[i + MARKER.len()..].trim()).ok()?;
+        let data = base64::engine::general_purpose::STANDARD
+            .decode(code[i + MARKER.len()..].trim())
+            .ok()?;
         let json = String::from_utf8(data).ok()?;
         let map = oxc_sourcemap::SourceMap::from_json_string(&json).ok()?;
         let sources = map.get_sources().map(str::to_string).collect();
         let mut lines: Vec<Vec<(u32, u32, u32, u32)>> = Vec::new();
         for t in map.get_tokens() {
-            let Some(src) = t.get_source_id() else { continue };
+            let Some(src) = t.get_source_id() else {
+                continue;
+            };
             let l = t.get_dst_line() as usize;
             if lines.len() <= l {
                 lines.resize_with(l + 1, Vec::new);

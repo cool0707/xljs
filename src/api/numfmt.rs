@@ -66,7 +66,11 @@ pub fn general(f: f64) -> String {
     if (1e-9..1e15).contains(&a) {
         let digits = 10 - a.log10().floor() as i32;
         let s = format!("{:.*}", digits.clamp(0, 15) as usize, f);
-        let s = if s.contains('.') { s.trim_end_matches('0').trim_end_matches('.').to_string() } else { s };
+        let s = if s.contains('.') {
+            s.trim_end_matches('0').trim_end_matches('.').to_string()
+        } else {
+            s
+        };
         return s;
     }
     format!("{f:E}")
@@ -106,16 +110,28 @@ pub fn format_number(f: f64, code: &str) -> String {
                     }
                     lit.push(d);
                 }
-                if seen_digit { suffix.push_str(&lit) } else { prefix.push_str(&lit) }
+                if seen_digit {
+                    suffix.push_str(&lit)
+                } else {
+                    prefix.push_str(&lit)
+                }
             }
             '\\' => {
                 if let Some(d) = chars.next() {
-                    if seen_digit { suffix.push(d) } else { prefix.push(d) }
+                    if seen_digit {
+                        suffix.push(d)
+                    } else {
+                        prefix.push(d)
+                    }
                 }
             }
             '_' => {
                 chars.next();
-                if seen_digit { suffix.push(' ') } else { prefix.push(' ') }
+                if seen_digit {
+                    suffix.push(' ')
+                } else {
+                    prefix.push(' ')
+                }
             }
             '*' => {
                 chars.next();
@@ -137,14 +153,26 @@ pub fn format_number(f: f64, code: &str) -> String {
                 let (m, e) = s.split_once('E').unwrap();
                 let e: i32 = e.parse().unwrap_or(0);
                 let sign = if e < 0 { '-' } else { '+' };
-                return format!("{}{prefix}{m}E{sign}{:02}{suffix}", if neg_sign { "-" } else { "" }, e.abs());
+                return format!(
+                    "{}{prefix}{m}E{sign}{:02}{suffix}",
+                    if neg_sign { "-" } else { "" },
+                    e.abs()
+                );
             }
             '%' => {
                 percent += 1;
-                if seen_digit { suffix.push('%') } else { prefix.push('%') }
+                if seen_digit {
+                    suffix.push('%')
+                } else {
+                    prefix.push('%')
+                }
             }
             _ => {
-                if seen_digit { suffix.push(c) } else { prefix.push(c) }
+                if seen_digit {
+                    suffix.push(c)
+                } else {
+                    prefix.push(c)
+                }
             }
         }
     }
@@ -161,7 +189,10 @@ pub fn format_number(f: f64, code: &str) -> String {
     let grouping = int_pat.contains(',');
     let int_pat: String = int_pat.chars().filter(|c| *c != ',').collect();
     let min_dec = dec_pat.chars().filter(|c| *c == '0').count();
-    let max_dec = dec_pat.chars().filter(|c| matches!(c, '0' | '#' | '?')).count();
+    let max_dec = dec_pat
+        .chars()
+        .filter(|c| matches!(c, '0' | '#' | '?'))
+        .count();
     let s = format!("{:.*}", max_dec, v);
     let (ip, mut dp) = match s.split_once('.') {
         Some((i, d)) => (i.to_string(), d.to_string()),
@@ -171,7 +202,11 @@ pub fn format_number(f: f64, code: &str) -> String {
         dp.pop();
     }
     let min_int = int_pat.chars().filter(|c| *c == '0').count();
-    let mut ip = if ip == "0" && min_int == 0 { String::new() } else { ip };
+    let mut ip = if ip == "0" && min_int == 0 {
+        String::new()
+    } else {
+        ip
+    };
     while ip.len() < min_int {
         ip.insert(0, '0');
     }
@@ -200,8 +235,29 @@ pub fn format_number(f: f64, code: &str) -> String {
     out
 }
 
-const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTHS: [&str; 12] = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+];
+const DAYS: [&str; 7] = [
+    "Sunday",
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+];
 const DAYS_JA: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];
 
 /// Formats a wall-clock time (y, month, d, h, mi, s, ms) with a date code.
@@ -212,7 +268,12 @@ pub fn format_date(t: (i32, u32, u32, u32, u32, u32, u32), code: &str) -> String
     let upper = first.to_uppercase();
     let ja = crate::i18n::lang() == "ja";
     let first = if upper.contains("[$-F800]") {
-        (if ja { "yyyy\"年\"m\"月\"d\"日\"" } else { "dddd, mmmm d, yyyy" }).to_string()
+        (if ja {
+            "yyyy\"年\"m\"月\"d\"日\""
+        } else {
+            "dddd, mmmm d, yyyy"
+        })
+        .to_string()
     } else if upper.contains("[$-F400]") {
         (if ja { "h:mm:ss" } else { "h:mm:ss AM/PM" }).to_string()
     } else {
@@ -228,7 +289,12 @@ pub fn format_date(t: (i32, u32, u32, u32, u32, u32, u32), code: &str) -> String
     let mut out = String::new();
     let mut i = 0;
     let mut last_was_hour = false;
-    let run = |i: usize, c: char| chars[i..].iter().take_while(|x| x.eq_ignore_ascii_case(&c)).count();
+    let run = |i: usize, c: char| {
+        chars[i..]
+            .iter()
+            .take_while(|x| x.eq_ignore_ascii_case(&c))
+            .count()
+    };
     while i < chars.len() {
         let c = chars[i];
         let lc = c.to_ascii_lowercase();
@@ -249,16 +315,26 @@ pub fn format_date(t: (i32, u32, u32, u32, u32, u32, u32), code: &str) -> String
             }
             'y' => {
                 let n = run(i, 'y');
-                if n <= 2 { out.push_str(&format!("{:02}", y % 100)) } else { out.push_str(&format!("{y:04}")) }
+                if n <= 2 {
+                    out.push_str(&format!("{:02}", y % 100))
+                } else {
+                    out.push_str(&format!("{y:04}"))
+                }
                 i += n;
             }
             'm' => {
                 let n = run(i, 'm');
                 // Minutes after hours or before seconds.
                 let rest: String = chars[i + n..].iter().collect::<String>().to_lowercase();
-                let next_is_sec = rest.trim_start_matches(|c: char| !c.is_ascii_alphabetic()).starts_with('s');
+                let next_is_sec = rest
+                    .trim_start_matches(|c: char| !c.is_ascii_alphabetic())
+                    .starts_with('s');
                 if (last_was_hour || next_is_sec) && n <= 2 {
-                    out.push_str(&if n == 2 { format!("{mi:02}") } else { mi.to_string() });
+                    out.push_str(&if n == 2 {
+                        format!("{mi:02}")
+                    } else {
+                        mi.to_string()
+                    });
                 } else {
                     match n {
                         1 => out.push_str(&mo.to_string()),
@@ -281,31 +357,70 @@ pub fn format_date(t: (i32, u32, u32, u32, u32, u32, u32), code: &str) -> String
                 }
                 i += n;
             }
-            'a' if chars[i..].iter().collect::<String>().to_lowercase().starts_with("aaa") => {
+            'a' if chars[i..]
+                .iter()
+                .collect::<String>()
+                .to_lowercase()
+                .starts_with("aaa") =>
+            {
                 let n = run(i, 'a');
                 if let Some(w) = weekday {
-                    out.push_str(if n >= 4 { ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"][w] } else { DAYS_JA[w] });
+                    out.push_str(if n >= 4 {
+                        [
+                            "日曜日",
+                            "月曜日",
+                            "火曜日",
+                            "水曜日",
+                            "木曜日",
+                            "金曜日",
+                            "土曜日",
+                        ][w]
+                    } else {
+                        DAYS_JA[w]
+                    });
                 }
                 i += n;
             }
-            'a' if chars[i..].iter().collect::<String>().to_lowercase().starts_with("am/pm") => {
+            'a' if chars[i..]
+                .iter()
+                .collect::<String>()
+                .to_lowercase()
+                .starts_with("am/pm") =>
+            {
                 out.push_str(if h < 12 { "AM" } else { "PM" });
                 i += 5;
             }
-            'a' if chars[i..].iter().collect::<String>().to_lowercase().starts_with("a/p") => {
+            'a' if chars[i..]
+                .iter()
+                .collect::<String>()
+                .to_lowercase()
+                .starts_with("a/p") =>
+            {
                 out.push(if h < 12 { 'A' } else { 'P' });
                 i += 3;
             }
             'h' => {
                 let n = run(i, 'h');
-                let hh = if ampm { if h % 12 == 0 { 12 } else { h % 12 } } else { h };
-                out.push_str(&if n >= 2 { format!("{hh:02}") } else { hh.to_string() });
+                let hh = if ampm {
+                    if h % 12 == 0 { 12 } else { h % 12 }
+                } else {
+                    h
+                };
+                out.push_str(&if n >= 2 {
+                    format!("{hh:02}")
+                } else {
+                    hh.to_string()
+                });
                 last_was_hour = true;
                 i += n;
             }
             's' => {
                 let n = run(i, 's');
-                out.push_str(&if n >= 2 { format!("{s:02}") } else { s.to_string() });
+                out.push_str(&if n >= 2 {
+                    format!("{s:02}")
+                } else {
+                    s.to_string()
+                });
                 i += n;
                 // Fractions of seconds: .0, .00, .000
                 if i < chars.len() && chars[i] == '.' {
@@ -359,7 +474,10 @@ mod tests {
         let t = (2026, 4, 1, 13, 5, 9, 0);
         assert_eq!(format_date(t, "yyyy/m/d"), "2026/4/1");
         assert_eq!(format_date(t, "yyyy/m/d h:mm"), "2026/4/1 13:05");
-        assert_eq!(format_date(t, "yyyy\"年\"m\"月\"d\"日\"(aaa)"), "2026年4月1日(水)");
+        assert_eq!(
+            format_date(t, "yyyy\"年\"m\"月\"d\"日\"(aaa)"),
+            "2026年4月1日(水)"
+        );
         assert_eq!(format_date(t, "h:mm:ss AM/PM"), "1:05:09 PM");
         assert_eq!(format_date(t, "mm-dd-yy"), "04-01-26");
     }

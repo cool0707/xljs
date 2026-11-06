@@ -2,7 +2,12 @@ use super::*;
 use crate::testutil::tempdir;
 
 fn payload(name: &str, code: &str) -> Payload {
-    Payload { name: name.into(), code: code.into(), meta: None, assets: None }
+    Payload {
+        name: name.into(),
+        code: code.into(),
+        meta: None,
+        assets: None,
+    }
 }
 
 fn count(hay: &[u8], needle: &[u8]) -> usize {
@@ -18,7 +23,12 @@ fn write_read() {
     let out = dir.join("out.exe");
     write_from(&base, &out, &payload("script.js", "console.log(1)")).unwrap();
     let p = read(&out).unwrap().unwrap();
-    assert!(p.name == "script.js" && p.code == b"console.log(1)" && p.meta.is_none() && p.assets.is_none());
+    assert!(
+        p.name == "script.js"
+            && p.code == b"console.log(1)"
+            && p.meta.is_none()
+            && p.assets.is_none()
+    );
     // Re-packing a packed exe replaces the payload instead of stacking.
     let out2 = dir.join("out2.exe");
     write_from(&out, &out2, &payload("b.js", "2")).unwrap();
@@ -48,7 +58,12 @@ fn assets() {
         ..Default::default()
     };
     let out = dir.join("out.exe");
-    let p = Payload { name: "app.js".into(), code: b"x".to_vec(), meta: Some(m.clone()), assets: Some(Box::new(m.asset_fs(&dir))) };
+    let p = Payload {
+        name: "app.js".into(),
+        code: b"x".to_vec(),
+        meta: Some(m.clone()),
+        assets: Some(Box::new(m.asset_fs(&dir))),
+    };
     write_from(&base, &out, &p).unwrap();
     let p = read(&out).unwrap().unwrap();
     assert_eq!(p.meta.as_ref(), Some(&m));
@@ -60,8 +75,16 @@ fn assets() {
         assert!(a.read(f).is_err(), "{f} should not be embedded");
     }
     // A missing @html file is an error.
-    let m2 = Meta { html: "missing.html".into(), ..Default::default() };
-    let p = Payload { name: "app.js".into(), code: b"x".to_vec(), meta: Some(m2.clone()), assets: Some(Box::new(m2.asset_fs(&dir))) };
+    let m2 = Meta {
+        html: "missing.html".into(),
+        ..Default::default()
+    };
+    let p = Payload {
+        name: "app.js".into(),
+        code: b"x".to_vec(),
+        meta: Some(m2.clone()),
+        assets: Some(Box::new(m2.asset_fs(&dir))),
+    };
     assert!(write_from(&base, &out, &p).is_err());
 }
 

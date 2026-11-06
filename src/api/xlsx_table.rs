@@ -40,7 +40,10 @@ pub fn custom_styles(styles_xml: &[u8]) -> HashMap<String, StyleDef> {
     let Some(root) = parse(styles_xml) else {
         return out;
     };
-    let dxfs: Vec<Dxf> = root.child("dxfs").map(|d| d.all("dxf").map(dxf).collect()).unwrap_or_default();
+    let dxfs: Vec<Dxf> = root
+        .child("dxfs")
+        .map(|d| d.all("dxf").map(dxf).collect())
+        .unwrap_or_default();
     let Some(ts) = root.child("tableStyles") else {
         return out;
     };
@@ -67,7 +70,11 @@ fn color(n: &Node) -> Option<Color> {
     if let Some(t) = n.attr("theme").and_then(|v| v.parse().ok()) {
         c.set_theme_index(t);
     } else if let Some(rgb) = n.attr("rgb") {
-        let rgb = if rgb.len() == 6 { format!("FF{rgb}") } else { rgb.to_string() };
+        let rgb = if rgb.len() == 6 {
+            format!("FF{rgb}")
+        } else {
+            rgb.to_string()
+        };
         if rgb.len() != 8 || !rgb.bytes().all(|b| b.is_ascii_hexdigit()) {
             return None;
         }
@@ -97,15 +104,24 @@ fn dxf(n: &Node) -> Dxf {
         let t = p.attr("patternType").unwrap_or("solid");
         if t != "none" {
             // A dxf's solid fill is its background color.
-            d.fill = p.child("bgColor").and_then(color).or_else(|| p.child("fgColor").and_then(color));
+            d.fill = p
+                .child("bgColor")
+                .and_then(color)
+                .or_else(|| p.child("fgColor").and_then(color));
         }
     }
     if let Some(b) = n.child("border") {
-        for (i, name) in ["left", "right", "top", "bottom", "vertical", "horizontal"].into_iter().enumerate() {
+        for (i, name) in ["left", "right", "top", "bottom", "vertical", "horizontal"]
+            .into_iter()
+            .enumerate()
+        {
             if let Some(s) = b.child(name)
                 && let Some(st) = s.attr("style")
             {
-                d.sides[i] = Some(Side { style: st.to_string(), color: s.child("color").and_then(color) });
+                d.sides[i] = Some(Side {
+                    style: st.to_string(),
+                    color: s.child("color").and_then(color),
+                });
             }
         }
     }
@@ -124,7 +140,10 @@ fn theme(i: u32, tint: f64) -> Option<Color> {
 }
 
 fn side(style: &str, c: Option<Color>) -> Option<Side> {
-    Some(Side { style: style.into(), color: c })
+    Some(Side {
+        style: style.into(),
+        color: c,
+    })
 }
 
 fn el(t: &str, d: Dxf) -> (String, u32, Dxf) {
@@ -140,28 +159,61 @@ pub fn builtin(name: &str) -> Option<StyleDef> {
     } else if let Some(v) = name.strip_prefix("TableStyleMedium") {
         ("M", v.parse::<u32>().ok()?)
     } else {
-        ("D", name.strip_prefix("TableStyleDark")?.parse::<u32>().ok()?)
+        (
+            "D",
+            name.strip_prefix("TableStyleDark")?.parse::<u32>().ok()?,
+        )
     };
     let i = (n - 1) % 7; // 0 = text color, 1-6 = accents
     let group = (n - 1) / 7;
     // The base color, its light and lighter tints.
     let base = if i == 0 { 1 } else { 3 + i };
     let c = |tint: f64| {
-        if i == 0 && tint > 0.0 { theme(0, -(1.0 - tint) * 0.5) } else { theme(base, tint) }
+        if i == 0 && tint > 0.0 {
+            theme(0, -(1.0 - tint) * 0.5)
+        } else {
+            theme(base, tint)
+        }
     };
     let white = || theme(0, 0.0);
-    let bold = |d: Dxf| Dxf { bold: Some(true), ..d };
-    let header_solid = || Dxf { fill: c(0.0), color: white(), bold: Some(true), ..Default::default() };
-    let total_double = || Dxf { bold: Some(true), sides: [None, None, side("double", c(0.0)), None, None, None], ..Default::default() };
-    let stripe = |tint: f64| Dxf { fill: c(tint), ..Default::default() };
+    let bold = |d: Dxf| Dxf {
+        bold: Some(true),
+        ..d
+    };
+    let header_solid = || Dxf {
+        fill: c(0.0),
+        color: white(),
+        bold: Some(true),
+        ..Default::default()
+    };
+    let total_double = || Dxf {
+        bold: Some(true),
+        sides: [None, None, side("double", c(0.0)), None, None, None],
+        ..Default::default()
+    };
+    let stripe = |tint: f64| Dxf {
+        fill: c(tint),
+        ..Default::default()
+    };
     let mut out: StyleDef = Vec::new();
     match (family, group) {
         ("L", 0) => {
             out.push(el(
                 "wholeTable",
                 Dxf {
-                    color: if i == 0 { theme(1, 0.0) } else { theme(base, -0.25) },
-                    sides: [None, None, side("thin", c(0.0)), side("thin", c(0.0)), None, None],
+                    color: if i == 0 {
+                        theme(1, 0.0)
+                    } else {
+                        theme(base, -0.25)
+                    },
+                    sides: [
+                        None,
+                        None,
+                        side("thin", c(0.0)),
+                        side("thin", c(0.0)),
+                        None,
+                        None,
+                    ],
                     ..Default::default()
                 },
             ));
@@ -169,13 +221,59 @@ pub fn builtin(name: &str) -> Option<StyleDef> {
             out.push(el("firstColumnStripe", stripe(0.8)));
             out.push(el("firstColumn", bold(Dxf::default())));
             out.push(el("lastColumn", bold(Dxf::default())));
-            out.push(el("headerRow", Dxf { bold: Some(true), sides: [None, None, None, side("thin", c(0.0)), None, None], ..Default::default() }));
+            out.push(el(
+                "headerRow",
+                Dxf {
+                    bold: Some(true),
+                    sides: [None, None, None, side("thin", c(0.0)), None, None],
+                    ..Default::default()
+                },
+            ));
             out.push(el("totalRow", total_double()));
         }
         ("L", 1) => {
-            out.push(el("wholeTable", Dxf { sides: [side("thin", c(0.0)), side("thin", c(0.0)), side("thin", c(0.0)), side("thin", c(0.0)), None, None], ..Default::default() }));
-            out.push(el("firstRowStripe", Dxf { sides: [None, None, side("thin", c(0.0)), side("thin", c(0.0)), None, None], ..Default::default() }));
-            out.push(el("firstColumnStripe", Dxf { sides: [side("thin", c(0.0)), side("thin", c(0.0)), None, None, None, None], ..Default::default() }));
+            out.push(el(
+                "wholeTable",
+                Dxf {
+                    sides: [
+                        side("thin", c(0.0)),
+                        side("thin", c(0.0)),
+                        side("thin", c(0.0)),
+                        side("thin", c(0.0)),
+                        None,
+                        None,
+                    ],
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "firstRowStripe",
+                Dxf {
+                    sides: [
+                        None,
+                        None,
+                        side("thin", c(0.0)),
+                        side("thin", c(0.0)),
+                        None,
+                        None,
+                    ],
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "firstColumnStripe",
+                Dxf {
+                    sides: [
+                        side("thin", c(0.0)),
+                        side("thin", c(0.0)),
+                        None,
+                        None,
+                        None,
+                        None,
+                    ],
+                    ..Default::default()
+                },
+            ));
             out.push(el("firstColumn", bold(Dxf::default())));
             out.push(el("lastColumn", bold(Dxf::default())));
             out.push(el("headerRow", header_solid()));
@@ -183,47 +281,136 @@ pub fn builtin(name: &str) -> Option<StyleDef> {
         }
         ("L", _) => {
             let t = || side("thin", c(0.0));
-            out.push(el("wholeTable", Dxf { sides: [t(), t(), t(), t(), t(), t()], ..Default::default() }));
+            out.push(el(
+                "wholeTable",
+                Dxf {
+                    sides: [t(), t(), t(), t(), t(), t()],
+                    ..Default::default()
+                },
+            ));
             out.push(el("firstRowStripe", stripe(0.8)));
             out.push(el("firstColumnStripe", stripe(0.8)));
             out.push(el("firstColumn", bold(Dxf::default())));
             out.push(el("lastColumn", bold(Dxf::default())));
-            out.push(el("headerRow", Dxf { bold: Some(true), sides: [None, None, None, side("medium", c(0.0)), None, None], ..Default::default() }));
+            out.push(el(
+                "headerRow",
+                Dxf {
+                    bold: Some(true),
+                    sides: [None, None, None, side("medium", c(0.0)), None, None],
+                    ..Default::default()
+                },
+            ));
             out.push(el("totalRow", total_double()));
         }
         ("M", 0) => {
             let t = || side("thin", c(0.4));
-            out.push(el("wholeTable", Dxf { sides: [t(), t(), t(), t(), None, t()], ..Default::default() }));
+            out.push(el(
+                "wholeTable",
+                Dxf {
+                    sides: [t(), t(), t(), t(), None, t()],
+                    ..Default::default()
+                },
+            ));
             out.push(el("firstRowStripe", stripe(0.8)));
             out.push(el("firstColumnStripe", stripe(0.8)));
             out.push(el("firstColumn", bold(Dxf::default())));
             out.push(el("lastColumn", bold(Dxf::default())));
-            out.push(el("headerRow", Dxf { sides: [side("thin", c(0.0)), side("thin", c(0.0)), side("thin", c(0.0)), side("thin", c(0.0)), None, None], ..header_solid() }));
+            out.push(el(
+                "headerRow",
+                Dxf {
+                    sides: [
+                        side("thin", c(0.0)),
+                        side("thin", c(0.0)),
+                        side("thin", c(0.0)),
+                        side("thin", c(0.0)),
+                        None,
+                        None,
+                    ],
+                    ..header_solid()
+                },
+            ));
             out.push(el("totalRow", total_double()));
         }
         ("M", 1) => {
             let w = || side("thin", white());
-            out.push(el("wholeTable", Dxf { fill: c(0.8), sides: [None, None, None, None, w(), w()], ..Default::default() }));
+            out.push(el(
+                "wholeTable",
+                Dxf {
+                    fill: c(0.8),
+                    sides: [None, None, None, None, w(), w()],
+                    ..Default::default()
+                },
+            ));
             out.push(el("firstRowStripe", stripe(0.6)));
             out.push(el("firstColumnStripe", stripe(0.6)));
             out.push(el("firstColumn", header_solid()));
             out.push(el("lastColumn", header_solid()));
-            out.push(el("headerRow", Dxf { sides: [None, None, None, side("thick", white()), None, None], ..header_solid() }));
-            out.push(el("totalRow", Dxf { sides: [None, None, side("thick", white()), None, None, None], ..header_solid() }));
+            out.push(el(
+                "headerRow",
+                Dxf {
+                    sides: [None, None, None, side("thick", white()), None, None],
+                    ..header_solid()
+                },
+            ));
+            out.push(el(
+                "totalRow",
+                Dxf {
+                    sides: [None, None, side("thick", white()), None, None, None],
+                    ..header_solid()
+                },
+            ));
         }
         ("M", 2) => {
             let t = || side("thin", theme(1, 0.0));
-            out.push(el("wholeTable", Dxf { sides: [t(), t(), t(), t(), None, t()], ..Default::default() }));
-            out.push(el("firstRowStripe", Dxf { fill: theme(0, -0.15), ..Default::default() }));
-            out.push(el("firstColumnStripe", Dxf { fill: theme(0, -0.15), ..Default::default() }));
+            out.push(el(
+                "wholeTable",
+                Dxf {
+                    sides: [t(), t(), t(), t(), None, t()],
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "firstRowStripe",
+                Dxf {
+                    fill: theme(0, -0.15),
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "firstColumnStripe",
+                Dxf {
+                    fill: theme(0, -0.15),
+                    ..Default::default()
+                },
+            ));
             out.push(el("firstColumn", header_solid()));
             out.push(el("lastColumn", header_solid()));
-            out.push(el("headerRow", Dxf { sides: [None, None, None, side("thick", theme(1, 0.0)), None, None], ..header_solid() }));
-            out.push(el("totalRow", Dxf { bold: Some(true), sides: [None, None, side("double", theme(1, 0.0)), None, None, None], ..Default::default() }));
+            out.push(el(
+                "headerRow",
+                Dxf {
+                    sides: [None, None, None, side("thick", theme(1, 0.0)), None, None],
+                    ..header_solid()
+                },
+            ));
+            out.push(el(
+                "totalRow",
+                Dxf {
+                    bold: Some(true),
+                    sides: [None, None, side("double", theme(1, 0.0)), None, None, None],
+                    ..Default::default()
+                },
+            ));
         }
         ("M", _) => {
             let t = || side("thin", c(0.4));
-            out.push(el("wholeTable", Dxf { fill: c(0.8), sides: [t(), t(), t(), t(), t(), t()], ..Default::default() }));
+            out.push(el(
+                "wholeTable",
+                Dxf {
+                    fill: c(0.8),
+                    sides: [t(), t(), t(), t(), t(), t()],
+                    ..Default::default()
+                },
+            ));
             out.push(el("firstRowStripe", stripe(0.6)));
             out.push(el("firstColumnStripe", stripe(0.6)));
             out.push(el("firstColumn", bold(Dxf::default())));
@@ -233,25 +420,113 @@ pub fn builtin(name: &str) -> Option<StyleDef> {
         }
         ("D", 0) => {
             let dark = |t: f64| {
-                if i == 0 { theme(1, if t < -0.3 { 0.15 } else { 0.35 }) } else { theme(base, t) }
+                if i == 0 {
+                    theme(1, if t < -0.3 { 0.15 } else { 0.35 })
+                } else {
+                    theme(base, t)
+                }
             };
-            out.push(el("wholeTable", Dxf { fill: dark(-0.25), color: white(), ..Default::default() }));
-            out.push(el("firstRowStripe", Dxf { fill: dark(-0.5), ..Default::default() }));
-            out.push(el("firstColumnStripe", Dxf { fill: dark(-0.5), ..Default::default() }));
-            out.push(el("firstColumn", Dxf { bold: Some(true), fill: dark(-0.5), sides: [None, side("medium", white()), None, None, None, None], ..Default::default() }));
-            out.push(el("lastColumn", Dxf { bold: Some(true), fill: dark(-0.5), sides: [side("medium", white()), None, None, None, None, None], ..Default::default() }));
-            out.push(el("headerRow", Dxf { bold: Some(true), fill: theme(1, 0.0), sides: [None, None, None, side("medium", white()), None, None], ..Default::default() }));
-            out.push(el("totalRow", Dxf { bold: Some(true), fill: dark(-0.5), sides: [None, None, side("double", white()), None, None, None], ..Default::default() }));
+            out.push(el(
+                "wholeTable",
+                Dxf {
+                    fill: dark(-0.25),
+                    color: white(),
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "firstRowStripe",
+                Dxf {
+                    fill: dark(-0.5),
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "firstColumnStripe",
+                Dxf {
+                    fill: dark(-0.5),
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "firstColumn",
+                Dxf {
+                    bold: Some(true),
+                    fill: dark(-0.5),
+                    sides: [None, side("medium", white()), None, None, None, None],
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "lastColumn",
+                Dxf {
+                    bold: Some(true),
+                    fill: dark(-0.5),
+                    sides: [side("medium", white()), None, None, None, None, None],
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "headerRow",
+                Dxf {
+                    bold: Some(true),
+                    fill: theme(1, 0.0),
+                    sides: [None, None, None, side("medium", white()), None, None],
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "totalRow",
+                Dxf {
+                    bold: Some(true),
+                    fill: dark(-0.5),
+                    sides: [None, None, side("double", white()), None, None, None],
+                    ..Default::default()
+                },
+            ));
         }
         ("D", _) => {
             let accent = [1, 4, 6, 8][(i as usize).min(3)];
-            out.push(el("wholeTable", Dxf { fill: theme(0, -0.15), ..Default::default() }));
-            out.push(el("firstRowStripe", Dxf { fill: theme(accent, 0.4), ..Default::default() }));
-            out.push(el("firstColumnStripe", Dxf { fill: theme(accent, 0.4), ..Default::default() }));
+            out.push(el(
+                "wholeTable",
+                Dxf {
+                    fill: theme(0, -0.15),
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "firstRowStripe",
+                Dxf {
+                    fill: theme(accent, 0.4),
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "firstColumnStripe",
+                Dxf {
+                    fill: theme(accent, 0.4),
+                    ..Default::default()
+                },
+            ));
             out.push(el("firstColumn", bold(Dxf::default())));
             out.push(el("lastColumn", bold(Dxf::default())));
-            out.push(el("headerRow", Dxf { bold: Some(true), color: white(), fill: theme(1, 0.0), ..Default::default() }));
-            out.push(el("totalRow", Dxf { bold: Some(true), sides: [None, None, side("double", theme(1, 0.0)), None, None, None], ..Default::default() }));
+            out.push(el(
+                "headerRow",
+                Dxf {
+                    bold: Some(true),
+                    color: white(),
+                    fill: theme(1, 0.0),
+                    ..Default::default()
+                },
+            ));
+            out.push(el(
+                "totalRow",
+                Dxf {
+                    bold: Some(true),
+                    sides: [None, None, side("double", theme(1, 0.0)), None, None, None],
+                    ..Default::default()
+                },
+            ));
         }
         _ => return None,
     }
@@ -289,7 +564,12 @@ impl Overlay {
         let pick = |edge: bool, outer: &Option<Side>, inner: &Option<Side>| {
             if edge { outer.clone() } else { inner.clone() }
         };
-        let sides = [pick(r == reg.1, t, h), pick(c == reg.2, rt, v), pick(r == reg.3, b, h), pick(c == reg.0, l, v)];
+        let sides = [
+            pick(r == reg.1, t, h),
+            pick(c == reg.2, rt, v),
+            pick(r == reg.3, b, h),
+            pick(c == reg.0, l, v),
+        ];
         for (i, s) in sides.into_iter().enumerate() {
             if s.is_some() {
                 self.sides[i] = s;
@@ -313,7 +593,10 @@ pub fn areas(ws: &Worksheet) -> Vec<(u32, u32, u32, u32)> {
 /// What the tables' styles give the cells of a sheet. The styles are looked
 /// up in custom (the workbook's own) and then among the built-in ones; a
 /// table without tableStyleInfo has no style.
-pub fn overlays(ws: &Worksheet, custom: &HashMap<String, StyleDef>) -> HashMap<(u32, u32), Overlay> {
+pub fn overlays(
+    ws: &Worksheet,
+    custom: &HashMap<String, StyleDef>,
+) -> HashMap<(u32, u32), Overlay> {
     let mut out: HashMap<(u32, u32), Overlay> = HashMap::new();
     for t in ws.tables() {
         let (a, b) = t.area();
@@ -329,7 +612,12 @@ pub fn overlays(ws: &Worksheet, custom: &HashMap<String, StyleDef>) -> HashMap<(
             continue;
         };
         let (first_col, last_col, row_stripes, col_stripes) = match info {
-            Some(i) => (i.is_show_first_col(), i.is_show_last_col(), i.is_show_row_stripes(), i.is_show_col_stripes()),
+            Some(i) => (
+                i.is_show_first_col(),
+                i.is_show_last_col(),
+                i.is_show_row_stripes(),
+                i.is_show_col_stripes(),
+            ),
             None => (false, false, true, false),
         };
         let header = 1u32; // headerRowCount is not kept; tables nearly always have one
@@ -350,7 +638,11 @@ pub fn overlays(ws: &Worksheet, custom: &HashMap<String, StyleDef>) -> HashMap<(
             while c <= c2 {
                 let size = if first { s1 } else { s2 };
                 let end = (c + size - 1).min(c2);
-                if let Some(e) = get(if first { "firstColumnStripe" } else { "secondColumnStripe" }) {
+                if let Some(e) = get(if first {
+                    "firstColumnStripe"
+                } else {
+                    "secondColumnStripe"
+                }) {
                     regions.push((&e.2, (c, body_r1, end, body_r2)));
                 }
                 c = end + 1;
@@ -365,7 +657,11 @@ pub fn overlays(ws: &Worksheet, custom: &HashMap<String, StyleDef>) -> HashMap<(
             while r <= body_r2 {
                 let size = if first { s1 } else { s2 };
                 let end = (r + size - 1).min(body_r2);
-                if let Some(e) = get(if first { "firstRowStripe" } else { "secondRowStripe" }) {
+                if let Some(e) = get(if first {
+                    "firstRowStripe"
+                } else {
+                    "secondRowStripe"
+                }) {
                     regions.push((&e.2, (c1, r, c2, end)));
                 }
                 r = end + 1;
@@ -430,11 +726,31 @@ mod tests {
 
     #[test]
     fn regions() {
-        let d = Dxf { sides: [side("thin", None), side("thin", None), side("thin", None), side("thin", None), side("hair", None), side("dotted", None)], ..Default::default() };
+        let d = Dxf {
+            sides: [
+                side("thin", None),
+                side("thin", None),
+                side("thin", None),
+                side("thin", None),
+                side("hair", None),
+                side("dotted", None),
+            ],
+            ..Default::default()
+        };
         let mut o = Overlay::default();
         o.apply(&d, 1, 1, (1, 1, 3, 3)); // top left corner
-        assert_eq!(o.sides.iter().map(|s| s.as_ref().unwrap().style.as_str()).collect::<Vec<_>>(), ["thin", "hair", "dotted", "thin"]);
-        assert!(builtin("TableStyleMedium2").is_some() && builtin("TableStyleLight21").is_some() && builtin("TableStyleDark11").is_some());
+        assert_eq!(
+            o.sides
+                .iter()
+                .map(|s| s.as_ref().unwrap().style.as_str())
+                .collect::<Vec<_>>(),
+            ["thin", "hair", "dotted", "thin"]
+        );
+        assert!(
+            builtin("TableStyleMedium2").is_some()
+                && builtin("TableStyleLight21").is_some()
+                && builtin("TableStyleDark11").is_some()
+        );
         assert!(builtin("PivotStyleLight16").is_none());
     }
 }

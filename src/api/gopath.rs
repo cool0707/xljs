@@ -96,12 +96,20 @@ pub fn clean(path: &str) -> String {
 }
 
 fn from_slash(s: &str) -> String {
-    if cfg!(windows) { s.replace('/', "\\") } else { s.to_string() }
+    if cfg!(windows) {
+        s.replace('/', "\\")
+    } else {
+        s.to_string()
+    }
 }
 
 /// Go's filepath.Join: the non-empty elements joined and cleaned.
 pub fn join(parts: &[String]) -> String {
-    let parts: Vec<&str> = parts.iter().map(String::as_str).filter(|p| !p.is_empty()).collect();
+    let parts: Vec<&str> = parts
+        .iter()
+        .map(String::as_str)
+        .filter(|p| !p.is_empty())
+        .collect();
     if parts.is_empty() {
         return String::new();
     }
@@ -119,7 +127,11 @@ pub fn base(path: &str) -> String {
         Some(i) => &p[i + 1..],
         None => p,
     };
-    if b.is_empty() { SEP.to_string() } else { b.to_string() }
+    if b.is_empty() {
+        SEP.to_string()
+    } else {
+        b.to_string()
+    }
 }
 
 /// Go's filepath.Dir.
@@ -157,7 +169,11 @@ pub fn abs(path: &str) -> std::io::Result<String> {
 }
 
 fn same(a: &str, b: &str) -> bool {
-    if cfg!(windows) { a.eq_ignore_ascii_case(b) } else { a == b }
+    if cfg!(windows) {
+        a.eq_ignore_ascii_case(b)
+    } else {
+        a == b
+    }
 }
 
 /// Go's filepath.Rel.
@@ -193,7 +209,11 @@ pub fn rel(basepath: &str, targpath: &str) -> Result<String, String> {
 
 /// Slash-separated form of a path.
 pub fn to_slash(p: &str) -> String {
-    if cfg!(windows) { p.replace('\\', "/") } else { p.to_string() }
+    if cfg!(windows) {
+        p.replace('\\', "/")
+    } else {
+        p.to_string()
+    }
 }
 
 #[cfg(test)]

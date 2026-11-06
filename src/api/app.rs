@@ -29,8 +29,27 @@ fn escape_path(p: &str) -> String {
     let mut out = String::new();
     for b in p.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' | b'!' | b'$' | b'&' | b'\'' | b'(' | b')'
-            | b'*' | b'+' | b',' | b';' | b'=' | b':' | b'@' => out.push(b as char),
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'~'
+            | b'/'
+            | b'!'
+            | b'$'
+            | b'&'
+            | b'\''
+            | b'('
+            | b')'
+            | b'*'
+            | b'+'
+            | b','
+            | b';'
+            | b'='
+            | b':'
+            | b'@' => out.push(b as char),
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -75,7 +94,9 @@ pub(super) fn install(n: &N) {
     n.val("appHeight", env.meta.height as f64);
     n.val("appTitleBar", env.meta.title_bar.clone());
     n.val("supportsWindows", env.ui.supports_windows());
-    let assets: Arc<dyn AssetFs> = Arc::new(WindowAssets { app: env.assets.clone() });
+    let assets: Arc<dyn AssetFs> = Arc::new(WindowAssets {
+        app: env.assets.clone(),
+    });
     // The @icon file, read when the first window opens.
     let icon: std::rc::Rc<std::cell::RefCell<Option<Vec<u8>>>> = Default::default();
     // appOpen(html, title, width, height, onMessage(msg, files), fixedSize,
@@ -88,7 +109,9 @@ pub(super) fn install(n: &N) {
             return Err(a.throw(&err!("app.htmlNotFound", html)));
         }
         if !h.env.meta.icon.is_empty() && icon.borrow().is_none() {
-            let data = assets.read(&h.env.meta.icon).map_err(|_| a.throw(&err!("app.iconNotFound", h.env.meta.icon)))?;
+            let data = assets
+                .read(&h.env.meta.icon)
+                .map_err(|_| a.throw(&err!("app.iconNotFound", h.env.meta.icon)))?;
             if !check_icon(&data) {
                 return Err(a.throw(&err!("app.badIcon", h.env.meta.icon)));
             }
@@ -105,7 +128,11 @@ pub(super) fn install(n: &N) {
         poster.add_pending();
         let (p1, c1) = (poster.clone(), cancel.clone());
         let (p2, ic) = (poster.clone(), is_closed.clone());
-        let title = if js::nullish(&a.arg(1)) { h.env.title.clone() } else { to_str(&a.arg(1)) };
+        let title = if js::nullish(&a.arg(1)) {
+            h.env.title.clone()
+        } else {
+            to_str(&a.arg(1))
+        };
         let w = h.env.ui.open_window(WindowOptions {
             title,
             width: a.int(2),
@@ -162,16 +189,30 @@ pub(super) fn install(n: &N) {
         obj.set(
             "post",
             Function::new(ctx.clone(), move |args: Rest<Value>| {
-                let msg = args.0.first().filter(|v| !js::nullish(v)).map(to_str).unwrap_or_default();
+                let msg = args
+                    .0
+                    .first()
+                    .filter(|v| !js::nullish(v))
+                    .map(to_str)
+                    .unwrap_or_default();
                 w2.post(msg);
             })?,
         )?;
         let ic = is_closed.clone();
-        obj.set("isClosed", Function::new(ctx.clone(), move || ic.load(Ordering::SeqCst))?)?;
+        obj.set(
+            "isClosed",
+            Function::new(ctx.clone(), move || ic.load(Ordering::SeqCst))?,
+        )?;
         let c2 = cancel.clone();
-        obj.set("cancelRequested", Function::new(ctx.clone(), move || c2.load(Ordering::SeqCst))?)?;
+        obj.set(
+            "cancelRequested",
+            Function::new(ctx.clone(), move || c2.load(Ordering::SeqCst))?,
+        )?;
         let c3 = cancel.clone();
-        obj.set("clearCancel", Function::new(ctx.clone(), move || c3.store(false, Ordering::SeqCst))?)?;
+        obj.set(
+            "clearCancel",
+            Function::new(ctx.clone(), move || c3.store(false, Ordering::SeqCst))?,
+        )?;
         Ok(obj.into_value())
     });
 }

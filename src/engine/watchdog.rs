@@ -65,7 +65,12 @@ impl PartialEq for StopKey {
     }
 }
 
-const MODIFIERS: &[(&str, &str, u16)] = &[("ctrl", "Ctrl", 0x11), ("control", "Ctrl", 0x11), ("shift", "Shift", 0x10), ("alt", "Alt", 0x12)];
+const MODIFIERS: &[(&str, &str, u16)] = &[
+    ("ctrl", "Ctrl", 0x11),
+    ("control", "Ctrl", 0x11),
+    ("shift", "Shift", 0x10),
+    ("alt", "Alt", 0x12),
+];
 
 const KEYS: &[(&str, &str, u16)] = &[
     ("esc", "Esc", 0x1B),
@@ -95,7 +100,9 @@ fn key_code(name: &str) -> Option<(String, u16)> {
         return Some(((up as char).to_string(), up as u16));
     }
     let n: u16 = name.strip_prefix('f')?.parse().ok()?;
-    (1..=24).contains(&n).then(|| (format!("F{n}"), 0x70 + n - 1))
+    (1..=24)
+        .contains(&n)
+        .then(|| (format!("F{n}"), 0x70 + n - 1))
 }
 
 impl StopKey {
@@ -122,7 +129,11 @@ impl StopKey {
         let (n, c) = key?;
         names.push(n);
         codes.push(c);
-        Some(StopKey { name: names.join("+"), codes, probe: None })
+        Some(StopKey {
+            name: names.join("+"),
+            codes,
+            probe: None,
+        })
     }
 
     fn down(&self) -> bool {
@@ -183,11 +194,20 @@ impl Drop for Guard {
 
 /// Sets up the watchdog (limit) and the stop key for a script run on this
 /// thread in rt. None when both are off.
-pub(crate) fn install(rt: &rquickjs::Runtime, host: Weak<Host>, limit: Option<Duration>, key: Option<StopKey>) -> Option<Guard> {
+pub(crate) fn install(
+    rt: &rquickjs::Runtime,
+    host: Weak<Host>,
+    limit: Option<Duration>,
+    key: Option<StopKey>,
+) -> Option<Guard> {
     if limit.is_none() && key.is_none() {
         return None;
     }
-    let st = Arc::new(State { base: Instant::now(), active_since: AtomicU64::new(0), pressed: AtomicU64::new(0) });
+    let st = Arc::new(State {
+        base: Instant::now(),
+        active_since: AtomicU64::new(0),
+        pressed: AtomicU64::new(0),
+    });
     CURRENT.with(|c| *c.borrow_mut() = Some(st.clone()));
     waited();
     let quit = Arc::new(AtomicBool::new(false));
@@ -218,7 +238,10 @@ pub(crate) fn install(rt: &rquickjs::Runtime, host: Weak<Host>, limit: Option<Du
         let active = st.active_since.load(Ordering::SeqCst);
         let pressed = st.pressed.swap(0, Ordering::SeqCst);
         let message = if pressed != 0 && pressed.saturating_sub(active) >= grace {
-            t!("engine.stopKeyConfirm", key_name.as_deref().unwrap_or_default())
+            t!(
+                "engine.stopKeyConfirm",
+                key_name.as_deref().unwrap_or_default()
+            )
         } else if let Some(l) = limit
             && st.now().saturating_sub(active) >= l.as_nanos() as u64
         {
@@ -226,7 +249,9 @@ pub(crate) fn install(rt: &rquickjs::Runtime, host: Weak<Host>, limit: Option<Du
         } else {
             return false;
         };
-        let Some(h) = host.upgrade() else { return false };
+        let Some(h) = host.upgrade() else {
+            return false;
+        };
         let stop = h.env.ui.confirm(&h.env.title, &message);
         waited();
         if stop {
@@ -250,7 +275,11 @@ mod tests {
             (" Escape ", "Esc", vec![0x1B]),
             ("F12", "F12", vec![0x7B]),
             ("ctrl+q", "Ctrl+Q", vec![0x11, 0x51]),
-            ("Ctrl + Shift + Break", "Ctrl+Shift+Pause", vec![0x11, 0x10, 0x13]),
+            (
+                "Ctrl + Shift + Break",
+                "Ctrl+Shift+Pause",
+                vec![0x11, 0x10, 0x13],
+            ),
             ("alt+0", "Alt+0", vec![0x12, 0x30]),
         ] {
             let k = StopKey::parse(s).unwrap_or_else(|| panic!("{s:?}"));

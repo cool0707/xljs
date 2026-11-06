@@ -58,7 +58,8 @@ fn is_zero(n: &i64) -> bool {
     *n == 0
 }
 
-static KEY_LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^@([A-Za-z][\w-]*)(?:\s+(.*))?$").unwrap());
+static KEY_LINE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^@([A-Za-z][\w-]*)(?:\s+(.*))?$").unwrap());
 static TRAILING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+//.*$").unwrap());
 static SIZE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+)\s*[xX×]\s*(\d+)$").unwrap());
 
@@ -161,7 +162,10 @@ pub fn parse(name: &str, src: &[u8]) -> Result<(Meta, Vec<String>)> {
             }
             "icon" => {
                 let p = rel_path(&val, &at())?;
-                let ext = p.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
+                let ext = p
+                    .rsplit_once('.')
+                    .map(|(_, e)| e.to_lowercase())
+                    .unwrap_or_default();
                 if ext != "ico" && ext != "png" || !p.contains('.') {
                     return Err(err!("meta.badIcon", at(), val));
                 }

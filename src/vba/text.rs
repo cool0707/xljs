@@ -8,7 +8,11 @@ use super::{CLASS, FORM, Module, Project, STANDARD};
 /// modules without code (only Option statements), which are listed. Without
 /// a file name the project's name is used.
 pub fn text(file: &str, p: &Project) -> String {
-    let file = if file.is_empty() { p.name.as_str() } else { file };
+    let file = if file.is_empty() {
+        p.name.as_str()
+    } else {
+        file
+    };
     let mut b = String::new();
     b.push_str(&t!("vba.textTitle", file));
     b.push_str("\n\n");
@@ -54,7 +58,10 @@ fn describe(m: &Module) -> String {
 /// The code without the leading Attribute lines and the blank lines around
 /// it, or "" when nothing but Option statements remain.
 fn body(code: &str) -> String {
-    let lines: Vec<&str> = code.split('\n').skip_while(|l| l.starts_with("Attribute VB_")).collect();
+    let lines: Vec<&str> = code
+        .split('\n')
+        .skip_while(|l| l.starts_with("Attribute VB_"))
+        .collect();
     let s = lines.join("\n").trim_matches([' ', '\t', '\n']).to_string();
     for l in s.split('\n') {
         let l = l.trim();
