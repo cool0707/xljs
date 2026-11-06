@@ -7,8 +7,8 @@ use std::str::FromStr;
 use rquickjs::Value;
 use umya_spreadsheet::structs::EnumTrait;
 use umya_spreadsheet::{
-    Border, BorderStyleValues, HorizontalAlignmentValues, NumberingFormat, PatternValues, Style,
-    UnderlineValues, VerticalAlignmentValues,
+    Border, BorderStyleValues, HorizontalAlignmentValues, NumberingFormat, PatternValues, Style, UnderlineValues,
+    VerticalAlignmentValues,
 };
 use unicode_width::UnicodeWidthStr;
 
@@ -26,30 +26,11 @@ pub struct BorderSide {
 
 /// The Excel border styles; the index is the style id (as excelize has it).
 const BORDER_NAMES: [&str; 14] = [
-    "none",
-    "thin",
-    "medium",
-    "dashed",
-    "dotted",
-    "thick",
-    "double",
-    "hair",
-    "mediumDashed",
-    "dashDot",
-    "mediumDashDot",
-    "dashDotDot",
-    "mediumDashDotDot",
-    "slantDashDot",
+    "none", "thin", "medium", "dashed", "dotted", "thick", "double", "hair", "mediumDashed", "dashDot", "mediumDashDot", "dashDotDot",
+    "mediumDashDotDot", "slantDashDot",
 ];
 
-const SIDES: [&str; 6] = [
-    "left",
-    "right",
-    "top",
-    "bottom",
-    "diagonalUp",
-    "diagonalDown",
-];
+const SIDES: [&str; 6] = ["left", "right", "top", "bottom", "diagonalUp", "diagonalDown"];
 
 #[derive(Default, Clone)]
 struct FontSpec {
@@ -82,8 +63,8 @@ pub struct StyleSpec {
     num_fmt: Option<String>,
     num_fmt_id: Option<u32>,
     borders: Option<BTreeMap<String, BorderSide>>, // per side for every cell
-    outline: Option<BorderSide>,                   // outer edges of the range
-    inside: Option<BorderSide>,                    // edges between cells of the range
+    outline: Option<BorderSide>,                  // outer edges of the range
+    inside: Option<BorderSide>,                   // edges between cells of the range
     inside_h: Option<BorderSide>,
     inside_v: Option<BorderSide>,
     protected: Option<bool>,
@@ -140,19 +121,11 @@ fn opt_s(o: &Value, k: &str) -> Option<String> {
         return None;
     }
     let x = get(o, k);
-    Some(if x.is_null() {
-        String::new()
-    } else {
-        to_str(&x)
-    })
+    Some(if x.is_null() { String::new() } else { to_str(&x) })
 }
 
 fn opt_b(o: &Value, k: &str) -> Option<bool> {
-    if has(o, k) {
-        Some(to_bool(&get(o, k)))
-    } else {
-        None
-    }
+    if has(o, k) { Some(to_bool(&get(o, k))) } else { None }
 }
 
 fn opt_n(o: &Value, k: &str) -> Option<f64> {
@@ -170,10 +143,7 @@ fn is_obj(x: &Value) -> bool {
 
 fn parse_border_style(s: &str) -> Result<usize> {
     let l = s.trim().to_lowercase();
-    BORDER_NAMES
-        .iter()
-        .position(|n| n.to_lowercase() == l)
-        .ok_or_else(|| err!("xlsx.invalidBorder", s))
+    BORDER_NAMES.iter().position(|n| n.to_lowercase() == l).ok_or_else(|| err!("xlsx.invalidBorder", s))
 }
 
 /// Parses "thin", true, null/"none", or {style, color}.
@@ -182,37 +152,18 @@ fn border_side_of(x: &Value) -> Result<Option<BorderSide>> {
         return Ok(None);
     }
     if x.is_null() {
-        return Ok(Some(BorderSide {
-            style: 0,
-            color: String::new(),
-        }));
+        return Ok(Some(BorderSide { style: 0, color: String::new() }));
     }
     if let Some(b) = x.as_bool() {
-        return Ok(Some(if b {
-            BorderSide {
-                style: 1,
-                color: "000000".into(),
-            }
-        } else {
-            BorderSide {
-                style: 0,
-                color: String::new(),
-            }
-        }));
+        return Ok(Some(if b { BorderSide { style: 1, color: "000000".into() } } else { BorderSide { style: 0, color: String::new() } }));
     }
     if x.is_string() {
-        return Ok(Some(BorderSide {
-            style: parse_border_style(&to_str(x))?,
-            color: "000000".into(),
-        }));
+        return Ok(Some(BorderSide { style: parse_border_style(&to_str(x))?, color: "000000".into() }));
     }
     if !is_obj(x) {
         return Err(err!("xlsx.invalidBorder", to_str(x)));
     }
-    let mut side = BorderSide {
-        style: 1,
-        color: "000000".into(),
-    };
+    let mut side = BorderSide { style: 1, color: "000000".into() };
     if let Some(s) = opt_s(x, "style") {
         side.style = parse_border_style(&s)?;
     }
@@ -243,11 +194,7 @@ pub fn parse_style(x: &Value) -> Result<StyleSpec> {
         if has(&f, "underline") {
             let u = get(&f, "underline");
             let s = if let Some(b) = u.as_bool() {
-                if b {
-                    "single".to_string()
-                } else {
-                    String::new()
-                }
+                if b { "single".to_string() } else { String::new() }
             } else if u.is_string() {
                 let s = to_str(&u);
                 if s == "none" { String::new() } else { s }
@@ -257,11 +204,7 @@ pub fn parse_style(x: &Value) -> Result<StyleSpec> {
             fs.underline = Some(s);
         }
         if let Some(c) = opt_s(&f, "color") {
-            fs.color = Some(if c.is_empty() {
-                String::new()
-            } else {
-                norm_color(&c)?
-            });
+            fs.color = Some(if c.is_empty() { String::new() } else { norm_color(&c)? });
         }
         sp.font = Some(fs);
     }
@@ -275,11 +218,7 @@ pub fn parse_style(x: &Value) -> Result<StyleSpec> {
         } else if !fv.is_null() {
             s = to_str(&fv);
         }
-        let s = if !s.is_empty() && !s.eq_ignore_ascii_case("none") {
-            norm_color(&s)?
-        } else {
-            String::new()
-        };
+        let s = if !s.is_empty() && !s.eq_ignore_ascii_case("none") { norm_color(&s)? } else { String::new() };
         sp.fill = Some(s);
     }
     let al = get(x, "alignment");
@@ -304,11 +243,7 @@ pub fn parse_style(x: &Value) -> Result<StyleSpec> {
                 if let Some(f) = nv.as_float().filter(|f| *f == f.trunc() && *f >= 0.0) {
                     sp.num_fmt_id = Some(f as u32);
                 } else {
-                    sp.num_fmt = Some(if nv.is_null() {
-                        String::new()
-                    } else {
-                        to_str(&nv)
-                    });
+                    sp.num_fmt = Some(if nv.is_null() { String::new() } else { to_str(&nv) });
                 }
             }
         }
@@ -364,12 +299,7 @@ impl StyleSpec {
     /// The border sides for the cell at (col,row) inside the range
     /// [c1..c2]x[r1..r2].
     fn sides_for(&self, col: u32, row: u32, c1: u32, r1: u32, c2: u32, r2: u32) -> Option<Sides> {
-        if self.borders.is_none()
-            && self.outline.is_none()
-            && self.inside.is_none()
-            && self.inside_h.is_none()
-            && self.inside_v.is_none()
-        {
+        if self.borders.is_none() && self.outline.is_none() && self.inside.is_none() && self.inside_h.is_none() && self.inside_v.is_none() {
             return None;
         }
         let mut m = self.borders.clone().unwrap_or_default();
@@ -439,16 +369,14 @@ fn apply(st: &mut Style, sp: &StyleSpec, sides: Option<&Sides>, default_font: &(
         let font = st.font_mut();
         if fresh || font.name().is_empty() {
             font.set_name(default_font.0.clone());
-            font.font_scheme_mut()
-                .set_val(umya_spreadsheet::structs::FontSchemeValues::None);
+            font.font_scheme_mut().set_val(umya_spreadsheet::structs::FontSchemeValues::None);
         }
         if fresh || font.size() == 0.0 {
             font.set_size(default_font.1);
         }
         if let Some(n) = f.name.as_ref().filter(|n| !n.is_empty()) {
             font.set_name(n.clone());
-            font.font_scheme_mut()
-                .set_val(umya_spreadsheet::structs::FontSchemeValues::None);
+            font.font_scheme_mut().set_val(umya_spreadsheet::structs::FontSchemeValues::None);
         }
         if let Some(s) = f.size {
             font.set_size(s);
@@ -463,18 +391,13 @@ fn apply(st: &mut Style, sp: &StyleSpec, sides: Option<&Sides>, default_font: &(
             font.set_strikethrough(s);
         }
         if let Some(u) = &f.underline {
-            let v = if u.is_empty() {
-                UnderlineValues::None
-            } else {
-                UnderlineValues::from_str(u).unwrap_or(UnderlineValues::Single)
-            };
+            let v = if u.is_empty() { UnderlineValues::None } else { UnderlineValues::from_str(u).unwrap_or(UnderlineValues::Single) };
             font.font_underline_mut().set_val(v);
         }
         if let Some(v) = &f.vert_align
-            && let Ok(x) = umya_spreadsheet::structs::VerticalAlignmentRunValues::from_str(v)
-        {
-            font.vertical_text_alignment_mut().set_val(x);
-        }
+            && let Ok(x) = umya_spreadsheet::structs::VerticalAlignmentRunValues::from_str(v) {
+                font.vertical_text_alignment_mut().set_val(x);
+            }
         if let Some(c) = &f.color {
             if c.is_empty() {
                 *font.color_mut() = umya_spreadsheet::Color::default();
@@ -488,8 +411,7 @@ fn apply(st: &mut Style, sp: &StyleSpec, sides: Option<&Sides>, default_font: &(
         let font = st.font_mut();
         font.set_name(default_font.0.clone());
         font.set_size(default_font.1);
-        font.font_scheme_mut()
-            .set_val(umya_spreadsheet::structs::FontSchemeValues::None);
+        font.font_scheme_mut().set_val(umya_spreadsheet::structs::FontSchemeValues::None);
     }
     if let Some(fill) = &sp.fill {
         if fill.is_empty() {
@@ -503,15 +425,10 @@ fn apply(st: &mut Style, sp: &StyleSpec, sides: Option<&Sides>, default_font: &(
     if let Some(a) = &sp.align {
         let al = st.alignment_mut();
         if let Some(h) = &a.horizontal {
-            al.set_horizontal(
-                HorizontalAlignmentValues::from_str(h)
-                    .unwrap_or(HorizontalAlignmentValues::General),
-            );
+            al.set_horizontal(HorizontalAlignmentValues::from_str(h).unwrap_or(HorizontalAlignmentValues::General));
         }
         if let Some(v) = &a.vertical {
-            al.set_vertical(
-                VerticalAlignmentValues::from_str(v).unwrap_or(VerticalAlignmentValues::Bottom),
-            );
+            al.set_vertical(VerticalAlignmentValues::from_str(v).unwrap_or(VerticalAlignmentValues::Bottom));
         }
         if let Some(w) = a.wrap {
             al.set_wrap_text(w);
@@ -571,8 +488,7 @@ fn apply(st: &mut Style, sp: &StyleSpec, sides: Option<&Sides>, default_font: &(
                 }
                 continue;
             }
-            let bs = BorderStyleValues::from_str(BORDER_NAMES[s.style])
-                .unwrap_or(BorderStyleValues::Thin);
+            let bs = BorderStyleValues::from_str(BORDER_NAMES[s.style]).unwrap_or(BorderStyleValues::Thin);
             let b = border_mut(st, side);
             b.set_style(bs);
             let mut c = umya_spreadsheet::Color::default();
@@ -606,22 +522,11 @@ pub fn parse_range(r: &str) -> Result<(u32, u32, u32, u32)> {
 }
 
 fn has_style(st: &Style) -> bool {
-    st.font().is_some()
-        || st.fill().is_some()
-        || st.borders().is_some()
-        || st.alignment().is_some()
-        || st.number_format().is_some()
-        || st.protection().is_some()
+    st.font().is_some() || st.fill().is_some() || st.borders().is_some() || st.alignment().is_some() || st.number_format().is_some() || st.protection().is_some()
 }
 
 /// Merges sp into every cell of the range.
-pub fn apply_style(
-    b: &mut Book,
-    sheet: &str,
-    r: &str,
-    sp: &StyleSpec,
-    replace: bool,
-) -> Result<()> {
+pub fn apply_style(b: &mut Book, sheet: &str, r: &str, sp: &StyleSpec, replace: bool) -> Result<()> {
     let (c1, r1, c2, r2) = parse_range(r)?;
     let df = b.default_font.clone();
     let ws = b.sheet_mut(sheet)?;
@@ -629,11 +534,7 @@ pub fn apply_style(
         for col in c1..=c2 {
             let sides = sp.sides_for(col, row, c1, r1, c2, r2);
             let c = ws.cell_mut((col, row));
-            let mut st = if replace {
-                Style::default()
-            } else {
-                c.style().clone()
-            };
+            let mut st = if replace { Style::default() } else { c.style().clone() };
             apply(&mut st, sp, sides.as_ref(), &df);
             c.set_style(st);
         }
@@ -641,12 +542,7 @@ pub fn apply_style(
     // Copy borders set on the edges of the range to the touching side of
     // already formatted neighbor cells, so the two cells do not disagree
     // about the line between them (as Excel's own UI does).
-    let edges: [(&str, &str, i64, i64); 4] = [
-        ("top", "bottom", 0, -1),
-        ("bottom", "top", 0, 1),
-        ("left", "right", -1, 0),
-        ("right", "left", 1, 0),
-    ];
+    let edges: [(&str, &str, i64, i64); 4] = [("top", "bottom", 0, -1), ("bottom", "top", 0, 1), ("left", "right", -1, 0), ("right", "left", 1, 0)];
     for (side, opposite, dc, dr) in edges {
         let cells: Vec<(u32, u32)> = match side {
             "top" => (c1..=c2).map(|c| (c, r1)).collect(),
@@ -655,17 +551,13 @@ pub fn apply_style(
             _ => (r1..=r2).map(|r| (c2, r)).collect(),
         };
         for (col, row) in cells {
-            let Some(sides) = sp.sides_for(col, row, c1, r1, c2, r2) else {
-                continue;
-            };
+            let Some(sides) = sp.sides_for(col, row, c1, r1, c2, r2) else { continue };
             let Some(s) = sides.get(side) else { continue };
             let (nc, nr) = (col as i64 + dc, row as i64 + dr);
             if nc < 1 || nr < 1 {
                 continue;
             }
-            let Some(nb) = ws.cell((nc as u32, nr as u32)) else {
-                continue;
-            };
+            let Some(nb) = ws.cell((nc as u32, nr as u32)) else { continue };
             if !has_style(nb.style()) {
                 continue;
             }
@@ -693,11 +585,7 @@ fn auto_fit(b: &mut Book, sheet: &str, c1: u32, c2: u32, min_w: f64, max_w: f64)
                 if text.is_empty() {
                     continue;
                 }
-                let w = text
-                    .split('\n')
-                    .map(UnicodeWidthStr::width)
-                    .max()
-                    .unwrap_or(0);
+                let w = text.split('\n').map(UnicodeWidthStr::width).max().unwrap_or(0);
                 let fw = w as f64 * 1.1 * scale + 2.0;
                 let e = widths.entry(col).or_insert(0.0);
                 if fw > *e {
@@ -724,11 +612,7 @@ fn kv<'js>(ctx: &rquickjs::Ctx<'js>, pairs: Vec<(&str, Option<Value<'js>>)>) -> 
             if s.is_empty() || s == "#" {
                 continue;
             }
-        } else if val.as_bool() == Some(false)
-            || val.as_number() == Some(0.0)
-            || val.is_null()
-            || val.is_undefined()
-        {
+        } else if val.as_bool() == Some(false) || val.as_number() == Some(0.0) || val.is_null() || val.is_undefined() {
             continue;
         } else if let Some(obj) = val.as_object()
             && obj.keys::<String>().count() == 0
@@ -744,18 +628,12 @@ fn style_object<'js>(ctx: &rquickjs::Ctx<'js>, st: &Style, df: &(String, f64)) -
     let s = |x: String| Some(v(ctx, x));
     let font = match st.font() {
         Some(f) => {
-            let color = color_rgb(f.color())
-                .map(|c| format!("#{c}"))
-                .unwrap_or_default();
+            let color = color_rgb(f.color()).map(|c| format!("#{c}")).unwrap_or_default();
             let u = f.font_underline().val().value_string().to_string();
             let u = if u == "none" { String::new() } else { u };
             let va = f.vertical_text_alignment().val().value_string().to_string();
             let va = if va == "baseline" { String::new() } else { va };
-            let name = if f.name().is_empty() {
-                df.0.clone()
-            } else {
-                f.name().to_string()
-            };
+            let name = if f.name().is_empty() { df.0.clone() } else { f.name().to_string() };
             let size = if f.size() == 0.0 { df.1 } else { f.size() };
             Some(kv(
                 ctx,
@@ -771,10 +649,7 @@ fn style_object<'js>(ctx: &rquickjs::Ctx<'js>, st: &Style, df: &(String, f64)) -
                 ],
             )?)
         }
-        None => Some(kv(
-            ctx,
-            vec![("name", s(df.0.clone())), ("size", Some(v(ctx, df.1)))],
-        )?),
+        None => Some(kv(ctx, vec![("name", s(df.0.clone())), ("size", Some(v(ctx, df.1)))])?),
     };
     let border = match st.borders() {
         Some(b) => {
@@ -784,18 +659,8 @@ fn style_object<'js>(ctx: &rquickjs::Ctx<'js>, st: &Style, df: &(String, f64)) -
                 if style.is_empty() || style == "none" {
                     return Ok(());
                 }
-                let color = bd
-                    .color()
-                    .as_ref()
-                    .and_then(color_rgb)
-                    .unwrap_or_else(|| "000000".into());
-                pairs.push((
-                    name,
-                    Some(kv(
-                        ctx,
-                        vec![("style", s(style)), ("color", s(format!("#{color}")))],
-                    )?),
-                ));
+                let color = bd.color().as_ref().and_then(color_rgb).unwrap_or_else(|| "000000".into());
+                pairs.push((name, Some(kv(ctx, vec![("style", s(style)), ("color", s(format!("#{color}")))])?)));
                 Ok(())
             };
             side("left", b.left())?;
@@ -840,9 +705,7 @@ fn style_object<'js>(ctx: &rquickjs::Ctx<'js>, st: &Style, df: &(String, f64)) -
         fill = format!("#{c}");
     }
     let num_fmt = match st.number_format() {
-        Some(nf)
-            if nf.number_format_id() != 0 && !nf.format_code().eq_ignore_ascii_case("General") =>
-        {
+        Some(nf) if nf.number_format_id() != 0 && !nf.format_code().eq_ignore_ascii_case("General") => {
             if nf.format_code().is_empty() {
                 Some(v(ctx, nf.number_format_id() as f64))
             } else {
@@ -851,16 +714,7 @@ fn style_object<'js>(ctx: &rquickjs::Ctx<'js>, st: &Style, df: &(String, f64)) -
         }
         _ => None,
     };
-    kv(
-        ctx,
-        vec![
-            ("font", font),
-            ("fill", s(fill)),
-            ("border", border),
-            ("alignment", align),
-            ("numberFormat", num_fmt),
-        ],
-    )
+    kv(ctx, vec![("font", font), ("fill", s(fill)), ("border", border), ("alignment", align), ("numberFormat", num_fmt)])
 }
 
 pub(super) fn install(n: &N) {
@@ -868,9 +722,7 @@ pub(super) fn install(n: &N) {
     n.set("xlsxStyle", |h, a| {
         let sp = parse_style(&a.arg(3)).map_err(|e| a.throw(&e))?;
         let (sheet, r, replace) = (a.str(1), a.str(2), a.bool(4));
-        with_book(h, a, |b| {
-            apply_style(b, &sheet, &r, &sp, replace).map_err(|e| a.throw(&e))
-        })?;
+        with_book(h, a, |b| apply_style(b, &sheet, &r, &sp, replace).map_err(|e| a.throw(&e)))?;
         a.undefined()
     });
     // xlsxGetStyle(book, sheet, cell) -> the cell's style in the same shape
@@ -880,10 +732,7 @@ pub(super) fn install(n: &N) {
         with_book(h, a, |b| {
             let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
-            let st = ws
-                .cell((col, row))
-                .map(|c| c.style().clone())
-                .unwrap_or_default();
+            let st = ws.cell((col, row)).map(|c| c.style().clone()).unwrap_or_default();
             style_object(&a.ctx, &st, &b.default_font)
         })
     });
@@ -928,9 +777,7 @@ pub(super) fn install(n: &N) {
                 return Err(a.throw(&Error::msg(format!("invalid row number {row}"))));
             }
             if !(0.0..=409.0).contains(&ht) {
-                return Err(a.throw(&Error::msg(
-                    "the height of the row must be less than or equal to 409 points",
-                )));
+                return Err(a.throw(&Error::msg("the height of the row must be less than or equal to 409 points")));
             }
             let ws = b.sheet_mut(&sheet).map_err(|e| a.throw(&e))?;
             let rd = ws.row_dimension_mut(row as u32);
@@ -942,25 +789,18 @@ pub(super) fn install(n: &N) {
     });
     n.set("xlsxGetColWidth", |h, a| {
         let (sheet, col) = (a.str(1), a.str(2).to_uppercase());
-        let w = with_book(h, a, |b| {
-            xlsx::col_width(b, &sheet, &col).map_err(|e| a.throw(&e))
-        })?;
+        let w = with_book(h, a, |b| xlsx::col_width(b, &sheet, &col).map_err(|e| a.throw(&e)))?;
         a.ret(w)
     });
     // xlsxAutoFit(book, sheet, firstCol, lastCol, min, max)
     n.set("xlsxAutoFit", |h, a| {
         let (sheet, c1, c2, mn, mx) = (a.str(1), a.int(2), a.int(3), a.f64(4), a.f64(5));
-        with_book(h, a, |b| {
-            auto_fit(b, &sheet, c1.max(1) as u32, c2.max(1) as u32, mn, mx).map_err(|e| a.throw(&e))
-        })?;
+        with_book(h, a, |b| auto_fit(b, &sheet, c1.max(1) as u32, c2.max(1) as u32, mn, mx).map_err(|e| a.throw(&e)))?;
         a.undefined()
     });
     n.set("xlsxDefaultFont", |h, a| {
         let (name, size) = with_book(h, a, |b| Ok(b.default_font.clone()))?;
-        object(
-            &a.ctx,
-            vec![("name", v(&a.ctx, name)), ("size", v(&a.ctx, size))],
-        )
+        object(&a.ctx, vec![("name", v(&a.ctx, name)), ("size", v(&a.ctx, size))])
     });
     let _ = js::nullish;
 }

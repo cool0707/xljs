@@ -22,17 +22,9 @@ fn check_project(p: Option<Project>, sheets: bool) {
     assert_eq!((p.name.as_str(), p.code_page), ("VBAProject", 932));
     let want: Vec<Want> = serde_json::from_slice(&fixture("modules.json")).unwrap();
     assert_eq!(p.modules.len(), want.len());
-    let types = HashMap::from([
-        ("Module", STANDARD),
-        ("Document", DOCUMENT),
-        ("Class", CLASS),
-        ("BaseClass", FORM),
-    ]);
+    let types = HashMap::from([("Module", STANDARD), ("Document", DOCUMENT), ("Class", CLASS), ("BaseClass", FORM)]);
     for (m, w) in p.modules.iter().zip(&want) {
-        assert_eq!(
-            (m.name.as_str(), m.kind.as_str()),
-            (w.name.as_str(), types[w.kind.as_str()])
-        );
+        assert_eq!((m.name.as_str(), m.kind.as_str()), (w.name.as_str(), types[w.kind.as_str()]));
         assert_eq!(m.code, w.code, "module {}", m.name);
     }
     if sheets {
@@ -67,14 +59,8 @@ fn no_macros() {
 
 #[test]
 fn errors() {
-    assert_eq!(
-        read(b"a,b\n1,2\n").unwrap_err().key(),
-        Some("vba.unsupported")
-    );
-    assert_eq!(
-        read(&fixture("encrypted.cfb")).unwrap_err().key(),
-        Some("vba.encrypted")
-    );
+    assert_eq!(read(b"a,b\n1,2\n").unwrap_err().key(), Some("vba.unsupported"));
+    assert_eq!(read(&fixture("encrypted.cfb")).unwrap_err().key(), Some("vba.encrypted"));
     assert!(read_file("does-not-exist.xlsm").is_err());
 }
 
@@ -82,15 +68,11 @@ fn errors() {
 fn decompress_container() {
     // The example of [MS-OVBA] 3.2.3.
     let input = [
-        0x01, 0x2F, 0xB0, 0x00, 0x23, 0x61, 0x61, 0x61, 0x62, 0x63, 0x64, 0x65, 0x82, 0x66, 0x00,
-        0x70, 0x61, 0x67, 0x68, 0x69, 0x6A, 0x01, 0x38, 0x08, 0x61, 0x6B, 0x6C, 0x00, 0x30, 0x6D,
-        0x6E, 0x6F, 0x70, 0x06, 0x71, 0x02, 0x70, 0x04, 0x10, 0x72, 0x73, 0x74, 0x75, 0x76, 0x10,
-        0x77, 0x78, 0x79, 0x7A, 0x00, 0x3C,
+        0x01, 0x2F, 0xB0, 0x00, 0x23, 0x61, 0x61, 0x61, 0x62, 0x63, 0x64, 0x65, 0x82, 0x66, 0x00, 0x70, 0x61, 0x67, 0x68, 0x69,
+        0x6A, 0x01, 0x38, 0x08, 0x61, 0x6B, 0x6C, 0x00, 0x30, 0x6D, 0x6E, 0x6F, 0x70, 0x06, 0x71, 0x02, 0x70, 0x04, 0x10, 0x72,
+        0x73, 0x74, 0x75, 0x76, 0x10, 0x77, 0x78, 0x79, 0x7A, 0x00, 0x3C,
     ];
-    assert_eq!(
-        decompress(&input).unwrap(),
-        b"#aaabcdefaaaaghijaaaaaklaaamnopqaaaaaaaaaaaarstuvwxyzaaa"
-    );
+    assert_eq!(decompress(&input).unwrap(), b"#aaabcdefaaaaghijaaaaaklaaamnopqaaaaaaaaaaaarstuvwxyzaaa");
     // An uncompressed chunk.
     let raw = b"0123456789abcdef".repeat(256);
     let mut chunk = vec![0x01, 0xFF, 0x3F];
@@ -99,10 +81,7 @@ fn decompress_container() {
     // Several chunks (compressed by the Go implementation).
     let want: Vec<Want> = serde_json::from_slice(&fixture("modules.json")).unwrap();
     let long = &want.iter().find(|w| w.name == "集計").unwrap().code;
-    assert_eq!(
-        decompress(&fixture("compress.bin")).unwrap(),
-        long.as_bytes()
-    );
+    assert_eq!(decompress(&fixture("compress.bin")).unwrap(), long.as_bytes());
     for bad in [&[][..], &[0x02], &[0x01, 0x03, 0xB0, 0x01, 0x00, 0x10]] {
         assert!(decompress(bad).is_err(), "{bad:x?}");
     }
@@ -130,12 +109,7 @@ fn markdown_text() {
     // Backticks in the code get a longer fence.
     let p = Project {
         name: "P".into(),
-        modules: vec![Module {
-            name: "M".into(),
-            kind: STANDARD.into(),
-            code: "s = \"```\"\n".into(),
-            ..Default::default()
-        }],
+        modules: vec![Module { name: "M".into(), kind: STANDARD.into(), code: "s = \"```\"\n".into(), ..Default::default() }],
         ..Default::default()
     };
     assert!(super::text("a.xlsm", &p).contains("````vba\ns = \"```\"\n````\n"));

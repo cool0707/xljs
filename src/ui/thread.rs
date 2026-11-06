@@ -26,10 +26,7 @@ pub(crate) trait UiThread: Send + Sync {
 /// it (the main thread). The UI handed to script forwards every call to the
 /// calling thread, so dialogs and windows keep responding while the script
 /// computes. It returns what script returns.
-pub fn run<T: Send + 'static>(
-    u: Arc<dyn Ui>,
-    script: impl FnOnce(Arc<dyn Ui>) -> T + Send + 'static,
-) -> T {
+pub fn run<T: Send + 'static>(u: Arc<dyn Ui>, script: impl FnOnce(Arc<dyn Ui>) -> T + Send + 'static) -> T {
     let t = new_thread(&u);
     let done = Arc::new((Mutex::new(false), Condvar::new()));
     let proxy: Arc<dyn Ui> = Arc::new(Threaded { u, t: t.clone() });
@@ -103,11 +100,7 @@ impl UiThread for ChanThread {
                     if *done.0.lock().unwrap() {
                         break None;
                     }
-                    q = self
-                        .cv
-                        .wait_timeout(q, Duration::from_millis(50))
-                        .unwrap()
-                        .0;
+                    q = self.cv.wait_timeout(q, Duration::from_millis(50)).unwrap().0;
                 }
             };
             match job {
@@ -123,10 +116,7 @@ impl UiThread for ChanThread {
 }
 
 /// Runs f on the UI thread and waits for its result.
-pub(crate) fn call<T: Send + 'static>(
-    t: &Arc<dyn UiThread>,
-    f: impl FnOnce() -> T + Send + 'static,
-) -> T {
+pub(crate) fn call<T: Send + 'static>(t: &Arc<dyn UiThread>, f: impl FnOnce() -> T + Send + 'static) -> T {
     let (tx, rx) = mpsc::sync_channel(1);
     t.post(Box::new(move || {
         let _ = tx.send(f());
@@ -181,11 +171,7 @@ impl Ui for Threaded {
     fn progress(&self, o: &ProgressOptions) -> Arc<dyn Progress> {
         let o = o.clone();
         let inner = self.on(move |u| u.progress(&o));
-        Arc::new(ThreadedProgress {
-            p: inner,
-            t: self.t.clone(),
-            state: Mutex::new((None, false)),
-        })
+        Arc::new(ThreadedProgress { p: inner, t: self.t.clone(), state: Mutex::new((None, false)) })
     }
     fn show_error(&self, title: &str, message: &str) {
         let (a, b) = (title.to_string(), message.to_string());
@@ -201,10 +187,7 @@ impl Ui for Threaded {
     }
     fn open_window(&self, o: WindowOptions) -> Result<Arc<dyn Window>> {
         let w = self.on(move |u| u.open_window(o))?;
-        Ok(Arc::new(ThreadedWindow {
-            w,
-            t: self.t.clone(),
-        }))
+        Ok(Arc::new(ThreadedWindow { w, t: self.t.clone() }))
     }
     fn supports_windows(&self) -> bool {
         self.u.supports_windows()

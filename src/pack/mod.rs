@@ -77,23 +77,16 @@ pub fn read(file: &Path) -> Result<Option<Payload>> {
             return Err(corrupt());
         }
         let name = String::from_utf8_lossy(&buf[4..4 + n]).into_owned();
-        return Ok(Some(Payload {
-            name,
-            code: buf[4 + n..].to_vec(),
-            meta: None,
-            assets: None,
-        }));
+        return Ok(Some(Payload { name, code: buf[4 + n..].to_vec(), meta: None, assets: None }));
     }
     let mut zr = zip::ZipArchive::new(io::Cursor::new(buf)).map_err(|_| corrupt())?;
-    let read_entry =
-        |zr: &mut zip::ZipArchive<io::Cursor<Vec<u8>>>, name: &str| -> Result<Vec<u8>> {
-            let mut e = zr.by_name(name).map_err(|_| corrupt())?;
-            let mut data = Vec::new();
-            e.read_to_end(&mut data).map_err(|_| corrupt())?;
-            Ok(data)
-        };
-    let manifest: Manifest =
-        serde_json::from_slice(&read_entry(&mut zr, MANIFEST_NAME)?).map_err(|_| corrupt())?;
+    let read_entry = |zr: &mut zip::ZipArchive<io::Cursor<Vec<u8>>>, name: &str| -> Result<Vec<u8>> {
+        let mut e = zr.by_name(name).map_err(|_| corrupt())?;
+        let mut data = Vec::new();
+        e.read_to_end(&mut data).map_err(|_| corrupt())?;
+        Ok(data)
+    };
+    let manifest: Manifest = serde_json::from_slice(&read_entry(&mut zr, MANIFEST_NAME)?).map_err(|_| corrupt())?;
     let code = read_entry(&mut zr, CODE_NAME)?;
     let mut assets = MemAssets::new();
     let names: Vec<String> = zr.file_names().map(str::to_string).collect();
@@ -105,17 +98,8 @@ pub fn read(file: &Path) -> Result<Option<Payload>> {
             assets.insert(rest, data);
         }
     }
-    let assets: Option<Box<dyn AssetFs>> = if assets.files.is_empty() {
-        None
-    } else {
-        Some(Box::new(assets))
-    };
-    Ok(Some(Payload {
-        name: manifest.name,
-        code,
-        meta: manifest.meta,
-        assets,
-    }))
+    let assets: Option<Box<dyn AssetFs>> = if assets.files.is_empty() { None } else { Some(Box::new(assets)) };
+    Ok(Some(Payload { name: manifest.name, code, meta: manifest.meta, assets }))
 }
 
 /// The payload version and bytes, or None when the file has none.
@@ -165,15 +149,13 @@ pub fn write_from(base: &Path, out: &Path, p: &Payload) -> Result<()> {
         return Err(err!("pack.sameAsSelf", out.display()));
     }
     let mut archive = build_archive(p)?;
-    let mut src =
-        File::open(base).map_err(|e| Error::path("open", base.display().to_string(), e))?;
+    let mut src = File::open(base).map_err(|e| Error::path("open", base.display().to_string(), e))?;
     let mut size = src.metadata()?.len();
     if let Ok(Some((old, _))) = payload_size(&mut src) {
         size -= old + TRAILER_SIZE;
     }
     src.seek(SeekFrom::Start(0))?;
-    let mut dst =
-        File::create(out).map_err(|e| Error::path("open", out.display().to_string(), e))?;
+    let mut dst = File::create(out).map_err(|e| Error::path("open", out.display().to_string(), e))?;
     io::copy(&mut (&mut src).take(size), &mut dst)?;
     let n = archive.len() as u64;
     archive.extend_from_slice(&n.to_le_bytes());
@@ -189,14 +171,9 @@ pub fn write_from(base: &Path, out: &Path, p: &Payload) -> Result<()> {
 
 fn build_archive(p: &Payload) -> Result<Vec<u8>> {
     let mut zw = zip::ZipWriter::new(io::Cursor::new(Vec::new()));
-    let opts = zip::write::SimpleFileOptions::default()
-        .compression_method(zip::CompressionMethod::Deflated);
+    let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     let zerr = |e: zip::result::ZipError| Error::msg(e.to_string());
-    let manifest = serde_json::to_vec(&Manifest {
-        version: 2,
-        name: p.name.clone(),
-        meta: p.meta.clone(),
-    })?;
+    let manifest = serde_json::to_vec(&Manifest { version: 2, name: p.name.clone(), meta: p.meta.clone() })?;
     zw.start_file(MANIFEST_NAME, opts).map_err(zerr)?;
     zw.write_all(&manifest)?;
     zw.start_file(CODE_NAME, opts).map_err(zerr)?;
@@ -204,18 +181,13 @@ fn build_archive(p: &Payload) -> Result<Vec<u8>> {
     if let (Some(assets), Some(meta)) = (&p.assets, &p.meta) {
         let mut seen = std::collections::HashSet::new();
         for root in meta.asset_roots() {
-            let files = assets
-                .files(&root)
-                .map_err(|e| Error::path("open", root.clone(), e))?;
+            let files = assets.files(&root).map_err(|e| Error::path("open", root.clone(), e))?;
             for name in files {
                 if !seen.insert(name.clone()) {
                     continue;
                 }
-                let data = assets
-                    .read(&name)
-                    .map_err(|e| Error::path("open", name.clone(), e))?;
-                zw.start_file(format!("{ASSETS_DIR}/{name}"), opts)
-                    .map_err(zerr)?;
+                let data = assets.read(&name).map_err(|e| Error::path("open", name.clone(), e))?;
+                zw.start_file(format!("{ASSETS_DIR}/{name}"), opts).map_err(zerr)?;
                 zw.write_all(&data)?;
             }
         }

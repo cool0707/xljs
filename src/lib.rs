@@ -8,11 +8,11 @@ pub mod cli;
 pub mod db;
 pub mod dev;
 pub mod engine;
+pub mod pdf;
 mod error;
 pub mod i18n;
 pub mod meta;
 pub mod pack;
-pub mod pdf;
 pub mod ui;
 pub mod vba;
 

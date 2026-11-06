@@ -80,12 +80,7 @@ thread_local! {
     static SHOWN: RefCell<HashSet<usize>> = RefCell::new(HashSet::new());
 }
 
-unsafe extern "system" fn wnd_proc(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> LRESULT {
+unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_TRAY => {
             match (lparam.0 as u32) & 0xFFFF {
@@ -126,21 +121,7 @@ fn window() -> Option<HWND> {
         });
         // A hidden top-level window: message-only windows do not get every
         // notification area message.
-        let h = CreateWindowExW(
-            WS_EX_TOOLWINDOW,
-            w!("xljsNotify"),
-            w!("xljs"),
-            WS_POPUP,
-            0,
-            0,
-            0,
-            0,
-            None,
-            None,
-            Some(hinst.into()),
-            None,
-        )
-        .ok()?;
+        let h = CreateWindowExW(WS_EX_TOOLWINDOW, w!("xljsNotify"), w!("xljs"), WS_POPUP, 0, 0, 0, 0, None, None, Some(hinst.into()), None).ok()?;
         STATE.with(|s| s.borrow_mut().hwnd = Some(h));
         Some(h)
     }
@@ -164,12 +145,7 @@ fn copy_to(dst: &mut [u16], s: &str) {
 }
 
 fn base_data(hwnd: HWND) -> NOTIFYICONDATAW {
-    NOTIFYICONDATAW {
-        cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
-        hWnd: hwnd,
-        uID: ICON_ID,
-        ..Default::default()
-    }
+    NOTIFYICONDATAW { cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32, hWnd: hwnd, uID: ICON_ID, ..Default::default() }
 }
 
 /// Shows a notification of the script. Must be called on the UI thread.
@@ -183,16 +159,8 @@ pub(crate) fn show(title: &str, message: &str) {
 fn show_balloon(title: &str, message: &str) -> bool {
     let Some(hwnd) = window() else { return false };
     // A balloon without text is not shown: use the title as the text.
-    let (title, message) = if message.trim().is_empty() {
-        ("", title)
-    } else {
-        (title, message)
-    };
-    let message = if message.trim().is_empty() {
-        " "
-    } else {
-        message
-    };
+    let (title, message) = if message.trim().is_empty() { ("", title) } else { (title, message) };
+    let message = if message.trim().is_empty() { " " } else { message };
     let (big, small) = exe_icons();
     let mut d = base_data(hwnd);
     d.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_INFO | NIF_SHOWTIP;
@@ -226,12 +194,7 @@ fn show_balloon(title: &str, message: &str) -> bool {
             s.added = true;
             s.open += 1;
         });
-        SetTimer(
-            Some(hwnd),
-            REMOVE_TIMER,
-            REMOVE_AFTER.as_millis() as u32,
-            None,
-        );
+        SetTimer(Some(hwnd), REMOVE_TIMER, REMOVE_AFTER.as_millis() as u32, None);
     }
     true
 }
@@ -286,12 +249,7 @@ pub(crate) fn finish() {
             break;
         }
         unsafe {
-            MsgWaitForMultipleObjects(
-                None,
-                false,
-                (deadline - now).as_millis() as u32,
-                QS_ALLINPUT,
-            );
+            MsgWaitForMultipleObjects(None, false, (deadline - now).as_millis() as u32, QS_ALLINPUT);
             while PeekMessageW(&mut m, None, 0, 0, PM_REMOVE).as_bool() {
                 let _ = TranslateMessage(&m);
                 DispatchMessageW(&m);
@@ -325,9 +283,7 @@ pub(crate) fn app_active() -> bool {
         }
         // Windows Terminal: the console window is hidden and owned by the
         // terminal's window.
-        con == fg
-            || GetAncestor(con, GA_ROOTOWNER) == fg
-            || GetWindow(con, GW_OWNER).is_ok_and(|o| o == fg)
+        con == fg || GetAncestor(con, GA_ROOTOWNER) == fg || GetWindow(con, GW_OWNER).is_ok_and(|o| o == fg)
     }
 }
 
@@ -355,16 +311,7 @@ pub(crate) fn watch(title: &str, message: &str, tracked: bool) -> usize {
     }
     let id = unsafe { SetTimer(None, 0, WATCH_DELAY, Some(watch_proc)) };
     if id != 0 {
-        WATCHES.with(|w| {
-            w.borrow_mut().insert(
-                id,
-                Watch {
-                    title: title.to_string(),
-                    message: message.to_string(),
-                    tracked,
-                },
-            )
-        });
+        WATCHES.with(|w| w.borrow_mut().insert(id, Watch { title: title.to_string(), message: message.to_string(), tracked }));
     }
     id
 }
@@ -401,10 +348,7 @@ unsafe extern "system" fn find_top(hwnd: HWND, lparam: LPARAM) -> BOOL {
     unsafe {
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
-        if pid == GetCurrentProcessId()
-            && IsWindowVisible(hwnd).as_bool()
-            && IsWindowEnabled(hwnd).as_bool()
-        {
+        if pid == GetCurrentProcessId() && IsWindowVisible(hwnd).as_bool() && IsWindowEnabled(hwnd).as_bool() {
             *(lparam.0 as *mut Option<HWND>) = Some(hwnd);
             return false.into();
         }
@@ -442,9 +386,6 @@ mod tests {
         assert_eq!(b[7], 0);
         // A surrogate pair is not split.
         copy_to(&mut b, "abcde😀xyz");
-        assert_eq!(
-            String::from_utf16_lossy(&b[..b.iter().position(|&c| c == 0).unwrap()]),
-            "abcde…"
-        );
+        assert_eq!(String::from_utf16_lossy(&b[..b.iter().position(|&c| c == 0).unwrap()]), "abcde…");
     }
 }

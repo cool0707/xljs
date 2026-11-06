@@ -70,10 +70,7 @@ pub fn read(data: &[u8]) -> Result<Option<Project>> {
 
 fn read_zip(data: &[u8]) -> Result<Option<Project>> {
     let mut zr = zip::ZipArchive::new(Cursor::new(data)).map_err(|_| err!("vba.unsupported"))?;
-    let bin = zr
-        .file_names()
-        .find(|n| path_base(n).eq_ignore_ascii_case("vbaProject.bin"))
-        .map(str::to_string);
+    let bin = zr.file_names().find(|n| path_base(n).eq_ignore_ascii_case("vbaProject.bin")).map(str::to_string);
     let Some(bin) = bin else {
         return Ok(None);
     };
@@ -106,10 +103,8 @@ fn corrupt(s: impl std::fmt::Display) -> Error {
 
 fn read_cfb(data: &[u8], sheets: &HashMap<String, String>) -> Result<Option<Project>> {
     let mut doc = cfb::CompoundFile::open(Cursor::new(data)).map_err(corrupt)?;
-    let entries: Vec<(std::path::PathBuf, bool, String)> = doc
-        .walk()
-        .map(|e| (e.path().to_path_buf(), e.is_stream(), e.name().to_string()))
-        .collect();
+    let entries: Vec<(std::path::PathBuf, bool, String)> =
+        doc.walk().map(|e| (e.path().to_path_buf(), e.is_stream(), e.name().to_string())).collect();
     let mut streams = Vec::new();
     for (path, is_stream, name) in entries {
         if !is_stream {
@@ -120,31 +115,17 @@ fn read_cfb(data: &[u8], sheets: &HashMap<String, String>) -> Result<Option<Proj
         }
         let storages: Vec<String> = path
             .parent()
-            .map(|p| {
-                p.components()
-                    .filter_map(|c| c.as_os_str().to_str())
-                    .filter(|s| *s != "/" && *s != "\\")
-                    .map(str::to_string)
-                    .collect()
-            })
+            .map(|p| p.components().filter_map(|c| c.as_os_str().to_str()).filter(|s| *s != "/" && *s != "\\").map(str::to_string).collect())
             .unwrap_or_default();
         // Only the streams of a VBA project are needed; skip the workbook
         // itself and the forms' layouts.
-        if name != "PROJECT"
-            && !storages
-                .last()
-                .is_some_and(|s| s.eq_ignore_ascii_case("VBA"))
-        {
+        if name != "PROJECT" && !storages.last().is_some_and(|s| s.eq_ignore_ascii_case("VBA")) {
             continue;
         }
         let mut s = doc.open_stream(&path).map_err(corrupt)?;
         let mut b = Vec::new();
         s.read_to_end(&mut b).map_err(corrupt)?;
-        streams.push(Stream {
-            path: storages,
-            name,
-            data: b,
-        });
+        streams.push(Stream { path: storages, name, data: b });
     }
     // The project is the storage holding VBA/dir: the root of a
     // vbaProject.bin, _VBA_PROJECT_CUR in an .xls.
@@ -153,47 +134,26 @@ fn read_cfb(data: &[u8], sheets: &HashMap<String, String>) -> Result<Option<Proj
     };
     let root = &dir.path[..dir.path.len() - 1];
     let find = |path: &[String], name: &str| {
-        streams
-            .iter()
-            .find(|s| s.name.eq_ignore_ascii_case(name) && same_path(&s.path, path))
+        streams.iter().find(|s| s.name.eq_ignore_ascii_case(name) && same_path(&s.path, path))
     };
     let d = decompress(&dir.data).map_err(|e| corrupt(format!("dir: {e}")))?;
     let info = parse_dir(&d).map_err(|e| corrupt(format!("dir: {e}")))?;
     let dec = |b: &[u8]| decode(info.code_page, b);
-    let mut p = Project {
-        name: dec(&info.name),
-        code_page: info.code_page,
-        modules: Vec::new(),
-    };
+    let mut p = Project { name: dec(&info.name), code_page: info.code_page, modules: Vec::new() };
 
-    let types = find(root, "PROJECT")
-        .map(|s| project_types(&dec(&s.data)))
-        .unwrap_or_default();
+    let types = find(root, "PROJECT").map(|s| project_types(&dec(&s.data))).unwrap_or_default();
     let vba_path = dir.path.clone();
     for m in &info.modules {
-        let name = if m.name_unicode.is_empty() {
-            dec(&m.name)
-        } else {
-            m.name_unicode.clone()
-        };
-        let stream_name = if m.stream_unicode.is_empty() {
-            dec(&m.stream)
-        } else {
-            m.stream_unicode.clone()
-        };
+        let name = if m.name_unicode.is_empty() { dec(&m.name) } else { m.name_unicode.clone() };
+        let stream_name = if m.stream_unicode.is_empty() { dec(&m.stream) } else { m.stream_unicode.clone() };
         let Some(s) = find(&vba_path, &stream_name) else {
             return Err(err!("vba.moduleMissing", name));
         };
         if m.offset as usize > s.data.len() {
             return Err(corrupt(&name));
         }
-        let src = decompress(&s.data[m.offset as usize..])
-            .map_err(|e| corrupt(format!("{name}: {e}")))?;
-        let mut module = Module {
-            name: name.clone(),
-            code: normalize_newlines(&dec(&src)),
-            ..Default::default()
-        };
+        let src = decompress(&s.data[m.offset as usize..]).map_err(|e| corrupt(format!("{name}: {e}")))?;
+        let mut module = Module { name: name.clone(), code: normalize_newlines(&dec(&src)), ..Default::default() };
         module.kind = lookup_fold(&types, &name);
         if module.kind.is_empty() {
             module.kind = if m.procedural { STANDARD } else { CLASS }.to_string();
@@ -215,10 +175,7 @@ fn lookup_fold(m: &HashMap<String, String>, key: &str) -> String {
         return v.clone();
     }
     let lower = key.to_lowercase();
-    m.iter()
-        .find(|(k, _)| k.to_lowercase() == lower)
-        .map(|(_, v)| v.clone())
-        .unwrap_or_default()
+    m.iter().find(|(k, _)| k.to_lowercase() == lower).map(|(_, v)| v.clone()).unwrap_or_default()
 }
 
 fn normalize_newlines(s: &str) -> String {
@@ -276,11 +233,7 @@ struct DirModule {
 /// 2.3.4.2). Every record is an id, a size and that many bytes, except
 /// PROJECTVERSION whose size field (always 4) is followed by 6 bytes.
 fn parse_dir(d: &[u8]) -> Result<DirInfo, String> {
-    let mut info = DirInfo {
-        name: Vec::new(),
-        code_page: 1252,
-        modules: Vec::new(),
-    };
+    let mut info = DirInfo { name: Vec::new(), code_page: 1252, modules: Vec::new() };
     let mut cur: Option<DirModule> = None;
     let mut pos = 0;
     while pos + 6 <= d.len() {
@@ -303,10 +256,7 @@ fn parse_dir(d: &[u8]) -> Result<DirInfo, String> {
                 if let Some(m) = cur.take() {
                     info.modules.push(m);
                 }
-                cur = Some(DirModule {
-                    name: v.to_vec(),
-                    ..Default::default()
-                });
+                cur = Some(DirModule { name: v.to_vec(), ..Default::default() });
             }
             0x0047 => {
                 if let Some(m) = cur.as_mut() {
@@ -351,10 +301,7 @@ fn parse_dir(d: &[u8]) -> Result<DirInfo, String> {
 }
 
 fn utf16le(b: &[u8]) -> String {
-    let u: Vec<u16> = b
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
-        .collect();
+    let u: Vec<u16> = b.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
     String::from_utf16_lossy(&u)
 }
 
@@ -366,9 +313,7 @@ fn project_types(text: &str) -> HashMap<String, String> {
         if line.starts_with('[') {
             break;
         }
-        let Some((key, value)) = line.split_once('=') else {
-            continue;
-        };
+        let Some((key, value)) = line.split_once('=') else { continue };
         let (t, value) = match key.trim() {
             "Module" => (STANDARD, value),
             "Class" => (CLASS, value),

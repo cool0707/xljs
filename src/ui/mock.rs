@@ -47,8 +47,7 @@ impl Mock {
         if answers_path.is_empty() {
             return Mock::from_json("", log);
         }
-        let data = std::fs::read_to_string(answers_path)
-            .map_err(|e| Error::path("open", answers_path, e))?;
+        let data = std::fs::read_to_string(answers_path).map_err(|e| Error::path("open", answers_path, e))?;
         Mock::from_json(&data, log).map_err(|e| e.context(answers_path))
     }
 
@@ -59,10 +58,7 @@ impl Mock {
             let m: HashMap<String, Vec<Value>> = serde_json::from_str(doc)?;
             answers = m.into_iter().map(|(k, v)| (k, v.into())).collect();
         }
-        Ok(Mock {
-            log,
-            answers: Mutex::new(answers),
-        })
+        Ok(Mock { log, answers: Mutex::new(answers) })
     }
 
     /// A sink that writes to stderr.
@@ -138,20 +134,13 @@ impl Ui for Mock {
 
     fn save_file(&self, o: &PickerOptions) -> Option<String> {
         let v: Option<String> = self.next("showSaveFilePicker");
-        self.logf(&format!(
-            "showSaveFilePicker({}) -> {}",
-            quote(&o.suggested_name),
-            quote(v.as_deref().unwrap_or(""))
-        ));
+        self.logf(&format!("showSaveFilePicker({}) -> {}", quote(&o.suggested_name), quote(v.as_deref().unwrap_or(""))));
         v.filter(|s| !s.is_empty())
     }
 
     fn pick_directory(&self, _o: &PickerOptions) -> Option<String> {
         let v: Option<String> = self.next("showDirectoryPicker");
-        self.logf(&format!(
-            "showDirectoryPicker() -> {}",
-            quote(v.as_deref().unwrap_or(""))
-        ));
+        self.logf(&format!("showDirectoryPicker() -> {}", quote(v.as_deref().unwrap_or(""))));
         v.filter(|s| !s.is_empty())
     }
 
@@ -168,13 +157,7 @@ impl Ui for Mock {
         let pages = job.html.matches("class=\"xljs-page\"").count();
         let charts: Vec<Value> = serde_json::from_str(&job.charts).unwrap_or_default();
         let drawn = charts.iter().filter(|c| c.get("spec").is_some()).count();
-        self.logf(&format!(
-            "pdf({}, {} pages, {}/{} charts)",
-            quote(&job.path),
-            pages,
-            drawn,
-            charts.len()
-        ));
+        self.logf(&format!("pdf({}, {} pages, {}/{} charts)", quote(&job.path), pages, drawn, charts.len()));
         done(Ok(()))
     }
 
@@ -185,21 +168,12 @@ impl Ui for Mock {
             cancel_after: i64,
         }
         let cfg: Cfg = self.next("progress").unwrap_or_default();
-        self.logf(&format!(
-            "progress({}, total={}) start",
-            quote(&o.title),
-            o.total
-        ));
+        self.logf(&format!("progress({}, total={}) start", quote(&o.title), o.total));
         progress_opened();
         Arc::new(MockProgress {
             log: self.log.clone(),
             cancel_after: cfg.cancel_after,
-            st: Mutex::new(MockProgressState {
-                updates: 0,
-                done: 0,
-                total: o.total,
-                closed: false,
-            }),
+            st: Mutex::new(MockProgressState { updates: 0, done: 0, total: o.total, closed: false }),
         })
     }
 
@@ -227,32 +201,19 @@ impl Ui for Mock {
                 self.logf(&format!("form error: {}: {}", f.name, f.error));
             }
             for e in &f.cell_errors {
-                self.logf(&format!(
-                    "form error: {}: {}",
-                    f.name,
-                    super::console_form::cell_error_text(f, e)
-                ));
+                self.logf(&format!("form error: {}: {}", f.name, super::console_form::cell_error_text(f, e)));
             }
         }
         let Some(v) = self.next::<Map<String, Value>>("form") else {
             self.logf(&format!("form({}) -> null", quote(&o.title)));
             return None;
         };
-        self.logf(&format!(
-            "form({}) -> {}",
-            quote(&o.title),
-            sorted_json(&Value::Object(v.clone()))
-        ));
+        self.logf(&format!("form({}) -> {}", quote(&o.title), sorted_json(&Value::Object(v.clone()))));
         Some(v)
     }
 
     fn table(&self, o: &TableOptions) -> Option<Vec<i64>> {
-        self.logf(&format!(
-            "table({}, {} rows, {})",
-            quote(&o.title),
-            o.rows.len(),
-            quote_list(&o.columns)
-        ));
+        self.logf(&format!("table({}, {} rows, {})", quote(&o.title), o.rows.len(), quote_list(&o.columns)));
         if o.select == SELECT_NONE {
             return Some(Vec::new());
         }
@@ -288,17 +249,9 @@ impl Ui for Mock {
             self.logf(&format!("window.icon({} bytes)", o.icon.len()));
         }
         if let Some(steps) = self.next::<Vec<AppStep>>("app") {
-            return Ok(super::mock_app::AppWindow::start(
-                self.log.clone(),
-                o,
-                steps,
-            ));
+            return Ok(super::mock_app::AppWindow::start(self.log.clone(), o, steps));
         }
-        let w = Arc::new(MockWindow {
-            log: self.log.clone(),
-            o,
-            closed: Mutex::new(false),
-        });
+        let w = Arc::new(MockWindow { log: self.log.clone(), o, closed: Mutex::new(false) });
         w.close();
         Ok(w)
     }
@@ -359,10 +312,7 @@ impl Progress for MockProgress {
         }
         s.closed = true;
         progress_closed();
-        log_to(
-            &self.log,
-            &format!("progress closed at {}/{}", s.done, s.total),
-        );
+        log_to(&self.log, &format!("progress closed at {}/{}", s.done, s.total));
     }
 }
 
@@ -386,10 +336,7 @@ impl Window for MockWindow {
             }
             *c = true;
         }
-        log_to(
-            &self.log,
-            &format!("window.closed({})", quote(&self.o.title)),
-        );
+        log_to(&self.log, &format!("window.closed({})", quote(&self.o.title)));
         if let Some(f) = &self.o.on_closed {
             f();
         }

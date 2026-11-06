@@ -12,12 +12,7 @@ fn english_unchanged() {
 #[test]
 fn language_selection() {
     let _l = lock_lang("ja");
-    for (tag, want) in [
-        ("ja", "ja"),
-        ("ja-JP", "ja"),
-        ("ja_JP.UTF-8", "ja"),
-        ("EN-us", "en"),
-    ] {
+    for (tag, want) in [("ja", "ja"), ("ja-JP", "ja"), ("ja_JP.UTF-8", "ja"), ("EN-us", "en")] {
         assert!(set_language(tag) && lang() == want, "{tag}");
     }
     assert!(!set_language("xx"), "unknown language must report false");
@@ -31,15 +26,8 @@ fn language_selection() {
 fn path_error() {
     let _l = lock_lang("ja");
     let e = std::fs::File::open("/definitely/missing/file.xlsx").unwrap_err();
-    let msg = error(&crate::Error::path(
-        "open",
-        "/definitely/missing/file.xlsx",
-        e,
-    ));
-    assert!(
-        msg.contains("file.xlsx") && msg.contains("開けません") && msg.contains("見つかりません"),
-        "{msg}"
-    );
+    let msg = error(&crate::Error::path("open", "/definitely/missing/file.xlsx", e));
+    assert!(msg.contains("file.xlsx") && msg.contains("開けません") && msg.contains("見つかりません"), "{msg}");
 }
 
 /// Every locale against en.json: no unknown keys, the same placeholders.
@@ -54,15 +42,8 @@ fn locale_files() {
     };
     for (lang, loc) in locales() {
         for (k, v) in &loc.messages {
-            let base = en
-                .messages
-                .get(k)
-                .unwrap_or_else(|| panic!("{lang}.json: key {k:?} is not in en.json"));
-            assert_eq!(
-                marks(v),
-                marks(base),
-                "{lang}.json: {k:?} has different placeholders than en.json"
-            );
+            let base = en.messages.get(k).unwrap_or_else(|| panic!("{lang}.json: key {k:?} is not in en.json"));
+            assert_eq!(marks(v), marks(base), "{lang}.json: {k:?} has different placeholders than en.json");
         }
     }
 }
@@ -77,52 +58,27 @@ fn keys_used_in_source_exist() {
     for e in walkdir::WalkDir::new(root) {
         let e = e.unwrap();
         let p = e.path().to_string_lossy().to_string();
-        if !(p.ends_with(".rs") || p.ends_with(".js"))
-            || p.contains("fontawesome")
-            || p.ends_with("tests.rs")
-        {
+        if !(p.ends_with(".rs") || p.ends_with(".js")) || p.contains("fontawesome") || p.ends_with("tests.rs") {
             continue;
         }
         let src = std::fs::read_to_string(e.path()).unwrap_or_default();
         for c in re.captures_iter(&src) {
             found += 1;
-            assert!(
-                has_key(&c[1]),
-                "{p}: key {:?} is not defined in locales/en.json",
-                &c[1]
-            );
+            assert!(has_key(&c[1]), "{p}: key {:?} is not defined in locales/en.json", &c[1]);
         }
     }
-    assert!(
-        found >= 20,
-        "only {found} keys found; is the pattern still right?"
-    );
+    assert!(found >= 20, "only {found} keys found; is the pattern still right?");
 }
 
 #[test]
 fn text_japanese() {
     let _l = lock_lang("ja");
     for (input, want) in [
-        (
-            "TypeError: cannot read property 'foo' of undefined",
-            "TypeError: undefined のプロパティ 'foo' は読み取れません",
-        ),
-        (
-            "ReferenceError: hoge is not defined",
-            "ReferenceError: hoge は定義されていません",
-        ),
-        (
-            "TypeError: obj.run is not a function",
-            "TypeError: obj.run は関数ではありません",
-        ),
-        (
-            r#"a.js:1:4: Could not resolve "./x.js""#,
-            r#"a.js:1:4: "./x.js" が見つかりません（import のパスを確認してください）"#,
-        ),
-        (
-            "a.js:2:1: Expected `)` but found `EOF`",
-            "a.js:2:1: \")\" が必要ですが、ファイルが終わっています（括弧の閉じ忘れなど）",
-        ),
+        ("TypeError: cannot read property 'foo' of undefined", "TypeError: undefined のプロパティ 'foo' は読み取れません"),
+        ("ReferenceError: hoge is not defined", "ReferenceError: hoge は定義されていません"),
+        ("TypeError: obj.run is not a function", "TypeError: obj.run は関数ではありません"),
+        (r#"a.js:1:4: Could not resolve "./x.js""#, r#"a.js:1:4: "./x.js" が見つかりません（import のパスを確認してください）"#),
+        ("a.js:2:1: Expected `)` but found `EOF`", "a.js:2:1: \")\" が必要ですが、ファイルが終わっています（括弧の閉じ忘れなど）"),
         ("sheet 売上 does not exist", r#"シート "売上" はありません"#),
         ("plain message", "plain message"),
     ] {

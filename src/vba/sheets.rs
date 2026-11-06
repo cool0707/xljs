@@ -9,10 +9,7 @@ use quick_xml::events::Event;
 /// `<sheetPr codeName>` of each sheet. Missing parts give an empty map.
 pub fn sheet_code_names<R: Read + Seek>(zr: &mut zip::ZipArchive<R>) -> HashMap<String, String> {
     let mut out = HashMap::new();
-    let names: HashMap<String, String> = zr
-        .file_names()
-        .map(|n| (n.to_lowercase(), n.to_string()))
-        .collect();
+    let names: HashMap<String, String> = zr.file_names().map(|n| (n.to_lowercase(), n.to_string())).collect();
     let mut open = |name: &str| -> Option<Vec<u8>> {
         let real = names.get(&name.to_lowercase())?;
         let mut f = zr.by_name(real).ok()?;
@@ -25,10 +22,7 @@ pub fn sheet_code_names<R: Read + Seek>(zr: &mut zip::ZipArchive<R>) -> HashMap<
         return out;
     };
     let mut targets = HashMap::new();
-    for (id, target) in elements(&rels, b"Relationship", &["Id", "Target"])
-        .into_iter()
-        .map(|v| (v[0].clone(), v[1].clone()))
-    {
+    for (id, target) in elements(&rels, b"Relationship", &["Id", "Target"]).into_iter().map(|v| (v[0].clone(), v[1].clone())) {
         let t = match target.strip_prefix('/') {
             Some(t) => t.to_string(),
             None => crate::meta::clean_path(&format!("xl/{target}")),
@@ -36,9 +30,7 @@ pub fn sheet_code_names<R: Read + Seek>(zr: &mut zip::ZipArchive<R>) -> HashMap<
         targets.insert(id, t);
     }
     for v in elements(&wb, b"sheet", &["name", "r:id"]) {
-        let Some(target) = targets.get(&v[1]) else {
-            continue;
-        };
+        let Some(target) = targets.get(&v[1]) else { continue };
         if let Some(data) = open(target) {
             let code = sheet_code_name(&data);
             if !code.is_empty() {
@@ -68,10 +60,7 @@ fn elements(xml: &[u8], local: &[u8], attrs: &[&str]) -> Vec<Vec<String>> {
                             key == *want
                         };
                         if hit {
-                            vals[i] = a
-                                .unescape_value()
-                                .map(|v| v.into_owned())
-                                .unwrap_or_default();
+                            vals[i] = a.unescape_value().map(|v| v.into_owned()).unwrap_or_default();
                         }
                     }
                 }
@@ -102,10 +91,7 @@ fn sheet_code_name(xml: &[u8]) -> String {
                     }
                     for a in e.attributes().flatten() {
                         if a.key.local_name().as_ref() == b"codeName" {
-                            return a
-                                .unescape_value()
-                                .map(|v| v.into_owned())
-                                .unwrap_or_default();
+                            return a.unescape_value().map(|v| v.into_owned()).unwrap_or_default();
                         }
                     }
                     return String::new();

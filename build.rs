@@ -27,17 +27,8 @@ fn embed(out: &mut String, name: &str, dir: &str) {
     println!("cargo:rerun-if-changed={dir}");
     writeln!(out, "pub static {name}: &[(&str, &[u8])] = &[").unwrap();
     for f in files(&root) {
-        let rel = f
-            .strip_prefix(&root)
-            .unwrap()
-            .to_string_lossy()
-            .replace('\\', "/");
-        writeln!(
-            out,
-            "    ({rel:?}, include_bytes!({:?})),",
-            f.to_string_lossy()
-        )
-        .unwrap();
+        let rel = f.strip_prefix(&root).unwrap().to_string_lossy().replace('\\', "/");
+        writeln!(out, "    ({rel:?}, include_bytes!({:?})),", f.to_string_lossy()).unwrap();
     }
     writeln!(out, "];").unwrap();
 }
@@ -54,8 +45,6 @@ fn main() {
         println!("cargo:rerun-if-changed=src/cli/xljs.rc");
         println!("cargo:rerun-if-changed=src/cli/xljs.manifest");
         println!("cargo:rerun-if-changed=assets/xljs.ico");
-        embed_resource::compile("src/cli/xljs.rc", embed_resource::NONE)
-            .manifest_required()
-            .unwrap();
+        embed_resource::compile("src/cli/xljs.rc", embed_resource::NONE).manifest_required().unwrap();
     }
 }

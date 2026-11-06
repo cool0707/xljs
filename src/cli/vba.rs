@@ -11,21 +11,12 @@ pub(crate) const MACRO_PATTERNS: &[&str] = &["*.xlsm", "*.xlsb", "*.xlam", "*.xl
 /// Whether path is an Excel workbook (with or without macros) rather than a
 /// script.
 pub(crate) fn is_workbook(path: &str) -> bool {
-    let ext = Path::new(path)
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
-    matches!(
-        ext.as_str(),
-        "xlsm" | "xlsb" | "xlam" | "xltm" | "xls" | "xla" | "xlt" | "xlsx" | "xltx"
-    )
+    let ext = Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    matches!(ext.as_str(), "xlsm" | "xlsb" | "xlam" | "xltm" | "xls" | "xla" | "xlt" | "xlsx" | "xltx")
 }
 
 fn base(p: &str) -> String {
-    Path::new(p)
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default()
+    Path::new(p).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 /// The VBA code of the workbooks as one text and the number of modules.
@@ -46,13 +37,8 @@ pub(crate) fn vba_text(books: &[String]) -> Result<(String, usize)> {
 /// The default text file for the workbook: 売上.xlsm → 売上_VBA.txt.
 pub(crate) fn vba_output(book: &str) -> String {
     let p = Path::new(book);
-    let stem = p
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    p.with_file_name(format!("{stem}_VBA.txt"))
-        .to_string_lossy()
-        .into_owned()
+    let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    p.with_file_name(format!("{stem}_VBA.txt")).to_string_lossy().into_owned()
 }
 
 /// xljs vba <book>... [-o out.txt]: the VBA code of the workbooks in one
@@ -97,18 +83,9 @@ pub(crate) fn drop_vba(con: &ConsoleState, u: Arc<dyn Ui>, books: &[String]) -> 
         let abs = std::path::absolute(&out).unwrap_or_else(|_| out.clone().into());
         let p = u.save_file(&PickerOptions {
             title: t!("cli.vbaSaveTitle"),
-            start_in: abs
-                .parent()
-                .map(|p| p.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            suggested_name: abs
-                .file_name()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            filters: vec![FileFilter {
-                description: t!("cli.vbaText"),
-                patterns: vec!["*.txt".into()],
-            }],
+            start_in: abs.parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default(),
+            suggested_name: abs.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
+            filters: vec![FileFilter { description: t!("cli.vbaText"), patterns: vec!["*.txt".into()] }],
             ..Default::default()
         });
         let Some(p) = p else { return 0 };

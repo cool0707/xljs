@@ -69,16 +69,10 @@ pub fn value_to_json(v: &Value) -> J {
     match v {
         Value::Null => J::Null,
         Value::Integer(i) => J::from(*i),
-        Value::Real(f) if f.is_finite() => serde_json::Number::from_f64(*f)
-            .map(J::Number)
-            .unwrap_or(J::Null),
-        Value::Real(f) => {
-            serde_json::json!({"r": if f.is_nan() { "nan" } else if *f > 0.0 { "inf" } else { "-inf" }})
-        }
+        Value::Real(f) if f.is_finite() => serde_json::Number::from_f64(*f).map(J::Number).unwrap_or(J::Null),
+        Value::Real(f) => serde_json::json!({"r": if f.is_nan() { "nan" } else if *f > 0.0 { "inf" } else { "-inf" }}),
         Value::Text(s) => J::String(s.clone()),
-        Value::Blob(b) => {
-            serde_json::json!({"b": base64::engine::general_purpose::STANDARD.encode(b)})
-        }
+        Value::Blob(b) => serde_json::json!({"b": base64::engine::general_purpose::STANDARD.encode(b)}),
     }
 }
 
@@ -93,11 +87,7 @@ pub fn json_to_value(j: &J) -> Value {
         J::String(s) => Value::Text(s.clone()),
         J::Object(o) => {
             if let Some(b) = o.get("b").and_then(J::as_str) {
-                return Value::Blob(
-                    base64::engine::general_purpose::STANDARD
-                        .decode(b)
-                        .unwrap_or_default(),
-                );
+                return Value::Blob(base64::engine::general_purpose::STANDARD.decode(b).unwrap_or_default());
             }
             match o.get("r").and_then(J::as_str) {
                 Some("inf") => Value::Real(f64::INFINITY),
@@ -111,16 +101,8 @@ pub fn json_to_value(j: &J) -> Value {
 
 /// Who is running this: (user, computer).
 pub fn whoami() -> (String, String) {
-    let get = |names: &[&str]| {
-        names
-            .iter()
-            .find_map(|n| std::env::var(n).ok().filter(|s| !s.is_empty()))
-            .unwrap_or_default()
-    };
-    (
-        get(&["USERNAME", "USER"]),
-        get(&["COMPUTERNAME", "HOSTNAME"]),
-    )
+    let get = |names: &[&str]| names.iter().find_map(|n| std::env::var(n).ok().filter(|s| !s.is_empty())).unwrap_or_default();
+    (get(&["USERNAME", "USER"]), get(&["COMPUTERNAME", "HOSTNAME"]))
 }
 
 fn now_text() -> String {
@@ -129,10 +111,7 @@ fn now_text() -> String {
 
 impl Sidecar {
     pub fn path_for(db: &Path) -> PathBuf {
-        let name = db
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let name = db.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         db.with_file_name(format!("{name}{SUFFIX}"))
     }
 
@@ -151,15 +130,11 @@ impl Sidecar {
         }
         let readme = s.dir.join("README.txt");
         if !readme.exists() {
-            let name = db
-                .file_name()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default();
+            let name = db.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
             let text = t!("sqlite.readme", name).replace('\n', "\r\n");
             let _ = std::fs::write(&readme, text);
         }
-        lock::ensure(&s.lock_path())
-            .map_err(|e| Error::path("open", s.lock_path().to_string_lossy(), e))?;
+        lock::ensure(&s.lock_path()).map_err(|e| Error::path("open", s.lock_path().to_string_lossy(), e))?;
         Ok(s)
     }
 
@@ -185,14 +160,9 @@ impl Sidecar {
                 }
                 Ok(l)
             }
-            Err(LockError::Io(e)) => {
-                Err(Error::path("open", self.lock_path().to_string_lossy(), e))
-            }
+            Err(LockError::Io(e)) => Err(Error::path("open", self.lock_path().to_string_lossy(), e)),
             Err(LockError::Busy) => {
-                let who = self
-                    .owner()
-                    .map(|(u, c, time)| t!("sqlite.lastWriter", u, c, time))
-                    .unwrap_or_default();
+                let who = self.owner().map(|(u, c, time)| t!("sqlite.lastWriter", u, c, time)).unwrap_or_default();
                 Err(err!("sqlite.busy", db.to_string_lossy(), who))
             }
         }
@@ -221,11 +191,7 @@ impl Sidecar {
                 let name = e.file_name().to_string_lossy().into_owned();
                 let rest = name.strip_prefix("snap-")?.strip_suffix(".db")?;
                 let (generation, time) = rest.split_once('-')?;
-                Some(Snap {
-                    generation: generation.parse().ok()?,
-                    time: NaiveDateTime::parse_from_str(time, STAMP).ok()?,
-                    path: e.path(),
-                })
+                Some(Snap { generation: generation.parse().ok()?, time: NaiveDateTime::parse_from_str(time, STAMP).ok()?, path: e.path() })
             })
             .collect();
         v.sort_by_key(|s| s.generation);
@@ -240,11 +206,7 @@ impl Sidecar {
             .flatten()
             .filter_map(|e| {
                 let name = e.file_name().to_string_lossy().into_owned();
-                let generation = name
-                    .strip_prefix("log-")?
-                    .strip_suffix(".jsonl")?
-                    .parse()
-                    .ok()?;
+                let generation = name.strip_prefix("log-")?.strip_suffix(".jsonl")?.parse().ok()?;
                 Some((generation, e.path()))
             })
             .collect();
@@ -253,20 +215,14 @@ impl Sidecar {
     }
 
     fn log_path(&self, generation: u64) -> PathBuf {
-        self.backups_dir()
-            .join(format!("log-{generation:06}.jsonl"))
+        self.backups_dir().join(format!("log-{generation:06}.jsonl"))
     }
 
     /// Takes a backup of the database open in conn when there is none yet
     /// or the newest is older than interval. The database is checked
     /// first: a damaged one is not backed up (the error says it is
     /// damaged). The caller holds the write lock.
-    pub fn maybe_snapshot(
-        &self,
-        conn: &rusqlite::Connection,
-        interval: Duration,
-        keep: usize,
-    ) -> Result<()> {
+    pub fn maybe_snapshot(&self, conn: &rusqlite::Connection, interval: Duration, keep: usize) -> Result<()> {
         let newest = self.snapshots().pop();
         if let Some(s) = &newest {
             let age = Local::now().naive_local() - s.time;
@@ -286,33 +242,16 @@ impl Sidecar {
     /// starts empty, and removes the backups and logs beyond keep.
     pub fn snapshot(&self, conn: &rusqlite::Connection, keep: usize) -> Result<Snap> {
         let dir = self.backups_dir();
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| Error::path("mkdir", dir.to_string_lossy(), e))?;
-        let generation = self
-            .snapshots()
-            .last()
-            .map(|s| s.generation)
-            .max(self.logs().last().map(|l| l.0))
-            .unwrap_or(0)
-            + 1;
+        std::fs::create_dir_all(&dir).map_err(|e| Error::path("mkdir", dir.to_string_lossy(), e))?;
+        let generation = self.snapshots().last().map(|s| s.generation).max(self.logs().last().map(|l| l.0)).unwrap_or(0) + 1;
         let now = Local::now().naive_local();
         let tmp = dir.join(format!("snap-{generation:06}.tmp"));
         let _ = std::fs::remove_file(&tmp);
-        conn.backup(
-            rusqlite::MAIN_DB,
-            &tmp,
-            None::<fn(rusqlite::backup::Progress)>,
-        )
-        .map_err(super::sql_error)?;
+        conn.backup(rusqlite::MAIN_DB, &tmp, None::<fn(rusqlite::backup::Progress)>).map_err(super::sql_error)?;
         let path = dir.join(format!("snap-{generation:06}-{}.db", now.format(STAMP)));
-        std::fs::rename(&tmp, &path)
-            .map_err(|e| Error::path("rename", tmp.to_string_lossy(), e))?;
+        std::fs::rename(&tmp, &path).map_err(|e| Error::path("rename", tmp.to_string_lossy(), e))?;
         self.prune(keep.max(1));
-        Ok(Snap {
-            generation,
-            time: now,
-            path,
-        })
+        Ok(Snap { generation, time: now, path })
     }
 
     /// Keeps the newest keep backups and the logs from the oldest of them on.
@@ -335,29 +274,16 @@ impl Sidecar {
 
     /// Appends a committed transaction to the log of the newest backup.
     pub fn append_log(&self, stmts: Vec<LogStmt>) -> Result<()> {
-        let Some(generation) = self.snapshots().last().map(|s| s.generation) else {
-            return Ok(());
-        };
+        let Some(generation) = self.snapshots().last().map(|s| s.generation) else { return Ok(()) };
         let (user, computer) = whoami();
-        let e = LogEntry {
-            time: now_text(),
-            user,
-            computer,
-            stmts,
-        };
+        let e = LogEntry { time: now_text(), user, computer, stmts };
         let mut line = serde_json::to_string(&e)?;
         line.push('\n');
         let p = self.log_path(generation);
-        let mut f = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&p)
-            .map_err(|e| Error::path("open", p.to_string_lossy(), e))?;
+        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(&p).map_err(|e| Error::path("open", p.to_string_lossy(), e))?;
         // One write for the whole line, flushed through to the server.
-        f.write_all(line.as_bytes())
-            .map_err(|e| Error::path("write", p.to_string_lossy(), e))?;
-        f.sync_data()
-            .map_err(|e| Error::path("write", p.to_string_lossy(), e))?;
+        f.write_all(line.as_bytes()).map_err(|e| Error::path("write", p.to_string_lossy(), e))?;
+        f.sync_data().map_err(|e| Error::path("write", p.to_string_lossy(), e))?;
         Ok(())
     }
 }

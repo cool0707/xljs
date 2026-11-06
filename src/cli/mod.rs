@@ -2,8 +2,8 @@
 //! version, help), the start screen, and running scripts.
 
 mod console;
-mod db;
 mod launch;
+mod db;
 mod vba;
 
 use std::path::Path;
@@ -19,9 +19,7 @@ pub use console::ConsoleState;
 
 /// The version (set by the build: XLJS_VERSION, else the crate version).
 pub fn version() -> String {
-    option_env!("XLJS_VERSION")
-        .map(str::to_string)
-        .unwrap_or_else(|| format!("v{}", env!("CARGO_PKG_VERSION")))
+    option_env!("XLJS_VERSION").map(str::to_string).unwrap_or_else(|| format!("v{}", env!("CARGO_PKG_VERSION")))
 }
 
 fn usage() -> String {
@@ -66,9 +64,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>)> {
                 return Ok(v.clone());
             }
             *i += 1;
-            args.get(*i)
-                .cloned()
-                .ok_or_else(|| Error::msg(format!("flag needs an argument: -{name}")))
+            args.get(*i).cloned().ok_or_else(|| Error::msg(format!("flag needs an argument: -{name}")))
         };
         match name {
             "ui" => f.ui = Some(take(&mut i)?),
@@ -80,11 +76,7 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>)> {
             "stop-key" => f.stop_key = Some(take(&mut i)?),
             "help" | "h" => f.help = true,
             "version" | "v" => f.version = true,
-            _ => {
-                return Err(Error::msg(format!(
-                    "flag provided but not defined: -{name}"
-                )));
-            }
+            _ => return Err(Error::msg(format!("flag provided but not defined: -{name}"))),
         }
         i += 1;
     }
@@ -122,14 +114,7 @@ fn run(con: &ConsoleState, args: Vec<String>) -> i32 {
             Some(a) => Arc::from(a),
             None => Arc::new(m.asset_fs(&dir)),
         };
-        let mut o = Options {
-            script_path: script,
-            code: Some(payload.code),
-            args,
-            meta: Some(m),
-            assets: Some(assets),
-            ..Default::default()
-        };
+        let mut o = Options { script_path: script, code: Some(payload.code), args, meta: Some(m), assets: Some(assets), ..Default::default() };
         use_script_dir(con, &mut o);
         if let Err(e) = set_debug(&mut o, &env("XLJS_DEBUG"), &*u) {
             return con.fail(None, &e);
@@ -151,10 +136,7 @@ fn run(con: &ConsoleState, args: Vec<String>) -> i32 {
     if let Some(l) = &flags.lang
         && !i18n::set_language(l)
     {
-        return con.fail(
-            None,
-            &err!("cli.unknownLang", l, i18n::available().join(", ")),
-        );
+        return con.fail(None, &err!("cli.unknownLang", l, i18n::available().join(", ")));
     }
     if flags.version {
         println!("xljs {}", version());
@@ -202,12 +184,7 @@ fn run(con: &ConsoleState, args: Vec<String>) -> i32 {
             eprintln!("{}", t!("cli.usageDev"));
             return 2;
         }
-        return dev(
-            con,
-            u,
-            args.first().cloned().unwrap_or_default(),
-            explicit_lang,
-        );
+        return dev(con, u, args.first().cloned().unwrap_or_default(), explicit_lang);
     }
     if rest.is_empty() {
         // Double-clicked without a script: ask what to do.
@@ -258,14 +235,7 @@ fn install_interrupt() {
 
 /// Runs the script rest[0] with the arguments rest[1..], or writes out the
 /// VBA code when workbooks are given instead of a script.
-fn start(
-    con: &ConsoleState,
-    u: Arc<dyn Ui>,
-    rest: Vec<String>,
-    explicit_lang: bool,
-    debug: &str,
-    stop: &Stop,
-) -> i32 {
+fn start(con: &ConsoleState, u: Arc<dyn Ui>, rest: Vec<String>, explicit_lang: bool, debug: &str, stop: &Stop) -> i32 {
     if vba::is_workbook(&rest[0]) {
         return vba::drop_vba(con, u, &rest);
     }
@@ -277,12 +247,7 @@ fn start(
         Err(e) => return con.fail(Some(&*u), &e),
     };
     apply_lang(&m, explicit_lang);
-    let mut o = Options {
-        script_path: rest[0].clone(),
-        args: rest[1..].to_vec(),
-        meta: Some(m),
-        ..Default::default()
-    };
+    let mut o = Options { script_path: rest[0].clone(), args: rest[1..].to_vec(), meta: Some(m), ..Default::default() };
     use_script_dir(con, &mut o);
     if let Err(e) = set_debug(&mut o, debug, &*u) {
         return con.fail(Some(&*u), &e);
@@ -309,9 +274,7 @@ fn use_script_dir(con: &ConsoleState, o: &mut Options) {
             *a = abs.to_string_lossy().into_owned();
         }
     }
-    let Ok(abs) = std::path::absolute(&o.script_path) else {
-        return;
-    };
+    let Ok(abs) = std::path::absolute(&o.script_path) else { return };
     o.script_path = abs.to_string_lossy().into_owned();
     if let Some(d) = abs.parent() {
         let _ = std::env::set_current_dir(d);
@@ -368,9 +331,7 @@ fn parse_stop_key(value: &str, native: bool) -> Result<Option<watchdog::StopKey>
         "on" | "true" | "yes" => watchdog::DEFAULT_KEY,
         k => k,
     };
-    watchdog::StopKey::parse(key)
-        .map(Some)
-        .ok_or_else(|| err!("cli.unknownStopKey", value))
+    watchdog::StopKey::parse(key).map(Some).ok_or_else(|| err!("cli.unknownStopKey", value))
 }
 
 /// How the user can stop a running script (--watchdog, --stop-key).
@@ -382,10 +343,7 @@ pub(super) struct Stop {
 
 impl Stop {
     pub fn from_env() -> Stop {
-        Stop {
-            watchdog: env("XLJS_WATCHDOG"),
-            key: env("XLJS_STOP_KEY"),
-        }
+        Stop { watchdog: env("XLJS_WATCHDOG"), key: env("XLJS_STOP_KEY") }
     }
 }
 
@@ -412,10 +370,7 @@ fn apply_lang(m: &Meta, explicit: bool) {
         return;
     }
     if !i18n::set_language(&m.lang) {
-        eprintln!(
-            "{}",
-            t!("cli.unknownMetaLang", m.lang, i18n::available().join(", "))
-        );
+        eprintln!("{}", t!("cli.unknownMetaLang", m.lang, i18n::available().join(", ")));
     }
 }
 
@@ -430,10 +385,7 @@ fn choose_ui(mode: &str, answers: &str) -> Result<Arc<dyn Ui>> {
         }
         "native" => ui::new_native(),
         "console" | "cui" | "cli" => Ok(Arc::new(ui::Console::new())),
-        "mock" => Ok(Arc::new(ui::Mock::new(
-            answers,
-            Some(ui::Mock::stderr_log()),
-        )?)),
+        "mock" => Ok(Arc::new(ui::Mock::new(answers, Some(ui::Mock::stderr_log()))?)),
         _ => Err(err!("cli.unknownUI", mode)),
     }
 }
@@ -476,11 +428,7 @@ fn split_out(args: &[String]) -> Result<(Option<String>, Vec<String>)> {
         let a = &args[i];
         if a == "-o" || a == "--o" {
             i += 1;
-            out = Some(
-                args.get(i)
-                    .cloned()
-                    .ok_or_else(|| Error::msg("flag needs an argument: -o"))?,
-            );
+            out = Some(args.get(i).cloned().ok_or_else(|| Error::msg("flag needs an argument: -o"))?);
         } else if let Some(v) = a.strip_prefix("-o=").or_else(|| a.strip_prefix("--o=")) {
             out = Some(v.to_string());
         } else if a.starts_with('-') && a.len() > 1 {
@@ -515,39 +463,19 @@ fn cmd_pack(con: &ConsoleState, args: &[String]) -> i32 {
 /// outside Windows), next to it.
 pub(crate) fn pack_output(script: &str) -> String {
     let p = Path::new(script);
-    let base = p
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let base = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     let ext = if cfg!(windows) { ".exe" } else { "" };
-    p.with_file_name(format!("{base}{ext}"))
-        .to_string_lossy()
-        .into_owned()
+    p.with_file_name(format!("{base}{ext}")).to_string_lossy().into_owned()
 }
 
 /// Writes out: this exe with the bundled script embedded.
 pub(crate) fn pack_script(script: &str, out: &str) -> Result<()> {
     let m = read_meta(script)?;
     let code = engine::bundle(script)?;
-    let dir = Path::new(script)
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_default();
-    let dir = if dir.as_os_str().is_empty() {
-        std::path::PathBuf::from(".")
-    } else {
-        dir
-    };
-    let name = Path::new(script)
-        .file_name()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let p = pack::Payload {
-        name,
-        code,
-        assets: Some(Box::new(m.asset_fs(&dir))),
-        meta: Some(m),
-    };
+    let dir = Path::new(script).parent().map(Path::to_path_buf).unwrap_or_default();
+    let dir = if dir.as_os_str().is_empty() { std::path::PathBuf::from(".") } else { dir };
+    let name = Path::new(script).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let p = pack::Payload { name, code, assets: Some(Box::new(m.asset_fs(&dir))), meta: Some(m) };
     pack::write(Path::new(out), &p)
 }
 
@@ -580,10 +508,7 @@ fn cmd_init(con: &ConsoleState, args: &[String]) -> i32 {
     let jsconfig = Path::new(&dir).join("jsconfig.json");
     if !jsconfig.exists() {
         if let Err(e) = std::fs::write(&jsconfig, JSCONFIG) {
-            return con.fail(
-                None,
-                &Error::path("open", jsconfig.display().to_string(), e),
-            );
+            return con.fail(None, &Error::path("open", jsconfig.display().to_string(), e));
         }
         println!("{}", t!("cli.created", jsconfig.display()));
     }

@@ -32,16 +32,10 @@ fn id_of(a: &A, i: usize) -> rquickjs::Result<u64> {
 }
 
 /// Runs f with the open document of the handle (argument 0).
-fn with_doc<'js, T>(
-    h: &Host,
-    a: &A<'js>,
-    f: impl FnOnce(&mut PdfDoc) -> rquickjs::Result<T>,
-) -> rquickjs::Result<T> {
+fn with_doc<'js, T>(h: &Host, a: &A<'js>, f: impl FnOnce(&mut PdfDoc) -> rquickjs::Result<T>) -> rquickjs::Result<T> {
     let id = id_of(a, 0)?;
     let mut docs = h.pdfs.borrow_mut();
-    let Some(d) = docs.get_mut(&id) else {
-        return Err(a.throw(&err!("pdfdoc.invalidHandle")));
-    };
+    let Some(d) = docs.get_mut(&id) else { return Err(a.throw(&err!("pdfdoc.invalidHandle"))) };
     if d.closed {
         return Err(a.throw(&err!("pdfdoc.closed")));
     }
@@ -57,11 +51,7 @@ fn indexes(a: &A, i: usize, count: usize) -> rquickjs::Result<Vec<usize>> {
             if n >= 0.0 && n < count as f64 && n.fract() == 0.0 {
                 Ok(n as usize)
             } else {
-                Err(a.throw(&err!(
-                    "pdfdoc.badPage",
-                    ((n + 1.0) as i64).to_string(),
-                    count.to_string()
-                )))
+                Err(a.throw(&err!("pdfdoc.badPage", ((n + 1.0) as i64).to_string(), count.to_string())))
             }
         })
         .collect()
@@ -76,10 +66,8 @@ fn closed() -> PdfDoc {
 pub(super) fn install(n: &N) {
     n.set("pdfOpen", |h, a| {
         let path = a.str(0);
-        let data =
-            std::fs::read(&path).map_err(|e| a.throw(&Error::path("open", path.clone(), e)))?;
-        let d = PdfDoc::open(&data, &a.str(1), path.clone())
-            .map_err(|e| super::throw_path(&a.ctx, &path, e))?;
+        let data = std::fs::read(&path).map_err(|e| a.throw(&Error::path("open", path.clone(), e)))?;
+        let d = PdfDoc::open(&data, &a.str(1), path.clone()).map_err(|e| super::throw_path(&a.ctx, &path, e))?;
         track(h, &a.ctx, d)
     });
     n.set("pdfOpenBytes", |h, a| {
@@ -87,14 +75,12 @@ pub(super) fn install(n: &N) {
         track(h, &a.ctx, d)
     });
     // The size (mm, portrait) of a paper name ("A4", "B5", "Letter"), or null.
-    n.set("pdfPaperSize", |_, a| {
-        match super::xlsx_print::paper_code(&a.str(0)) {
-            Some(c) => {
-                let (w, h) = super::xlsx_print::paper_size(c);
-                a.ret(vec![w.min(h), w.max(h)])
-            }
-            None => a.null(),
+    n.set("pdfPaperSize", |_, a| match super::xlsx_print::paper_code(&a.str(0)) {
+        Some(c) => {
+            let (w, h) = super::xlsx_print::paper_size(c);
+            a.ret(vec![w.min(h), w.max(h)])
         }
+        None => a.null(),
     });
     n.set("pdfCreate", |h, a| track(h, &a.ctx, PdfDoc::create()));
     n.set("pdfPath", |h, a| {
@@ -132,9 +118,7 @@ pub(super) fn install(n: &N) {
             let ids: Vec<_> = idx.iter().map(|&i| d.pages[i]).collect();
             d.insert_pages(at, &copy, &ids);
         } else {
-            let [Some(d), Some(s)] = docs.get_disjoint_mut([&dst, &src]) else {
-                unreachable!()
-            };
+            let [Some(d), Some(s)] = docs.get_disjoint_mut([&dst, &src]) else { unreachable!() };
             let idx = indexes(a, 3, s.pages.len())?;
             // Text added to src goes along with its pages.
             s.finish().map_err(|e| a.throw(&e))?;
@@ -171,8 +155,7 @@ pub(super) fn install(n: &N) {
     // pdfAddText(h, page index, text, options JSON)
     n.set("pdfAddText", |h, a| {
         let text = a.str(2);
-        let o: TextOptions =
-            serde_json::from_str(&a.str(3)).map_err(|e| a.throw(&Error::msg(e.to_string())))?;
+        let o: TextOptions = serde_json::from_str(&a.str(3)).map_err(|e| a.throw(&Error::msg(e.to_string())))?;
         with_doc(h, a, |d| {
             let idx = indexes(a, 1, d.pages.len())?;
             for i in idx {
@@ -192,8 +175,7 @@ pub(super) fn install(n: &N) {
                 return Err(a.throw(&err!("pdfdoc.noDestination")));
             }
             let data = d.to_bytes().map_err(|e| a.throw(&e))?;
-            std::fs::write(&path, data)
-                .map_err(|e| a.throw(&Error::path("open", path.clone(), e)))?;
+            std::fs::write(&path, data).map_err(|e| a.throw(&Error::path("open", path.clone(), e)))?;
             d.path = path.clone();
             Ok(())
         })?;

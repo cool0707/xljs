@@ -46,9 +46,7 @@ pub struct RawPrint {
 /// Reads the page setup of every sheet of an xlsx file (see RawPrint).
 pub fn collect_raw(data: &[u8]) -> HashMap<String, RawPrint> {
     let mut out = HashMap::new();
-    let shrink_xfs = super::xlsx::zip_part(data, "xl/styles.xml")
-        .map(|b| shrink_styles(&b))
-        .unwrap_or_default();
+    let shrink_xfs = super::xlsx::zip_part(data, "xl/styles.xml").map(|b| shrink_styles(&b)).unwrap_or_default();
     for_each_sheet(data, |s, name, xml| {
         let mut r = raw_print(xml);
         r.hidden = matches!(s.attr("state"), Some("hidden" | "veryHidden"));
@@ -62,37 +60,22 @@ pub fn collect_raw(data: &[u8]) -> HashMap<String, RawPrint> {
 
 /// Calls f with the `<sheet>` element of workbook.xml, the name and the XML
 /// of every worksheet of an xlsx file.
-pub(super) fn for_each_sheet(
-    data: &[u8],
-    mut f: impl FnMut(&super::xlsx_chart::Node, &str, &[u8]),
-) {
-    let Ok(mut zr) = zip::ZipArchive::new(Cursor::new(data)) else {
-        return;
-    };
+pub(super) fn for_each_sheet(data: &[u8], mut f: impl FnMut(&super::xlsx_chart::Node, &str, &[u8])) {
+    let Ok(mut zr) = zip::ZipArchive::new(Cursor::new(data)) else { return };
     let mut read = |name: &str| -> Option<Vec<u8>> {
         let mut f = zr.by_name(name).ok()?;
         let mut b = Vec::new();
         f.read_to_end(&mut b).ok()?;
         Some(b)
     };
-    let Some(wb) = read("xl/workbook.xml").and_then(|b| parse(&b)) else {
-        return;
-    };
+    let Some(wb) = read("xl/workbook.xml").and_then(|b| parse(&b)) else { return };
     let rels: HashMap<String, String> = read("xl/_rels/workbook.xml.rels")
         .and_then(|b| parse(&b))
-        .map(|r| {
-            r.all("Relationship")
-                .filter_map(|x| Some((x.attr("Id")?.to_string(), resolve("xl", x.attr("Target")?))))
-                .collect()
-        })
+        .map(|r| r.all("Relationship").filter_map(|x| Some((x.attr("Id")?.to_string(), resolve("xl", x.attr("Target")?)))).collect())
         .unwrap_or_default();
-    let Some(sheets) = wb.child("sheets") else {
-        return;
-    };
+    let Some(sheets) = wb.child("sheets") else { return };
     for s in sheets.all("sheet") {
-        let (Some(name), Some(id)) = (s.attr("name"), s.attr("id")) else {
-            continue;
-        };
+        let (Some(name), Some(id)) = (s.attr("name"), s.attr("id")) else { continue };
         let Some(part) = rels.get(id) else { continue };
         let Some(xml) = read(part) else { continue };
         f(s, name, &xml);
@@ -101,29 +84,19 @@ pub(super) fn for_each_sheet(
 
 /// The indexes of the cell formats (cellXfs) of styles.xml with shrinkToFit.
 fn shrink_styles(xml: &[u8]) -> HashSet<usize> {
-    let Some(ss) = parse(xml) else {
-        return HashSet::new();
-    };
-    let Some(xfs) = ss.child("cellXfs") else {
-        return HashSet::new();
-    };
+    let Some(ss) = parse(xml) else { return HashSet::new() };
+    let Some(xfs) = ss.child("cellXfs") else { return HashSet::new() };
     xfs.all("xf")
         .enumerate()
-        .filter(|(_, x)| {
-            x.child("alignment")
-                .and_then(|a| a.attr("shrinkToFit"))
-                .is_some_and(|v| v == "1" || v == "true")
-        })
+        .filter(|(_, x)| x.child("alignment").and_then(|a| a.attr("shrinkToFit")).is_some_and(|v| v == "1" || v == "true"))
         .map(|(i, _)| i)
         .collect()
 }
 
 /// The cells of a sheet's XML whose style (s) is one of xfs.
 fn styled_cells(xml: &[u8], xfs: &HashSet<usize>) -> HashSet<(u32, u32)> {
-    static CELL: std::sync::LazyLock<regex::Regex> =
-        std::sync::LazyLock::new(|| regex::Regex::new(r#"<c\b([^>]*)>"#).unwrap());
-    static ATTR: std::sync::LazyLock<regex::Regex> =
-        std::sync::LazyLock::new(|| regex::Regex::new(r#"\b([rs])="([^"]*)""#).unwrap());
+    static CELL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"<c\b([^>]*)>"#).unwrap());
+    static ATTR: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"\b([rs])="([^"]*)""#).unwrap());
     let s = String::from_utf8_lossy(xml);
     let mut out = HashSet::new();
     for c in CELL.captures_iter(&s) {
@@ -471,16 +444,8 @@ fn parse_area(s: &str, max_col: u32, max_row: u32) -> Option<Area> {
         let p = p.trim();
         let letters: String = p.chars().take_while(|c| c.is_ascii_alphabetic()).collect();
         let digits = &p[letters.len()..];
-        let col = if letters.is_empty() {
-            None
-        } else {
-            Some(super::xlsx::column_number(&letters.to_uppercase()).ok()?)
-        };
-        let row = if digits.is_empty() {
-            None
-        } else {
-            Some(digits.parse().ok()?)
-        };
+        let col = if letters.is_empty() { None } else { Some(super::xlsx::column_number(&letters.to_uppercase()).ok()?) };
+        let row = if digits.is_empty() { None } else { Some(digits.parse().ok()?) };
         if col.is_none() && row.is_none() {
             return None;
         }
@@ -513,10 +478,7 @@ fn split_refs(s: &str) -> Vec<String> {
             _ => out.last_mut().unwrap().push(c),
         }
     }
-    out.into_iter()
-        .map(|x| x.trim().to_string())
-        .filter(|x| !x.is_empty())
-        .collect()
+    out.into_iter().map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
 }
 
 /// How a sheet is laid out on paper.
@@ -565,19 +527,13 @@ impl<'a> Sheet<'a> {
     fn new(b: &'a Book, name: &str) -> Result<Sheet<'a>> {
         let ws = b.sheet(name)?;
         let font = b.default_font.clone();
-        let mdw = ((if japanese_font(&font.0) { 8.0 } else { 7.0 }) * font.1 / 11.0)
-            .round()
-            .max(1.0);
+        let mdw = ((if japanese_font(&font.0) { 8.0 } else { 7.0 }) * font.1 / 11.0).round().max(1.0);
         let px = |w: f64| ((256.0 * w + (128.0 / mdw).trunc()) / 256.0 * mdw).trunc();
         let fmt = ws.sheet_format_properties();
         let default_w = if fmt.default_column_width() > 0.0 {
             px(fmt.default_column_width())
         } else {
-            let base = if fmt.base_column_width() > 0 {
-                fmt.base_column_width() as f64
-            } else {
-                8.0
-            };
+            let base = if fmt.base_column_width() > 0 { fmt.base_column_width() as f64 } else { 8.0 };
             ((base * mdw + 5.0) / 8.0).ceil() * 8.0
         } * 0.75;
         // Excel sizes rows by the Normal font unless the sheet says otherwise
@@ -599,11 +555,7 @@ impl<'a> Sheet<'a> {
         };
         let mut col_w = HashMap::new();
         for c in ws.column_dimensions() {
-            let w = if c.hidden() {
-                0.0
-            } else {
-                px(c.width()) * 0.75
-            };
+            let w = if c.hidden() { 0.0 } else { px(c.width()) * 0.75 };
             col_w.insert(c.col_num(), w);
         }
         let mut row_h = HashMap::new();
@@ -636,9 +588,7 @@ impl<'a> Sheet<'a> {
         let mut merges = Vec::new();
         let mut merge_at = HashMap::new();
         for m in ws.merge_cells() {
-            let Ok(a) = super::xlsx_style::parse_range(&m.range()) else {
-                continue;
-            };
+            let Ok(a) = super::xlsx_style::parse_range(&m.range()) else { continue };
             for r in a.1..=a.3 {
                 for c in a.0..=a.2 {
                     merge_at.insert((c, r), merges.len());
@@ -664,11 +614,7 @@ impl<'a> Sheet<'a> {
             font,
             table: super::xlsx_table::overlays(ws, &b.table_styles),
             mono: b.print.get(name).is_some_and(|p| p.black_and_white),
-            shrink: b
-                .print
-                .get(name)
-                .map(|p| p.shrink.clone())
-                .unwrap_or_default(),
+            shrink: b.print.get(name).map(|p| p.shrink.clone()).unwrap_or_default(),
             images,
         })
     }
@@ -709,9 +655,7 @@ impl<'a> Sheet<'a> {
     }
 
     fn val(&self, col: u32, row: u32) -> Val {
-        let Some(c) = self.cells.get(&(col, row)) else {
-            return Val::Empty;
-        };
+        let Some(c) = self.cells.get(&(col, row)) else { return Val::Empty };
         if let Some(i) = self.images.get(&(col, row)) {
             return Val::Image(*i);
         }
@@ -748,11 +692,7 @@ impl<'a> Sheet<'a> {
             CellRawValue::Error(e) => Val::Error(e.to_string()),
             other => {
                 let s = other.to_string();
-                if s.is_empty() {
-                    Val::Empty
-                } else {
-                    Val::Text(s)
-                }
+                if s.is_empty() { Val::Empty } else { Val::Text(s) }
             }
         }
     }
@@ -814,13 +754,7 @@ impl<'a> Sheet<'a> {
         for d in self.b.wb.defined_names() {
             if (d.name() == full || d.name() == name) && d.has_local_sheet_id() {
                 let idx = d.local_sheet_id() as usize;
-                if self
-                    .b
-                    .wb
-                    .sheet_collection()
-                    .get(idx)
-                    .is_some_and(|s| s.name() == self.name)
-                {
+                if self.b.wb.sheet_collection().get(idx).is_some_and(|s| s.name() == self.name) {
                     return Some(d.address());
                 }
             }
@@ -833,19 +767,12 @@ impl<'a> Sheet<'a> {
     /// whole columns or rows ends where the used range does, as in Excel.
     fn areas(&self, anchors: &[Anchor]) -> Vec<Area> {
         let used = self.used(anchors);
-        let Some(addr) = self.defined("Print_Area") else {
-            return used.into_iter().collect();
-        };
+        let Some(addr) = self.defined("Print_Area") else { return used.into_iter().collect() };
         let areas: Vec<Area> = if addr.contains('(') {
             // A formula such as OFFSET($A$1,0,0,COUNTA($A:$A),7).
-            super::xlsx_calc::eval_area(self.b, &self.name, &addr)
-                .into_iter()
-                .collect()
+            super::xlsx_calc::eval_area(self.b, &self.name, &addr).into_iter().collect()
         } else {
-            split_refs(&addr)
-                .iter()
-                .filter_map(|r| parse_area(r, 16384, 1048576))
-                .collect()
+            split_refs(&addr).iter().filter_map(|r| parse_area(r, 16384, 1048576)).collect()
         };
         if areas.is_empty() {
             return used.into_iter().collect();
@@ -923,12 +850,7 @@ impl<'a> Sheet<'a> {
 
     /// The rectangle of an anchor in pt from the sheet's top left.
     fn anchor_rect(&self, an: &Anchor) -> Option<(f64, f64, f64, f64)> {
-        let at = |m: (u32, i64, u32, i64)| {
-            (
-                self.x0(m.0) + m.1 as f64 / EMU_PT,
-                self.y0(m.2) + m.3 as f64 / EMU_PT,
-            )
-        };
+        let at = |m: (u32, i64, u32, i64)| (self.x0(m.0) + m.1 as f64 / EMU_PT, self.y0(m.2) + m.3 as f64 / EMU_PT);
         let (x, y) = match (an.from, an.pos) {
             (Some(f), _) => at(f),
             (None, Some((x, y))) => (x as f64 / EMU_PT, y as f64 / EMU_PT),
@@ -951,14 +873,8 @@ impl<'a> Sheet<'a> {
     /// The print titles: rows and columns.
     fn titles(&self) -> (Option<Seg>, Option<Seg>) {
         let (mut rows, mut cols) = (None, None);
-        for r in self
-            .defined("Print_Titles")
-            .map(|a| split_refs(&a))
-            .unwrap_or_default()
-        {
-            let Some(a) = parse_area(&r, 16384, 1048576) else {
-                continue;
-            };
+        for r in self.defined("Print_Titles").map(|a| split_refs(&a)).unwrap_or_default() {
+            let Some(a) = parse_area(&r, 16384, 1048576) else { continue };
             if a.0 == 1 && a.2 == 16384 {
                 rows = Some((a.1, a.3));
             } else if a.1 == 1 && a.3 == 1048576 {
@@ -969,11 +885,7 @@ impl<'a> Sheet<'a> {
     }
 
     fn breaks(&self, rows: bool) -> HashSet<u32> {
-        let list = if rows {
-            self.ws.row_breaks().break_list()
-        } else {
-            self.ws.column_breaks().break_list()
-        };
+        let list = if rows { self.ws.row_breaks().break_list() } else { self.ws.column_breaks().break_list() };
         list.iter().map(|b| b.id() + 1).collect()
     }
 }
@@ -981,15 +893,7 @@ impl<'a> Sheet<'a> {
 /// Splits first..=last into pages of at most avail pt (titles of title pt
 /// come before every segment that starts after title_last). A break at i
 /// starts a new page at i.
-fn split(
-    first: u32,
-    last: u32,
-    size: &dyn Fn(u32) -> f64,
-    avail: f64,
-    title: f64,
-    title_last: u32,
-    breaks: &HashSet<u32>,
-) -> Vec<Seg> {
+fn split(first: u32, last: u32, size: &dyn Fn(u32) -> f64, avail: f64, title: f64, title_last: u32, breaks: &HashSet<u32>) -> Vec<Seg> {
     let mut out = Vec::new();
     let mut start = first;
     while start <= last {
@@ -1000,12 +904,7 @@ fn split(
         if start > last {
             break;
         }
-        let room = avail
-            - if title > 0.0 && start > title_last {
-                title
-            } else {
-                0.0
-            };
+        let room = avail - if title > 0.0 && start > title_last { title } else { 0.0 };
         let mut used = 0.0;
         let mut end = start;
         let mut i = start;
@@ -1029,23 +928,13 @@ fn split(
 
 /// Builds the style of the header or footer text of one side ("&L", "&C",
 /// "&R" sections): CSS content and the font properties.
-fn hf_content(
-    text: &str,
-    sheet: &str,
-    file: &str,
-    dir: &str,
-    now: &(String, String),
-) -> (String, String) {
+fn hf_content(text: &str, sheet: &str, file: &str, dir: &str, now: &(String, String)) -> (String, String) {
     let mut parts: Vec<String> = Vec::new();
     let mut lit = String::new();
     let mut css = String::new();
     let flush = |lit: &mut String, parts: &mut Vec<String>| {
         if !lit.is_empty() {
-            let s = lit
-                .replace('\\', "\\\\")
-                .replace('"', "\\\"")
-                .replace('\n', "\\A ")
-                .replace('\r', "");
+            let s = lit.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\A ").replace('\r', "");
             parts.push(format!("\"{s}\""));
             lit.clear();
         }
@@ -1224,20 +1113,11 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
     };
     let now = {
         let t = chrono::Local::now();
-        (
-            t.format("%Y/%m/%d").to_string(),
-            t.format("%H:%M").to_string(),
-        )
+        (t.format("%Y/%m/%d").to_string(), t.format("%H:%M").to_string())
     };
     let path = std::path::Path::new(&b.path);
-    let file = path
-        .file_name()
-        .map(|f| f.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let dir = path
-        .parent()
-        .map(|d| d.to_string_lossy().into_owned())
-        .unwrap_or_default();
+    let file = path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+    let dir = path.parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default();
     let mut classes = Classes::default();
     let mut page_css = String::new();
     let mut body = String::new();
@@ -1253,9 +1133,7 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
         let setup = setup_of(&sh, b.print.get(name), o)?;
         // The drawing's objects as (anchor, opening tag, content), later ones on top.
         let mut objects: Vec<(Anchor, String, String)> = Vec::new();
-        match super::xlsx_shape::sheet_drawing(b, name, &ids, &|an| {
-            sh.anchor_rect(an).map(|r| (r.2, r.3))
-        }) {
+        match super::xlsx_shape::sheet_drawing(b, name, &ids, &|an| sh.anchor_rect(an).map(|r| (r.2, r.3))) {
             Some(drawn) => {
                 for d in drawn {
                     match d.drawn {
@@ -1264,19 +1142,10 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
                                 continue;
                             }
                             let k = charts.len();
-                            charts.push(ChartRef {
-                                sheet: name.clone(),
-                                index: i,
-                            });
-                            objects.push((
-                                d.anchor,
-                                format!("<div class=\"xljs-print-chart\" data-chart=\"{k}\""),
-                                String::new(),
-                            ));
+                            charts.push(ChartRef { sheet: name.clone(), index: i });
+                            objects.push((d.anchor, format!("<div class=\"xljs-print-chart\" data-chart=\"{k}\""), String::new()));
                         }
-                        super::xlsx_shape::Drawn::Html(h) => {
-                            objects.push((d.anchor, "<div class=\"xljs-print-shape\"".into(), h))
-                        }
+                        super::xlsx_shape::Drawn::Html(h) => objects.push((d.anchor, "<div class=\"xljs-print-shape\"".into(), h)),
                     }
                 }
             }
@@ -1286,13 +1155,8 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
                     if !img.has_image() {
                         continue;
                     }
-                    let m = |mk: &umya_spreadsheet::structs::drawing::spreadsheet::MarkerType| {
-                        (mk.col(), mk.col_off() as i64, mk.row(), mk.row_off() as i64)
-                    };
-                    let mut an = Anchor {
-                        from: Some(m(img.from_marker_type())),
-                        ..Default::default()
-                    };
+                    let m = |mk: &umya_spreadsheet::structs::drawing::spreadsheet::MarkerType| (mk.col(), mk.col_off() as i64, mk.row(), mk.row_off() as i64);
+                    let mut an = Anchor { from: Some(m(img.from_marker_type())), ..Default::default() };
                     if let Some(t) = img.to_marker_type() {
                         an.to = Some(m(t));
                     } else if let Some(one) = img.one_cell_anchor() {
@@ -1311,11 +1175,7 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
                         "image/jpeg"
                     };
                     let data = base64::engine::general_purpose::STANDARD.encode(img.image_data());
-                    objects.push((
-                        an,
-                        format!("<img alt=\"\" src=\"data:{mime};base64,{data}\""),
-                        String::new(),
-                    ));
+                    objects.push((an, format!("<img alt=\"\" src=\"data:{mime};base64,{data}\""), String::new()));
                 }
             }
         }
@@ -1326,25 +1186,9 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
         }
         let page_name = format!("s{si}");
         page_css.push_str(&page_rule(&page_name, &sh, &setup, &file, &dir, &now));
-        let mut info = SheetPages {
-            sheet: name.clone(),
-            pages: 0,
-            across: 0,
-            down: 0,
-            scale: 100.0,
-            areas: Vec::new(),
-        };
+        let mut info = SheetPages { sheet: name.clone(), pages: 0, across: 0, down: 0, scale: 100.0, areas: Vec::new() };
         for area in areas {
-            let (a, scale) = sheet_pages(
-                &sh,
-                &setup,
-                area,
-                &objects,
-                &page_name,
-                &mut classes,
-                o.skip_blank_pages,
-                if o.layout_only { None } else { Some(&mut body) },
-            );
+            let (a, scale) = sheet_pages(&sh, &setup, area, &objects, &page_name, &mut classes, o.skip_blank_pages, if o.layout_only { None } else { Some(&mut body) });
             pages += a.pages;
             info.pages += a.pages;
             info.across = info.across.max(a.across);
@@ -1357,26 +1201,13 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
         sheets.push(info);
     }
     if o.layout_only {
-        return Ok(PrintOut {
-            html: String::new(),
-            charts,
-            pages,
-            sheets,
-        });
+        return Ok(PrintOut { html: String::new(), charts, pages, sheets });
     }
     if pages == 0 {
         return Err(err!("pdf.empty"));
     }
-    let title = if o.title.is_empty() {
-        file.clone()
-    } else {
-        o.title.clone()
-    };
-    let lang = if crate::i18n::lang() == "ja" {
-        "ja"
-    } else {
-        "en"
-    };
+    let title = if o.title.is_empty() { file.clone() } else { o.title.clone() };
+    let lang = if crate::i18n::lang() == "ja" { "ja" } else { "en" };
     let mut html = String::with_capacity(body.len() + 4096);
     let _ = write!(
         html,
@@ -1384,12 +1215,7 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
         esc(&title),
         classes.css
     );
-    Ok(PrintOut {
-        html,
-        charts,
-        pages,
-        sheets,
-    })
+    Ok(PrintOut { html, charts, pages, sheets })
 }
 
 fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setup> {
@@ -1399,9 +1225,7 @@ fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setu
         None => ps.paper_size(),
     };
     let (mut w, mut h) = paper_size(code);
-    let landscape = o
-        .landscape
-        .unwrap_or(ps.orientation().value_string() == "landscape");
+    let landscape = o.landscape.unwrap_or(ps.orientation().value_string() == "landscape");
     if landscape != (w > h) {
         std::mem::swap(&mut w, &mut h);
     }
@@ -1422,27 +1246,14 @@ fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setu
     }
     let raw = raw.cloned().unwrap_or_default();
     let (scale, fit) = if o.fit_to_width.is_some() || o.fit_to_height.is_some() {
-        (
-            None,
-            Some((o.fit_to_width.unwrap_or(0), o.fit_to_height.unwrap_or(0))),
-        )
+        (None, Some((o.fit_to_width.unwrap_or(0), o.fit_to_height.unwrap_or(0))))
     } else if let Some(s) = o.scale {
         (Some((s / 100.0).clamp(0.1, 4.0)), None)
     } else if ps.fit_to_page() {
-        (
-            None,
-            Some((raw.fit_width.unwrap_or(1), raw.fit_height.unwrap_or(1))),
-        )
+        (None, Some((raw.fit_width.unwrap_or(1), raw.fit_height.unwrap_or(1))))
     } else {
         let s = ps.scale();
-        (
-            Some(if s == 0 {
-                1.0
-            } else {
-                (s as f64 / 100.0).clamp(0.1, 4.0)
-            }),
-            None,
-        )
+        (Some(if s == 0 { 1.0 } else { (s as f64 / 100.0).clamp(0.1, 4.0) }), None)
     };
     let fit = fit.filter(|f| f.0 > 0 || f.1 > 0);
     Ok(Setup {
@@ -1450,51 +1261,23 @@ fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setu
         margins,
         header: inch(pm.has_header(), pm.header(), 0.3),
         footer: inch(pm.has_footer(), pm.footer(), 0.3),
-        scale: if fit.is_some() {
-            None
-        } else {
-            scale.or(Some(1.0))
-        },
+        scale: if fit.is_some() { None } else { scale.or(Some(1.0)) },
         fit,
         zoom: o.zoom.map(|z| (z / 100.0).clamp(0.1, 4.0)).unwrap_or(1.0),
         over_then_down: raw.over_then_down,
         grid: o.grid_lines.unwrap_or(raw.grid_lines),
-        center_h: o
-            .center_horizontally
-            .unwrap_or(sh.ws.print_options().horizontal_centered()),
+        center_h: o.center_horizontally.unwrap_or(sh.ws.print_options().horizontal_centered()),
         center_v: sh.ws.print_options().vertical_centered(),
     })
 }
 
 /// The @page rule of a sheet: size, margins, header and footer.
-fn page_rule(
-    name: &str,
-    sh: &Sheet,
-    s: &Setup,
-    file: &str,
-    dir: &str,
-    now: &(String, String),
-) -> String {
+fn page_rule(name: &str, sh: &Sheet, s: &Setup, file: &str, dir: &str, now: &(String, String)) -> String {
     let [t, r, bt, l] = s.margins;
-    let mut css = format!(
-        "@page {name}{{size:{}pt {}pt;margin:{}pt {}pt {}pt {}pt;",
-        n(s.paper.0),
-        n(s.paper.1),
-        n(t),
-        n(r),
-        n(bt),
-        n(l)
-    );
+    let mut css = format!("@page {name}{{size:{}pt {}pt;margin:{}pt {}pt {}pt {}pt;", n(s.paper.0), n(s.paper.1), n(t), n(r), n(bt), n(l));
     let hf = sh.ws.header_footer();
-    let font = format!(
-        "font-family:{};font-size:{}pt;",
-        font_family(&sh.font.0),
-        n(sh.font.1)
-    );
-    for (text, top) in [
-        (hf.odd_header().value(), true),
-        (hf.odd_footer().value(), false),
-    ] {
+    let font = format!("font-family:{};font-size:{}pt;", font_family(&sh.font.0), n(sh.font.1));
+    for (text, top) in [(hf.odd_header().value(), true), (hf.odd_footer().value(), false)] {
         if text.is_empty() {
             continue;
         }
@@ -1508,15 +1291,8 @@ fn page_rule(
             }
             let pos = ["left", "center", "right"][i];
             let edge = if top { "top" } else { "bottom" };
-            let pad = if top {
-                format!("padding-top:{}pt;vertical-align:top;", n(s.header))
-            } else {
-                format!("padding-bottom:{}pt;vertical-align:bottom;", n(s.footer))
-            };
-            let _ = write!(
-                css,
-                "@{edge}-{pos}{{content:{content};text-align:{pos};white-space:pre;{font}{pad}{extra}}}"
-            );
+            let pad = if top { format!("padding-top:{}pt;vertical-align:top;", n(s.header)) } else { format!("padding-bottom:{}pt;vertical-align:bottom;", n(s.footer)) };
+            let _ = write!(css, "@{edge}-{pos}{{content:{content};text-align:{pos};white-space:pre;{font}{pad}{extra}}}");
         }
     }
     css.push_str("}\n");
@@ -1526,25 +1302,12 @@ fn page_rule(
 /// Writes the pages of one area of a sheet (only works them out when out is
 /// None); returns how they are cut and the scale.
 #[allow(clippy::too_many_arguments)]
-fn sheet_pages(
-    sh: &Sheet,
-    s: &Setup,
-    area: Area,
-    objects: &[(Anchor, String, String)],
-    page: &str,
-    classes: &mut Classes,
-    skip_blank: u8,
-    out: Option<&mut String>,
-) -> (AreaPages, f64) {
+fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, String)], page: &str, classes: &mut Classes, skip_blank: u8, out: Option<&mut String>) -> (AreaPages, f64) {
     let (c1, r1, c2, r2) = area;
     let (title_rows, title_cols) = sh.titles();
     let sum = |a: u32, b: u32, f: &dyn Fn(u32) -> f64| (a..=b).map(f).sum::<f64>();
-    let tr_h = title_rows
-        .map(|(a, b)| sum(a, b, &|r| sh.h(r)))
-        .unwrap_or(0.0);
-    let tc_w = title_cols
-        .map(|(a, b)| sum(a, b, &|c| sh.w(c)))
-        .unwrap_or(0.0);
+    let tr_h = title_rows.map(|(a, b)| sum(a, b, &|r| sh.h(r))).unwrap_or(0.0);
+    let tc_w = title_cols.map(|(a, b)| sum(a, b, &|c| sh.w(c))).unwrap_or(0.0);
     let avail_w = s.paper.0 - s.margins[1] - s.margins[3];
     let avail_h = s.paper.1 - s.margins[0] - s.margins[2];
     let (scale, col_breaks, row_breaks) = match s.fit {
@@ -1558,33 +1321,13 @@ fn sheet_pages(
             if fh > 0 {
                 k = k.min(avail_h * fh as f64 / total_h);
             }
-            (
-                (k * 100.0).floor().max(10.0) / 100.0,
-                HashSet::new(),
-                HashSet::new(),
-            )
+            ((k * 100.0).floor().max(10.0) / 100.0, HashSet::new(), HashSet::new())
         }
         None => (s.scale.unwrap_or(1.0), sh.breaks(false), sh.breaks(true)),
     };
     let scale = (scale * s.zoom).clamp(0.01, 4.0);
-    let col_segs = split(
-        c1,
-        c2,
-        &|c| sh.w(c),
-        avail_w / scale,
-        tc_w,
-        title_cols.map(|t| t.1).unwrap_or(0),
-        &col_breaks,
-    );
-    let row_segs = split(
-        r1,
-        r2,
-        &|r| sh.h(r),
-        avail_h / scale,
-        tr_h,
-        title_rows.map(|t| t.1).unwrap_or(0),
-        &row_breaks,
-    );
+    let col_segs = split(c1, c2, &|c| sh.w(c), avail_w / scale, tc_w, title_cols.map(|t| t.1).unwrap_or(0), &col_breaks);
+    let row_segs = split(r1, r2, &|r| sh.h(r), avail_h / scale, tr_h, title_rows.map(|t| t.1).unwrap_or(0), &row_breaks);
     let mut order = Vec::new();
     if s.over_then_down {
         for rs in &row_segs {
@@ -1603,13 +1346,7 @@ fn sheet_pages(
         order.retain(|&(cs, rs)| !blank_page(sh, cs, rs, objects, skip_blank == 2));
     }
     let cut = AreaPages {
-        range: format!(
-            "{}{}:{}{}",
-            super::xlsx::column_name(c1 as i64).unwrap_or_default(),
-            r1,
-            super::xlsx::column_name(c2 as i64).unwrap_or_default(),
-            r2
-        ),
+        range: format!("{}{}:{}{}", super::xlsx::column_name(c1 as i64).unwrap_or_default(), r1, super::xlsx::column_name(c2 as i64).unwrap_or_default(), r2),
         across: col_segs.len(),
         down: row_segs.len(),
         pages: order.len(),
@@ -1648,33 +1385,19 @@ fn sheet_pages(
             body_y = tr_h;
         }
         rows.extend((rs.0..=rs.1).filter(|r| sh.h(*r) > 0.0));
-        let _ = write!(
-            out,
-            "<section class=\"xljs-page\" style=\"{style}\">\n<div class=\"xljs-sheet{}\" style=\"zoom:{}\">",
-            if s.grid { " grid" } else { "" },
-            n(scale)
-        );
+        let _ = write!(out, "<section class=\"xljs-page\" style=\"{style}\">\n<div class=\"xljs-sheet{}\" style=\"zoom:{}\">", if s.grid { " grid" } else { "" }, n(scale));
         page_table(sh, &cols, &rows, classes, out);
         // Pictures, shapes and charts, cut to the body of the page.
         let (bx0, by0) = (sh.x0(cs.0 - 1), sh.y0(rs.0 - 1));
         let (bw, bh) = (sh.x0(cs.1) - bx0, sh.y0(rs.1) - by0);
         let mut objs = String::new();
         for (an, tag, inner) in objects {
-            let Some((x, y, w, h)) = sh.anchor_rect(an) else {
-                continue;
-            };
+            let Some((x, y, w, h)) = sh.anchor_rect(an) else { continue };
             let (x, y) = (x - bx0, y - by0);
             if x >= bw || y >= bh || x + w <= 0.0 || y + h <= 0.0 {
                 continue;
             }
-            let _ = write!(
-                objs,
-                "{tag} style=\"left:{}pt;top:{}pt;width:{}pt;height:{}pt\"",
-                n(x),
-                n(y),
-                n(w),
-                n(h)
-            );
+            let _ = write!(objs, "{tag} style=\"left:{}pt;top:{}pt;width:{}pt;height:{}pt\"", n(x), n(y), n(w), n(h));
             if tag.starts_with("<img") {
                 objs.push('>');
             } else {
@@ -1682,14 +1405,7 @@ fn sheet_pages(
             }
         }
         if !objs.is_empty() {
-            let _ = write!(
-                out,
-                "<div class=\"xljs-objs\" style=\"left:{}pt;top:{}pt;width:{}pt;height:{}pt\">{objs}</div>",
-                n(body_x),
-                n(body_y),
-                n(bw),
-                n(bh)
-            );
+            let _ = write!(out, "<div class=\"xljs-objs\" style=\"left:{}pt;top:{}pt;width:{}pt;height:{}pt\">{objs}</div>", n(body_x), n(body_y), n(bw), n(bh));
         }
         out.push_str("</div>\n</section>\n");
     }
@@ -1699,13 +1415,7 @@ fn sheet_pages(
 /// Whether the body of a page (columns cs, rows rs; not the print titles)
 /// prints nothing: no values and no pictures, shapes or charts, and unless
 /// values_only, no fills or borders either. Text of only spaces is no value.
-fn blank_page(
-    sh: &Sheet,
-    cs: Seg,
-    rs: Seg,
-    objects: &[(Anchor, String, String)],
-    values_only: bool,
-) -> bool {
+fn blank_page(sh: &Sheet, cs: Seg, rs: Seg, objects: &[(Anchor, String, String)], values_only: bool) -> bool {
     let (bx0, by0) = (sh.x0(cs.0 - 1), sh.y0(rs.0 - 1));
     let (bw, bh) = (sh.x0(cs.1) - bx0, sh.y0(rs.1) - by0);
     for (an, _, _) in objects {
@@ -1741,20 +1451,13 @@ fn blank_page(
             if values_only {
                 continue;
             }
-            let st = sh
-                .cells
-                .get(&(c, r))
-                .map(|x| x.style())
-                .or_else(|| sh.ws.row_dimension(r).map(|x| x.style()));
+            let st = sh.cells.get(&(c, r)).map(|x| x.style()).or_else(|| sh.ws.row_dimension(r).map(|x| x.style()));
             if let Some(st) = st {
                 if sh.fill(st).is_some() {
                     return false;
                 }
                 if let Some(b) = st.borders()
-                    && ([b.left(), b.right(), b.top(), b.bottom()]
-                        .into_iter()
-                        .any(line)
-                        || ((b.diagonal_up() || b.diagonal_down()) && line(b.diagonal())))
+                    && ([b.left(), b.right(), b.top(), b.bottom()].into_iter().any(line) || ((b.diagonal_up() || b.diagonal_down()) && line(b.diagonal())))
                 {
                     return false;
                 }
@@ -1787,57 +1490,26 @@ fn side_css(sh: &Sheet, st: &Style, side: &str) -> Option<String> {
         _ => b.bottom(),
     };
     let style = bd.border_style();
-    let color = bd
-        .color()
-        .as_ref()
-        .and_then(|c| sh.color(c))
-        .unwrap_or_else(|| "#000".into());
+    let color = bd.color().as_ref().and_then(|c| sh.color(c)).unwrap_or_else(|| "#000".into());
     border_css(style, &color)
 }
 
 /// The CSS of a border side of a table style.
 fn table_side_css(sh: &Sheet, s: &Side) -> Option<String> {
-    let color = s
-        .color
-        .as_ref()
-        .and_then(|c| sh.color(c))
-        .unwrap_or_else(|| "#000".into());
+    let color = s.color.as_ref().and_then(|c| sh.color(c)).unwrap_or_else(|| "#000".into());
     border_css(&s.style, &color)
 }
 
-fn cell_css(
-    sh: &Sheet,
-    st: &Style,
-    val: &Val,
-    sides: [Option<String>; 4],
-    table: Option<&Overlay>,
-) -> CellCss {
+fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table: Option<&Overlay>) -> CellCss {
     let mut td = String::new();
     let mut div = String::new();
-    let fill = sh.fill(st).or_else(|| {
-        if sh.mono {
-            None
-        } else {
-            table
-                .and_then(|t| t.fill.as_ref())
-                .and_then(|c| css_color(c, sh.theme))
-        }
-    });
+    let fill = sh.fill(st).or_else(|| if sh.mono { None } else { table.and_then(|t| t.fill.as_ref()).and_then(|c| css_color(c, sh.theme)) });
     let mut bg: Vec<String> = Vec::new();
     if let Some(b) = st.borders() {
         let ds = b.diagonal().border_style();
         if (b.diagonal_up() || b.diagonal_down()) && !ds.is_empty() && ds != "none" {
-            let color = b
-                .diagonal()
-                .color()
-                .as_ref()
-                .and_then(|c| sh.color(c))
-                .unwrap_or_else(|| "#000".into());
-            let line = |dir: &str| {
-                format!(
-                    "linear-gradient(to {dir},transparent calc(50% - .5pt),{color} calc(50% - .5pt),{color} calc(50% + .5pt),transparent calc(50% + .5pt))"
-                )
-            };
+            let color = b.diagonal().color().as_ref().and_then(|c| sh.color(c)).unwrap_or_else(|| "#000".into());
+            let line = |dir: &str| format!("linear-gradient(to {dir},transparent calc(50% - .5pt),{color} calc(50% - .5pt),{color} calc(50% + .5pt),transparent calc(50% + .5pt))");
             if b.diagonal_up() {
                 bg.push(line("top left"));
             }
@@ -1859,11 +1531,7 @@ fn cell_css(
     }
     let (mut bold, mut italic, mut color) = (false, false, None);
     if let Some(f) = st.font() {
-        let name = if f.name().is_empty() {
-            sh.font.0.as_str()
-        } else {
-            f.name()
-        };
+        let name = if f.name().is_empty() { sh.font.0.as_str() } else { f.name() };
         let size = if f.size() == 0.0 { sh.font.1 } else { f.size() };
         if name != sh.font.0 {
             let _ = write!(div, "font-family:{};", font_family(name));
@@ -1922,8 +1590,7 @@ fn cell_css(
     {
         let _ = write!(div, "color:{c};");
     }
-    let (mut h, mut v, mut wrap, mut rot, mut indent) =
-        (String::from("general"), String::from("bottom"), false, 0, 0);
+    let (mut h, mut v, mut wrap, mut rot, mut indent) = (String::from("general"), String::from("bottom"), false, 0, 0);
     if let Some(a) = st.alignment() {
         h = a.horizontal().value_string().to_string();
         v = a.vertical().value_string().to_string();
@@ -1967,24 +1634,12 @@ fn cell_css(
     } else if rotated {
         div.push_str("align-items:center;justify-content:center;text-align:center;");
     }
-    CellCss {
-        td,
-        div,
-        wrap,
-        rotated,
-        halign,
-    }
+    CellCss { td, div, wrap, rotated, halign }
 }
 
 /// The text of a cell as HTML (rich text runs with their fonts).
 fn cell_html(sh: &Sheet, col: u32, row: u32, val: &Val, wrap: bool) -> String {
-    let line = |s: &str| {
-        if wrap {
-            esc(s)
-        } else {
-            esc(&s.replace("\r\n", "").replace('\n', ""))
-        }
-    };
+    let line = |s: &str| if wrap { esc(s) } else { esc(&s.replace("\r\n", "").replace('\n', "")) };
     if let Val::Text(_) = val
         && let Some(c) = sh.cells.get(&(col, row))
         && let CellRawValue::RichText(rt) = c.raw_value()
@@ -1996,19 +1651,11 @@ fn cell_html(sh: &Sheet, col: u32, row: u32, val: &Val, wrap: bool) -> String {
             // A run without properties has the cell's font. Properties
             // describe the whole font of the run (Excel writes them all), so
             // what they leave out is off rather than the cell's.
-            let css = el
-                .run_properties()
-                .map(|f| run_css(sh, f))
-                .unwrap_or_default();
+            let css = el.run_properties().map(|f| run_css(sh, f)).unwrap_or_default();
             if css.is_empty() {
                 out.push_str(&line(el.text()));
             } else {
-                let _ = write!(
-                    out,
-                    "<span style=\"{}\">{}</span>",
-                    esc(&css),
-                    line(el.text())
-                );
+                let _ = write!(out, "<span style=\"{}\">{}</span>", esc(&css), line(el.text()));
             }
         }
         out.push_str("</span>");
@@ -2028,21 +1675,13 @@ fn cell_html(sh: &Sheet, col: u32, row: u32, val: &Val, wrap: bool) -> String {
 /// shape kept, where the cell's alignment puts it (centered unless the
 /// cell says left or right; at the bottom unless it says top or center).
 fn image_html(sh: &Sheet, i: usize, st: &Style, halign: &str) -> String {
-    let Some(img) = sh.b.cell_images.images.get(i) else {
-        return String::new();
-    };
-    let Some(mime) = img.mime else {
-        return String::new();
-    };
+    let Some(img) = sh.b.cell_images.images.get(i) else { return String::new() };
+    let Some(mime) = img.mime else { return String::new() };
     let x = match halign {
         "left" | "right" => halign,
         _ => "center",
     };
-    let y = match st
-        .alignment()
-        .map(|a| a.vertical().value_string())
-        .unwrap_or("bottom")
-    {
+    let y = match st.alignment().map(|a| a.vertical().value_string()).unwrap_or("bottom") {
         "top" => "top",
         "center" | "justify" | "distributed" => "center",
         _ => "bottom",
@@ -2063,16 +1702,8 @@ fn run_css(sh: &Sheet, f: &umya_spreadsheet::Font) -> String {
     if f.size() > 0.0 {
         let _ = write!(css, "font-size:{}pt;", n(f.size()));
     }
-    css.push_str(if f.bold() {
-        "font-weight:bold;"
-    } else {
-        "font-weight:normal;"
-    });
-    css.push_str(if f.italic() {
-        "font-style:italic;"
-    } else {
-        "font-style:normal;"
-    });
+    css.push_str(if f.bold() { "font-weight:bold;" } else { "font-weight:normal;" });
+    css.push_str(if f.italic() { "font-style:italic;" } else { "font-style:normal;" });
     let u = f.font_underline().val().value_string();
     let mut deco = Vec::new();
     if u != "none" && !u.is_empty() {
@@ -2116,10 +1747,7 @@ fn text_width(sh: &Sheet, col: u32, row: u32, val: &Val, st: &Style) -> f64 {
         }
         bold = f.bold();
     }
-    let ems = |s: &str| -> f64 {
-        s.chars()
-            .filter(|c| *c != '\n' && *c != '\r')
-            .map(|c| match c {
+    let ems = |s: &str| -> f64 { s.chars().filter(|c| *c != '\n' && *c != '\r').map(|c| match c {
                 _ if c.width() == Some(2) => 1.0,
                 '0'..='9' => 0.5,
                 ',' | '.' | ':' | ';' | ' ' | '\'' | '|' | 'i' | 'l' => 0.28,
@@ -2136,11 +1764,7 @@ fn text_width(sh: &Sheet, col: u32, row: u32, val: &Val, st: &Style) -> f64 {
             .rich_text_elements()
             .iter()
             .map(|el| match el.run_properties() {
-                Some(f) => {
-                    ems(el.text())
-                        * (if f.size() > 0.0 { f.size() } else { size })
-                        * bolder(f.bold())
-                }
+                Some(f) => ems(el.text()) * (if f.size() > 0.0 { f.size() } else { size }) * bolder(f.bold()),
                 None => ems(el.text()) * size * bolder(bold),
             })
             .sum();
@@ -2148,13 +1772,7 @@ fn text_width(sh: &Sheet, col: u32, row: u32, val: &Val, st: &Style) -> f64 {
     let text = match val {
         Val::Empty | Val::Image(_) => return 0.0,
         Val::Num(_, s) | Val::Text(s) | Val::Error(s) => s.as_str(),
-        Val::Bool(b) => {
-            if *b {
-                "TRUE"
-            } else {
-                "FALSE"
-            }
-        }
+        Val::Bool(b) => if *b { "TRUE" } else { "FALSE" },
     };
     ems(text) * size * bolder(bold)
 }
@@ -2162,13 +1780,7 @@ fn text_width(sh: &Sheet, col: u32, row: u32, val: &Val, st: &Style) -> f64 {
 /// Writes the table of the cells cols × rows (sheet numbers, in order).
 fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out: &mut String) {
     let total: f64 = cols.iter().map(|c| sh.w(*c)).sum();
-    let _ = write!(
-        out,
-        "<table style=\"width:{}pt;font-family:{};font-size:{}pt\"><colgroup>",
-        n(total),
-        esc(&font_family(&sh.font.0)),
-        n(sh.font.1)
-    );
+    let _ = write!(out, "<table style=\"width:{}pt;font-family:{};font-size:{}pt\"><colgroup>", n(total), esc(&font_family(&sh.font.0)), n(sh.font.1));
     for c in cols {
         let _ = write!(out, "<col style=\"width:{}pt\">", n(sh.w(*c)));
     }
@@ -2203,32 +1815,16 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
             };
             let st_of = |c: u32, r: u32| sh.cells.get(&(c, r)).map(|x| x.style());
             let default_style = Style::default();
-            let st = st_of(vc, vr)
-                .or_else(|| sh.ws.row_dimension(r).map(|x| x.style()))
-                .unwrap_or(&default_style);
+            let st = st_of(vc, vr).or_else(|| sh.ws.row_dimension(r).map(|x| x.style())).unwrap_or(&default_style);
             let side = |cc: u32, rr: u32, s: &str| {
                 st_of(cc, rr).and_then(|x| side_css(sh, x, s)).or_else(|| {
-                    let i = ["top", "right", "bottom", "left"]
-                        .iter()
-                        .position(|x| *x == s)?;
-                    sh.table.get(&(cc, rr))?.sides[i]
-                        .as_ref()
-                        .and_then(|t| table_side_css(sh, t))
+                    let i = ["top", "right", "bottom", "left"].iter().position(|x| *x == s)?;
+                    sh.table.get(&(cc, rr))?.sides[i].as_ref().and_then(|t| table_side_css(sh, t))
                 })
             };
             let sides = match merge {
-                Some(m) => [
-                    side(m.0, m.1, "top"),
-                    side(m.2, m.1, "right"),
-                    side(m.0, m.3, "bottom"),
-                    side(m.0, m.1, "left"),
-                ],
-                None => [
-                    side(c, r, "top"),
-                    side(c, r, "right"),
-                    side(c, r, "bottom"),
-                    side(c, r, "left"),
-                ],
+                Some(m) => [side(m.0, m.1, "top"), side(m.2, m.1, "right"), side(m.0, m.3, "bottom"), side(m.0, m.1, "left")],
+                None => [side(c, r, "top"), side(c, r, "right"), side(c, r, "bottom"), side(c, r, "left")],
             };
             let val = sh.val(vc, vr);
             let css = cell_css(sh, st, &val, sides, sh.table.get(&(vc, vr)));
@@ -2251,12 +1847,7 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                 let h: f64 = rows[ri..ri + rspan].iter().map(|r| sh.h(*r)).sum();
                 // Text overflows into the empty cells beside it, as in Excel.
                 let (mut left, mut right) = (0.0, 0.0);
-                if matches!(val, Val::Text(_))
-                    && merge.is_none()
-                    && !css.wrap
-                    && !css.rotated
-                    && !shrink
-                {
+                if matches!(val, Val::Text(_)) && merge.is_none() && !css.wrap && !css.rotated && !shrink {
                     let grow = |dir: i64| -> f64 {
                         let mut s = 0.0;
                         let mut i = ci as i64 + dir;
@@ -2278,18 +1869,8 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                     }
                 }
                 // data-n: a number that does not fit is shown as ### (print-page.js measures it).
-                let num = if matches!(val, Val::Num(..)) && !css.rotated && !shrink {
-                    " data-n"
-                } else {
-                    ""
-                };
-                let _ = write!(
-                    out,
-                    "<div{num} style=\"left:{}pt;width:{}pt;height:{}pt\">",
-                    n(-left),
-                    n(w + left + right),
-                    n(h)
-                );
+                let num = if matches!(val, Val::Num(..)) && !css.rotated && !shrink { " data-n" } else { "" };
+                let _ = write!(out, "<div{num} style=\"left:{}pt;width:{}pt;height:{}pt\">", n(-left), n(w + left + right), n(h));
                 if let Val::Image(i) = val {
                     out.push_str(&image_html(sh, i, st, &css.halign));
                     out.push_str("</div></td>");
@@ -2298,34 +1879,15 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                 let mut text = cell_html(sh, vc, vr, &val, css.wrap);
                 if shrink {
                     // A rough guess from the characters; print-page.js measures the text.
-                    let room = w
-                        - 3.0
-                        - st.alignment()
-                            .map(|a| a.indent() as f64 * sh.mdw * 1.4 * 0.75)
-                            .unwrap_or(0.0);
+                    let room = w - 3.0 - st.alignment().map(|a| a.indent() as f64 * sh.mdw * 1.4 * 0.75).unwrap_or(0.0);
                     let wide = text_width(sh, vc, vr, &val, st);
-                    let zoom = if wide > room && room > 0.0 {
-                        (room / wide).max(0.05)
-                    } else {
-                        1.0
-                    };
-                    text = format!(
-                        "<span class=\"xljs-shrink\" style=\"zoom:{}\">{text}</span>",
-                        n(zoom)
-                    );
+                    let zoom = if wide > room && room > 0.0 { (room / wide).max(0.05) } else { 1.0 };
+                    text = format!("<span class=\"xljs-shrink\" style=\"zoom:{}\">{text}</span>", n(zoom));
                 }
                 if css.rotated && st.alignment().map(|a| a.text_rotation()).unwrap_or(0) != 255 {
                     let rot = st.alignment().map(|a| a.text_rotation()).unwrap_or(0);
-                    let deg = if rot <= 90 {
-                        -(rot as f64)
-                    } else {
-                        rot as f64 - 90.0
-                    };
-                    let _ = write!(
-                        out,
-                        "<span style=\"display:inline-block;transform:rotate({}deg)\">{text}</span>",
-                        n(deg)
-                    );
+                    let deg = if rot <= 90 { -(rot as f64) } else { rot as f64 - 90.0 };
+                    let _ = write!(out, "<span style=\"display:inline-block;transform:rotate({}deg)\">{text}</span>", n(deg));
                 } else {
                     out.push_str(&text);
                 }
@@ -2344,52 +1906,28 @@ mod tests {
 
     #[test]
     fn areas_and_refs() {
-        assert_eq!(
-            parse_area("'集計'!$A$1:$H$40", 16384, 1048576),
-            Some((1, 1, 8, 40))
-        );
-        assert_eq!(
-            parse_area("Sheet1!$1:$2", 16384, 1048576),
-            Some((1, 1, 16384, 2))
-        );
-        assert_eq!(
-            parse_area("Sheet1!$A:$B", 16384, 1048576),
-            Some((1, 1, 2, 1048576))
-        );
+        assert_eq!(parse_area("'集計'!$A$1:$H$40", 16384, 1048576), Some((1, 1, 8, 40)));
+        assert_eq!(parse_area("Sheet1!$1:$2", 16384, 1048576), Some((1, 1, 16384, 2)));
+        assert_eq!(parse_area("Sheet1!$A:$B", 16384, 1048576), Some((1, 1, 2, 1048576)));
         assert_eq!(parse_area("B3", 16384, 1048576), Some((2, 3, 2, 3)));
         // Pieces of a formula split at its commas are not areas (row 0 used to overflow).
         assert_eq!(parse_area("0", 16384, 1048576), None);
         assert_eq!(parse_area("A0", 16384, 1048576), None);
-        assert_eq!(
-            split_refs("'a,b'!$A$1:$B$2,'a,b'!$D$1:$E$2"),
-            vec!["'a,b'!$A$1:$B$2", "'a,b'!$D$1:$E$2"]
-        );
+        assert_eq!(split_refs("'a,b'!$A$1:$B$2,'a,b'!$D$1:$E$2"), vec!["'a,b'!$A$1:$B$2", "'a,b'!$D$1:$E$2"]);
     }
 
     #[test]
     fn splitting() {
         let size = |_: u32| 10.0;
         let none = HashSet::new();
-        assert_eq!(
-            split(1, 10, &size, 35.0, 0.0, 0, &none),
-            vec![(1, 3), (4, 6), (7, 9), (10, 10)]
-        );
+        assert_eq!(split(1, 10, &size, 35.0, 0.0, 0, &none), vec![(1, 3), (4, 6), (7, 9), (10, 10)]);
         // Titles (rows 1-2, 20pt) before every page after the first.
-        assert_eq!(
-            split(1, 10, &size, 40.0, 20.0, 2, &none),
-            vec![(1, 4), (5, 6), (7, 8), (9, 10)]
-        );
+        assert_eq!(split(1, 10, &size, 40.0, 20.0, 2, &none), vec![(1, 4), (5, 6), (7, 8), (9, 10)]);
         let breaks: HashSet<u32> = [3].into_iter().collect();
-        assert_eq!(
-            split(1, 5, &size, 100.0, 0.0, 0, &breaks),
-            vec![(1, 2), (3, 5)]
-        );
+        assert_eq!(split(1, 5, &size, 100.0, 0.0, 0, &breaks), vec![(1, 2), (3, 5)]);
         // Hidden rows take no room.
         let hidden = |i: u32| if i == 4 { 0.0 } else { 10.0 };
-        assert_eq!(
-            split(1, 6, &hidden, 30.0, 0.0, 0, &none),
-            vec![(1, 4), (5, 6)]
-        );
+        assert_eq!(split(1, 6, &hidden, 30.0, 0.0, 0, &none), vec![(1, 4), (5, 6)]);
     }
 
     #[test]
@@ -2403,18 +1941,12 @@ mod tests {
         let (c, _) = hf_content(&s[1], "S", "a.xlsx", "", &now);
         assert_eq!(c, "counter(page) \" / \" counter(pages) \" ページ\"");
         assert_eq!(hf_content(&s[2], "S", "", "", &now).0, "\"2026/10/31\"");
-        assert_eq!(
-            hf_content("&A &F &&", "集計", "a.xlsx", "", &now).0,
-            "\"集計 a.xlsx &\""
-        );
+        assert_eq!(hf_content("&A &F &&", "集計", "a.xlsx", "", &now).0, "\"集計 a.xlsx &\"");
     }
 
     #[test]
     fn colors_of_formats() {
-        assert_eq!(
-            format_color("#,##0;[Red]-#,##0", Some(-1.0)),
-            Some("#FF0000")
-        );
+        assert_eq!(format_color("#,##0;[Red]-#,##0", Some(-1.0)), Some("#FF0000"));
         assert_eq!(format_color("#,##0;[赤]-#,##0", Some(1.0)), None);
         assert_eq!(format_color("[Blue]0", Some(1.0)), Some("#0000FF"));
     }
@@ -2432,18 +1964,13 @@ mod tests {
 pub(super) fn install(n: &super::N) {
     // xlsxPrintHtml(book, optionsJSON) -> JSON { html, charts: [{ sheet, index }], pages }
     n.set("xlsxPrintHtml", |h, a| {
-        let o: PrintOptions =
-            serde_json::from_str(&a.str(1)).map_err(|e| a.throw(&crate::Error::from(e)))?;
+        let o: PrintOptions = serde_json::from_str(&a.str(1)).map_err(|e| a.throw(&crate::Error::from(e)))?;
         let out = super::xlsx::with_book(h, a, |b| workbook_html(b, &o).map_err(|e| a.throw(&e)))?;
-        a.ret(
-            serde_json::json!({ "html": out.html, "charts": out.charts, "pages": out.pages })
-                .to_string(),
-        )
+        a.ret(serde_json::json!({ "html": out.html, "charts": out.charts, "pages": out.pages }).to_string())
     });
     // xlsxPrintPages(book, optionsJSON) -> JSON [{ sheet, pages, across, down, scale, areas: [{ range, across, down, pages }] }]
     n.set("xlsxPrintPages", |h, a| {
-        let mut o: PrintOptions =
-            serde_json::from_str(&a.str(1)).map_err(|e| a.throw(&crate::Error::from(e)))?;
+        let mut o: PrintOptions = serde_json::from_str(&a.str(1)).map_err(|e| a.throw(&crate::Error::from(e)))?;
         o.layout_only = true;
         let out = super::xlsx::with_book(h, a, |b| workbook_html(b, &o).map_err(|e| a.throw(&e)))?;
         a.ret(serde_json::to_string(&out.sheets).map_err(|e| a.throw(&crate::Error::from(e)))?)

@@ -48,10 +48,7 @@ pub(crate) fn form(c: &Console, o: &FormOptions) -> Option<Map<String, Value>> {
             let edits = ask_edits(c, f)?;
             if !edits.is_empty() {
                 let cells = values.entry("$cells").or_insert_with(|| json!({}));
-                cells
-                    .as_object_mut()
-                    .unwrap()
-                    .insert(f.name.clone(), Value::Array(edits));
+                cells.as_object_mut().unwrap().insert(f.name.clone(), Value::Array(edits));
             }
         }
     }
@@ -65,21 +62,11 @@ pub(crate) fn form(c: &Console, o: &FormOptions) -> Option<Map<String, Value>> {
 /// Asks which of the form's buttons to press: the index of a button, or
 /// null for the submit button (listed last, the default).
 fn ask_button(c: &Console, o: &FormOptions) -> Option<Value> {
-    let mut opts: Vec<FormOption> = o
-        .buttons
-        .iter()
-        .enumerate()
-        .map(|(i, b)| FormOption {
-            value: i.to_string(),
-            label: b.clone(),
-        })
-        .collect();
+    let mut opts: Vec<FormOption> =
+        o.buttons.iter().enumerate().map(|(i, b)| FormOption { value: i.to_string(), label: b.clone() }).collect();
     let mut cur = "0";
     if !o.submit.is_empty() {
-        opts.push(FormOption {
-            value: String::new(),
-            label: o.submit.clone(),
-        });
+        opts.push(FormOption { value: String::new(), label: o.submit.clone() });
         cur = "";
     }
     let v = ask_choice(c, &t!("ui.formButton"), &opts, cur)?;
@@ -90,11 +77,7 @@ fn ask_button(c: &Console, o: &FormOptions) -> Option<Value> {
 }
 
 fn field_label(f: &FormField) -> String {
-    if f.label.is_empty() {
-        f.name.clone()
-    } else {
-        f.label.clone()
-    }
+    if f.label.is_empty() { f.name.clone() } else { f.label.clone() }
 }
 
 fn value_string(v: &Value) -> String {
@@ -114,10 +97,7 @@ fn value_string(v: &Value) -> String {
 }
 
 fn is_yes(s: &str) -> bool {
-    matches!(
-        s.trim().to_lowercase().as_str(),
-        "y" | "yes" | "はい" | "ok" | "1" | "true"
-    )
+    matches!(s.trim().to_lowercase().as_str(), "y" | "yes" | "はい" | "ok" | "1" | "true")
 }
 
 fn ask_field(c: &Console, f: &FormField) -> Option<Value> {
@@ -183,11 +163,7 @@ fn ask_rows(c: &Console, label: &str, f: &FormField) -> Option<Value> {
             }
         }
     }
-    let prompt = if nums.is_empty() {
-        t!("ui.tablePick")
-    } else {
-        t!("ui.tableKeep", nums.join(","))
-    };
+    let prompt = if nums.is_empty() { t!("ui.tablePick") } else { t!("ui.tableKeep", nums.join(",")) };
     loop {
         let line = c.prompt("", &prompt, "")?;
         match line.trim() {
@@ -241,11 +217,7 @@ fn ask_edits(c: &Console, f: &FormField) -> Option<Vec<Value>> {
             let label = &f.columns[ci];
             let v = match col.kind.as_str() {
                 "select" => ask_choice(c, label, &col.options, &row[ci])?,
-                "checkbox" => json!(is_yes(&c.prompt(
-                    "",
-                    &format!("{label} [y/n]"),
-                    &row[ci]
-                )?)),
+                "checkbox" => json!(is_yes(&c.prompt("", &format!("{label} [y/n]"), &row[ci])?)),
                 _ => Value::String(c.prompt("", label, &row[ci])?),
             };
             row[ci] = value_string(&v);
@@ -258,12 +230,7 @@ fn ask_edits(c: &Console, f: &FormField) -> Option<Vec<Value>> {
 /// "row 3 金額: message" for an error of a table cell.
 pub(crate) fn cell_error_text(f: &FormField, e: &FormCellError) -> String {
     if e.col >= 0 && (e.col as usize) < f.columns.len() {
-        t!(
-            "form.cellError",
-            e.row + 1,
-            f.columns[e.col as usize],
-            e.message
-        )
+        t!("form.cellError", e.row + 1, f.columns[e.col as usize], e.message)
     } else {
         t!("form.rowError", e.row + 1, e.message)
     }
@@ -273,10 +240,7 @@ fn accept_filters(accept: &[String]) -> Vec<FileFilter> {
     if accept.is_empty() {
         return Vec::new();
     }
-    vec![FileFilter {
-        description: String::new(),
-        patterns: accept.iter().map(|a| format!("*{a}")).collect(),
-    }]
+    vec![FileFilter { description: String::new(), patterns: accept.iter().map(|a| format!("*{a}")).collect() }]
 }
 
 /// Lists the options and accepts a number, a value or a label.

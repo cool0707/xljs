@@ -51,21 +51,9 @@ pub fn default_names() -> Vec<String> {
     let more: &[&str] = if cfg!(windows) {
         &["Yu Gothic", "Meiryo", "MS Gothic", "Arial", "Segoe UI"]
     } else if cfg!(target_os = "macos") {
-        &[
-            "Hiragino Sans",
-            "Hiragino Kaku Gothic ProN",
-            "Helvetica",
-            "Arial",
-        ]
+        &["Hiragino Sans", "Hiragino Kaku Gothic ProN", "Helvetica", "Arial"]
     } else {
-        &[
-            "Noto Sans CJK JP",
-            "Noto Sans JP",
-            "IPAexGothic",
-            "IPAGothic",
-            "DejaVu Sans",
-            "Liberation Sans",
-        ]
+        &["Noto Sans CJK JP", "Noto Sans JP", "IPAexGothic", "IPAGothic", "DejaVu Sans", "Liberation Sans"]
     };
     v.extend(more.iter().map(|s| s.to_string()));
     v.retain(|s| !s.is_empty());
@@ -118,11 +106,7 @@ fn font_dirs() -> Vec<PathBuf> {
     let mut v = Vec::new();
     let env = |k: &str| std::env::var_os(k).map(PathBuf::from);
     if cfg!(windows) {
-        v.push(
-            env("WINDIR")
-                .unwrap_or_else(|| PathBuf::from(r"C:\Windows"))
-                .join("Fonts"),
-        );
+        v.push(env("WINDIR").unwrap_or_else(|| PathBuf::from(r"C:\Windows")).join("Fonts"));
         if let Some(p) = env("LOCALAPPDATA") {
             v.push(p.join(r"Microsoft\Windows\Fonts"));
         }
@@ -144,10 +128,7 @@ fn font_dirs() -> Vec<PathBuf> {
 }
 
 fn is_font_file(p: &Path) -> bool {
-    let e = p
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
+    let e = p.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     matches!(e.as_str(), "ttf" | "ttc" | "otf" | "otc")
 }
 
@@ -168,12 +149,8 @@ fn be32(b: &[u8], i: usize) -> u32 {
 /// The names (family, full, typographic family; every language, normalized)
 /// of each face in a font file, reading only the headers and the name table.
 pub fn face_names(path: &Path) -> Vec<(u32, Vec<String>)> {
-    let Ok(mut f) = std::fs::File::open(path) else {
-        return Vec::new();
-    };
-    let Some(head) = read_at(&mut f, 0, 12) else {
-        return Vec::new();
-    };
+    let Ok(mut f) = std::fs::File::open(path) else { return Vec::new() };
+    let Some(head) = read_at(&mut f, 0, 12) else { return Vec::new() };
     let offsets: Vec<u64> = if &head[..4] == b"ttcf" {
         let n = be32(&head, 8).min(256) as usize;
         match read_at(&mut f, 12, n * 4) {
@@ -185,25 +162,12 @@ pub fn face_names(path: &Path) -> Vec<(u32, Vec<String>)> {
     };
     let mut out = Vec::new();
     for (i, off) in offsets.into_iter().enumerate() {
-        let Some(t) = read_at(&mut f, off, 12) else {
-            continue;
-        };
+        let Some(t) = read_at(&mut f, off, 12) else { continue };
         let n = u16::from_be_bytes([t[4], t[5]]) as usize;
-        let Some(recs) = read_at(&mut f, off + 12, n * 16) else {
-            continue;
-        };
-        let Some(r) = (0..n)
-            .map(|k| &recs[k * 16..k * 16 + 16])
-            .find(|r| &r[..4] == b"name")
-        else {
-            continue;
-        };
-        let Some(data) = read_at(&mut f, be32(r, 8) as u64, be32(r, 12) as usize) else {
-            continue;
-        };
-        let Some(table) = ttf_parser::name::Table::parse(&data) else {
-            continue;
-        };
+        let Some(recs) = read_at(&mut f, off + 12, n * 16) else { continue };
+        let Some(r) = (0..n).map(|k| &recs[k * 16..k * 16 + 16]).find(|r| &r[..4] == b"name") else { continue };
+        let Some(data) = read_at(&mut f, be32(r, 8) as u64, be32(r, 12) as usize) else { continue };
+        let Some(table) = ttf_parser::name::Table::parse(&data) else { continue };
         let mut names: Vec<String> = Vec::new();
         for name in table.names {
             if matches!(name.name_id, 1 | 4 | 16)
@@ -227,11 +191,7 @@ fn system_faces() -> &'static Vec<(Vec<String>, PathBuf, u32)> {
     FACES.get_or_init(|| {
         let mut v = Vec::new();
         for dir in font_dirs() {
-            for e in walkdir::WalkDir::new(&dir)
-                .follow_links(true)
-                .into_iter()
-                .flatten()
-            {
+            for e in walkdir::WalkDir::new(&dir).follow_links(true).into_iter().flatten() {
                 if e.file_type().is_file() && is_font_file(e.path()) {
                     for (i, names) in face_names(e.path()) {
                         v.push((names, e.path().to_path_buf(), i));
@@ -251,15 +211,8 @@ pub fn locate(name: &str) -> Option<(PathBuf, u32)> {
         if !p.is_file() {
             return None;
         }
-        let want = p
-            .file_stem()
-            .map(|s| norm_name(&s.to_string_lossy()))
-            .unwrap_or_default();
-        let idx = face_names(p)
-            .iter()
-            .find(|(_, n)| n.contains(&want))
-            .map(|(i, _)| *i)
-            .unwrap_or(0);
+        let want = p.file_stem().map(|s| norm_name(&s.to_string_lossy())).unwrap_or_default();
+        let idx = face_names(p).iter().find(|(_, n)| n.contains(&want)).map(|(i, _)| *i).unwrap_or(0);
         return Some((p.to_path_buf(), idx));
     }
     let want = norm_name(name);
@@ -282,10 +235,7 @@ pub fn locate(name: &str) -> Option<(PathBuf, u32)> {
             }
         }
     }
-    system_faces()
-        .iter()
-        .find(|(n, _, _)| n.contains(&want))
-        .map(|(_, p, i)| (p.clone(), *i))
+    system_faces().iter().find(|(n, _, _)| n.contains(&want)).map(|(_, p, i)| (p.clone(), *i))
 }
 
 /// Loads a face (kept for the rest of the process: fonts are big and the
@@ -298,48 +248,27 @@ pub fn load(path: &Path, index: u32) -> Result<Arc<FontFile>> {
         return Ok(f.clone());
     }
     let data = std::fs::read(path).map_err(|e| Error::path("open", path.to_string_lossy(), e))?;
-    let face = ttf_parser::Face::parse(&data, index)
-        .map_err(|_| err!("pdfdoc.badFont", path.to_string_lossy()))?;
+    let face = ttf_parser::Face::parse(&data, index).map_err(|_| err!("pdfdoc.badFont", path.to_string_lossy()))?;
     // CFF2 (variable) outlines cannot be subset.
-    if face
-        .raw_face()
-        .table(ttf_parser::Tag::from_bytes(b"CFF2"))
-        .is_some()
-        && face.tables().glyf.is_none()
-    {
+    if face.raw_face().table(ttf_parser::Tag::from_bytes(b"CFF2")).is_some() && face.tables().glyf.is_none() {
         return Err(err!("pdfdoc.badFont", path.to_string_lossy()));
     }
-    let name_of = |id: u16| {
-        face.names()
-            .into_iter()
-            .filter(|n| n.name_id == id)
-            .find_map(|n| n.to_string().or_else(|| mac_roman(n.name)))
-    };
+    let name_of = |id: u16| face.names().into_iter().filter(|n| n.name_id == id).find_map(|n| n.to_string().or_else(|| mac_roman(n.name)));
     let ps_name: String = name_of(ttf_parser::name_id::POST_SCRIPT_NAME)
         .or_else(|| name_of(ttf_parser::name_id::FAMILY))
         .unwrap_or_default()
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
         .collect();
-    let ps_name = if ps_name.is_empty() {
-        "Font".to_string()
-    } else {
-        ps_name
-    };
-    let f = Arc::new(FontFile {
-        path: path.to_path_buf(),
-        index,
-        data: Arc::new(data),
-        ps_name,
-    });
+    let ps_name = if ps_name.is_empty() { "Font".to_string() } else { ps_name };
+    let f = Arc::new(FontFile { path: path.to_path_buf(), index, data: Arc::new(data), ps_name });
     cache.lock().unwrap().insert(key, f.clone());
     Ok(f)
 }
 
 /// A name of the Macintosh platform (ASCII is enough for PostScript names).
 fn mac_roman(b: &[u8]) -> Option<String> {
-    b.is_ascii()
-        .then(|| String::from_utf8_lossy(b).into_owned())
+    b.is_ascii().then(|| String::from_utf8_lossy(b).into_owned())
 }
 
 /// A font used in a document: the glyphs used so far, each with its new
@@ -356,13 +285,7 @@ pub struct FontUse {
 
 impl FontUse {
     pub fn new(file: Arc<FontFile>, id: ObjectId) -> FontUse {
-        FontUse {
-            file,
-            id,
-            remapper: GlyphRemapper::new(),
-            glyphs: BTreeMap::new(),
-            sealed: false,
-        }
+        FontUse { file, id, remapper: GlyphRemapper::new(), glyphs: BTreeMap::new(), sealed: false }
     }
 
     /// The CID of glyph gid (for text s).
@@ -370,11 +293,7 @@ impl FontUse {
         let cid = self.remapper.remap(gid);
         if !self.glyphs.contains_key(&cid) {
             let face = self.file.face();
-            let w = face
-                .glyph_hor_advance(ttf_parser::GlyphId(gid))
-                .unwrap_or(0) as f32
-                * 1000.0
-                / face.units_per_em() as f32;
+            let w = face.glyph_hor_advance(ttf_parser::GlyphId(gid)).unwrap_or(0) as f32 * 1000.0 / face.units_per_em() as f32;
             self.glyphs.insert(cid, (w, s.to_string()));
         }
         cid
@@ -382,24 +301,15 @@ impl FontUse {
 
     /// The width (1/1000 em) of glyphs by their CIDs.
     pub fn run_width(&self, cids: &[u16]) -> f64 {
-        cids.iter()
-            .map(|c| self.glyphs.get(c).map(|g| g.0 as f64).unwrap_or(0.0))
-            .sum()
+        cids.iter().map(|c| self.glyphs.get(c).map(|g| g.0 as f64).unwrap_or(0.0)).sum()
     }
 
     /// Writes the font (Type0 with a CID font of the subset) into its
     /// object.
     pub fn embed(&mut self, doc: &mut Document) -> Result<()> {
         self.sealed = true;
-        let fail = |e: &dyn std::fmt::Display| {
-            err!(
-                "pdfdoc.fontFailed",
-                self.file.path.to_string_lossy(),
-                e.to_string()
-            )
-        };
-        let sub = subsetter::subset(&self.file.data, self.file.index, &self.remapper)
-            .map_err(|e| fail(&e))?;
+        let fail = |e: &dyn std::fmt::Display| err!("pdfdoc.fontFailed", self.file.path.to_string_lossy(), e.to_string());
+        let sub = subsetter::subset(&self.file.data, self.file.index, &self.remapper).map_err(|e| fail(&e))?;
         let face = self.file.face();
         let scale = 1000.0 / face.units_per_em() as f32;
         let tag = subset_tag(&self.glyphs);
@@ -409,10 +319,7 @@ impl FontUse {
         let font_file = if cff {
             // CFF outlines: the CFF table of the subset (FontFile3 / CIDFontType0C).
             let raw = ttf_parser::RawFace::parse(&sub, 0).map_err(|e| fail(&e))?;
-            let data = raw
-                .table(ttf_parser::Tag::from_bytes(b"CFF "))
-                .ok_or_else(|| fail(&"no CFF table"))?
-                .to_vec();
+            let data = raw.table(ttf_parser::Tag::from_bytes(b"CFF ")).ok_or_else(|| fail(&"no CFF table"))?.to_vec();
             let mut d = Dictionary::new();
             d.set("Subtype", Object::Name(b"CIDFontType0C".to_vec()));
             compressed(d, data)
@@ -431,25 +338,14 @@ impl FontUse {
         desc.set("Flags", 4);
         desc.set(
             "FontBBox",
-            Object::Array(vec![
-                n(bbox.x_min as f32 * scale),
-                n(bbox.y_min as f32 * scale),
-                n(bbox.x_max as f32 * scale),
-                n(bbox.y_max as f32 * scale),
-            ]),
+            Object::Array(vec![n(bbox.x_min as f32 * scale), n(bbox.y_min as f32 * scale), n(bbox.x_max as f32 * scale), n(bbox.y_max as f32 * scale)]),
         );
         desc.set("ItalicAngle", Object::Real(face.italic_angle()));
         desc.set("Ascent", n(face.ascender() as f32 * scale));
         desc.set("Descent", n(face.descender() as f32 * scale));
-        desc.set(
-            "CapHeight",
-            n(face.capital_height().unwrap_or(face.ascender()) as f32 * scale),
-        );
+        desc.set("CapHeight", n(face.capital_height().unwrap_or(face.ascender()) as f32 * scale));
         desc.set("StemV", 80);
-        desc.set(
-            if cff { "FontFile3" } else { "FontFile2" },
-            Object::Reference(font_file_id),
-        );
+        desc.set(if cff { "FontFile3" } else { "FontFile2" }, Object::Reference(font_file_id));
         let desc_id = doc.add_object(desc);
 
         let mut w = Vec::new();
@@ -463,14 +359,7 @@ impl FontUse {
         sysinfo.set("Supplement", 0);
         let mut cid_font = Dictionary::new();
         cid_font.set("Type", Object::Name(b"Font".to_vec()));
-        cid_font.set(
-            "Subtype",
-            Object::Name(if cff {
-                b"CIDFontType0".to_vec()
-            } else {
-                b"CIDFontType2".to_vec()
-            }),
-        );
+        cid_font.set("Subtype", Object::Name(if cff { b"CIDFontType0".to_vec() } else { b"CIDFontType2".to_vec() }));
         cid_font.set("BaseFont", Object::Name(base.clone().into_bytes()));
         cid_font.set("CIDSystemInfo", sysinfo);
         cid_font.set("FontDescriptor", Object::Reference(desc_id));
@@ -481,20 +370,14 @@ impl FontUse {
         }
         let cid_id = doc.add_object(cid_font);
 
-        let to_unicode = doc.add_object(compressed(
-            Dictionary::new(),
-            to_unicode_cmap(&self.glyphs).into_bytes(),
-        ));
+        let to_unicode = doc.add_object(compressed(Dictionary::new(), to_unicode_cmap(&self.glyphs).into_bytes()));
 
         let mut font = Dictionary::new();
         font.set("Type", Object::Name(b"Font".to_vec()));
         font.set("Subtype", Object::Name(b"Type0".to_vec()));
         font.set("BaseFont", Object::Name(base.into_bytes()));
         font.set("Encoding", Object::Name(b"Identity-H".to_vec()));
-        font.set(
-            "DescendantFonts",
-            Object::Array(vec![Object::Reference(cid_id)]),
-        );
+        font.set("DescendantFonts", Object::Array(vec![Object::Reference(cid_id)]));
         font.set("ToUnicode", Object::Reference(to_unicode));
         doc.objects.insert(self.id, Object::Dictionary(font));
         Ok(())
@@ -515,9 +398,7 @@ fn subset_tag(glyphs: &BTreeMap<u16, (f32, String)>) -> String {
             h = (h ^ *b as u32).wrapping_mul(16777619);
         }
     }
-    (0..6)
-        .map(|i| (b'A' + ((h >> (i * 5)) % 26) as u8) as char)
-        .collect()
+    (0..6).map(|i| (b'A' + ((h >> (i * 5)) % 26) as u8) as char).collect()
 }
 
 fn utf16_hex(s: &str) -> String {
@@ -548,10 +429,7 @@ mod tests {
 
     #[test]
     fn names_are_normalized() {
-        assert_eq!(
-            norm_name("ＭＳ Ｐゴシック"),
-            "msｐゴシック".replace('ｐ', "p")
-        );
+        assert_eq!(norm_name("ＭＳ Ｐゴシック"), "msｐゴシック".replace('ｐ', "p"));
         assert_eq!(norm_name("Yu Gothic"), "yugothic");
         assert_eq!(norm_name("游ゴシック Medium"), "游ゴシックmedium");
     }
@@ -563,10 +441,7 @@ mod tests {
         g.insert(2, (1000.0, "あ".to_string()));
         g.insert(3, (1000.0, "😀".to_string()));
         let c = to_unicode_cmap(&g);
-        assert!(
-            c.contains("3 beginbfchar\n<0001> <0041>\n<0002> <3042>\n<0003> <D83DDE00>\n"),
-            "{c}"
-        );
+        assert!(c.contains("3 beginbfchar\n<0001> <0041>\n<0002> <3042>\n<0003> <D83DDE00>\n"), "{c}");
         assert_eq!(subset_tag(&g).len(), 6);
     }
 }
