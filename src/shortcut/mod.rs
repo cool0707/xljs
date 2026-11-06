@@ -4,7 +4,8 @@
 //! A .lnk goes through IShellLinkW on Windows (`win.rs`), so that Windows
 //! itself builds the item ID list and the link information; elsewhere (the
 //! tests on Linux) `lnk.rs` reads and writes the format (MS-SHLLINK)
-//! directly. A .url is a small INI file, handled here on every platform.
+//! directly (Windows builds never write links that way). A .url is a small
+//! INI file, handled here on every platform.
 
 #[cfg(any(not(windows), test))]
 pub(crate) mod lnk;

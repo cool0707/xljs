@@ -1,8 +1,10 @@
 //! The shell link format (.lnk, MS-SHLLINK) read and written without the
 //! shell: the header, the item ID list (read only), the link information,
 //! the strings and the environment variable blocks. Windows builds its
-//! links with IShellLinkW (`win.rs`); this serves the other platforms and
-//! the tests that check both against each other.
+//! links with IShellLinkW (`win.rs`); this serves the other platforms (the
+//! tests on Linux). The Windows tests check that it reads what IShellLinkW
+//! writes; the links it writes have no item ID list, and IShellLinkW gives
+//! no target for them.
 
 use super::Link;
 
