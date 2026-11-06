@@ -17,7 +17,9 @@ let tabButtons = []; // one per tab; fields name their tab by index (-1 = above 
 let state = "input"; // input | busy (waiting for the script) | running | stopping
 let ran = false;
 let noSubmit = false;
-let extraButtons = []; // the form's buttons (beside the submit button)
+let extraButtons = []; // the form's buttons (beside the submit button), with the toggles and items of their menus
+let extraNodes = []; // what init put in the footer for them
+let pressed = null, spinTimer = 0; // the button whose press runs (it shows a spinner), and the timer that shows it
 let seq = 0; // the last value set by the script (ctx.setValue) applied here; sent back with the values
 let chartTexts = {}, lang = "ja"; // for chart fields (chart.js)
 const controls = new Map(); // name -> { field, row, get(), set(value, append), focus() }
@@ -57,14 +59,26 @@ function init(m) {
   $("submit").replaceChildren(...withIcon(m.submitIcon, m.submit || texts.ok));
   noSubmit = !!m.noSubmit;
   $("submit").hidden = noSubmit;
-  for (const b of extraButtons) b.remove();
-  extraButtons = (m.buttons || []).map((label, k) => {
-    const b = el("button", { type: "button", title: (m.buttonTooltips || [])[k] || "" }, ...withIcon((m.buttonIcons || [])[k], label));
-    b.onclick = () => submit(k);
-    $("submit").before(b);
-    return b;
+  for (const n of extraNodes) n.remove();
+  extraButtons = [];
+  menus.length = 0;
+  extraNodes = (m.buttons || []).map((label, k) => {
+    const variant = (m.buttonVariants || [])[k] || "default";
+    const b = el("button", { type: "button", className: variantClass(variant), title: (m.buttonTooltips || [])[k] || "" },
+      ...withIcon((m.buttonIcons || [])[k], label));
+    extraButtons.push(b);
+    const menu = (m.buttonMenus || [])[k];
+    let node = b;
+    if (menu && (menu.items.length || !menu.split)) node = menuButton(b, k, menu, variant);
+    else b.onclick = () => submit(k, undefined, b);
+    $("submit").before(node);
+    return node;
   });
-  if (noSubmit && extraButtons.length) extraButtons[extraButtons.length - 1].classList.add("primary");
+  // Without the submit button the last button is the main one (unless it has its own look).
+  if (noSubmit && extraNodes.length && ((m.buttonVariants || [])[extraNodes.length - 1] || "default") === "default") {
+    const last = extraNodes[extraNodes.length - 1];
+    for (const b of last.matches("button") ? [last] : last.querySelectorAll(":scope > button")) b.classList.add("primary");
+  }
   $("cancel").textContent = texts.cancel;
   $("open").textContent = texts.openFolder;
   const box = $("fields");
@@ -77,9 +91,10 @@ function init(m) {
   const groupBoxes = groups.map(() => null);
   const startGroups = (i) => groups.forEach((g, k) => {
     if (g.at !== i || groupBoxes[k]) return;
-    const sec = el("section", { className: "group" },
-      el("h2", { className: "group-head" }, ...withIcon(g.icon, g.label)));
+    const head = el("h2", { className: "group-head" }, ...withIcon(g.icon, g.label));
+    const sec = el("section", { className: "group" }, head);
     if (g.help) sec.append(el("div", { className: "group-help", textContent: g.help }));
+    if (g.collapsible) collapsible(sec, head, g.collapsed);
     parent(g.tab).append(sec);
     groupBoxes[k] = sec;
   });
@@ -87,26 +102,66 @@ function init(m) {
     startGroups(i);
     const id = "f" + i;
     const c = buildControl(f, id);
-    const wide = f.type === "table" || f.type === "chart" ? " wide" : "";
-    const label = el("label", { className: "lbl" + wide, htmlFor: id }, ...(f.type === "checkbox" ? [] : withIcon(f.icon, f.label)));
-    if (f.required && f.type !== "checkbox") label.append(el("span", { className: "req", textContent: "*" }));
-    if (f.tooltip) label.title = c.node.title = f.tooltip;
+    const check = f.type === "checkbox" || f.type === "switch";
+    const wide = f.type === "table" || f.type === "chart" || f.type === "note" ? " wide" : "";
+    // A note has no label beside it (its label is its heading).
+    const label = f.type === "note" ? null : el("label", { className: "lbl" + wide, htmlFor: id }, ...(check ? [] : withIcon(f.icon, f.label)));
+    if (label && f.required && !check) label.append(el("span", { className: "req", textContent: "*" }));
+    if (f.tooltip) { if (label) label.title = f.tooltip; c.node.title = f.tooltip; }
     const ctl = el("div", { className: "ctl" + wide }, c.node);
-    if (f.help) ctl.append(el("div", { className: "help", textContent: f.help }));
+    const counter = f.maxLength && c.text ? el("div", { className: "counter" }) : null;
+    const help = f.help ? el("div", { className: "help", textContent: f.help }) : null;
+    if (counter) ctl.append(el("div", { className: "meta" }, help || el("div", { className: "help" }), counter));
+    else if (help) ctl.append(help);
     c.err = ctl.appendChild(el("div", { className: "err", hidden: true }));
     c.field = f;
     c.ctl = ctl;
-    (f.group >= 0 && groupBoxes[f.group] ? groupBoxes[f.group] : parent(f.tab)).append(label, ctl);
+    c.group = f.group >= 0 ? groupBoxes[f.group] : null;
+    (c.group || parent(f.tab)).append(...(label ? [label, ctl] : [ctl]));
     controls.set(f.name, c);
+    if (counter) countChars(c, counter);
     watch(c);
     c.set(f.value);
   });
   startGroups(fields.length);
   setState("input");
   if (tabButtons.length) showTab(0, false);
-  const first = fields.find((f) => f.type !== "checkbox" && f.type !== "radio" && f.type !== "table" && f.type !== "chart" && !(f.tab > 0));
+  const typing = ["text", "password", "number", "date", "month", "time", "select", "textarea", "file", "files", "folder", "saveFile", "combobox", "tags", "dateRange"];
+  const hidden = (f) => f.tab > 0 || !!controls.get(f.name).group?.classList.contains("collapsed");
+  const first = fields.find((f) => typing.includes(f.type) && !hidden(f));
   if (first) controls.get(first.name).focus();
   host.send({ type: "shown" });
+}
+
+/** Makes a group's heading open and close it (collapsed: closed at first). */
+function collapsible(sec, head, collapsed) {
+  head.classList.add("toggle");
+  head.prepend(el("i", { className: "fa-solid fa-chevron-right chevron" }));
+  head.tabIndex = 0;
+  head.setAttribute("role", "button");
+  const set = (closed) => {
+    sec.classList.toggle("collapsed", closed);
+    head.setAttribute("aria-expanded", String(!closed));
+  };
+  set(collapsed);
+  sec.open = () => set(false);
+  head.onclick = () => set(!sec.classList.contains("collapsed"));
+  head.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); head.click(); }
+  });
+}
+
+/** Shows "12 / 100" under a field with maxLength (red past it). */
+function countChars(c, counter) {
+  const max = c.field.maxLength;
+  const update = () => {
+    const n = Array.from(c.text.value).length;
+    counter.textContent = `${n} / ${max}`;
+    counter.classList.toggle("over", n > max);
+  };
+  c.text.addEventListener("input", update);
+  const set = c.set;
+  c.set = (v, append) => { set(v, append); update(); };
 }
 
 // ---- tabs
@@ -205,14 +260,75 @@ function input(type, f, id) {
   return i;
 }
 
+/** An input with its prefix and suffix ("¥", "件") inside its box. */
+function affix(f, i) {
+  if (!f.prefix && !f.suffix) return i;
+  return el("div", { className: "affix" },
+    f.prefix ? el("span", { className: "affix-text", textContent: f.prefix }) : null, i,
+    f.suffix ? el("span", { className: "affix-text", textContent: f.suffix }) : null);
+}
+
+/** Tells the field's checks that the user changed it (for controls without a native change event). */
+const changedBy = (node) => node.dispatchEvent(new Event("change", { bubbles: true }));
+
 function buildControl(f, id) {
   switch (f.type) {
-    case "checkbox": {
-      const i = el("input", { type: "checkbox", id, name: f.name });
+    case "checkbox": case "switch": {
+      const i = el("input", { type: "checkbox", id, name: f.name, className: f.type === "switch" ? "switch" : "" });
+      if (f.type === "switch") i.setAttribute("role", "switch");
       return {
         node: el("label", { className: "check" }, i, ...withIcon(f.icon, f.label)),
         get: () => i.checked, set: (v) => { i.checked = !!v; }, focus: () => i.focus(), inputs: [i],
       };
+    }
+    case "checkboxes": {
+      const inputs = (f.options || []).map((o, k) => el("input", { type: "checkbox", name: f.name, value: o.value, id: k ? "" : id }));
+      const node = el("div", { className: "choices" }, ...inputs.map((i, k) => el("label", {}, i, f.options[k].label)));
+      return {
+        node, inputs,
+        get: () => inputs.filter((i) => i.checked).map((i) => i.value),
+        set: (v) => { const on = new Set((Array.isArray(v) ? v : []).map(String)); for (const i of inputs) i.checked = on.has(i.value); },
+        focus: () => inputs[0]?.focus(),
+      };
+    }
+    case "segmented": return segmentedControl(f, id);
+    case "combobox": return comboControl(f, id);
+    case "tags": return tagsControl(f, id);
+    case "slider": {
+      const i = el("input", { type: "range", id, name: f.name });
+      for (const k of ["min", "max", "step"]) if (f[k] !== undefined && f[k] !== null) i[k] = f[k];
+      const out = el("output", { className: "slider-value", htmlFor: id });
+      const show = () => { out.textContent = (f.prefix || "") + i.value + (f.suffix || ""); };
+      i.addEventListener("input", show);
+      return {
+        node: el("div", { className: "slider" }, i, out), inputs: [i],
+        get: () => i.value, set: (v) => { i.value = v ?? ""; show(); }, focus: () => i.focus(),
+      };
+    }
+    case "dateRange": {
+      const a = el("input", { type: "date", id, name: f.name + "-from" });
+      const b = el("input", { type: "date", name: f.name + "-to" });
+      a.setAttribute("aria-label", texts.rangeFrom);
+      b.setAttribute("aria-label", texts.rangeTo);
+      // The end's calendar starts at the start date.
+      const limit = () => { b.min = a.value; };
+      a.addEventListener("change", limit);
+      return {
+        node: el("div", { className: "range" }, a, el("span", { className: "range-sep", textContent: "～" }), b), inputs: [a, b],
+        get: () => [a.value, b.value],
+        set: (v) => { const [x, y] = Array.isArray(v) ? v : []; a.value = x || ""; b.value = y || ""; limit(); },
+        focus: () => a.focus(),
+      };
+    }
+    case "note": {
+      const icons = { info: "fa-solid fa-circle-info", success: "fa-solid fa-circle-check", warning: "fa-solid fa-triangle-exclamation", error: "fa-solid fa-circle-xmark" };
+      const variant = icons[f.variant] ? f.variant : "info";
+      const body = el("div", { className: "note-body" });
+      const node = el("div", { className: "note " + variant, id },
+        el("i", { className: (f.icon || icons[variant]) + " note-icon" }),
+        el("div", { className: "note-text" }, f.label ? el("div", { className: "note-title", textContent: f.label }) : null, body));
+      node.setAttribute("role", variant === "error" || variant === "warning" ? "alert" : "note");
+      return { node, inputs: [], get: () => null, set: (v) => { body.textContent = v ?? ""; }, focus: () => {} };
     }
     case "radio": {
       const inputs = (f.options || []).map((o, k) => el("input", { type: "radio", name: f.name, value: o.value, id: k ? "" : id }));
@@ -241,7 +357,7 @@ function buildControl(f, id) {
     }
     case "textarea": {
       const t = el("textarea", { id, name: f.name, rows: f.rows || 4, placeholder: f.placeholder || "" });
-      return { node: t, inputs: [t], get: () => t.value, set: (v) => { t.value = v ?? ""; }, focus: () => t.focus() };
+      return { node: t, inputs: [t], text: t, get: () => t.value, set: (v) => { t.value = v ?? ""; }, focus: () => t.focus() };
     }
     case "file": case "folder": case "saveFile": {
       const i = input("text", f, id);
@@ -279,7 +395,8 @@ function buildControl(f, id) {
     }
     case "number": case "date": case "month": case "time": case "password": {
       const i = input(f.type, f, id);
-      return { node: i, inputs: [i], get: () => i.value, set: (v) => { i.value = v ?? ""; }, focus: () => i.focus() };
+      const text = f.type === "password" ? i : undefined;
+      return { node: affix(f, i), inputs: [i], text, get: () => i.value, set: (v) => { i.value = v ?? ""; }, focus: () => i.focus() };
     }
     case "table":
       return tableControl(f, id);
@@ -287,9 +404,202 @@ function buildControl(f, id) {
       return chartControl(f, id);
     default: {
       const i = input("text", f, id);
-      return { node: i, inputs: [i], get: () => i.value, set: (v) => { i.value = v ?? ""; }, focus: () => i.focus() };
+      return { node: affix(f, i), inputs: [i], text: i, get: () => i.value, set: (v) => { i.value = v ?? ""; }, focus: () => i.focus() };
     }
   }
+}
+
+/** Options as buttons side by side (one chosen, or several with multiple). */
+function segmentedControl(f, id) {
+  const opts = f.options || [];
+  const on = new Set();
+  const node = el("div", { className: "segmented" });
+  node.setAttribute("role", f.multiple ? "group" : "radiogroup");
+  const btns = opts.map((o, k) => {
+    const b = el("button", { type: "button", className: "seg", id: k ? "" : id, textContent: o.label });
+    b.setAttribute("role", f.multiple ? "checkbox" : "radio");
+    b.onclick = () => {
+      if (f.multiple) on.has(o.value) ? on.delete(o.value) : on.add(o.value);
+      else { if (on.has(o.value)) return; on.clear(); on.add(o.value); }
+      mark();
+      changedBy(node);
+    };
+    return b;
+  });
+  node.append(...btns);
+  const mark = () => {
+    const any = opts.some((o) => on.has(o.value));
+    btns.forEach((b, k) => {
+      const sel = on.has(opts[k].value);
+      b.classList.toggle("on", sel);
+      b.setAttribute("aria-checked", String(sel));
+      // One tab stop for the group (the chosen option); arrows move between the options.
+      b.tabIndex = f.multiple || sel || (!any && k === 0) ? 0 : -1;
+    });
+  };
+  node.addEventListener("keydown", (e) => {
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    const at = btns.indexOf(document.activeElement);
+    if (!step || at < 0) return;
+    e.preventDefault();
+    const next = btns[(at + step + btns.length) % btns.length];
+    next.focus();
+    if (!f.multiple) next.click();
+  });
+  return {
+    node, inputs: btns,
+    get: () => (f.multiple ? opts.filter((o) => on.has(o.value)).map((o) => o.value) : [...on][0] ?? ""),
+    set: (v) => { on.clear(); for (const x of [v].flat()) if (x !== null && x !== undefined && x !== "") on.add(String(x)); mark(); },
+    focus: () => (btns.find((b) => b.tabIndex === 0) || btns[0])?.focus(),
+  };
+}
+
+/**
+ * A text input with a list of the options that match what is typed. The
+ * value is the option whose label (or value) is typed, or (custom) the text.
+ */
+function comboControl(f, id) {
+  const opts = f.options || [];
+  const i = input("text", f, id);
+  i.classList.add("combo-input");
+  i.spellcheck = false;
+  i.setAttribute("role", "combobox");
+  i.setAttribute("aria-autocomplete", "list");
+  i.setAttribute("aria-expanded", "false");
+  const list = el("div", { className: "combo-list", hidden: true });
+  list.setAttribute("role", "listbox");
+  let shown = [], active = -1;
+  const labelOf = (v) => (opts.find((o) => o.value === v) || { label: v }).label;
+  const valueOf = (text) => {
+    const t = text.trim();
+    const o = opts.find((x) => x.label === t) || opts.find((x) => x.value === t);
+    return o ? o.value : t;
+  };
+  function render() {
+    list.textContent = "";
+    if (!shown.length) list.append(el("div", { className: "combo-empty", textContent: texts.noMatch }));
+    shown.slice(0, 200).forEach((o, k) => {
+      const item = el("div", { className: "combo-item" + (k === active ? " active" : ""), textContent: o.label });
+      item.setAttribute("role", "option");
+      item.addEventListener("mousedown", (e) => { e.preventDefault(); choose(o); });
+      list.append(item);
+    });
+    const a = list.children[active];
+    if (a) a.scrollIntoView({ block: "nearest" });
+  }
+  /** Opens the list with the options matching the text (all: every option, the current one active). */
+  function open(all) {
+    if (i.disabled) return;
+    const q = all ? "" : i.value.trim().toLowerCase();
+    shown = opts.filter((o) => !q || o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q));
+    active = all ? shown.findIndex((o) => o.label === i.value.trim()) : shown.length ? 0 : -1;
+    list.hidden = false;
+    i.setAttribute("aria-expanded", "true");
+    render();
+  }
+  function close() {
+    list.hidden = true;
+    i.setAttribute("aria-expanded", "false");
+  }
+  function choose(o) {
+    i.value = o.label;
+    close();
+    changedBy(i);
+  }
+  i.addEventListener("input", () => open(false));
+  i.addEventListener("mousedown", () => { if (list.hidden) open(true); });
+  i.addEventListener("blur", close);
+  i.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (list.hidden) { open(true); return; }
+      const n = Math.min(shown.length, 200);
+      if (n) { active = (active + (e.key === "ArrowDown" ? 1 : -1) + n) % n; render(); }
+    } else if (e.key === "Enter" && !list.hidden) {
+      e.preventDefault();
+      if (active >= 0 && shown[active]) choose(shown[active]);
+      else close();
+    } else if (e.key === "Escape" && !list.hidden) {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    }
+  });
+  return {
+    node: el("div", { className: "combo" }, i, list), inputs: [i],
+    get: () => valueOf(i.value), set: (v) => { i.value = labelOf(String(v ?? "")); close(); }, focus: () => i.focus(),
+  };
+}
+
+/** A list of strings as chips; typing and Enter (or a comma) adds one, Backspace on empty removes the last. */
+function tagsControl(f, id) {
+  const i = el("input", { type: "text", id, name: f.name, className: "tag-input", placeholder: f.placeholder || texts.addTag, spellcheck: false });
+  const box = el("div", { className: "tags" }, i);
+  let tags = [], removes = [];
+  const split = (s) => String(s).split(/[,、;\r\n\t]+/).map((x) => x.trim()).filter(Boolean);
+  function render() {
+    for (const n of [...box.querySelectorAll(".tag")]) n.remove();
+    removes = tags.map((t, k) => {
+      const x = el("button", { type: "button", className: "tag-x", title: texts.removeTag, tabIndex: -1 }, el("i", { className: "fa-solid fa-xmark" }));
+      x.setAttribute("aria-label", texts.removeTag + " " + t);
+      x.disabled = i.disabled;
+      x.onclick = (e) => { e.stopPropagation(); tags.splice(k, 1); render(); changedBy(box); i.focus(); };
+      i.before(el("span", { className: "tag" }, el("span", { textContent: t }), x));
+      return x;
+    });
+  }
+  /** Adds the tags in text; true if any was added. */
+  function add(text) {
+    const before = tags.length;
+    for (const t of split(text)) if (!tags.includes(t)) tags.push(t);
+    if (tags.length === before) return false;
+    render();
+    return true;
+  }
+  i.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
+    if (e.key === "Enter" && i.value.trim()) {
+      e.preventDefault();
+      if (add(i.value)) changedBy(box);
+      i.value = "";
+    } else if (e.key === "Backspace" && i.value === "" && tags.length) {
+      tags.pop();
+      render();
+      changedBy(box);
+    }
+  });
+  i.addEventListener("input", () => {
+    if (/[,、;\t]/.test(i.value)) {
+      const parts = i.value.split(/[,、;\t]/);
+      const rest = parts.pop();
+      if (add(parts.join(","))) changedBy(box);
+      i.value = rest;
+    }
+  });
+  i.addEventListener("paste", (e) => {
+    const t = e.clipboardData && e.clipboardData.getData("text");
+    if (!t || !/[\r\n,、;\t]/.test(t)) return;
+    e.preventDefault();
+    if (add(i.value + t)) changedBy(box);
+    i.value = "";
+  });
+  // Leaving the field adds what is typed (as the text input's own change would only report it).
+  i.addEventListener("change", (e) => {
+    if (!i.value.trim()) return;
+    e.stopPropagation();
+    add(i.value);
+    i.value = "";
+    changedBy(box);
+  });
+  box.addEventListener("mousedown", (e) => { if (e.target === box) { e.preventDefault(); i.focus(); } });
+  return {
+    node: box,
+    get inputs() { return [i, ...removes]; },
+    get: () => tags.concat(split(i.value).filter((t) => !tags.includes(t))),
+    set: (v) => { tags = []; i.value = ""; add((Array.isArray(v) ? v : v ? [v] : []).join("\n")); render(); },
+    focus: () => i.focus(),
+  };
 }
 
 // ---- table fields: sortable; rows are chosen by clicking (selectable) and the value is their indices.
@@ -633,11 +943,19 @@ function watch(c) {
     c.onChange = () => { if (!c.err.hidden || c.field.change) liveCheck(name, true, true); };
     return;
   }
+  if (c.field.type === "dateRange") {
+    // Not halfway: once both dates are entered (or none), or when the field is left.
+    const done = () => { const [a, b] = c.get(); return (a === "") === (b === ""); };
+    c.ctl.addEventListener("change", () => { if (done() || !c.err.hidden) liveCheck(name, true, true); });
+    c.ctl.addEventListener("focusout", (e) => { if (!c.ctl.contains(e.relatedTarget) && !done()) liveCheck(name, true, true); });
+    return;
+  }
   c.ctl.addEventListener("change", () => liveCheck(name, true, true));
   c.ctl.addEventListener("input", () => { if (!c.err.hidden) liveCheck(name, false); });
 }
 
 function setError(c, msg) {
+  if (msg && c.group && c.group.open) c.group.open(); // a closed group opens to show it
   c.err.textContent = msg;
   c.err.hidden = !msg;
   c.ctl.classList.toggle("invalid", !!msg);
@@ -673,25 +991,116 @@ function setState(s) {
   for (const c of controls.values()) for (const i of c.inputs) i.disabled = !editing;
   $("submit").disabled = !editing;
   for (const b of extraButtons) b.disabled = !editing;
+  if (!editing) closeMenus();
+  if (editing) {
+    clearTimeout(spinTimer);
+    if (pressed) pressed.classList.remove("loading");
+    pressed = null;
+  }
   $("cancel").disabled = s === "stopping";
   $("cancel").textContent = s === "running" ? texts.abort : s === "stopping" ? texts.aborting : ran ? texts.close : texts.cancel;
 }
 
-/** Sends the values for the submit button or, with k, the form's k-th button. */
-function submit(k) {
+/**
+ * Sends the values for the submit button or, with k, the form's k-th
+ * button (item: the item of its menu). The button pressed (b) shows a
+ * spinner until the form takes input again, unless that is right away.
+ */
+function submit(k, item, b) {
   if (state !== "input") return;
   flushCells();
+  closeMenus();
   setState("busy");
-  host.send(k === undefined ? { type: "submit", values: values(), seq } : { type: "submit", values: values(), seq, button: k });
+  pressed = b || (k === undefined ? $("submit") : null);
+  clearTimeout(spinTimer);
+  spinTimer = setTimeout(() => { if (pressed) pressed.classList.add("loading"); }, 150);
+  const m = { type: "submit", values: values(), seq };
+  if (k !== undefined) m.button = k;
+  if (item !== undefined) m.item = item;
+  host.send(m);
 }
 
+const variantClass = (v) => (v === "primary" ? "primary" : v === "destructive" ? "destructive" : v === "ghost" ? "ghost" : "");
+
+// ---- menus of the buttons: a split button (the button, and a toggle for
+// its menu) or a menu button (no action of its own). The menu opens above
+// the footer; arrow keys move in it, Escape closes it.
+
+const menus = []; // { menu, toggle } of each button with a menu
+
+/** The footer node of button b (the k-th) with its menu. */
+function menuButton(b, k, spec, variant) {
+  const menu = el("div", { className: "menu", hidden: true });
+  menu.setAttribute("role", "menu");
+  const items = spec.items.map((x, j) => {
+    const it = el("button", { type: "button", className: "menu-item" + (x.variant === "destructive" ? " destructive" : ""), title: x.tooltip || "" },
+      ...withIcon(x.icon, x.label));
+    it.setAttribute("role", "menuitem");
+    it.tabIndex = -1;
+    it.onclick = () => submit(k, j, b);
+    return it;
+  });
+  menu.append(...items);
+  let toggle = b;
+  if (spec.split) {
+    b.onclick = () => submit(k, undefined, b);
+    toggle = el("button", { type: "button", className: "split-toggle " + variantClass(variant), title: texts.moreActions },
+      el("i", { className: "fa-solid fa-chevron-down" }));
+    toggle.setAttribute("aria-label", texts.moreActions);
+    extraButtons.push(toggle);
+  } else {
+    b.append(el("i", { className: "fa-solid fa-chevron-down caret" }));
+  }
+  toggle.setAttribute("aria-haspopup", "menu");
+  toggle.setAttribute("aria-expanded", "false");
+  extraButtons.push(...items);
+  const entry = { menu, toggle };
+  menus.push(entry);
+  const open = (focusItem) => {
+    closeMenus();
+    if (state !== "input" || !items.length) return;
+    menu.hidden = false;
+    // Under the button's right end, or its left end when that would leave the window.
+    menu.style.left = menu.style.right = "";
+    if (menu.getBoundingClientRect().left < 0) { menu.style.left = "0"; menu.style.right = "auto"; }
+    toggle.setAttribute("aria-expanded", "true");
+    if (focusItem !== undefined) items[(focusItem + items.length) % items.length].focus();
+  };
+  toggle.onclick = () => (menu.hidden ? open() : closeMenus());
+  toggle.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); open(e.key === "ArrowDown" ? 0 : -1); }
+  });
+  menu.addEventListener("keydown", (e) => {
+    const at = items.indexOf(document.activeElement);
+    const step = e.key === "ArrowDown" ? 1 : e.key === "ArrowUp" ? -1 : 0;
+    if (step) { e.preventDefault(); items[(at + step + items.length) % items.length].focus(); }
+    else if (e.key === "Home" || e.key === "End") { e.preventDefault(); items[e.key === "Home" ? 0 : items.length - 1].focus(); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenus(); toggle.focus(); }
+    else if (e.key === "Tab") closeMenus();
+  });
+  return el("div", { className: "menu-wrap" + (spec.split ? " split" : "") }, ...(spec.split ? [b, toggle] : [b]), menu);
+}
+
+function closeMenus() {
+  for (const { menu, toggle } of menus) {
+    menu.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+  }
+}
+const menuOpen = () => menus.some((x) => !x.menu.hidden);
+document.addEventListener("mousedown", (e) => { if (!e.target.closest(".menu-wrap")) closeMenus(); });
+
 // Enter submits (not when the submit button is hidden).
-$("form").addEventListener("submit", (e) => { e.preventDefault(); if (!noSubmit) submit(); });
+$("form").addEventListener("submit", (e) => { e.preventDefault(); if (!noSubmit) submit(undefined, undefined, $("submit")); });
 $("submit").onclick = () => submit();
 $("cancel").onclick = cancel;
 $("open").onclick = () => host.send({ type: "open" });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") { e.preventDefault(); cancel(); }
+  if (e.key === "Escape") {
+    e.preventDefault();
+    if (menuOpen()) closeMenus();
+    else cancel();
+  }
   // Ctrl+Tab / Ctrl+PageDown and back switch tabs.
   const step = e.ctrlKey && (e.key === "Tab" ? (e.shiftKey ? -1 : 1) : e.key === "PageDown" ? 1 : e.key === "PageUp" ? -1 : 0);
   if (step && tabButtons.length) {

@@ -1,0 +1,14 @@
+{
+  "form": [
+    {"on": false, "depts": [], "unit": "年", "customer": "鈴木", "free": "名古屋", "rate": "60", "period": ["2026-04-01", ""], "words": ["見積", "3"], "price": "1,200", "memo": "あいうえおか"},
+    {"depts": ["経理", "営業"], "unit": "月", "days": "1;2", "customer": "佐藤工業", "rate": 15, "period": ["2026-04-01", "2026-05-10"], "words": "見積;請求", "memo": "あいうえお"},
+    {},
+    {},
+    {"$button": 0},
+    {"$button": "保存 ▸ 名前を付けて保存", "n": 2},
+    {"$button": "PDF"},
+    {"$button": 3},
+    {"$button": "削除"}
+  ],
+  "confirm": [false, true]
+}
