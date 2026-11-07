@@ -27,10 +27,19 @@ AI チャットと並べてスクリプトを作る・直すための画面。�
 - `wizardCreate`: フォルダに仮のスクリプト（アプリなら雛形と `ui/index.html`）を作って開き、依頼文をコピーさせる。名前が「おまかせ」「未定」なら `.xljs/dev.json` の `unnamed` に入れる。
 - `unnamed` の入口のスクリプトに AI のスクリプトのファイルが来たら、`download` に `rename`（ブラウザの ` (1)` を除いた名前）を付ける。ページで「名前を変える」がオンのまま承認すると、置き換えたあと名前を変え、履歴のフォルダとチャットの紐付けも移す（`Session::rename_entry`）。
 
+## 画面の配置（`dev.js` の layout）
+
+- 枠（グループ）を左右に最大 4 つ並べ、それぞれにタブを持つ（エディタの分割表示と同じ形）。タブは AI チャット（`chat`）とキャンバスの各パネル（`code` `diff` `preview` `history` `output`）。AI チャットだけのグループはタブ列を出さず、チャットのバー（ホーム・アドレス）がそのまま見出しになる。
+- タブ（とチャットのバー。アドレス欄を除く）を押したまま 6px 動かすとドラッグ。落とす先は、タブ列の中（並べ替え・別のグループへ）、グループの中央（そのグループへ）、グループの左端・右端の 1/4（その横に新しいグループ。グループが 4 つあるときは不可）。グループを丸ごと動かしたときはそのグループの幅を保ち、タブから作ったグループは割ったグループの半分の幅。空になったグループは消える。Esc で取りやめ。ドラッグの終わりのクリックは捨てる。
+- ドラッグ中は AI チャットの枠（ネイティブの WebView2）を隠す。ページの上に重なって落とす先の表示を隠し、マウスも取るため。
+- 要素は所属するグループが変わったときだけ DOM を移す（iframe は移すと読み込み直す。プレビューは `ready` で同じフォームを返すので元に戻る）。並びはフレックスの `order`。
+- ツールバーの「AI チャットだけ」はチャットのあるグループだけを、「キャンバスだけ」はチャットのタブを隠す。「左右を入れ替え」はグループの並びを逆にし、「配置を元に戻す」は既定（左にチャット、右にキャンバス）に戻す。
+- 配置は `localStorage` の `xljs.dev.layout`（`{mode, groups: [{id, tabs, active, size}]}`）。以前の形（`{mode, swap, split}`）は読み込み時に変換する。
+
 ## AI チャットの枠
 
 - ページの WebView2 とは別に、子ウィンドウ（`xljsBrowserHost`）に 2 つ目の WebView2 を作る。外部サイトは iframe に入れられない（X-Frame-Options）ため。環境（ユーザーデータフォルダ）はページと同じなので、サインインは残る。環境のオプション `AllowSingleSignOnUsingOSPrimaryAccount` を有効にしているので、Microsoft のサイト（Copilot）には Edge と同じく Windows にサインインしているアカウントで自動的にサインインする（ローカルアカウントの Windows では効かない）。
-- 位置はページが決める。`dev.js` が `#chat-view` の矩形（CSS ピクセル）と `devicePixelRatio` を `{op:"browser", path:"show"}` で送り、Rust が子ウィンドウを `HWND_TOP` でそこに置く。親ウィンドウは `WS_CLIPCHILDREN`。ページ側のメニューやダイアログが枠に隠れないよう、ページは枠の上に重なる要素を作らない（確認は `confirm()` のネイティブダイアログ）。
+- 位置はページが決める。`dev.js` が `#chat-view` の矩形（チャットのタブが表示中のときだけ。ほかのタブの裏やドラッグ中は `hide`）（CSS ピクセル）と `devicePixelRatio` を `{op:"browser", path:"show"}` で送り、Rust が子ウィンドウを `HWND_TOP` でそこに置く。親ウィンドウは `WS_CLIPCHILDREN`。ページ側のメニューやダイアログが枠に隠れないよう、ページは枠の上に重なる要素を作らない（確認は `confirm()` のネイティブダイアログ）。
 - ダウンロード（`ICoreWebView2_4::DownloadStarting`）は保存先を一時フォルダ（`%TEMP%\xljs-dev\<pid>`）に変え、ダウンロードの表示を出さない（`Handled`）。完了（`StateChanged` が COMPLETED）で `BrowserEvent::Downloaded`。
 - `.js` などは WebView2 の「危険なファイルの種類」の確認（保存するかを毎回尋ねる）にかかるため、`ICoreWebView2_26::SaveFileSecurityCheckStarting` で、開発モードが読むテキストの拡張子（`project::TEXT_EXTS`。`BrowserOptions::trusted_extensions`）だけ既定の確認を外す（`SuppressDefaultPolicy`）。受け取ったファイルはテキストとして読むだけで実行しない。.exe などはそのまま確認される。SmartScreen（評判の確認）は切らない。ランタイムが 1.0.2903 より古いと、このイベントがないので従来どおり尋ねる。
 - 表示中のページ（`SourceChanged`）を `BrowserEvent::Url` で知らせ、スクリプトごとに `.xljs/dev.json` の `chat` に覚える。スクリプトを開くとその URL を開く。チャットを開いていない状態でスクリプトを開いたときは、今のチャットをそのスクリプトに紐付ける。「ホーム」でチャットを選び直す（紐付けを消し、`about:blank` にして隠す）。
