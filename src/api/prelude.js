@@ -907,6 +907,111 @@
     if (o.runAsAdmin !== undefined && o.runAsAdmin !== null) o.runAsAdmin = !!o.runAsAdmin;
     return native.shellWriteShortcut(toPath(p), operation === undefined || operation === null ? "create" : String(operation), JSON.stringify(o));
   };
+  // Running programs: run (Promise), runSync, spawn (a ChildProcess). With
+  // an array of arguments the program is started directly; without one the
+  // command is a command line for cmd.exe /c (sh -c elsewhere), unless it is
+  // the path of an existing file. Output is captured (stdout/stderr "pipe")
+  // and decoded ("auto": UTF-8 or CP932) unless encoding is "buffer".
+  const PROC_IO = ["pipe", "inherit", "ignore"];
+  const PROC_WINDOW = ["default", "normal", "hidden", "minimized", "maximized"];
+  const isFileAt = (p) => { try { const st = native.fsStat(p); return !!(st && st.isFile); } catch { return false; } };
+  function procSpec(name, command, args, options) {
+    if (args !== undefined && args !== null && !Array.isArray(args)) [args, options] = [undefined, args];
+    const o = options === undefined || options === null ? {} : options;
+    if (typeof o !== "object") throw new TypeError(T("process.badOption", name, String(o)));
+    const bad = (k, v) => { throw new TypeError(T("process.badOption", name + " " + k, String(v))); };
+    if (command === undefined || command === null || command === "") throw new TypeError(T("process.expectedCommand", String(command)));
+    const hasArgs = Array.isArray(args);
+    let shell = o.shell !== undefined && o.shell !== null ? !!o.shell : !hasArgs;
+    let cmd;
+    if (typeof command === "string") {
+      cmd = command;
+      if (shell && o.shell === undefined && isFileAt(expandEnv(command.trim()))) [shell, cmd] = [false, expandEnv(command.trim())];
+      else if (!shell) cmd = expandEnv(command);
+    } else {
+      cmd = toPath(command, "command");
+      shell = o.shell === true;
+    }
+    const io = (k, def) => {
+      const v = o[k];
+      if (v === undefined || v === null) return def;
+      if (!PROC_IO.includes(v)) bad(k, v);
+      return v;
+    };
+    const win = o.window === undefined || o.window === null ? "default" : String(o.window);
+    if (!PROC_WINDOW.includes(win)) bad("window", win);
+    const env = {};
+    if (o.env !== undefined && o.env !== null) {
+      if (typeof o.env !== "object") bad("env", o.env);
+      for (const [k, v] of Object.entries(o.env)) env[k] = v === undefined || v === null ? null : String(v);
+    }
+    const timeout = o.timeout === undefined || o.timeout === null ? 0 : Number(o.timeout);
+    if (!(timeout >= 0)) bad("timeout", o.timeout);
+    const spec = {
+      command: cmd,
+      args: hasArgs ? args.map((a) => (typeof a === "string" ? a : a instanceof FileSystemHandle || a instanceof File ? toPath(a) : String(a))) : [],
+      shell,
+      cwd: o.cwd === undefined || o.cwd === null ? null : native.pathResolve(toPath(o.cwd, "cwd")),
+      env,
+      window: win,
+      stdin: io("stdin", o.input !== undefined && o.input !== null ? "pipe" : "ignore"),
+      stdout: io("stdout", "pipe"),
+      stderr: io("stderr", "pipe"),
+      timeout,
+      encoding: o.encoding === undefined || o.encoding === null ? "auto" : String(o.encoding),
+    };
+    const input = o.input === undefined || o.input === null ? null : o.input;
+    const fn = (k) => {
+      if (o[k] === undefined || o[k] === null) return null;
+      return typeof o[k] === "function" ? o[k] : bad(k, o[k]);
+    };
+    const onOut = fn("onStdout"), onErr = fn("onStderr");
+    return [JSON.stringify(spec), input, onOut, onErr];
+  }
+  function procResult(r) {
+    const out = (x) => (typeof x === "string" ? x : new Uint8Array(x));
+    return {
+      exitCode: r.exitCode,
+      ok: r.exitCode === 0 && !r.timedOut,
+      stdout: out(r.stdout),
+      stderr: out(r.stderr),
+      timedOut: r.timedOut,
+      pid: r.pid,
+    };
+  }
+  class ChildProcess {
+    constructor(n) {
+      define(this, "_n", n);
+      define(this, "_wait", null);
+    }
+    get pid() { return this._n.pid; }
+    /** Whether the program is still running. */
+    get running() { return this._n.running(); }
+    /** The result once the program has ended (the script keeps running until then). */
+    wait() {
+      if (!this._wait) define(this, "_wait", this._n.wait().then(procResult));
+      return this._wait;
+    }
+    /** Ends the program (and the programs it started). */
+    kill() { this._n.kill(); }
+    /** Writes to the standard input (stdin: "pipe"). */
+    write(data) { this._n.write(data); }
+    /** Closes the standard input. */
+    end() { this._n.end(); }
+  }
+  shellObj.run = async (command, args, options) => {
+    const [spec, input, onOut, onErr] = procSpec("shell.run()", command, args, options);
+    return new ChildProcess(native.procSpawn(spec, input, onOut, onErr)).wait();
+  };
+  shellObj.runSync = (command, args, options) => {
+    const [spec, input, onOut, onErr] = procSpec("shell.runSync()", command, args, options);
+    const r = native.procRunSync(spec, input, onOut, onErr);
+    // In the debugger the lines come with the result.
+    if (r.lines) for (const [s, line] of r.lines) (s ? onErr : onOut)?.(line);
+    return procResult(r);
+  };
+  shellObj.spawn = (command, args, options) => new ChildProcess(native.procSpawn(...procSpec("shell.spawn()", command, args, options)));
+  defineGlobal("ChildProcess", ChildProcess);
   shellObj.showInFolder = shellObj.showItemInFolder;
   shellObj.open = (target) => (isURL(target) ? shellObj.openExternal(target) : shellObj.openPath(target));
   defineGlobal("shell", shellObj);

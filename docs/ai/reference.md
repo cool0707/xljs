@@ -110,6 +110,9 @@ description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows �
 | `shell.openExternal(url)` | ブラウザで開く |
 | `shell.writeShortcutLink(p, [op], { target, args, cwd, description, icon, iconIndex, windowState, hotkey, runAsAdmin })` | ショートカット（.lnk。URL なら .url）を作る・編集する。op は "create"（既定）/ "update"（指定した項目だけ変更）/ "replace"。書いたパスを返す |
 | `shell.readShortcutLink(p)` | ショートカットを読む（`target` がリンク先。ほかは上と同じ項目） |
+| `await shell.run(cmd, [args], { cwd, env, window, input, timeout, encoding, onStdout, onStderr, stdout, stderr })` | プログラムを実行して終わるのを待つ。`{ exitCode, ok, stdout, stderr, timedOut, pid }` を返す（0 以外でも例外にしない）。args（配列）があれば直接起動、なければ cmd.exe /c のコマンドライン。window は "default"（コンソールはウィンドウなし）/ "hidden" / "normal" / "minimized" / "maximized"。出力は既定で受け取り、CP932 も自動で読む |
+| `shell.runSync(cmd, [args], opts)` | run の同期版 |
+| `shell.spawn(cmd, [args], opts)` | 起動して待たない。`{ pid, running, wait(), kill(), write(s), end() }`（stdin: "pipe" で write） |
 
 ### ad（Active Directory。ドメイン参加の Windows のみ）
 
