@@ -2,10 +2,8 @@
 //! text boxes, lines and connectors, groups and pictures as HTML/SVG, in
 //! the order of the sheet's drawing, with the places of its charts.
 //!
-//! Only the common preset shapes are drawn as such (rectangles, rounded
-//! rectangles, ellipses, triangles, diamonds, arrows, callouts, flowchart
-//! symbols, stars, brackets ...); other presets fall back to their
-//! rectangle. Freeforms (custGeom) are drawn from their paths.
+//! The geometry of shapes (all the preset shapes, and freeforms) is in
+//! xlsx_geom.rs.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -13,6 +11,7 @@ use std::fmt::Write as _;
 use base64::Engine as _;
 
 use super::xlsx::Book;
+use super::xlsx_geom as geom;
 use super::xlsx_chart::{Anchor, ChartParts, Node, anchor_of, color_of};
 use super::xlsx_print::{esc, font_family, n};
 
@@ -260,323 +259,6 @@ fn style_ref(sp: &Node, name: &str, theme: &HashMap<String, String>) -> Option<(
     Some((color, idx))
 }
 
-/// The adjust values of a preset (adj, adj1, adj2 ... in 1/100000).
-fn adjusts(geom: &Node) -> HashMap<String, f64> {
-    let mut out = HashMap::new();
-    if let Some(av) = geom.child("avLst") {
-        for gd in av.all("gd") {
-            if let (Some(name), Some(f)) = (gd.attr("name"), gd.attr("fmla"))
-                && let Some(v) = f.strip_prefix("val ").and_then(|v| v.trim().parse::<f64>().ok())
-            {
-                out.insert(name.to_string(), v);
-            }
-        }
-    }
-    out
-}
-
-fn pts(p: &[(f64, f64)]) -> String {
-    let mut s = String::new();
-    for (i, (x, y)) in p.iter().enumerate() {
-        let _ = write!(s, "{}{},{} ", if i == 0 { "M" } else { "L" }, n(*x), n(*y));
-    }
-    s.push('Z');
-    s
-}
-
-/// The SVG path of a preset shape in a w × h box, and whether it is a line
-/// (no fill). None for presets this does not know.
-fn preset_path(prst: &str, w: f64, h: f64, adj: &HashMap<String, f64>) -> Option<(String, bool)> {
-    let ss = w.min(h);
-    let a = |k: &str, d: f64| adj.get(k).copied().unwrap_or(d) / 100000.0;
-    let rect = pts(&[(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)]);
-    let round_rect = |r: f64| {
-        let r = r.min(w / 2.0).min(h / 2.0);
-        format!(
-            "M{r},0 L{x1},0 A{r},{r} 0 0 1 {w},{r} L{w},{y1} A{r},{r} 0 0 1 {x1},{h} L{r},{h} A{r},{r} 0 0 1 0,{y1} L0,{r} A{r},{r} 0 0 1 {r},0 Z",
-            r = n(r),
-            x1 = n(w - r),
-            y1 = n(h - r),
-            w = n(w),
-            h = n(h)
-        )
-    };
-    let ellipse = format!("M0,{cy} A{rx},{ry} 0 1 1 {w},{cy} A{rx},{ry} 0 1 1 0,{cy} Z", cy = n(h / 2.0), rx = n(w / 2.0), ry = n(h / 2.0), w = n(w));
-    // Callouts: one outline with the tail in it, so that no line crosses
-    // the tail's base. The tip is at adj1, adj2 from the center (of the size).
-    let tip = (w / 2.0 + a("adj1", -20833.0) * w, h / 2.0 + a("adj2", 62500.0) * h);
-    let box_callout = |r: f64| -> String {
-        let r = r.min(w / 2.0).min(h / 2.0);
-        let (dx, dy) = ((tip.0 - w / 2.0) / w, (tip.1 - h / 2.0) / h);
-        // The edge the tail leaves from (none when the tip is inside).
-        let edge = if dx.abs() <= 0.5 && dy.abs() <= 0.5 {
-            ' '
-        } else if dx.abs() > dy.abs() {
-            if dx > 0.0 { 'r' } else { 'l' }
-        } else if dy > 0.0 {
-            'b'
-        } else {
-            't'
-        };
-        // The base of the tail on the edge: a quarter of it, on the tip's side.
-        let span = |len: f64, toward_end: bool| if toward_end { (len * 7.0 / 12.0, len * 10.0 / 12.0) } else { (len * 2.0 / 12.0, len * 5.0 / 12.0) };
-        let t = |e: char, p: f64, q: f64| -> String {
-            if e != edge {
-                return String::new();
-            }
-            let (a0, a1) = (p, q);
-            let pt = |u: f64| match e {
-                't' => (u, 0.0),
-                'r' => (w, u),
-                'b' => (u, h),
-                _ => (0.0, u),
-            };
-            let (b1, b2) = (pt(a0), pt(a1));
-            format!("L{},{} L{},{} L{},{} ", n(b1.0), n(b1.1), n(tip.0), n(tip.1), n(b2.0), n(b2.1))
-        };
-        let (tx0, tx1) = span(w, dx > 0.0);
-        let (ty0, ty1) = span(h, dy > 0.0);
-        let arc = |x: f64, y: f64| if r > 0.0 { format!("A{r},{r} 0 0 1 {},{} ", n(x), n(y), r = n(r)) } else { String::new() };
-        format!(
-            "M{},0 {}L{},0 {}{}L{},{} {}{}L{},{} {}{}L0,{} {}Z",
-            n(r),
-            t('t', tx0, tx1),
-            n(w - r),
-            arc(w, r),
-            t('r', ty0, ty1),
-            n(w),
-            n(h - r),
-            arc(w - r, h),
-            t('b', tx1, tx0),
-            n(r),
-            n(h),
-            arc(0.0, h - r),
-            t('l', ty1, ty0),
-            n(r),
-            arc(r, 0.0),
-        )
-    };
-    let ellipse_callout = || -> String {
-        let (rx, ry) = (w / 2.0, h / 2.0);
-        let (ux, uy) = ((tip.0 - rx) / rx.max(0.01), (tip.1 - ry) / ry.max(0.01));
-        if ux * ux + uy * uy <= 1.0 {
-            return ellipse.clone();
-        }
-        // The base: on the ellipse, either side of the direction of the tip.
-        let th = uy.atan2(ux);
-        let p = |a: f64| (rx + rx * a.cos(), ry + ry * a.sin());
-        let (b1, b2) = (p(th + 0.3), p(th - 0.3));
-        format!(
-            "M{},{} A{},{} 0 1 1 {},{} L{},{} Z",
-            n(b1.0),
-            n(b1.1),
-            n(rx),
-            n(ry),
-            n(b2.0),
-            n(b2.1),
-            n(tip.0),
-            n(tip.1)
-        )
-    };
-    let arrow = |dir: char| -> String {
-        // Shaft thickness adj1 (of the cross size), head length adj2 (of the short side).
-        let (len, cross) = if dir == 'r' || dir == 'l' { (w, h) } else { (h, w) };
-        let th = cross * a("adj1", 50000.0);
-        let head = (ss * a("adj2", 50000.0)).min(len);
-        let (s0, s1) = ((cross - th) / 2.0, (cross + th) / 2.0);
-        let p = [(0.0, s0), (len - head, s0), (len - head, 0.0), (len, cross / 2.0), (len - head, cross), (len - head, s1), (0.0, s1)];
-        let map = |(u, v): (f64, f64)| match dir {
-            'r' => (u, v),
-            'l' => (w - u, v),
-            'd' => (v, u),
-            _ => (v, h - u),
-        };
-        pts(&p.map(map))
-    };
-    Some(match prst {
-        "rect" | "flowChartProcess" => (rect, false),
-        "roundRect" => (round_rect(ss * a("adj", 16667.0)), false),
-        "flowChartAlternateProcess" => (round_rect(ss / 6.0), false),
-        "flowChartTerminator" => (round_rect(h.min(w) / 2.0), false),
-        "ellipse" | "flowChartConnector" => (ellipse, false),
-        "triangle" | "flowChartExtract" => {
-            let tx = w * if prst == "triangle" { a("adj", 50000.0) } else { 0.5 };
-            (pts(&[(tx, 0.0), (w, h), (0.0, h)]), false)
-        }
-        "flowChartMerge" => (pts(&[(0.0, 0.0), (w, 0.0), (w / 2.0, h)]), false),
-        "rtTriangle" => (pts(&[(0.0, 0.0), (w, h), (0.0, h)]), false),
-        "diamond" | "flowChartDecision" => (pts(&[(w / 2.0, 0.0), (w, h / 2.0), (w / 2.0, h), (0.0, h / 2.0)]), false),
-        "parallelogram" | "flowChartInputOutput" => {
-            let o = if prst == "parallelogram" { ss * a("adj", 25000.0) } else { w / 5.0 };
-            (pts(&[(o, 0.0), (w, 0.0), (w - o, h), (0.0, h)]), false)
-        }
-        "trapezoid" | "flowChartManualOperation" => {
-            let o = if prst == "trapezoid" { ss * a("adj", 25000.0) } else { w / 5.0 };
-            if prst == "trapezoid" { (pts(&[(o, 0.0), (w - o, 0.0), (w, h), (0.0, h)]), false) } else { (pts(&[(0.0, 0.0), (w, 0.0), (w - o, h), (o, h)]), false) }
-        }
-        "pentagon" | "homePlate" => {
-            let o = ss * a("adj", 50000.0);
-            (pts(&[(0.0, 0.0), (w - o, 0.0), (w, h / 2.0), (w - o, h), (0.0, h)]), false)
-        }
-        "chevron" => {
-            let o = ss * a("adj", 50000.0);
-            (pts(&[(0.0, 0.0), (w - o, 0.0), (w, h / 2.0), (w - o, h), (0.0, h), (o, h / 2.0)]), false)
-        }
-        "hexagon" | "flowChartPreparation" => {
-            let o = if prst == "hexagon" { ss * a("adj", 25000.0) } else { w / 5.0 };
-            (pts(&[(o, 0.0), (w - o, 0.0), (w, h / 2.0), (w - o, h), (o, h), (0.0, h / 2.0)]), false)
-        }
-        "octagon" => {
-            let o = ss * a("adj", 29289.0);
-            (pts(&[(o, 0.0), (w - o, 0.0), (w, o), (w, h - o), (w - o, h), (o, h), (0.0, h - o), (0.0, o)]), false)
-        }
-        "plus" | "mathPlus" => {
-            let o = ss * a("adj", 25000.0);
-            (pts(&[(o, 0.0), (w - o, 0.0), (w - o, o), (w, o), (w, h - o), (w - o, h - o), (w - o, h), (o, h), (o, h - o), (0.0, h - o), (0.0, o), (o, o)]), false)
-        }
-        "star5" => {
-            let (cx, cy) = (w / 2.0, h / 2.0);
-            let mut p = Vec::new();
-            for i in 0..10 {
-                let r = if i % 2 == 0 { 1.0 } else { 0.38 };
-                let ang = -std::f64::consts::FRAC_PI_2 + i as f64 * std::f64::consts::PI / 5.0;
-                p.push((cx + cx * r * ang.cos(), cy + cy * r * ang.sin()));
-            }
-            (pts(&p), false)
-        }
-        "rightArrow" => (arrow('r'), false),
-        "leftArrow" => (arrow('l'), false),
-        "downArrow" => (arrow('d'), false),
-        "upArrow" => (arrow('u'), false),
-        "leftRightArrow" => {
-            let th = h * a("adj1", 50000.0);
-            let head = (ss * a("adj2", 50000.0)).min(w / 2.0);
-            let (s0, s1) = ((h - th) / 2.0, (h + th) / 2.0);
-            (pts(&[(0.0, h / 2.0), (head, 0.0), (head, s0), (w - head, s0), (w - head, 0.0), (w, h / 2.0), (w - head, h), (w - head, s1), (head, s1), (head, h)]), false)
-        }
-        "upDownArrow" => {
-            let th = w * a("adj1", 50000.0);
-            let head = (ss * a("adj2", 50000.0)).min(h / 2.0);
-            let (s0, s1) = ((w - th) / 2.0, (w + th) / 2.0);
-            (pts(&[(w / 2.0, 0.0), (w, head), (s1, head), (s1, h - head), (w, h - head), (w / 2.0, h), (0.0, h - head), (s0, h - head), (s0, head), (0.0, head)]), false)
-        }
-        "wedgeRectCallout" => (box_callout(0.0), false),
-        "wedgeRoundRectCallout" => (box_callout(ss * a("adj3", 16667.0)), false),
-        "wedgeEllipseCallout" | "cloudCallout" => (ellipse_callout(), false),
-        "cloud" => (ellipse, false),
-        "flowChartDocument" => (
-            format!(
-                "M0,0 L{w},0 L{w},{y} C{c1},{y2} {c2},{y3} 0,{y} Z",
-                w = n(w),
-                y = n(h * 0.83),
-                c1 = n(w * 0.6),
-                y2 = n(h * 0.65),
-                c2 = n(w * 0.4),
-                y3 = n(h * 1.05)
-            ),
-            false,
-        ),
-        "flowChartPredefinedProcess" => (format!("{rect} M{x1},0 L{x1},{h} M{x2},0 L{x2},{h}", x1 = n(w / 8.0), x2 = n(w * 7.0 / 8.0), h = n(h)), false),
-        "can" | "flowChartMagneticDisk" => {
-            let ry = ss * a("adj", 25000.0) / 2.0;
-            (
-                format!(
-                    "M0,{ry} A{rx},{ry} 0 0 1 {w},{ry} L{w},{y1} A{rx},{ry} 0 0 1 0,{y1} Z M0,{ry} A{rx},{ry} 0 0 0 {w},{ry}",
-                    ry = n(ry),
-                    rx = n(w / 2.0),
-                    w = n(w),
-                    y1 = n(h - ry)
-                ),
-                false,
-            )
-        }
-        "frame" => {
-            let t = ss * a("adj1", 12500.0);
-            (format!("{rect} {}", pts(&[(t, t), (t, h - t), (w - t, h - t), (w - t, t)])), false)
-        }
-        "leftBracket" | "rightBracket" => {
-            let r = (h * a("adj", 8333.0)).min(w);
-            let d = if prst == "leftBracket" {
-                format!("M{w},0 A{w},{r} 0 0 0 0,{r} L0,{y1} A{w},{r} 0 0 0 {w},{h}", w = n(w), r = n(r), y1 = n(h - r), h = n(h))
-            } else {
-                format!("M0,0 A{w},{r} 0 0 1 {w},{r} L{w},{y1} A{w},{r} 0 0 1 0,{h}", w = n(w), r = n(r), y1 = n(h - r), h = n(h))
-            };
-            (d, true)
-        }
-        "leftBrace" | "rightBrace" => {
-            let (x0, x1) = if prst == "leftBrace" { (w, 0.0) } else { (0.0, w) };
-            let xm = (x0 + x1) / 2.0;
-            let r = (h * a("adj1", 8333.0)).min(h / 4.0);
-            let d = format!(
-                "M{x0},0 Q{xm},0 {xm},{r} L{xm},{a1} Q{xm},{m} {x1},{m} Q{xm},{m} {xm},{a2} L{xm},{b1} Q{xm},{h} {x0},{h}",
-                x0 = n(x0),
-                x1 = n(x1),
-                xm = n(xm),
-                r = n(r),
-                a1 = n(h / 2.0 - r),
-                m = n(h / 2.0),
-                a2 = n(h / 2.0 + r),
-                b1 = n(h - r),
-                h = n(h)
-            );
-            (d, true)
-        }
-        "line" | "straightConnector1" => (format!("M0,0 L{},{}", n(w), n(h)), true),
-        "bentConnector2" => (format!("M0,0 L{},0 L{},{}", n(w), n(w), n(h)), true),
-        "bentConnector3" => {
-            let x = w * a("adj1", 50000.0);
-            (format!("M0,0 L{x},0 L{x},{h} L{w},{h}", x = n(x), h = n(h), w = n(w)), true)
-        }
-        "bentConnector4" | "bentConnector5" => {
-            let x = w * a("adj1", 50000.0);
-            (format!("M0,0 L{x},0 L{x},{h} L{w},{h}", x = n(x), h = n(h), w = n(w)), true)
-        }
-        "curvedConnector2" | "curvedConnector3" | "curvedConnector4" | "curvedConnector5" => {
-            (format!("M0,0 C{},0 {},{} {},{}", n(w / 2.0), n(w / 2.0), n(h), n(w), n(h)), true)
-        }
-        _ => return None,
-    })
-}
-
-/// The SVG path of a freeform (custGeom) in a w × h box.
-fn custom_path(geom: &Node, w: f64, h: f64) -> (String, bool, bool) {
-    let mut d = String::new();
-    let (mut filled, mut stroked) = (false, false);
-    let Some(list) = geom.child("pathLst") else { return (d, false, false) };
-    for p in list.all("path") {
-        let pw = p.attr("w").and_then(|v| v.parse::<f64>().ok()).filter(|v| *v > 0.0);
-        let ph = p.attr("h").and_then(|v| v.parse::<f64>().ok()).filter(|v| *v > 0.0);
-        let (kx, ky) = (pw.map(|v| w / v).unwrap_or(1.0 / EMU_PT), ph.map(|v| h / v).unwrap_or(1.0 / EMU_PT));
-        filled |= p.attr("fill") != Some("none");
-        stroked |= p.attr("stroke") != Some("0") && p.attr("stroke") != Some("false");
-        let pt = |n0: &Node| -> Option<String> {
-            let x = n0.attr("x")?.parse::<f64>().ok()? * kx;
-            let y = n0.attr("y")?.parse::<f64>().ok()? * ky;
-            Some(format!("{},{}", n(x), n(y)))
-        };
-        for c in &p.children {
-            let ps: Vec<String> = c.all("pt").filter_map(pt).collect();
-            match c.name.as_str() {
-                "moveTo" if !ps.is_empty() => {
-                    let _ = write!(d, "M{} ", ps[0]);
-                }
-                "lnTo" if !ps.is_empty() => {
-                    let _ = write!(d, "L{} ", ps[0]);
-                }
-                "cubicBezTo" if ps.len() == 3 => {
-                    let _ = write!(d, "C{} {} {} ", ps[0], ps[1], ps[2]);
-                }
-                "quadBezTo" if ps.len() == 2 => {
-                    let _ = write!(d, "Q{} {} ", ps[0], ps[1]);
-                }
-                "close" => d.push_str("Z "),
-                _ => {}
-            }
-        }
-    }
-    (d, filled, stroked)
-}
-
 /// An arrowhead of a line end (headEnd / tailEnd), as an SVG marker.
 fn marker(end: Option<&Node>, color: &str, id: &str, width: f64) -> Option<String> {
     let e = end?;
@@ -624,34 +306,21 @@ fn dash(ln: Option<&Node>, width: f64) -> String {
 
 fn shape_html(ctx: &Ctx, sp: &Node, x: &Xfrm, w: f64, h: f64) -> String {
     let props = sp.child("spPr");
-    let geom_preset = props.and_then(|p| p.child("prstGeom"));
-    let geom_custom = props.and_then(|p| p.child("custGeom"));
-    let (mut d, mut line) = (String::new(), false);
-    let (mut can_fill, mut can_stroke) = (true, true);
-    if let Some(g) = geom_preset {
-        let prst = g.attr("prst").unwrap_or("rect");
-        match preset_path(prst, w, h, &adjusts(g)) {
-            Some((p, l)) => (d, line) = (p, l),
-            None => d = preset_path("rect", w, h, &HashMap::new()).unwrap().0,
-        }
-    } else if let Some(g) = geom_custom {
-        (d, can_fill, can_stroke) = custom_path(g, w, h);
+    let geom = if let Some(g) = props.and_then(|p| p.child("prstGeom")) {
+        // Presets that are not defined are drawn as their rectangle.
+        geom::preset(g.attr("prst").unwrap_or("rect"), Some(g), w, h).or_else(|| geom::preset("rect", None, w, h))
+    } else if let Some(g) = props.and_then(|p| p.child("custGeom")) {
+        Some(geom::custom(g, w, h))
     } else if sp.name == "cxnSp" {
-        d = format!("M0,0 L{},{}", n(w), n(h));
-        line = true;
-    }
+        geom::preset("line", None, w, h)
+    } else {
+        None
+    };
+    let paths = geom.as_ref().map(|g| g.paths.as_slice()).unwrap_or_default();
     let ln = props.and_then(|p| p.child("ln"));
-    // Fill: the shape's own, else the theme's by its style; lines have none.
-    let fill = if line || !can_fill {
-        ("none".to_string(), 1.0)
-    } else {
-        paint(props, &ctx.theme).or_else(|| style_ref(sp, "fillRef", &ctx.theme).map(|(c, _)| (c, 1.0))).unwrap_or(("none".into(), 1.0))
-    };
-    let stroke = if !can_stroke {
-        ("none".to_string(), 1.0)
-    } else {
-        paint(ln, &ctx.theme).or_else(|| style_ref(sp, "lnRef", &ctx.theme).map(|(c, _)| (c, 1.0))).unwrap_or(("none".into(), 1.0))
-    };
+    // Fill: the shape's own, else the theme's by its style.
+    let fill = paint(props, &ctx.theme).or_else(|| style_ref(sp, "fillRef", &ctx.theme).map(|(c, _)| (c, 1.0))).unwrap_or(("none".into(), 1.0));
+    let stroke = paint(ln, &ctx.theme).or_else(|| style_ref(sp, "lnRef", &ctx.theme).map(|(c, _)| (c, 1.0))).unwrap_or(("none".into(), 1.0));
     let width = ln.and_then(|l| l.attr("w")).and_then(|v| v.parse::<f64>().ok()).map(|v| v / EMU_PT).unwrap_or_else(|| {
         match style_ref(sp, "lnRef", &ctx.theme).map(|(_, i)| i) {
             Some(1) => 0.5,
@@ -660,50 +329,75 @@ fn shape_html(ctx: &Ctx, sp: &Node, x: &Xfrm, w: f64, h: f64) -> String {
             None => 0.75,
         }
     });
-    let mut svg = String::new();
-    if !d.is_empty() && (fill.0 != "none" || stroke.0 != "none") {
-        let id = ctx.ids.get();
-        ctx.ids.set(id + 1);
-        let mut defs = String::new();
-        let mut ends = String::new();
-        if stroke.0 != "none" {
-            for (k, attr) in [("headEnd", "marker-start"), ("tailEnd", "marker-end")] {
-                let mid = format!("xm{id}{k}");
-                if let Some(m) = marker(ln.and_then(|l| l.child(k)), &stroke.0, &mid, width) {
-                    defs.push_str(&m);
-                    let _ = write!(ends, " {attr}=\"url(#{mid})\"");
-                }
+    let op = |name: &str, a: f64| if a < 1.0 { format!(" {name}-opacity=\"{}\"", n(a)) } else { String::new() };
+    let mut body = String::new();
+    let mut defs = String::new();
+    // The arrowheads (made once, for the open paths).
+    let mut ends: Option<String> = None;
+    for p in paths {
+        let f = if p.fill == geom::Fill::None || fill.0 == "none" { "none".to_string() } else { geom::shade(&fill.0, p.fill) };
+        let s = if p.stroke { stroke.0.as_str() } else { "none" };
+        if p.d.is_empty() || (f == "none" && s == "none") {
+            continue;
+        }
+        let _ = write!(body, "<path d=\"{}\" fill=\"{f}\"", p.d);
+        if f != "none" {
+            body.push_str(&op("fill", fill.1));
+        }
+        if s == "none" {
+            body.push_str(" stroke=\"none\"");
+        } else {
+            let _ = write!(body, " stroke=\"{s}\" stroke-width=\"{}\"{}{} stroke-linejoin=\"round\"", n(width), op("stroke", stroke.1), dash(ln, width));
+            if p.open {
+                let e = ends.get_or_insert_with(|| {
+                    let id = ctx.ids.get();
+                    ctx.ids.set(id + 1);
+                    let mut e = String::new();
+                    for (k, attr) in [("headEnd", "marker-start"), ("tailEnd", "marker-end")] {
+                        let mid = format!("xm{id}{k}");
+                        if let Some(m) = marker(ln.and_then(|l| l.child(k)), s, &mid, width) {
+                            defs.push_str(&m);
+                            let _ = write!(e, " {attr}=\"url(#{mid})\"");
+                        }
+                    }
+                    e
+                });
+                body.push_str(e);
             }
         }
+        body.push_str("/>");
+    }
+    let mut svg = String::new();
+    if !body.is_empty() {
         let flip = if x.flip_h || x.flip_v {
             format!(" transform=\"translate({},{}) scale({},{})\"", if x.flip_h { n(w) } else { "0".into() }, if x.flip_v { n(h) } else { "0".into() }, if x.flip_h { -1 } else { 1 }, if x.flip_v { -1 } else { 1 })
         } else {
             String::new()
         };
-        let op = |name: &str, a: f64| if a < 1.0 { format!(" {name}-opacity=\"{}\"", n(a)) } else { String::new() };
         let _ = write!(
             svg,
-            "<svg viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"none\" style=\"position:absolute;inset:0;width:100%;height:100%;overflow:visible\">{}<path d=\"{d}\" fill=\"{}\"{} stroke=\"{}\" stroke-width=\"{}\"{}{} stroke-linejoin=\"round\"{flip}{ends}/></svg>",
+            "<svg viewBox=\"0 0 {w} {h}\" preserveAspectRatio=\"none\" style=\"position:absolute;inset:0;width:100%;height:100%;overflow:visible\">{}<g{flip}>{body}</g></svg>",
             if defs.is_empty() { String::new() } else { format!("<defs>{defs}</defs>") },
-            fill.0,
-            op("fill", fill.1),
-            stroke.0,
-            n(width),
-            op("stroke", stroke.1),
-            dash(ln, width),
             w = n(w.max(0.01)),
             h = n(h.max(0.01)),
         );
     }
-    let text = sp.child("txBody").map(|t| text_html(ctx, sp, t)).unwrap_or_default();
+    // The text box of the geometry, mirrored with the shape.
+    let rect = geom.as_ref().and_then(|g| g.text).map(|(l, t, r, b)| {
+        let (l, r) = if x.flip_h { (w - r, w - l) } else { (l, r) };
+        let (t, b) = if x.flip_v { (h - b, h - t) } else { (t, b) };
+        (l.max(0.0), t.max(0.0), (w - r).max(0.0), (h - b).max(0.0))
+    });
+    let text = sp.child("txBody").map(|t| text_html(ctx, sp, t, rect.unwrap_or_default())).unwrap_or_default();
     format!("{svg}{text}")
 }
 
-/// The text of a shape (txBody).
-fn text_html(ctx: &Ctx, sp: &Node, tx: &Node) -> String {
+/// The text of a shape (txBody). bx is the distance of the geometry's text
+/// box from the shape's edges (left, top, right, bottom).
+fn text_html(ctx: &Ctx, sp: &Node, tx: &Node, bx: (f64, f64, f64, f64)) -> String {
     let body = tx.child("bodyPr");
     let ins = |k: &str, d: f64| body.and_then(|b| b.attr(k)).and_then(|v| v.parse::<f64>().ok()).unwrap_or(d) / EMU_PT;
-    let (l, t, r, b) = (ins("lIns", 91440.0), ins("tIns", 45720.0), ins("rIns", 91440.0), ins("bIns", 45720.0));
+    let (l, t, r, b) = (bx.0 + ins("lIns", 91440.0), bx.1 + ins("tIns", 45720.0), bx.2 + ins("rIns", 91440.0), bx.3 + ins("bIns", 45720.0));
     let anchor = match body.and_then(|b| b.attr("anchor")) {
         Some("ctr") => "center",
         Some("b") => "flex-end",
@@ -824,26 +518,6 @@ fn run_css(ctx: &Ctx, rpr: Option<&Node>, def: Option<&Node>, base_color: &str) 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn presets() {
-        let none = HashMap::new();
-        assert_eq!(preset_path("rect", 10.0, 5.0, &none).unwrap().0, "M0,0 L10,0 L10,5 L0,5 Z");
-        assert_eq!(preset_path("diamond", 10.0, 6.0, &none).unwrap().0, "M5,0 L10,3 L5,6 L0,3 Z");
-        // A right arrow: shaft half the height, head half the short side.
-        assert_eq!(preset_path("rightArrow", 20.0, 10.0, &none).unwrap().0, "M0,2.5 L15,2.5 L15,0 L20,5 L15,10 L15,7.5 L0,7.5 Z");
-        assert!(preset_path("straightConnector1", 10.0, 0.0, &none).unwrap().1, "a line");
-        let mut adj = HashMap::new();
-        adj.insert("adj".to_string(), 50000.0);
-        assert!(preset_path("roundRect", 10.0, 4.0, &adj).unwrap().0.starts_with("M2,0 L8,0 A2,2"));
-        assert!(preset_path("heart", 10.0, 10.0, &none).is_none());
-        // A callout is one outline: the tail (tip below left) is in the bottom edge.
-        let mut tail = HashMap::new();
-        tail.insert("adj1".to_string(), -25000.0);
-        tail.insert("adj2".to_string(), 100000.0);
-        assert_eq!(preset_path("wedgeRectCallout", 120.0, 60.0, &tail).unwrap().0, "M0,0 L120,0 L120,60 L50,60 L30,90 L20,60 L0,60 L0,0 Z");
-        assert_eq!(preset_path("wedgeRectCallout", 120.0, 60.0, &none).unwrap().0.matches('M').count(), 1);
-    }
 
     /// An SVG picture is drawn from the SVG, not from its PNG fallback.
     #[test]

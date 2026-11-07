@@ -88,6 +88,12 @@ shapes.append(anchor(3, 21, 5, 24, sp("rect", "印刷しない 12", text([run("�
 # Vertical text.
 shapes.append(anchor(6, 21, 7, 27, sp("rect", "縦書き 13", text([run("縦書きの文字")]).replace('anchor="ctr"', 'anchor="ctr" vert="eaVert"'),
     '<a:solidFill><a:srgbClr val="DDEBF7"/></a:solidFill>', style=STYLE.replace('<a:schemeClr val="lt1"/></a:fontRef>', '<a:schemeClr val="dk1"/></a:fontRef>'))))
+# Presets drawn from their definitions: a cloud callout with text, a
+# smiley face (its eyes are a darker shade of the fill), a heart.
+shapes.append(anchor(7, 21, 9, 26, sp("cloudCallout", "雲形吹き出し 14", text([run("雲の吹き出し")]),
+    '<a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>', style=STYLE.replace('<a:schemeClr val="lt1"/></a:fontRef>', '<a:schemeClr val="dk1"/></a:fontRef>'))))
+shapes.append(anchor(0, 25, 2, 29, sp("smileyFace", "スマイル 15", "", '<a:solidFill><a:srgbClr val="FFC000"/></a:solidFill>')))
+shapes.append(anchor(3, 25, 5, 29, sp("heart", "ハート 16", "", '<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>')))
 
 drawing = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr {NS}>' + "".join(shapes) + '</xdr:wsDr>'
 
