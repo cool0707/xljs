@@ -1264,6 +1264,91 @@ declare global {
     writeShortcutLink(path: PathLike, operation: "create" | "update" | "replace", options: ShortcutOptions): string;
     /** ショートカット（.lnk / .url）を読む。リンク先は target（target と icon の環境変数は展開済み） */
     readShortcutLink(path: PathLike): ShortcutDetails;
+    /**
+     * プログラムを実行し、終わるのを待つ（Promise）。終了コードと標準出力・標準エラーを返す。
+     * args（配列）を渡すとプログラムを直接起動する（引数は空白や " を含んでもそのまま渡る）。
+     * 渡さなければ command はコマンドライン（Windows は cmd.exe /c、ほかは sh -c。dir・パイプ・リダイレクトも使える）。
+     * ただし既存のファイルのパスならそのまま起動する。0 以外の終了コードでも例外にはしない（`ok` で判定）。
+     * 起動できない（見つからないなど）ときは例外。
+     * @example const r = await shell.run("robocopy", [src, dest, "/MIR"]); if (r.exitCode >= 8) throw new Error(r.stdout);
+     * @example const { stdout } = await shell.run("ipconfig /all");
+     */
+    run(command: PathLike, args?: string[], options?: RunOptions): Promise<RunResult>;
+    run(command: PathLike, options?: RunOptions): Promise<RunResult>;
+    /** run の同期版（終わるまでスクリプトが止まる）。onStdout / onStderr は出力が届くたびに呼ばれる */
+    runSync(command: PathLike, args?: string[], options?: RunOptions): RunResult;
+    runSync(command: PathLike, options?: RunOptions): RunResult;
+    /**
+     * プログラムを起動して、待たずに ChildProcess を返す（引数の扱いは run と同じ）。
+     * 終わりを待つなら wait()。待たなければスクリプトが終わってもプログラムは動き続ける。
+     * @example const p = shell.spawn("notepad.exe", [file]);
+     * @example const p = shell.spawn("sort", [], { stdin: "pipe" }); p.write("b\na\n"); p.end(); console.log((await p.wait()).stdout);
+     */
+    spawn(command: PathLike, args?: string[], options?: RunOptions): ChildProcess;
+    spawn(command: PathLike, options?: RunOptions): ChildProcess;
+  }
+  /** 標準入出力の行き先。"pipe": xljs が受け取る（stdin は write で書く）、"inherit": xljs と同じ（コンソール版のコンソールなど）、"ignore": なし */
+  type ProcessIO = "pipe" | "inherit" | "ignore";
+  interface RunOptions {
+    /** 作業フォルダー（既定はカレントディレクトリ） */
+    cwd?: PathLike;
+    /** 追加・変更する環境変数（null で削除）。ほかは xljs のものを引き継ぐ */
+    env?: Record<string, string | null | undefined>;
+    /**
+     * ウィンドウ（Windows）。"default"（既定）: コンソールのプログラムはウィンドウなし（コンソール版ではそのコンソール）、
+     * ほかのプログラムは普通に開く。"hidden": 隠す、"normal": 表示（コンソールのプログラムは新しいコンソール）、
+     * "minimized": 最小化（アクティブにしない）、"maximized": 最大化
+     */
+    window?: "default" | "normal" | "hidden" | "minimized" | "maximized";
+    /** 標準入力に書く内容（書いたあと閉じる）。文字列は encoding（"auto" なら UTF-8）で書く */
+    input?: string | Uint8Array | ArrayBuffer;
+    /** 既定 "ignore"（input を指定すれば "pipe"） */
+    stdin?: ProcessIO;
+    /** 既定 "pipe"（結果の stdout に入る） */
+    stdout?: ProcessIO;
+    /** 既定 "pipe"（結果の stderr に入る） */
+    stderr?: ProcessIO;
+    /** 標準出力の 1 行ごとに呼ばれる（改行は含まない。\r だけの行区切り＝進捗の上書き表示も 1 行） */
+    onStdout?: (line: string) => void;
+    /** 標準エラーの 1 行ごとに呼ばれる */
+    onStderr?: (line: string) => void;
+    /** ミリ秒。過ぎたらプログラム（とそれが起動したプログラム）を終わらせる。結果の timedOut が true */
+    timeout?: number;
+    /**
+     * 出力の文字コード。"auto"（既定）: UTF-8 として正しければ UTF-8、そうでなければ CP932（日本語の Windows のコマンドの出力）。
+     * "utf8"・"cp932"・"utf16le" など。"buffer" なら stdout / stderr は Uint8Array
+     */
+    encoding?: Encoding | "buffer";
+    /** コマンドラインとして cmd.exe /c（sh -c）で実行する（既定: args がなければ true）。args は引用符で囲んで後ろに足す */
+    shell?: boolean;
+  }
+  interface RunResult<T extends string | Uint8Array = string> {
+    /** 終了コード（シグナルで終わったときは null） */
+    exitCode: number | null;
+    /** 終了コードが 0 で、時間切れでもない */
+    ok: boolean;
+    stdout: T;
+    stderr: T;
+    /** timeout で終わらせた */
+    timedOut: boolean;
+    /** プロセス ID */
+    pid: number;
+  }
+  /** shell.spawn で起動したプログラム */
+  class ChildProcess {
+    private constructor();
+    /** プロセス ID */
+    readonly pid: number;
+    /** まだ動いているか */
+    readonly running: boolean;
+    /** 終わるのを待って結果を返す（何度呼んでも同じ Promise。待っている間はスクリプトが終わらない） */
+    wait(): Promise<RunResult>;
+    /** 終わらせる（それが起動したプログラムも） */
+    kill(): void;
+    /** 標準入力に書く（stdin: "pipe" のとき。文字列は encoding で。"auto" なら UTF-8） */
+    write(data: string | Uint8Array | ArrayBuffer): void;
+    /** 標準入力を閉じる（プログラムに入力の終わりを知らせる） */
+    end(): void;
   }
   interface ShortcutOptions {
     /** リンク先（ファイル・フォルダ・URL）。相対パスはカレントディレクトリから。"%SystemRoot%\\..." は展開せずに保存する */

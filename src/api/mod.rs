@@ -11,6 +11,7 @@ mod fs;
 mod net;
 pub(crate) mod numfmt;
 mod pdf;
+mod process;
 mod sqlite;
 mod xlsx_calc;
 mod xlsx_cellimage;
@@ -371,6 +372,7 @@ pub(crate) fn install_natives<'js>(ctx: &Ctx<'js>, host: &Rc<Host>) -> rquickjs:
     pdf::install(&n);
     vba::install(&n);
     ui::install(&n);
+    process::install(&n);
     app::install(&n);
     ad::install(&n);
     net::install(&n);

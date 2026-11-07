@@ -14,6 +14,7 @@ pub mod i18n;
 pub mod meta;
 pub mod net;
 pub mod pack;
+pub mod process;
 pub mod shortcut;
 pub mod ui;
 pub mod vba;
