@@ -59,6 +59,21 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
     `validate: false` は `rawValues`（検証なし）。`close: true` は正常終了で閉じる。`submit: false` で送信ボタンを隠す（Enter も無効）。
     `ctx.setValue(name, value)` はページへ `picked`。コンソール/mock は `uiForm` の応答の `"$button"`（番号かラベル、null は送信）で、
     close なしのボタンのあとはフォームを再度尋ねる（mock の応答が尽きたら最後に検証を通った値を返す）。
+  - ボタンの見た目と動き（shadcn/ui に寄せたもの）: 押したボタンは状態が `input` に戻るまでスピナー（`button.loading`。
+    すぐ戻る検証エラーでちらつかないよう 150ms 後に付ける）。`variant`（primary / destructive / ghost）はクラス、init の `buttonVariants`。
+    `menu: [...]` はスプリットボタン（onClick なしならメニューだけのボタン）で、init の `buttonMenus`（`{ split, items }`）、
+    ページは `{"type":"submit","button":k,"item":j}`。メニューはフッターの上に開き、矢印・Home/End・Escape で操作する。
+    `confirm` は検証が通ったあとに `native.uiConfirm` で尋ね、「いいえ」は空の `errors` を返して入力に戻す。
+    コンソール/mock ではメニューの項目を「ボタン ▸ 項目」としてボタンのあとに平らに並べる（`o.actions`。`"$button"` はその番号かラベル）。
+  - 追加の項目（shadcn/ui の部品に相当するもの）。wire 値とコンソールでの扱い:
+    `switch`（bool。コンソールは checkbox）、`checkboxes`（文字列配列。コンソールは番号のカンマ区切り）、
+    `segmented`（radio と同じ。`multiple` は配列で checkboxes と同じ）、`combobox`（値の文字列。ラベルを渡しても値になる。
+    コンソールは `allowCustom` なしなら select、ありなら `combobox`＝番号か自由入力）、`slider`（数値の文字列。コンソールは number）、
+    `dateRange`（`["YYYY-MM-DD","YYYY-MM-DD"]`。値は `{ from, to }` か null。ページは両方入力するか欄を離れるまで検査しない）、
+    `tags`（文字列配列。コンソールは `;` 区切り）、`note`（値なし。wire は本文で、`ctx.setValue` で書き換えられる。remember しない）。
+    `prefix` / `suffix` は入力欄の枠の中（`.affix`。コンソールはラベルに「(¥ … 円)」）、`maxLength` は文字数の表示と検査（tags は 1 つずつ）。
+    グループの `collapsible` / `collapsed` は見出しで開閉し、中の項目にエラーが出ると開く（`formSize` は閉じたグループの項目を数えない）。
+    init の項目には、使ったときだけ `multiple` `custom` `variant` `prefix` `suffix` `maxLength` を入れる。
   - 編集できる表（`editable` / 列の `editable`）: `formTable` が列ごとのセル用フィールド（`normField` を流用、`t.edit`）を作る。
     検証はスクリプト側だけ（`checkValue` をフォーム項目と共用＋列の `validate`＋`validateRow`）。ページは入力欄（数値は text＋`inputmode`）で、
     入力が止まって 250ms か確定で `{"type":"cell",field,row,col,value}`、スクリプトは行に書き込んで（通らない値は `t.bad` に保持）

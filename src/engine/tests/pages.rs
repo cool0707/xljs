@@ -441,6 +441,70 @@ fn form_case(name: &str, src: &str, want: &str, pages: Vec<PageFn>) {
 }
 
 #[test]
+fn form_window_menus_and_new_fields() {
+    let pages: Vec<PageFn> = vec![Box::new(|p| {
+        let init = p.expect("init");
+        let menus = as_json(&init["buttonMenus"]);
+        check!(
+            p,
+            menus == r#"[{"items":[{"icon":"fa-solid fa-file-pdf","label":"PDF","tooltip":"","variant":"default"}],"split":true},{"items":[{"icon":"","label":"削除","tooltip":"","variant":"destructive"}],"split":false}]"#,
+            "buttonMenus = {menus}"
+        );
+        check!(p, as_json(&init["buttonVariants"]) == r#"["primary","default"]"#, "buttonVariants = {}", init["buttonVariants"]);
+        let fields = as_json(&init["fields"]);
+        for want in [
+            r#""label":"","max":null"#, // a note has no label unless given
+            r#""type":"note","value":"注意書き","variant":"warning""#,
+            r#""max":100,"min":0"#,
+            r#""prefix":"¥","#,
+            r#""type":"dateRange","value":["2026-04-01",""]"#,
+            r#""multiple":true"#,
+        ] {
+            check!(p, fields.contains(want), "fields do not contain {want}:\n{fields}");
+        }
+        let groups = as_json(&init["groups"]);
+        check!(p, groups.contains(r#""collapsed":true,"collapsible":true"#), "groups = {groups}");
+        // A live check of a dateRange half entered.
+        p.send(json!({"type": "check", "field": "r", "values": {"r": ["2026-04-10", "2026-04-01"]}, "change": true}), &[]);
+        let got = as_json(&p.expect("fieldError"));
+        check!(p, got == r#"{"error":"終了日が開始日より前になっています","field":"r","type":"fieldError"}"#, "fieldError = {got}");
+        // The menu button itself does nothing; its item runs once confirmed (the first time it is declined).
+        p.send(json!({"type": "submit", "button": 1, "values": {}}), &[]);
+        p.send(json!({"type": "submit", "button": 0, "item": 0, "values": {"r": ["2026-04-01", "2026-04-02"], "t": ["a", "b"]}}), &[]);
+        p.expect("running");
+        p.expect("done");
+        p.send(json!({"type": "submit", "button": 1, "item": 0, "values": {}}), &[]);
+        let got = as_json(&p.expect("errors"));
+        check!(p, got == r#"{"error":"","errors":{},"type":"errors"}"#, "errors = {got}");
+        p.send(json!({"type": "submit", "button": 1, "item": 0, "values": {"s": "30"}}), &[]);
+        p.wait_closed();
+    })];
+    let src = r#"
+const v = await ui.form({
+  fields: [
+    { name: "n", type: "note", variant: "warning", default: "注意書き" },
+    { name: "s", type: "slider" },
+    { name: "p", type: "number", prefix: "¥" },
+    { name: "r", type: "dateRange", default: ["2026-04-01", ""] },
+    { name: "m", type: "segmented", multiple: true, options: ["a", "b"] },
+    { group: "詳細", collapsed: true, fields: [{ name: "t", type: "tags" }] },
+  ],
+  buttons: [
+    { label: "保存", variant: "primary", onClick() { console.log("save"); }, menu: [{ label: "PDF", icon: "file-pdf", onClick(values) { console.log("pdf", values.r.to.getDate(), values.t.join()); } }] },
+    { label: "その他", menu: [{ label: "削除", variant: "destructive", confirm: "削除しますか？", close: true, onClick(values) { console.log("delete", values.s); } }] },
+  ],
+});
+console.log("v", v.s, "n" in v);
+"#;
+    let _l = lock_lang("ja");
+    let _cfg = config_dir();
+    let u = PageUi::new(r#"{"confirm": [false, true]}"#, None, pages);
+    let r = run_pages(&u, "menus.js", src);
+    let want = "pdf 2 a,b\ndelete 30\nv 30 false\n";
+    assert!(r.code == 0 && r.err.is_none() && r.stdout == want, "exit {}, {:?}, stdout {:?}, want {want:?}\nstderr:\n{}", r.code, r.err, r.stdout, r.stderr);
+}
+
+#[test]
 fn form_window_tables_and_tabs() {
     let pages: Vec<PageFn> = vec![Box::new(|p| {
         let init = p.expect("init");

@@ -244,13 +244,16 @@ declare global {
   // ------------------------------------------------------------------ ui.form
 
   type FormFieldType = "text" | "password" | "number" | "date" | "month" | "time" | "select" | "radio" |
-    "checkbox" | "textarea" | "file" | "files" | "folder" | "saveFile" | "table" | "chart";
+    "checkbox" | "textarea" | "file" | "files" | "folder" | "saveFile" | "table" | "chart" |
+    "switch" | "checkboxes" | "segmented" | "combobox" | "slider" | "dateRange" | "tags" | "note";
 
   /**
    * フォームの項目。値の型は type による:
-   * text / password / textarea / select / radio は string、number は number | null、
+   * text / password / textarea / select / radio / combobox は string、number は number | null、
    * date は Date | null（ローカル日付）、month は "YYYY-MM" | null、time は "HH:MM" | null、
-   * checkbox は boolean、file / saveFile は FileSystemFileHandle | null、
+   * checkbox / switch は boolean、slider は number、checkboxes / tags は string[]、
+   * segmented は string（multiple: true なら string[]）、dateRange は { from: Date, to: Date } | null、
+   * note は値なし、file / saveFile は FileSystemFileHandle | null、
    * files は FileSystemFileHandle[]、folder は FileSystemDirectoryHandle | null、
    * table は選択した行（元のオブジェクト）の配列（selectable: "single" なら行か null。selectable なしなら値なし。
    * 編集できる表で selectable なしならすべての行）、
@@ -263,14 +266,35 @@ declare global {
     label?: string;
     /** ラベルの前に出す Font Awesome のアイコン（"folder-open" は solid、"fa-regular fa-calendar" のようにクラスでも可） */
     icon?: string;
-    /** 既定 "text" */
+    /**
+     * 既定 "text"。switch はオン・オフのスイッチ（checkbox と同じ値）、checkboxes は options の複数選択、
+     * segmented は options を並べたボタン（radio と同じ値。multiple: true で複数選択）、
+     * combobox は入力で options を絞り込んで選ぶ欄（allowCustom: true なら自由入力も可）、
+     * slider は min〜max（既定 0〜100）のスライダー、dateRange は開始日と終了日、
+     * tags は Enter かカンマで区切って入力する文字列のリスト、
+     * note は入力欄ではなくメッセージの表示（label が見出し、default が本文、variant が種類）
+     */
     type?: FormFieldType;
-    /** 初期値。ファイル系はパスかハンドル、date は Date か "YYYY-MM-DD"、table は選択する行（行そのものか番号、配列可） */
+    /**
+     * 初期値。ファイル系はパスかハンドル、date は Date か "YYYY-MM-DD"、table は選択する行（行そのものか番号、配列可）、
+     * checkboxes / tags / segmented（multiple）は配列、dateRange は { from, to } か [from, to]（Date か "YYYY-MM-DD"）、note は本文
+     */
     default?: unknown;
-    /** 入力必須（checkbox はチェック必須、table は 1 行以上の選択が必須） */
+    /** 入力必須（checkbox / switch はオン必須、checkboxes は 1 つ以上、table は 1 行以上の選択が必須、dateRange は両方） */
     required?: boolean;
-    /** select / radio の選択肢 */
+    /** select / radio / checkboxes / segmented / combobox の選択肢 */
     options?: (string | { value: string; label?: string })[];
+    /** segmented で複数選べるようにする（値は string[]） */
+    multiple?: boolean;
+    /** combobox で選択肢にない入力も値として受け付ける */
+    allowCustom?: boolean;
+    /** note の種類（既定 "info"）。色とアイコンが変わる */
+    variant?: "info" | "success" | "warning" | "error";
+    /** text / number / password の入力欄の中に付ける前後の文字（"¥"、"件" など）。slider では値の表示に付く */
+    prefix?: string;
+    suffix?: string;
+    /** text / textarea / password の最大文字数。「12 / 100」と表示し、超えるとエラー。tags では 1 つあたり */
+    maxLength?: number;
     /** 入力欄が空のときの薄い表示。select では未選択の項目として表示し、初期値を未選択（""）にする */
     placeholder?: string;
     /** 入力欄の下に出す説明 */
@@ -305,7 +329,7 @@ declare global {
     chart?: ChartSpec | ExcelChart;
     /** ファイル系の拡張子（".xlsx" など）。ピッカーとドロップに使う */
     accept?: string | string[];
-    /** 入力全体が一致すべき正規表現（文字列なら全体一致） */
+    /** 入力全体が一致すべき正規表現（文字列なら全体一致）。tags では 1 つずつ */
     pattern?: string | RegExp;
     /** pattern に一致しないときのメッセージ */
     patternMessage?: string;
@@ -338,6 +362,10 @@ declare global {
     icon?: string;
     /** 見出しの下に出す説明 */
     help?: string;
+    /** 見出しのクリックで開閉できるようにする */
+    collapsible?: boolean;
+    /** 閉じた状態で表示する（collapsible を兼ねる）。中の項目にエラーが出ると開く */
+    collapsed?: boolean;
     fields: FormField[];
   }
 
@@ -381,14 +409,26 @@ declare global {
     table(name: string, rows: readonly unknown[], columns?: (string | FormTableColumn)[]): void;
   }
 
+  /**
+   * フォームのボタン。押されたボタンは処理が終わるまでスピナーを表示する。
+   * menu を付けると右に ▼ が付き（スプリットボタン）、メニューの項目もボタンと同じように実行する。
+   * onClick なしで menu だけならメニューを開くだけのボタンになる。
+   * コンソール・mock ではメニューの項目は「ボタン ▸ 項目」としてボタンのあとに並ぶ
+   */
   interface FormButton<V extends FormValues = FormValues> {
     label: string;
     /** Font Awesome のアイコン（FormField の icon と同じ） */
     icon?: string;
     /** マウスを重ねたときに出す説明（ツールチップ） */
     tooltip?: string;
-    /** 押されたときの処理。onSubmit と同じく、出力ファイルを返すと「フォルダを開く」ボタンを出す */
-    onClick(values: V, ctx: FormContext): unknown;
+    /** 見た目（既定 "default"＝枠線）。"primary" は塗りつぶし、"destructive" は赤（削除など）、"ghost" は枠なし */
+    variant?: "default" | "primary" | "destructive" | "ghost";
+    /** 実行の前に確認するメッセージ（検証が通ったあとに尋ね、「いいえ」ならフォームに戻る） */
+    confirm?: string;
+    /** メニューの項目（スプリットボタン）。項目は menu を持てない */
+    menu?: Omit<FormButton<V>, "menu">[];
+    /** 押されたときの処理。onSubmit と同じく、出力ファイルを返すと「フォルダを開く」ボタンを出す。menu があれば省略可 */
+    onClick?(values: V, ctx: FormContext): unknown;
     /** false なら検証せずに入力のままの値で実行する（読み込み・クリアなど）。既定 true */
     validate?: boolean;
     /** true なら onClick が正常に終わったらフォームを閉じる（ui.form はその値を返す） */
@@ -998,6 +1038,8 @@ declare global {
     copy(from: PathLike, to: PathLike): void;
     cwd(): string;
     chdir(path: PathLike): void;
+    /** デスクトップ・ドキュメントなどのフォルダのパス（OneDrive などへの移動も反映） */
+    knownFolder(name: WellKnownDirectory): string;
   }
   const fs: Fs;
 
@@ -1029,6 +1071,51 @@ declare global {
     openExternal(url: string): void;
     /** URL なら openExternal、それ以外は openPath */
     open(target: PathLike): void;
+    /**
+     * ショートカット（.lnk）を作る・編集する。target が URL なら .url（インターネットショートカット）。
+     * 名前が .lnk / .url で終わらなければ付け足す。書いたファイルのパスを返す（失敗は例外）。
+     * operation: "create"（既定。指定した項目だけで作り直す）、"update"（既存のショートカットの指定した項目だけ変える）、
+     * "replace"（既存のショートカットを作り直す）
+     * @example shell.writeShortcutLink(path.join(fs.knownFolder("desktop"), "売上"), { target: "\\\\server\\共有\\売上.xlsx" })
+     */
+    writeShortcutLink(path: PathLike, options: ShortcutOptions): string;
+    writeShortcutLink(path: PathLike, operation: "create" | "update" | "replace", options: ShortcutOptions): string;
+    /** ショートカット（.lnk / .url）を読む。リンク先は target（target と icon の環境変数は展開済み） */
+    readShortcutLink(path: PathLike): ShortcutDetails;
+  }
+  interface ShortcutOptions {
+    /** リンク先（ファイル・フォルダ・URL）。相対パスはカレントディレクトリから。"%SystemRoot%\\..." は展開せずに保存する */
+    target?: PathLike;
+    /** 引数 */
+    args?: string;
+    /** 作業フォルダー */
+    cwd?: PathLike;
+    /** コメント */
+    description?: string;
+    /** アイコンのファイル（.ico・.exe・.dll） */
+    icon?: PathLike;
+    /** アイコンの番号（既定 0） */
+    iconIndex?: number;
+    /** 実行時の大きさ（既定 "normal"） */
+    windowState?: "normal" | "maximized" | "minimized";
+    /** ショートカットキー（"Ctrl+Alt+K" など。"" でなし） */
+    hotkey?: string;
+    /** 管理者として実行 */
+    runAsAdmin?: boolean;
+  }
+  interface ShortcutDetails {
+    target: string;
+    args: string;
+    cwd: string;
+    description: string;
+    icon: string;
+    iconIndex: number;
+    windowState: "normal" | "maximized" | "minimized";
+    /** "Ctrl+Alt+K" など（なしは ""） */
+    hotkey: string;
+    runAsAdmin: boolean;
+    /** 読んだファイルの絶対パス（.lnk / .url を補ったときはそれを付けたもの） */
+    path: string;
   }
   const shell: Shell;
 

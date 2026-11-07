@@ -108,6 +108,8 @@ description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows �
 | `shell.showItemInFolder(p)` | エクスプローラーでファイルを選択した状態で開く（配列で複数可） |
 | `shell.openPath(p)` | 既定のアプリで開く（.xlsx なら Excel、フォルダならエクスプローラー） |
 | `shell.openExternal(url)` | ブラウザで開く |
+| `shell.writeShortcutLink(p, [op], { target, args, cwd, description, icon, iconIndex, windowState, hotkey, runAsAdmin })` | ショートカット（.lnk。URL なら .url）を作る・編集する。op は "create"（既定）/ "update"（指定した項目だけ変更）/ "replace"。書いたパスを返す |
+| `shell.readShortcutLink(p)` | ショートカットを読む（`target` がリンク先。ほかは上と同じ項目） |
 
 ### ad（Active Directory。ドメイン参加の Windows のみ）
 
@@ -361,8 +363,16 @@ if (!v) exit();
 | `files` | ファイルハンドルの配列 |
 | `folder` | フォルダハンドルか `null` |
 | `table` | 表から選んだ行（`rows` `columns` `selectable: true | "single"`） |
+| `switch` | `true` / `false`（オン・オフのスイッチ） |
+| `checkboxes` | 選んだ文字列の配列（`options` の複数選択。`required` は 1 つ以上） |
+| `segmented` | 選んだ文字列（`options` を横に並べたボタン。`multiple: true` なら配列） |
+| `combobox` | 選んだ選択肢の `value`（入力で `options` を絞り込む。`allowCustom: true` なら入力した文字列も可） |
+| `slider` | 数値（`min` `max` 既定 0〜100、`step`） |
+| `dateRange` | `{ from: Date, to: Date }` か `null`（`default: { from, to }`。開始 > 終了はエラー） |
+| `tags` | 文字列の配列（Enter かカンマで区切って入力。`pattern` `maxLength` は 1 つずつ） |
+| `note` | 値なし。メッセージの表示（`label` が見出し、`default` が本文、`variant: "info" | "success" | "warning" | "error"`） |
 
-- 項目の共通オプション: `label` `default` `required` `placeholder`（`select` では未選択の表示になり、初期値が `""`）`help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
+- 項目の共通オプション: `label` `default` `required` `placeholder`（`select` では未選択の表示になり、初期値が `""`）`help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`maxLength`（文字数の上限。「12 / 100」と表示）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
 - ウィンドウの大きさは `width` `height`（既定は項目数から決める）。`resizable: false` で大きさを固定する（枠のドラッグ・最大化ができない）。`titleBar: "custom"` で OS のタイトルバーの代わりに自前のタイトルバー（`icon` とタイトル、最小化・最大化・閉じる）を表示する（`ui.table` / `app.open` も同じ。メインウィンドウは `@titlebar custom`）。
 - `onChange(value, values, ctx)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる。`ctx.setValue(name, value)` でほかの項目を埋められる（setValue で変えた項目の onChange は呼ばれない）。
 
@@ -386,7 +396,7 @@ await ui.form({
 });
 ```
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
-- `fields` に `{ group: "出力", icon: "file-export", help: "説明", fields: [...] }` を項目と並べて書くと見出し付きのグループになる（タブの中でも可。値は項目と同じく 1 つのオブジェクト）。
+- `fields` に `{ group: "出力", icon: "file-export", help: "説明", fields: [...] }` を項目と並べて書くと見出し付きのグループになる（タブの中でも可。値は項目と同じく 1 つのオブジェクト）。`collapsed: true` で閉じた状態の「詳細設定」にできる（見出しのクリックで開閉。エラーが出ると開く）。`collapsible: true` は開いた状態で開閉可能。
 - アイコン（Font Awesome Free の名前。`"folder-open"` など）: 項目・タブ・ボタンの `icon`、送信ボタンは `submitIcon`。フォームの `icon` は `titleBar: "custom"` のときだけタイトルバーに出る（それ以外は無視）。
 - アクセントカラー: `accent: "#c42b1c"`（CSS の色。ライト・ダーク共通）か `accent: { light, dark }`。送信ボタン・タブ・フォーカス枠などの色が変わる。
 - 角丸: `radius: "large"`（`"none"` `"small"` `"medium"`（既定）`"large"` `"full"` かピクセル数）。ボタン・入力欄・タブ・表の角の丸み。
@@ -429,7 +439,9 @@ await ui.form({
 });
 ```
 
-- `buttons: [{ label, onClick(v, ctx) }]` で送信ボタンの左にボタンを追加できる。押すと onClick が onSubmit と同じように動く（ウィンドウは開いたまま）。`validate: false` で検証なし、`close: true` で正常終了後に閉じる。`submit: false` で送信ボタンを出さない。`ctx.setValue(name, value)` で項目の値を変えられる。
+- `buttons: [{ label, onClick(v, ctx) }]` で送信ボタンの左にボタンを追加できる。押すと onClick が onSubmit と同じように動く（ウィンドウは開いたまま。押したボタンは終わるまでスピナーを表示）。`validate: false` で検証なし、`close: true` で正常終了後に閉じる。`submit: false` で送信ボタンを出さない。`ctx.setValue(name, value)` で項目の値を変えられる。
+- ボタンの `variant`: `"primary"`（塗りつぶし）`"destructive"`（赤。削除など）`"ghost"`（枠なし）。`confirm: "削除しますか？"` で実行前に確認する（検証のあと）。
+- `menu: [{ label, onClick, ... }]` でスプリットボタン（本体と ▼ のメニュー）。`onClick` なしで `menu` だけなら、メニューを開くだけのボタン。
 
 ```js
 await ui.form({
@@ -437,6 +449,9 @@ await ui.form({
   fields: [{ name: "file", label: "名簿", type: "file", accept: [".xlsx"], required: true }, { name: "count", label: "件数", type: "number" }],
   buttons: [
     { label: "件数を確認", onClick(v, ctx) { ctx.setValue("count", workbooks.open(v.file).sheets[0].toObjects().length); } },
+    { label: "その他", menu: [
+      { label: "名簿を削除", variant: "destructive", confirm: "名簿を削除しますか？", onClick(v) { fs.remove(v.file); } },
+    ] },
   ],
   submit: "作成",
   async onSubmit(v, ctx) { /* ... */ },

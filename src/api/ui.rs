@@ -86,6 +86,17 @@ pub(super) fn install(n: &N) {
         h.env.ui.open_path(&a.str(0)).map_err(|e| a.throw(&e))?;
         a.undefined()
     });
+    // shellReadShortcut(path) -> detailsJSON
+    n.set("shellReadShortcut", |_, a| {
+        let d = crate::shortcut::read(&a.str(0)).map_err(|e| a.throw(&e))?;
+        a.ret(serde_json::to_string(&d).map_err(|e| a.throw(&Error::from(e)))?)
+    });
+    // shellWriteShortcut(path, operation, changesJSON) -> the file written
+    n.set("shellWriteShortcut", |_, a| {
+        let op = crate::shortcut::Operation::parse(&a.str(1)).map_err(|e| a.throw(&e))?;
+        let c: crate::shortcut::Changes = serde_json::from_str(&a.str(2)).map_err(|e| a.throw(&Error::from(e)))?;
+        a.ret(crate::shortcut::write(&a.str(0), op, &c).map_err(|e| a.throw(&e))?)
+    });
     // uiForm(optionsJSON) -> valuesJSON | null (UIs without windows)
     n.set("uiForm", |h, a| {
         let o: FormOptions = serde_json::from_str(&a.str(0)).map_err(|e| a.throw(&Error::from(e)))?;

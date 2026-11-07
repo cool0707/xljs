@@ -95,10 +95,9 @@ await xljs.htmlToPdf("<h1>報告書</h1>", "報告書.pdf", { paper: "A4" }); //
 - リッチテキスト（1 つのセルで一部だけフォント・色・大きさが違う）: ランは 1 つの `<span>` で包む（セルの `<div>` は縦方向の flex なので、
   包まないとランごとに行が分かれて最後のランしか見えない）。`rPr` のないランはセルのフォントのまま、`rPr` のあるランはそれがフォントのすべて
   （Excel はすべての属性を書く）なので、書いていない太字・斜体・下線は「なし」としてセルの書式を打ち消す。色がなければセルの色、自動は黒。
-  インライン文字列（`t="inlineStr"`。openpyxl などが書く）のリッチテキストは umya が最後のランの文字しか残さないので、開くときに
-  シートの XML から読み直してセルに入れる（`xlsx.rs` の `inline_rich_text`）。
-- 縮小して全体を表示（`shrinkToFit`）: umya はこの属性を読まない（保存でも落ちる）ので、開くときに styles.xml の `cellXfs` と
-  シートの XML のセルの `s` から該当するセルを集めておく（`RawPrint::shrink`）。セルの文字を `<span class="xljs-shrink" style="zoom:…">` で包み、
+  インライン文字列（`t="inlineStr"`。openpyxl などが書く）のリッチテキストも、共有文字列と同じくランごとに読む
+  （本家の umya は最後のランの文字しか残さない。フォークで修正。7 章）。
+- 縮小して全体を表示（`shrinkToFit`）: セルのスタイルの `Alignment::shrink_to_fit`（フォークで追加。7 章）。セルの文字を `<span class="xljs-shrink" style="zoom:…">` で包み、
   倍率はまず文字から大まかに見積もる（全角 1em、数字 0.5em、区切り記号 0.28em、ほか 0.55em。リッチテキストはランの大きさで）。
   PDF にするときは `print-page.js` の `shrinkToFit` が実際の幅を測って倍率を直す。折り返し・回転のセルでは縮小しない（Excel と同じ）。
   縮小するセルは隣へはみ出さず、数値も `###` にしない。
@@ -136,7 +135,7 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
   `_rvRel:LocalImageIdentifier` が `richValueRel.xml` の `rel` の位置（→ そのリレーションの `xl/media/*`）、`Text` が代替テキスト。
   部品はブックのリレーションの種類（`sheetMetadata` `rdRichValue` `rdRichValueStructure` `richValueRel`）から探す（名前の大文字・小文字は問わない）。
 - `IMAGE("https://…")`（構造 `_webImage`）は画像がファイルにないので空欄にする（`#VALUE!` は出さない）。EMF/WMF も空欄。
-- 画像として扱うのは、開いたときに `vm` があり、いまの値がエラーのままのセル（スクリプトが値を書いたら画像ではない）。位置で持っているので、行・列の挿入・削除はずれる（`shrink` と同じ）。
+- 画像として扱うのは、開いたときに `vm` があり、いまの値がエラーのままのセル（スクリプトが値を書いたら画像ではない）。位置で持っているので、行・列の挿入・削除はずれる。
 - **参照するセル**: Excel は `=B2` のセルにも `vm` を付けて保存するので、それはそのまま画像（保存された結果を使う。ほかの数式と同じ）。
   `vm` のない数式（スクリプトで書いた数式、`vm` を書かないツールが保存した数式）は `xlsx_calc` で評価し、結果が画像なら画像（`xlsx_calc::cell_image`）。
   計算の値 `V::Image` は参照・`IF`・`IFERROR`・`INDEX`・`VLOOKUP` / `HLOOKUP`・`XLOOKUP`（完全一致）をそのまま通り、数値・文字列として使うと `#VALUE!`（`=B2&""` など。Excel と同じ）。
@@ -188,14 +187,19 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
 
 ## 6. 残務
 
-umya-spreadsheet（3.1）の制約で残っているもの。いずれライブラリをフォークするなどして対応する。
+なし（umya-spreadsheet の制約で残っていたものはフォークで直した。7 章）。
 
-- **縮小して全体を表示（`shrinkToFit`）の保持と設定**: umya の `Alignment` にこの属性がなく、読み込みでも保存でも落ちる。
-  - 印刷は開くときに styles.xml とシートの XML から集めた `RawPrint::shrink`（セルの位置）で対応しているが、位置で持っているので
-    スクリプトで行・列の挿入や削除をすると印刷の縮小がずれる。
-  - xljs で開いて保存したブックからは縮小の指定が消える。
-  - `types/xljs.d.ts` の `AlignmentSpec.shrink` は型にあるだけで、`style({ alignment: { shrink: true } })` は効かない
-    （`xlsx_style.rs` の `AlignSpec` に項目がない）。`getStyle` も返さない。
-  - フォーク後は `Alignment` に `shrink_to_fit` を足して読み書きし、`RawPrint::shrink` をやめてセルのスタイルから読む。
-- **インライン文字列のリッチテキスト**: umya は `t="inlineStr"` の `<r>` の文字を最後のランしか残さない。開くときに
-  `xlsx.rs` の `inline_rich_text` でシートの XML から読み直して補っている。フォーク後は umya 側で直してこの処理を消す。
+## 7. umya-spreadsheet のフォーク
+
+`Cargo.toml` の `[patch.crates-io]` で、本家（MathNya/umya-spreadsheet）の代わりにフォーク
+`cool0707/umya-spreadsheet` の `xljs` ブランチを使う。ブランチは本家の 3.1.1 のタグから切ってある（フォークの master は本家の
+4.0 系）。直したもの:
+
+- **縮小して全体を表示（`shrinkToFit`）**: 本家の `Alignment` にこの属性がなく、読み込みでも保存でも落ちていた。
+  `shrink_to_fit` / `set_shrink_to_fit` を足して styles.xml と読み書きする。xljs では `style({ alignment: { shrink: true } })` で設定し、
+  `getStyle().alignment.shrink` で読める。開いて保存したブックにも残る。
+- **インライン文字列のリッチテキスト**: 本家は `t="inlineStr"` の `<is>` の中の `<t>` を読むたびに値を上書きするので、最後のラン
+  （`<rPh>` があればふりがな）しか残らなかった。`<is>` を共有文字列の `<si>` と同じに読む。
+
+本家の版を上げるときは、`xljs` ブランチを新しいタグへ載せ替える（本家に取り込まれた修正は落とす）。どちらも取り込まれたら
+`[patch.crates-io]` を消して本家に戻す。
