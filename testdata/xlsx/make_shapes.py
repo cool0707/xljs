@@ -95,6 +95,31 @@ shapes.append(anchor(7, 21, 9, 26, sp("cloudCallout", "雲形吹き出し 14", t
 shapes.append(anchor(0, 25, 2, 29, sp("smileyFace", "スマイル 15", "", '<a:solidFill><a:srgbClr val="FFC000"/></a:solidFill>')))
 shapes.append(anchor(3, 25, 5, 29, sp("heart", "ハート 16", "", '<a:solidFill><a:srgbClr val="FF0000"/></a:solidFill>')))
 
+# WordArt: text with effects (fill, outline, shadow, glow, reflection,
+# gradient) and text warps (prstTxWarp), as Excel's Insert > WordArt writes it:
+# a text box without fill or line.
+def wordart(name, paras, warp="textNoShape", rpr="", sz=3600, av="", sppr_fx=""):
+    runs = "".join(f'<a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="ja-JP" altLang="en-US" sz="{sz}" b="1" cap="none" spc="0">{rpr}</a:rPr><a:t>{t}</a:t></a:r></a:p>' for t in paras)
+    body = (f'<xdr:txBody><a:bodyPr wrap="none" lIns="91440" tIns="45720" rIns="91440" bIns="45720" rtlCol="0" anchor="ctr">'
+            f'<a:prstTxWarp prst="{warp}"><a:avLst>{av}</a:avLst></a:prstTxWarp><a:noAutofit/></a:bodyPr><a:lstStyle/>{runs}</xdr:txBody>')
+    return (f'<xdr:sp macro="" textlink=""><xdr:nvSpPr><xdr:cNvPr id="{next(ids)}" name="{name}"/><xdr:cNvSpPr txBox="1"/></xdr:nvSpPr>'
+            f'<xdr:spPr>{xfrm()}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/>{sppr_fx}</xdr:spPr>{body}</xdr:sp>')
+
+SHADOW = ('<a:effectLst><a:outerShdw blurRad="38100" dist="38100" dir="2700000" algn="tl" rotWithShape="0">'
+          '<a:srgbClr val="000000"><a:alpha val="40000"/></a:srgbClr></a:outerShdw></a:effectLst>')
+GLOW = '<a:effectLst><a:glow rad="101600"><a:schemeClr val="accent2"><a:alpha val="40000"/></a:schemeClr></a:glow></a:effectLst>'
+REFLECT = ('<a:effectLst><a:reflection blurRad="6350" stA="53000" endA="300" endPos="35500" dist="12700" dir="5400000" sy="-90000" algn="bl" rotWithShape="0"/></a:effectLst>')
+GRAD = ('<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFC000"/></a:gs><a:gs pos="100000"><a:srgbClr val="C00000"/></a:gs></a:gsLst>'
+        '<a:lin ang="5400000" scaled="1"/></a:gradFill>')
+LINE = '<a:ln w="12700"><a:solidFill><a:srgbClr val="002060"/></a:solidFill></a:ln>'
+shapes.append(anchor(0, 31, 4, 35, wordart("ワードアート 17", ["影付きの文字"], rpr='<a:ln w="0"/><a:solidFill><a:srgbClr val="4472C4"/></a:solidFill>' + SHADOW)))
+shapes.append(anchor(5, 31, 9, 37, wordart("ワードアート 18", ["アーチの文字"], "textArchUp", LINE + GRAD + GLOW)))
+shapes.append(anchor(0, 36, 4, 40, wordart("ワードアート 19", ["WAVE", "二行目"], "textWave1", '<a:ln w="19050"><a:solidFill><a:srgbClr val="7030A0"/></a:solidFill></a:ln><a:noFill/>', 4000)))
+shapes.append(anchor(5, 38, 9, 42, wordart("ワードアート 20", ["反射"], "textInflate", '<a:solidFill><a:srgbClr val="00B050"/></a:solidFill>' + REFLECT)))
+shapes.append(anchor(0, 40, 3, 45, wordart("ワードアート 21", ["円に沿った文字の並び"], "textCircle", '<a:solidFill><a:srgbClr val="C00000"/></a:solidFill>', 2000)))
+shapes.append(anchor(4, 42, 9, 45, wordart("ワードアート 22", ["spaced caps"], "textNoShape", '<a:solidFill><a:schemeClr val="accent1"/></a:solidFill>', 2400,
+    sppr_fx=SHADOW).replace('cap="none" spc="0"', 'cap="all" spc="300"')))
+
 drawing = f'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<xdr:wsDr {NS}>' + "".join(shapes) + '</xdr:wsDr>'
 
 src = zipfile.ZipFile(buf)

@@ -34,6 +34,8 @@ pub struct GPath {
     pub stroke: bool,
     /// Whether the path ends open (arrowheads go on open paths).
     pub open: bool,
+    /// The path as points (pt; curves and arcs sampled), for text warps.
+    pub points: Vec<(f64, f64)>,
 }
 
 #[derive(Debug)]
@@ -64,6 +66,24 @@ pub fn preset(prst: &str, geom: Option<&Node>, w: f64, h: f64) -> Option<Geom> {
         g.paths.rotate_left(lead);
     }
     Some(g)
+}
+
+/// The preset text warp definitions (prstTxWarp) by name.
+fn text_warps() -> &'static HashMap<String, Node> {
+    static P: OnceLock<HashMap<String, Node>> = OnceLock::new();
+    P.get_or_init(|| {
+        let root = parse(include_bytes!("preset_text_warps.xml")).unwrap_or_default();
+        root.children.into_iter().map(|c| (c.name.clone(), c)).collect()
+    })
+}
+
+/// The paths of a text warp (bodyPr's prstTxWarp with its avLst) in a w × h
+/// (pt) text box, as points; None for textNoShape and unknown names.
+pub fn text_warp(prst: &str, warp: Option<&Node>, w: f64, h: f64) -> Option<Vec<Vec<(f64, f64)>>> {
+    let def = text_warps().get(prst)?;
+    let g = evaluate(def, warp.and_then(|g| g.child("avLst")), w, h);
+    let paths: Vec<Vec<(f64, f64)>> = g.paths.into_iter().map(|p| p.points).filter(|p| p.len() >= 2).collect();
+    (!paths.is_empty()).then_some(paths)
 }
 
 /// The geometry of a freeform (custGeom) in a w × h (pt) box.
@@ -195,6 +215,14 @@ fn path(g: &Guides, p: &Node, we: f64, he: f64) -> GPath {
     let mut cur = (0.0, 0.0);
     let mut start = (0.0, 0.0);
     let mut open = false;
+    let mut points: Vec<(f64, f64)> = Vec::new();
+    let to_pt = |(x, y): (f64, f64)| (x * kx, y * ky);
+    // Samples of a curve from cur, at t in (0, 1].
+    let curve = |points: &mut Vec<(f64, f64)>, f: &dyn Fn(f64) -> (f64, f64)| {
+        for i in 1..=24 {
+            points.push(to_pt(f(i as f64 / 24.0)));
+        }
+    };
     for c in &p.children {
         let ps: Vec<(f64, f64)> = c.all("pt").map(pt).collect();
         match c.name.as_str() {
@@ -203,18 +231,31 @@ fn path(g: &Guides, p: &Node, we: f64, he: f64) -> GPath {
                 start = cur;
                 let _ = write!(d, "M{} ", xy(cur));
                 open = false;
+                points.push(to_pt(cur));
             }
             "lnTo" if !ps.is_empty() => {
                 cur = ps[0];
                 let _ = write!(d, "L{} ", xy(cur));
                 open = true;
+                points.push(to_pt(cur));
             }
             "cubicBezTo" if ps.len() == 3 => {
+                let (p0, [p1, p2, p3]) = (cur, [ps[0], ps[1], ps[2]]);
+                curve(&mut points, &|t| {
+                    let u = 1.0 - t;
+                    let k = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
+                    (k[0] * p0.0 + k[1] * p1.0 + k[2] * p2.0 + k[3] * p3.0, k[0] * p0.1 + k[1] * p1.1 + k[2] * p2.1 + k[3] * p3.1)
+                });
                 cur = ps[2];
                 let _ = write!(d, "C{} {} {} ", xy(ps[0]), xy(ps[1]), xy(ps[2]));
                 open = true;
             }
             "quadBezTo" if ps.len() == 2 => {
+                let (p0, p1, p2) = (cur, ps[0], ps[1]);
+                curve(&mut points, &|t| {
+                    let u = 1.0 - t;
+                    (u * u * p0.0 + 2.0 * u * t * p1.0 + t * t * p2.0, u * u * p0.1 + 2.0 * u * t * p1.1 + t * t * p2.1)
+                });
                 cur = ps[1];
                 let _ = write!(d, "Q{} {} ", xy(ps[0]), xy(ps[1]));
                 open = true;
@@ -223,29 +264,31 @@ fn path(g: &Guides, p: &Node, we: f64, he: f64) -> GPath {
                 if d.is_empty() {
                     let _ = write!(d, "M{} ", xy(cur));
                     start = cur;
+                    points.push(to_pt(cur));
                 }
                 let (wr, hr) = (g.opt(c.attr("wR")), g.opt(c.attr("hR")));
                 let (st, sw) = (g.opt(c.attr("stAng")), g.opt(c.attr("swAng")));
-                cur = arc(&mut d, cur, wr, hr, st, sw, kx, ky);
+                cur = arc(&mut d, &mut points, cur, wr, hr, st, sw, kx, ky);
                 open = true;
             }
             "close" => {
                 d.push_str("Z ");
                 cur = start;
+                points.push(to_pt(cur));
                 open = false;
             }
             _ => {}
         }
     }
     let d = d.trim_end().to_string();
-    GPath { d, fill, stroke, open }
+    GPath { d, fill, stroke, open, points }
 }
 
 /// An arcTo from cur: an arc of the ellipse wr × hr from the angle st by
 /// sw (60000ths of a degree; the angles are of the ellipse as drawn, not
 /// its parameter). Returns the end point.
 #[allow(clippy::too_many_arguments)]
-fn arc(d: &mut String, cur: (f64, f64), wr: f64, hr: f64, st: f64, sw: f64, kx: f64, ky: f64) -> (f64, f64) {
+fn arc(d: &mut String, points: &mut Vec<(f64, f64)>, cur: (f64, f64), wr: f64, hr: f64, st: f64, sw: f64, kx: f64, ky: f64) -> (f64, f64) {
     let rad = |v: f64| v / 60000.0 * PI / 180.0;
     // The parameter of the point at a visual angle.
     let param = |a: f64| (wr * a.sin()).atan2(hr * a.cos());
@@ -276,6 +319,11 @@ fn arc(d: &mut String, cur: (f64, f64), wr: f64, hr: f64, st: f64, sw: f64, kx: 
     p2 += turns * 2.0 * PI;
     let at = |p: f64| (center.0 + wr * p.cos(), center.1 + hr * p.sin());
     let end = at(p2);
+    let steps = ((p2 - p1).abs() / (PI / 48.0)).ceil().clamp(1.0, 1000.0) as usize;
+    for i in 1..=steps {
+        let q = at(p1 + (p2 - p1) * i as f64 / steps as f64);
+        points.push((q.0 * kx, q.1 * ky));
+    }
     let (rx, ry) = (n((wr * kx).abs()), n((hr * ky).abs()));
     if wr == 0.0 || hr == 0.0 || sw == 0.0 {
         let _ = write!(d, "L{},{} ", n(end.0 * kx), n(end.1 * ky));
@@ -362,6 +410,32 @@ mod tests {
         let g = preset("ellipse", None, 100.0, 100.0).unwrap();
         let (l, t, r, b) = g.text.unwrap();
         assert!((l - 14.645).abs() < 0.01 && (t - l).abs() < 1e-9 && (r - 85.355).abs() < 0.01 && (b - r).abs() < 1e-9, "{:?}", g.text);
+    }
+
+    #[test]
+    fn all_text_warps() {
+        // Every text warp evaluates to finite paths of points.
+        assert!(text_warps().len() >= 40, "{}", text_warps().len());
+        for name in text_warps().keys() {
+            let paths = text_warp(name, None, 100.0, 60.0).unwrap_or_else(|| panic!("{name}"));
+            for p in paths.iter().flatten() {
+                assert!(p.0.is_finite() && p.1.is_finite(), "{name}: {p:?}");
+            }
+        }
+        assert!(text_warp("textNoShape", None, 100.0, 60.0).is_none());
+        // Plain: the top and the bottom of the box.
+        assert_eq!(text_warp("textPlain", None, 100.0, 60.0).unwrap(), vec![vec![(0.0, 0.0), (100.0, 0.0)], vec![(0.0, 60.0), (100.0, 60.0)]]);
+        // Arch up: one path over the top half of the ellipse, from the left to the right.
+        let arch = text_warp("textArchUp", None, 100.0, 60.0).unwrap();
+        assert_eq!(arch.len(), 1);
+        let (first, last) = (arch[0][0], *arch[0].last().unwrap());
+        assert!((first.0).abs() < 1e-6 && (first.1 - 30.0).abs() < 1e-6 && (last.0 - 100.0).abs() < 1e-6, "{first:?} {last:?}");
+        assert!(arch[0].iter().all(|p| p.1 <= 30.0 + 1e-6) && arch[0].iter().any(|p| p.1.abs() < 0.1));
+        // An adjust value (pinned to at most 20%): the ends of an inflated band come in by it.
+        let av = parse(br#"<prstTxWarp><avLst><gd name="adj" fmla="val 25000"/></avLst></prstTxWarp>"#).unwrap();
+        let top = text_warp("textInflate", Some(&av), 100.0, 60.0).unwrap().remove(0);
+        let min = top.iter().map(|p| p.1).fold(f64::MAX, f64::min);
+        assert!(min.abs() < 0.5 && (top[0].1 - 12.0).abs() < 1e-6, "{min} {:?}", top[0]);
     }
 
     #[test]

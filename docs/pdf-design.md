@@ -120,6 +120,8 @@ umya-spreadsheet の図形のモデルは一部しか持たないので使わな
 | 線・コネクタ（`cxnSp`） | 既定の形の直線・カギ線（`bentConnector2`〜`5`）・曲線（`curvedConnector2`〜`5`）。矢じりは閉じていないパスに付ける。矢じり（`headEnd` / `tailEnd` の triangle・stealth・arrow・oval・diamond、大きさ sm/med/lg）は SVG の marker。破線（`prstDash`） |
 | 塗り・線 | `spPr` の `solidFill`（グラデーションは最初の色）・`noFill`・`alpha`、`ln` の幅・色。指定がなければ図形のスタイル（`fillRef` / `lnRef` のテーマの色。線の幅は idx から 0.5/1/1.5pt） |
 | 文字（`txBody`） | 段落ごとの揃え、ランの大きさ・太字・斜体・下線・取り消し線・色・フォント（`ea` / `latin`。`+mn-ea` などはブックの既定のフォント）、改行、箇条書きの文字。`bodyPr` の内側の余白・上下の位置・折り返しなし・縦書き。色の既定は `fontRef` |
+| ワードアート（文字の効果） | ランの `rPr` の塗り（`solidFill`・`alpha`・`gradFill` は CSS のグラデーションを `background-clip:text` で文字に・`noFill` は輪郭だけ）、輪郭（`ln` → `-webkit-text-stroke`）、`effectLst` の光彩（`glow` → 2 重の `drop-shadow`）と影（`outerShdw` → `filter:drop-shadow`。`rotWithShape="0"` なら図形の回転を戻す）、反射（`reflection` → 文字を包む `div` の `-webkit-box-reflect`。`stA`/`endA`/`endPos` の濃さで消える）、文字間隔（`spc`）、大文字（`cap`）。図形の `spPr` の `effectLst`（影・光彩・反射）は図形の `div` 全体に（塗りのない図形なら文字に付く。Excel と同じ） |
+| 文字の変形（`bodyPr` の `prstTxWarp`） | 定義は ECMA-376 の "Preset Text Warp Definitions"（`src/api/preset_text_warps.xml`、`tools/preset-shapes/make.py` で作る。40 種）。Rust が文字の枠（内側の余白を除く）でパスを評価して点列にし（`xlsx_geom::text_warp`）、`<div class="xljs-warp" data-warp="{w,h,paths}">` に段落と一緒に出す。印刷ページ（`print-page.js` の `warpText`）が 1 文字ずつ span にして測り、アフィン変換（`matrix`）で置く: パスが偶数なら 2 本ずつが帯の上下で、帯の行を帯いっぱいに引き伸ばす（文字は約 5pt 幅の縦の短冊に分け（`clip-path`）、短冊ごとに上下のパスの間に置くので曲がる）。奇数（アーチ・円・ボタン）なら 1 本ずつに行が乗り、パスの長さいっぱいに並べてパスに垂直に立てる（枠の中心の側に）。行は帯・パスに順に割り振る。グラデーションは行の幅で 1 つ |
 | 回転・反転 | 回転は外側の `div` の `transform`（文字も一緒に回る）、反転は SVG の形だけ |
 | グループ（`grpSp`） | 子の位置を子の座標（`chOff` / `chExt`）からグループの枠の割合にして置く（入れ子も） |
 | 画像（`pic`） | `blip` の画像を data URL で（PNG・JPEG・GIF・BMP・SVG。EMF/WMF は描けないので出さない）。SVG の画像は `blip` が画面の大きさの PNG の代替画像なので、拡張（`extLst` の `asvg:svgBlip`）の SVG を使う（PDF でも線のまま）。Excel と同じく枠いっぱいに伸ばす（`preserveAspectRatio` がなければ `none`、`viewBox` がなければ `width` / `height` から） |
@@ -159,7 +161,8 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
 
 ## 4. できないこと・違い
 
-- 条件付き書式、SmartArt、ワードアートの効果、図形の影・3-D・グラデーション（最初の色で塗る）・パターン、
+- 条件付き書式、SmartArt、図形と文字の 3-D（面取り・奥行き・`scene3d`）・内側の影・ぼかし・テーマの効果（`effectRef`）・グラデーション（図形は最初の色で塗る）・パターン、
+  文字の変形は文字の形そのものは曲げず短冊ごとのアフィン変換（大きい字の曲がりは近似）、変形した文字は PDF の中で短冊の数だけ重なる（文字の検索・コピーで重複する）、
   画像のトリミング、EMF/WMF の画像、Web の画像（`IMAGE` 関数）、コメント、フォームのコントロール、ヘッダー/フッターの画像、先頭ページ・偶数ページ用のヘッダー。
 - 塗りのパターン（単色以外は前景色で塗る）、グラデーションの塗り。
 - 先頭ページ番号（`firstPageNumber`）、行列番号の印刷、簡易印刷、印刷の品質。白黒印刷は塗りと色を消すだけ（画像・図形はそのまま）。
@@ -169,7 +172,7 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
 
 ## 5. テスト
 
-- `src/api/xlsx_geom.rs` の単体テスト: すべての既定の形が評価できること、形の path（`arcTo` の楕円・調整値）、文字の枠、塗りの濃淡、フリーフォームのガイド。
+- `src/api/xlsx_geom.rs` の単体テスト: すべての既定の形が評価できること、形の path（`arcTo` の楕円・調整値）、文字の枠、塗りの濃淡、フリーフォームのガイド、すべての文字の変形が評価できること（平ら・アーチ・調整値）。
 - `src/api/xlsx_table.rs` の単体テスト: テーブルスタイルの読み方、要素の罫線の当て方。
 - `src/api/xlsx_print.rs` の単体テスト: 範囲の読み方、ページの分け方（印刷タイトル・改ページ・非表示）、ヘッダー/フッター、表示形式の色、ページ設定の XML。
 - `testdata/scripts/pdf.test.js`（mock）: 新しいブックの HTML（値・結合・罫線・塗り・負数の赤）、オプション、検査、複数シート、
@@ -177,7 +180,7 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
   ヘッダー/フッター・改ページ・画像・グラフ・非表示の列とシート・印刷範囲・B5）、`testdata/xlsx/tables.xlsx`（`make_tables.py`。
   独自のテーブルスタイル（styles.xml に足す）と TableStyleMedium2・白黒印刷・OFFSET の印刷範囲・列全体の印刷範囲）、`testdata/xlsx/shapes.xlsx`（`make_shapes.py`。openpyxl の
   出力に描画の XML を足す: テキストボックス・既定のスタイルの図形・吹き出し・矢印・星（回転）・矢印付きの線・破線のカギ線コネクタ（反転）・グループ・
-  フリーフォーム・縦書き・非表示・印刷しない図形・雲形吹き出し・スマイル・ハート）、`testdata/xlsx/cellimages.xlsx`（`make_cellimages.py`。openpyxl の出力にリッチ値の部品を足す:
+  フリーフォーム・縦書き・非表示・印刷しない図形・雲形吹き出し・スマイル・ハート、ワードアート（影・グラデーション＋輪郭＋光彩のアーチ・輪郭だけの 2 行の波・反射の膨らみ・円・大文字と文字間隔に図形の影））、`testdata/xlsx/cellimages.xlsx`（`make_cellimages.py`。openpyxl の出力にリッチ値の部品を足す:
   セルに配置した PNG・JPEG・代替テキスト付き、同じシートと別のシートから参照するセル（`vm` あり・なし）。スクリプトで書いた `=`・`IF`・`XLOOKUP`・`VLOOKUP`・`INDEX` の参照、
   `&` で `#VALUE!`、画像に値を上書きしたとき）、mock のログ。デバッガ経由でも同じ（`scripts_in_debugger`）。
 - `src/ui/native/tests.rs`（Windows CI）: `print_page_draws_charts_hidden`（見えないウィンドウで縦棒とガントが描けること）、
