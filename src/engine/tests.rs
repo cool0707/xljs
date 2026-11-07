@@ -101,6 +101,14 @@ fn check_script_output(name: &str, r: &Res) -> Vec<String> {
             ],
             "mock log",
         ),
+        "fetchproxy.test.js" => want_in(
+            &r.stderr,
+            &[
+                r#"credentials(proxy "xljs test proxy") -> "wrong""#,
+                r#"credentials(proxy "xljs test proxy", failed) -> "proxyuser""#,
+            ],
+            "mock log",
+        ),
         "app.test.js" => want_in(
             &r.stderr,
             &[
@@ -187,7 +195,14 @@ pub(crate) fn test_scripts(debugger: bool) {
         }
         let answers = s.to_string_lossy().replace(".test.js", ".test.answers.json").replace(".test.ts", ".test.answers.json");
         let answers = if std::path::Path::new(&answers).exists() { answers } else { String::new() };
+        // fetchproxy.test.js goes through the test server as a proxy, with
+        // no saved login.
+        crate::net::auth::clear();
+        if name.starts_with("fetchproxy") {
+            unsafe { std::env::set_var("XLJS_PROXY", crate::net::testserver::url()) };
+        }
         let r = run_script_in(debugger, &s.to_string_lossy(), &answers, &[]);
+        unsafe { std::env::remove_var("XLJS_PROXY") };
         if std::env::var("XLJS_TEST_VERBOSE").is_ok() {
             eprintln!("{name}: {} {:?}", r.code, r.stdout.lines().last());
         }

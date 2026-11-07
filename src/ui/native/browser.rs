@@ -110,6 +110,7 @@ pub(super) fn create(parent: HWND, env: &ICoreWebView2Environment, o: &BrowserOp
         }
         let _ = controller.SetIsVisible(false);
         let mut token = 0i64;
+        super::auth::attach(&core);
 
         // The page shown: the session keeps it for the script.
         let on = o.on_event.clone();

@@ -456,3 +456,76 @@ pub(super) fn choose(title: &str, message: &str, choices: &[Choice]) -> i64 {
         None => -1,
     }
 }
+
+/// The Windows credential dialog for a user name and a password (generic
+/// credentials, nothing saved by the dialog itself).
+pub(super) fn credentials(title: &str, message: &str, user: &str, _failed: bool) -> Option<crate::net::auth::Login> {
+    use windows::Win32::Security::Credentials::*;
+    use windows::core::PWSTR;
+    let (t, m) = (hstr(title), hstr(message));
+    let info = CREDUI_INFOW {
+        cbSize: std::mem::size_of::<CREDUI_INFOW>() as u32,
+        hwndParent: owner().unwrap_or_default(),
+        pszMessageText: windows::core::PCWSTR(m.as_ptr()),
+        pszCaptionText: windows::core::PCWSTR(t.as_ptr()),
+        ..Default::default()
+    };
+    // The user name of the last attempt, filled in.
+    let mut inbuf: Vec<u8> = Vec::new();
+    if !user.is_empty() {
+        let mut n = 0u32;
+        let u = hstr(user);
+        let _ = unsafe { CredPackAuthenticationBufferW(CRED_PACK_GENERIC_CREDENTIALS, &u, windows::core::w!(""), None, &mut n) };
+        inbuf.resize(n as usize, 0);
+        if unsafe { CredPackAuthenticationBufferW(CRED_PACK_GENERIC_CREDENTIALS, &u, windows::core::w!(""), Some(inbuf.as_mut_ptr()), &mut n) }.is_err() {
+            inbuf.clear();
+        }
+    }
+    let mut package = 0u32;
+    let mut out: *mut std::ffi::c_void = std::ptr::null_mut();
+    let mut out_size = 0u32;
+    let r = unsafe {
+        CredUIPromptForWindowsCredentialsW(
+            Some(&info),
+            0,
+            &mut package,
+            (!inbuf.is_empty()).then(|| inbuf.as_ptr() as *const std::ffi::c_void),
+            inbuf.len() as u32,
+            &mut out,
+            &mut out_size,
+            None,
+            CREDUIWIN_GENERIC,
+        )
+    };
+    if r != 0 || out.is_null() {
+        return None;
+    }
+    let mut u = vec![0u16; 514];
+    let mut p = vec![0u16; 514];
+    let (mut un, mut pn) = (u.len() as u32, p.len() as u32);
+    let ok = unsafe {
+        CredUnPackAuthenticationBufferW(
+            CRED_PACK_FLAGS(0),
+            out,
+            out_size,
+            Some(PWSTR(u.as_mut_ptr())),
+            &mut un,
+            None,
+            None,
+            Some(PWSTR(p.as_mut_ptr())),
+            &mut pn,
+        )
+    }
+    .is_ok();
+    unsafe {
+        std::ptr::write_bytes(out as *mut u8, 0, out_size as usize);
+        windows::Win32::System::Com::CoTaskMemFree(Some(out));
+    }
+    if !ok {
+        return None;
+    }
+    let s = |b: &[u16], n: u32| String::from_utf16_lossy(&b[..(n as usize).min(b.len())]).trim_end_matches('\0').to_string();
+    let l = crate::net::auth::Login { user: s(&u, un), password: s(&p, pn) };
+    p.fill(0);
+    Some(l)
+}

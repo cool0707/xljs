@@ -3,6 +3,7 @@
 //! also run while a modal dialog has its own loop.
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -17,6 +18,31 @@ const WM_RUN_QUEUED: u32 = WM_APP + 1;
 
 static QUEUE: Mutex<VecDeque<Job>> = Mutex::new(VecDeque::new());
 static CLASS: OnceLock<bool> = OnceLock::new();
+/// The window of the UI thread's queue (0: none yet).
+static DISPATCH: AtomicIsize = AtomicIsize::new(0);
+
+/// Whether post_ui can reach the UI thread.
+pub(crate) fn can_post() -> bool {
+    DISPATCH.load(Ordering::SeqCst) != 0
+}
+
+/// Queues f to run on the UI thread, from any thread.
+pub(crate) fn post_ui(f: Job) {
+    QUEUE.lock().unwrap().push_back(f);
+    unsafe {
+        let _ = PostMessageW(Some(HWND(DISPATCH.load(Ordering::SeqCst) as *mut _)), WM_RUN_QUEUED, WPARAM(0), LPARAM(0));
+    }
+}
+
+/// Runs f on the UI thread and waits for its result (not from the UI
+/// thread itself).
+pub(crate) fn run_on_ui<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    post_ui(Box::new(move || {
+        let _ = tx.send(f());
+    }));
+    rx.recv().expect("the UI thread stopped")
+}
 
 fn drain() {
     loop {
@@ -54,7 +80,10 @@ pub(crate) fn new_ui_thread() -> Arc<dyn UiThread> {
             RegisterClassExW(&wc) != 0
         });
         match CreateWindowExW(Default::default(), w!("xljsDispatch"), None, Default::default(), 0, 0, 0, 0, Some(HWND_MESSAGE), None, Some(hinst.into()), None) {
-            Ok(hwnd) => Arc::new(WinThread { hwnd: hwnd.0 as isize }),
+            Ok(hwnd) => {
+                DISPATCH.store(hwnd.0 as isize, Ordering::SeqCst);
+                Arc::new(WinThread { hwnd: hwnd.0 as isize })
+            }
             Err(_) => Arc::new(ChanThread::default()),
         }
     }
@@ -74,6 +103,7 @@ impl UiThread for WinThread {
             if *done.0.lock().unwrap() {
                 drain();
                 super::finish_notifications();
+                let _ = DISPATCH.compare_exchange(self.hwnd, 0, Ordering::SeqCst, Ordering::SeqCst);
                 unsafe {
                     let _ = DestroyWindow(HWND(self.hwnd as *mut _));
                 }

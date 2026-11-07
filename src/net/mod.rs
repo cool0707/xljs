@@ -7,6 +7,7 @@
 //! cookies within the run, TLS with the certificate store of Windows and
 //! gzip. Elsewhere (`plain.rs`, for the tests) only plain HTTP/1.1.
 
+pub mod auth;
 #[cfg(not(windows))]
 mod plain;
 #[cfg(windows)]
@@ -42,7 +43,7 @@ impl Credentials {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Request {
     pub method: String,
     /// An absolute http(s) URL (already encoded by the prelude's URL).
@@ -54,6 +55,9 @@ pub struct Request {
     pub credentials: Credentials,
     /// The User-Agent unless the headers have one.
     pub agent: String,
+    /// Asks for the login of a proxy that wants Basic authentication (none:
+    /// the 407 is the response).
+    pub ask: Option<auth::Ask>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -62,6 +66,15 @@ pub struct Response {
     pub status_text: String,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
+}
+
+/// The proxy of the environment variable XLJS_PROXY ("host:port"), used
+/// instead of the system's.
+pub(crate) fn proxy_override() -> Option<String> {
+    let v = std::env::var("XLJS_PROXY").ok()?;
+    let v = v.trim();
+    let v = v.strip_prefix("http://").unwrap_or(v).trim_end_matches('/');
+    (!v.is_empty()).then(|| v.to_string())
 }
 
 /// The time a connection may take.

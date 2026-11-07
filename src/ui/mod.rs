@@ -246,6 +246,11 @@ pub trait Ui: Send + Sync {
     fn print_pdf(&self, _job: PdfJob, done: PdfDone) {
         done(Err(crate::err!("pdf.unavailable")))
     }
+    /// Asks for a user name and a password (Basic authentication of a
+    /// proxy or a site); None when cancelled or when the UI cannot.
+    fn credentials(&self, _p: &crate::net::auth::LoginPrompt) -> Option<crate::net::auth::Login> {
+        None
+    }
 }
 
 /// A form for UIs without HTML windows. Values are strings for every field

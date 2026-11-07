@@ -56,6 +56,7 @@ fn get(path: &str) -> Result<Response> {
         timeout: None,
         credentials: Credentials::SameOrigin,
         agent: "xljs/test".into(),
+        ask: None,
     };
     send(&req, &Cancel::default())
 }
@@ -92,6 +93,7 @@ fn plain_errors_and_abort() {
         timeout: None,
         credentials: Credentials::SameOrigin,
         agent: "xljs/test".into(),
+        ask: None,
     };
     assert!(send(&req, &Cancel::default()).is_err());
     // Nothing listens on the port.

@@ -341,6 +341,7 @@ const book = workbooks.open(data);         // 保存せずに開くこともで�
 - `res.text()` は Content-Type の charset（`Shift_JIS` なども）で読む。`res.text("cp932")` で文字コードを指定できる（xljs 拡張）。本文は 1 回しか読めない（2 回読むなら先に `res.clone()`）。
 - オプション: `method`、`headers`（オブジェクト・`Headers`）、`body`（文字列は UTF-8、`URLSearchParams` はフォーム、`FormData`、`Blob`、`ArrayBuffer`）、`signal`（`AbortController` で中止、`AbortSignal.timeout(ms)`）、`redirect`（`"follow"` 既定・`"manual"`・`"error"`）、`timeout`（ミリ秒、xljs 拡張）。
 - 社内サーバーの Windows 認証（Negotiate / NTLM）はサインイン中のユーザーで自動で通る（イントラネットのサーバーだけ。ほかのサーバーにも使うなら `credentials: "include"`）。Cookie はその実行の間だけ保たれる。
+- 認証付きのプロキシも通る（Windows 認証はそのまま、Basic 認証は初回にユーザー名とパスワードを尋ねて Windows の資格情報マネージャーに保存する）。プロキシの ID・パスワードをスクリプトに書かない。
 - つながらない・サーバーが見つからない・証明書の問題は `TypeError`、中止は `AbortError`、時間切れは `TimeoutError` で reject する。ヘッダーの値に日本語は使えない（必要なら `encodeURIComponent`）。
 - `URL` / `URLSearchParams` は URL の組み立てに使える（`new URL("/api/a", base)`、`url.searchParams.set("q", "日本語")`）。
 

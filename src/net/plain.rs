@@ -4,6 +4,7 @@
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Shutdown, TcpStream, ToSocketAddrs};
 
+use super::auth::{self, Login, LoginPrompt};
 use super::{CONNECT_TIMEOUT, Cancel, IO_TIMEOUT, Request, Response, Target, parse_headers, parse_status};
 use crate::{Error, Result, err};
 
@@ -14,11 +15,49 @@ fn io_err(req: &Request, e: std::io::Error) -> Error {
     }
 }
 
+/// Sends the request, through the proxy of XLJS_PROXY if set (the tests
+/// of Basic proxy authentication: 407 asks with Request::ask).
 pub(super) fn send(req: &Request, t: &Target, cancel: &Cancel) -> Result<Response> {
+    let proxy = super::proxy_override();
+    let mut login: Option<(String, Login)> = None;
+    let mut prompts = 0;
+    loop {
+        let res = send_once(req, t, cancel, proxy.as_deref(), login.as_ref().map(|x| &x.1))?;
+        if res.status != 407 {
+            if let Some((realm, l)) = &login {
+                auth::confirm(realm, l);
+            }
+            return Ok(res);
+        }
+        let realm = res.headers.iter().filter(|(k, _)| k.eq_ignore_ascii_case("proxy-authenticate")).find_map(|(_, v)| auth::basic_realm(v));
+        let (Some(realm), Some(ask)) = (realm, &req.ask) else { return Ok(res) };
+        let failed = login.take().map(|(_, l)| l);
+        if failed.is_some() {
+            prompts += 1;
+            if prompts >= 5 {
+                return Ok(res);
+            }
+        }
+        let prompt = LoginPrompt { proxy: true, host: proxy.clone().unwrap_or_default(), ..Default::default() };
+        match auth::login(&realm, prompt, failed.as_ref(), ask) {
+            Some(l) => login = Some((realm, l)),
+            None => return Ok(res),
+        }
+    }
+}
+
+fn send_once(req: &Request, t: &Target, cancel: &Cancel, proxy: Option<&str>, login: Option<&Login>) -> Result<Response> {
     if t.secure {
         return Err(err!("net.httpsUnsupported"));
     }
-    let addrs = (t.host.as_str(), t.port).to_socket_addrs().map_err(|_| err!("net.unresolved", req.url))?;
+    let (host, port) = match proxy {
+        Some(p) => {
+            let (h, port) = p.rsplit_once(':').ok_or_else(|| err!("net.badUrl", p))?;
+            (h.to_string(), port.parse::<u16>().map_err(|_| err!("net.badUrl", p))?)
+        }
+        None => (t.host.clone(), t.port),
+    };
+    let addrs = (host.as_str(), port).to_socket_addrs().map_err(|_| err!("net.unresolved", req.url))?;
     let mut last = None;
     let mut stream = None;
     for a in addrs {
@@ -48,7 +87,13 @@ pub(super) fn send(req: &Request, t: &Target, cancel: &Cancel) -> Result<Respons
         }
     }
 
-    let mut head = format!("{} {} HTTP/1.1\r\nHost: {}\r\n", req.method, t.path, t.host_header());
+    let target = if proxy.is_some() { format!("http://{}{}", t.host_header(), t.path) } else { t.path.clone() };
+    let mut head = format!("{} {target} HTTP/1.1\r\nHost: {}\r\n", req.method, t.host_header());
+    if let Some(l) = login {
+        use base64::Engine as _;
+        let b = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", l.user, l.password));
+        head.push_str(&format!("Proxy-Authorization: Basic {b}\r\n"));
+    }
     let has = |n: &str| req.headers.iter().any(|(k, _)| k.eq_ignore_ascii_case(n));
     if !has("user-agent") {
         head.push_str(&format!("User-Agent: {}\r\n", req.agent));

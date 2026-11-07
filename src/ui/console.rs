@@ -154,6 +154,14 @@ impl Ui for Console {
         self.w(&format!("{}{message}\n", Self::header(title)));
     }
 
+    fn credentials(&self, p: &crate::net::auth::LoginPrompt) -> Option<crate::net::auth::Login> {
+        let (title, message) = p.texts();
+        self.w(&format!("{}{message}\n", Self::header(&title)));
+        let user = self.prompt("", &t!("net.loginUser"), &p.user)?;
+        let password = self.read_password(&t!("net.loginPassword"), "")?;
+        Some(crate::net::auth::Login { user, password: password.as_str().unwrap_or("").to_string() })
+    }
+
     fn progress(&self, o: &ProgressOptions) -> Arc<dyn Progress> {
         progress_opened();
         let p = ConsoleProgress {

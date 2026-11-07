@@ -3,6 +3,7 @@
 //! main thread, see ui::run); the types are Send + Sync only so that the
 //! UI can be handed around, and must not be used from other threads.
 
+mod auth;
 mod browser;
 mod dialogs;
 mod loader;
@@ -277,6 +278,11 @@ impl Ui for Native {
 
     fn notify(&self, title: &str, message: &str) {
         notify::show(title, message);
+    }
+
+    fn credentials(&self, p: &crate::net::auth::LoginPrompt) -> Option<crate::net::auth::Login> {
+        let (title, message) = p.texts();
+        notify::watching(&title, &message, || dialogs::credentials(&title, &message, &p.user, p.failed))
     }
 
     fn print_pdf(&self, job: PdfJob, done: PdfDone) {

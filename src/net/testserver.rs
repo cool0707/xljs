@@ -11,6 +11,10 @@
 //! - `/cookies`: two Set-Cookie headers
 //! - `/slow`: answers after 3 seconds
 //! - `/auth`: 401 with Basic unless the request has Authorization
+//!
+//! As a proxy (requests for absolute URLs) it answers 407 unless the
+//! request has Proxy-Authorization for proxyuser:proxypass (realm "xljs
+//! test proxy"), then serves the path.
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -87,6 +91,17 @@ fn serve(s: TcpStream) -> std::io::Result<()> {
     let mut body = vec![0u8; len];
     r.read_exact(&mut body)?;
     let mut w = s;
+    // As a proxy (an absolute URL): Basic proxyuser:proxypass.
+    let mut path = path;
+    if let Some(rest) = path.strip_prefix("http://") {
+        let want = format!("Basic {}", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, "proxyuser:proxypass"));
+        if headers.get("proxy-authorization").and_then(|v| v.as_str()) != Some(want.as_str()) {
+            let head = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"xljs test proxy\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+            w.write_all(head.as_bytes())?;
+            return w.flush();
+        }
+        path = rest.find('/').map(|i| rest[i..].to_string()).unwrap_or_else(|| "/".into());
+    }
     let reply = |w: &mut TcpStream, status: &str, extra: &[(&str, &str)], body: &[u8]| -> std::io::Result<()> {
         let mut head = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n", body.len());
         for (k, v) in extra {
