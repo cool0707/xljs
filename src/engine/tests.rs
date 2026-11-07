@@ -176,6 +176,8 @@ fn check_script_output(name: &str, r: &Res) -> Vec<String> {
 /// debugger, the way xljs --debug does.
 pub(crate) fn test_scripts(debugger: bool) {
     let _l = lock_lang("ja");
+    // The server of fetch.test.js.
+    unsafe { std::env::set_var("XLJS_TEST_HTTP", crate::net::testserver::url()) };
     let mut fails = Vec::new();
     let filter = std::env::var("XLJS_TEST_SCRIPT").unwrap_or_default();
     for s in scripts() {

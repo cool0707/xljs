@@ -146,7 +146,7 @@ xljs --debug 集計.ts
 - `console.log` の出力は通常の出力先と開発者ツールのコンソールの両方に出ます。
 - 終了後もウィンドウは残り、結果（終了コード・エラー）を表示します。［閉じる］で xljs が終了します。実行中にウィンドウを閉じるとスクリプトを中止します。
 - 仕組み: デバッグ時だけ、prelude とスクリプトを QuickJS ではなく WebView2（V8）のワーカーで動かし、ファイル・Excel・ダイアログなどの Rust 側の処理はメッセージで中継します（ワーカーは `Atomics.wait` で応答を待つので、スクリプトからは同期の呼び出しに見えます）。そのため Rust 側の処理 1 回ごとに往復が入り、セルを 1 つずつ大量に読み書きするスクリプトは通常より遅くなります。
-- V8 は QuickJS より機能が多いので、デバッグでは動くのに通常実行では動かないことがあります（`fetch` などワーカーで使えるブラウザの機能が見えてしまう、など）。最後は通常実行で確認してください。`Blob`・`File`・`TextEncoder`・`TextDecoder`・`Intl` は通常実行と同じ xljs のものに置き換えています。
+- V8 は QuickJS より機能が多いので、デバッグでは動くのに通常実行では動かないことがあります（ワーカーで使えるブラウザの機能が見えてしまう、など）。最後は通常実行で確認してください。`Blob`・`File`・`TextEncoder`・`TextDecoder`・`Intl`・`fetch`・`URL`・`AbortController` などは通常実行と同じ xljs のものに置き換えています（`fetch` は通常実行と同じく WinHTTP で通信します）。
 - ネイティブ UI（Windows・WebView2）が必要です。コンソール UI やモック UI では `--debug=window` と同じ動作になります。埋め込み exe は環境変数 `XLJS_DEBUG=1`（または `window`）で同じことができます（元のソースは埋め込まれていないので、バンドル後のコードでのデバッグになります）。
 
 ### エディタの補完
@@ -402,6 +402,24 @@ db.check() / db.backup("copy.db") / db.close()
 - **ファイルサーバーで複数人が使う（共有モード）**: `sqlite.open(p, { shared: true })`、ネットワークドライブ・`\\server\share` 上なら自動。データベースの隣に `<ファイル名>.xljs-shared` フォルダを作り、以後は誰が開いても共有モードになります。呼び出しのたびにファイルを開いてロック（読み取りは共有、書き込みは排他）を取り、終わったらすぐ閉じます（ローカルより遅くなりますが壊れにくくなります）。書き込みの前に 1 時間ごとに検査と自動バックアップ（10 世代）を取り、以降の変更をすべて記録します。
 - **壊れたとき**: 次の呼び出しで「修復しますか？」と確認し、はいなら修復して処理をやり直します。修復は 中断された書き込みの取り消し・索引の作り直し → 自動バックアップ＋その後の変更の再実行 → 読める行だけで作り直し の順に試し、壊れたファイルは `broken` フォルダに残します。データベースのファイルを xljs.exe にドロップするか `xljs repair 受注.db` でも修復できます。詳しくは `docs/sqlite-design.md`。
 
+### Web API（`fetch`）
+
+```js
+const res = await fetch("https://api.example.com/items?" + new URLSearchParams({ q: "部品" }));
+if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);   // 404・500 では reject しない
+const items = await res.json();
+await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data), timeout: 30000 });
+const form = new FormData();
+form.append("file", await fs.file("報告.xlsx").getFile());        // multipart/form-data
+await fetch(url, { method: "POST", body: form });
+fs.writeBytes("master.xlsx", await (await fetch(fileUrl)).arrayBuffer());
+```
+
+- ブラウザの `fetch`・`Request`・`Response`・`Headers`・`FormData`・`URL`・`URLSearchParams`・`AbortController`（`AbortSignal.timeout`）と同じ使い方です。
+- Windows では WinHTTP で通信します。プロキシは Windows の設定（自動構成スクリプト（PAC）も）、HTTPS の証明書は Windows の証明書ストアで確かめ、gzip は自動で展開します。社内サーバーの Windows 認証（Negotiate / NTLM）はサインイン中のユーザーで通ります（既定はイントラネットのサーバーだけ。`credentials: "include"` でどのサーバーにも、`"omit"` で使わない）。Cookie はその実行の間だけ保ちます。
+- xljs の拡張: `timeout`（ミリ秒。リダイレクトを含めて応答を待つ上限）、`res.text(encoding)`（省略時は Content-Type の charset。`Shift_JIS` なども読めます）。リダイレクトは 20 回まで自動でたどり、`redirect: "manual"` なら 3xx の応答をそのまま返します。
+- 本文のストリーム（`res.body`）、`XMLHttpRequest`、`WebSocket` はありません。Windows 以外（開発用）では http だけ使えます。
+
 ### エクスプローラー・既定のアプリ
 
 ```js
@@ -577,7 +595,7 @@ sheet.cell("A1").value = dayjs();              // dayjs の値はセル・CSV・
 - `fs.readJSON` などのほか、`csv.read` / `workbooks.open` もパス・ハンドル・`File`・`Blob` を受け付けます
 - `xljs.computerName`（コンピューター名） `xljs.userName`（ログオン中のユーザー名）。ドメインに参加していなくても使えます（AD の詳しい情報は `ad.me()`）
 - `xljs.args` `xljs.script` `xljs.scriptDir` `xljs.version` `xljs.title`（ダイアログのタイトル。`@title` で変更可） `xljs.env(name)` `exit(code)`
-- 補っている組み込み: `Array.fromAsync`, `structuredClone`, `TextEncoder` / `TextDecoder`（Shift_JIS 対応）, `atob` / `btoa`, `Blob` / `File`, 数値・日付の `toLocaleString`（日本語形式）, 簡易 `Intl`
+- 補っている組み込み: `Array.fromAsync`, `structuredClone`, `TextEncoder` / `TextDecoder`（Shift_JIS 対応）, `atob` / `btoa`, `Blob` / `File`, `fetch` / `URL` / `URLSearchParams` / `AbortController`, 数値・日付の `toLocaleString`（日本語形式）, 簡易 `Intl`
 
 ## ビルド
 

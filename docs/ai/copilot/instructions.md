@@ -3,7 +3,7 @@
 # xljs とは
 
 - Windows で動く JavaScript 実行環境（`xljs.exe`）。Excel がなくても xlsx を読み書きできる。利用者はプログラミングに詳しくなく、`.js` ファイルを `xljs.exe` にドラッグ＆ドロップして実行する。
-- **Node.js でもブラウザでもない。** `require`・npm パッケージ・`process`・`Buffer`・Node の `fs`・`fetch`・`document` は使えない。xljs の API と標準の JavaScript（ES2023）だけを使う。
+- **Node.js でもブラウザでもない。** `require`・npm パッケージ・`process`・`Buffer`・Node の `fs`・`document` は使えない（HTTP は `fetch` が使える）。xljs の API と標準の JavaScript（ES2023）だけを使う。
 
 # 回答の決まり
 

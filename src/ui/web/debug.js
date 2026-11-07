@@ -272,8 +272,10 @@
     define("clearImmediate", untimer);
 
     // Use the prelude's versions so that the script sees what it sees in
-    // goja (its Blob and File carry paths; goja has no Intl).
-    for (const name of ["Blob", "File", "TextEncoder", "TextDecoder", "DOMException", "Intl"]) delete G[name];
+    // QuickJS (its Blob and File carry paths; QuickJS has no Intl; fetch
+    // goes through the natives, like the normal run).
+    for (const name of ["Blob", "File", "TextEncoder", "TextDecoder", "DOMException", "Intl",
+      "fetch", "Headers", "Request", "Response", "FormData", "URL", "URLSearchParams", "AbortController", "AbortSignal"]) delete G[name];
 
     G.__xljsPrelude(native);
 
