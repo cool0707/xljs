@@ -629,6 +629,37 @@ fn watchdog_tells_where_it_stopped() {
     assert!(r.stderr.contains("中止した場所:\n    at spin (loop.js:3:"), "{:?}", r.stderr);
 }
 
+/// Runs src (on a script thread of ui::run) with the memory floor; the
+/// error of the run and stdout.
+fn run_floor(src: &str, floor: u64) -> (String, String) {
+    let o = SharedBuf::default();
+    let mut opts = Options {
+        script_path: write_script("grow.js", src),
+        stdout: Some(out(&o)),
+        memory_floor: Some(floor),
+        ..Default::default()
+    };
+    let r = crate::ui::run(Arc::new(Mock::from_json("{}", None).unwrap()), move |su| {
+        opts.ui = Some(su);
+        run(opts)
+    });
+    (r.expect_err("the run should fail").to_string(), o.text())
+}
+
+#[test]
+fn low_memory_stops_the_script() {
+    let _l = lock_lang("ja");
+    // An array that grows without end: stopped once it has taken 500 MB.
+    let src = "const rows = [];\nfunction grow() {\n  while (rows.length < rows.length + 1) rows.push({ a: 1 });\n}\ntry { grow(); } catch (e) { console.log(\"caught\"); }\n";
+    let floor = crate::engine::memory::available().unwrap().saturating_sub(500 << 20);
+    let (msg, stdout) = run_floor(src, floor);
+    assert!(msg.contains("空きメモリ") && msg.contains("    at grow (grow.js:3:"), "{msg}");
+    assert!(stdout.is_empty(), "the stop cannot be caught: {stdout:?}");
+    // Low on memory from the start: stopped while xljs sets up the script.
+    let (msg, _) = run_floor("console.log(1)", u64::MAX);
+    assert!(msg.contains("空きメモリ") && !msg.contains("内部エラー"), "{msg}");
+}
+
 /// Runs src like the development mode's runs (dev_guard, preview) with the
 /// mock answers.
 fn run_dev(src: &str, answers: &str, preview: &str) -> Res {

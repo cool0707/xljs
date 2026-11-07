@@ -275,6 +275,21 @@ fs.writeJSON(dest, rows, { space: 0 });            // 1 行で
 fs.writeJSONL(dest, rows);                         // 1 行 1 レコード
 ```
 
+設定ファイルを既定値と合わせて読むときは、既定値を複製してから使う（既定値の配列をそのまま返して `push` すると、既定値も増える）:
+
+```js
+const defaults = { 担当: [{ 区: "北", 名前: "" }], 行数: 20 };
+function loadConfig(path) {
+  let saved = {};
+  try { if (fs.exists(path)) saved = fs.readJSON(path) ?? {}; }
+  catch (e) { alert(`設定を読めなかったため、初期値を使います。\n${e.message}`); }
+  const c = { ...structuredClone(defaults), ...saved };
+  const blank = Math.max(0, c.行数 - c.担当.length);  // 足す数を先に決める
+  c.担当 = [...c.担当, ...Array.from({ length: blank }, () => ({ 区: "", 名前: "" }))];
+  return c;
+}
+```
+
 ## SQLite データベース
 
 ```js

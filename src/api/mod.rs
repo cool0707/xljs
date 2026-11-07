@@ -89,6 +89,9 @@ pub struct Host {
     pub lp: Loop,
     pub mapper: Option<Mapper>,
     exit: Cell<Option<i32>>,
+    /// Why the engine stopped the script (the computer ran low on memory):
+    /// the run ends with this error instead of the exit code.
+    pub stop_error: RefCell<Option<String>>,
     /// Called instead of ending the script by exit() (the debugger).
     pub exit_hook: RefCell<Option<Box<dyn Fn(i32)>>>,
     cleanup: RefCell<Vec<Box<dyn FnOnce()>>>,
@@ -117,6 +120,7 @@ impl Host {
             lp: Loop::new(),
             mapper,
             exit: Cell::new(None),
+            stop_error: RefCell::new(None),
             exit_hook: RefCell::new(None),
             cleanup: RefCell::new(Vec::new()),
             next_id: Cell::new(0),

@@ -6,6 +6,10 @@
 //! - the stop key (Esc by default): pressing it while the script runs
 //!   JavaScript asks the same.
 //!
+//! The same handler stops the script without asking when the computer's
+//! free memory falls below a floor (memory.rs): the run ends with an error
+//! that tells where the script was running.
+//!
 //! The script is paused while the question is open; "stop" ends it like
 //! exit(130) with an uncatchable exception. The waits mark themselves with
 //! `waited()` (the event loop and the UI calls of ui::run); the checks run
@@ -181,10 +185,10 @@ impl Drop for Guard {
     }
 }
 
-/// Sets up the watchdog (limit) and the stop key for a script run on this
-/// thread in rt. None when both are off.
-pub(crate) fn install(rt: &rquickjs::Runtime, host: Weak<Host>, limit: Option<Duration>, key: Option<StopKey>) -> Option<Guard> {
-    if limit.is_none() && key.is_none() {
+/// Sets up the watchdog (limit), the stop key and the memory floor (bytes)
+/// for a script run on this thread in rt. None when all are off.
+pub(crate) fn install(rt: &rquickjs::Runtime, host: Weak<Host>, limit: Option<Duration>, key: Option<StopKey>, floor: Option<u64>) -> Option<Guard> {
+    if limit.is_none() && key.is_none() && floor.is_none() {
         return None;
     }
     let st = Arc::new(State { base: Instant::now(), active_since: AtomicU64::new(0), pressed: AtomicU64::new(0) });
@@ -211,9 +215,24 @@ pub(crate) fn install(rt: &rquickjs::Runtime, host: Weak<Host>, limit: Option<Du
     let key_name = key.map(|k| k.name);
     let grace = KEY_GRACE.as_nanos() as u64;
     let mut stopped = false;
+    let mut checked: Option<Instant> = None;
     rt.set_interrupt_handler(Some(Box::new(move || {
         if stopped {
             return true;
+        }
+        if let Some(f) = floor
+            && checked.is_none_or(|c| c.elapsed() >= super::memory::CHECK_EVERY)
+        {
+            checked = Some(Instant::now());
+            if let Some(free) = super::memory::available()
+                && free < f
+                && let Some(h) = host.upgrade()
+            {
+                stopped = true;
+                *h.stop_error.borrow_mut() = Some(t!("engine.lowMemory", free >> 20));
+                h.set_exit(1);
+                return true;
+            }
         }
         let active = st.active_since.load(Ordering::SeqCst);
         let pressed = st.pressed.swap(0, Ordering::SeqCst);
