@@ -29,12 +29,26 @@
     <button type="button" id="lay-chat" class="tool icon" data-tip="layoutChat"><i class="fa-regular fa-comments"></i></button>
     <button type="button" id="lay-canvas" class="tool icon" data-tip="layoutCanvas"><i class="fa-solid fa-code"></i></button>
     <button type="button" id="lay-swap" class="tool icon" data-tip="layoutSwap"><i class="fa-solid fa-right-left"></i></button>
+    <button type="button" id="lay-reset" class="tool icon" data-tip="layoutReset"><i class="fa-solid fa-table-cells-large"></i></button>
   </div>
 </header>
 
-<div id="panes">
-  <section id="chat" class="pane">
-    <div class="bar">
+<!-- The panes are built by dev.js (layout) from the tabs and panels below:
+     groups side by side, each with its tabs. -->
+<div id="panes"></div>
+<div id="stash" hidden>
+  <nav id="tabs">
+    <button type="button" data-tab="chat" data-tip="tabMoveTip"><i class="fa-regular fa-comments"></i><span data-t="tabChat"></span></button>
+    <button type="button" data-tab="code" data-tip="tabMoveTip"><i class="fa-solid fa-code"></i><span data-t="tabCode"></span></button>
+    <button type="button" data-tab="diff" data-tip="tabMoveTip"><i class="fa-solid fa-code-compare"></i><span data-t="tabDiff"></span><span id="diff-badge" class="badge" hidden>1</span></button>
+    <button type="button" data-tab="preview" data-tip="tabMoveTip"><i class="fa-regular fa-eye"></i><span data-t="tabPreview"></span></button>
+    <button type="button" data-tab="history" data-tip="tabMoveTip"><i class="fa-solid fa-clock-rotate-left"></i><span data-t="tabHistory"></span></button>
+    <button type="button" data-tab="output" data-tip="tabMoveTip"><i class="fa-solid fa-terminal"></i><span data-t="tabOutput"></span><span id="output-badge" class="badge error" hidden>!</span></button>
+  </nav>
+
+  <div id="panel-chat" class="panel">
+    <div id="chat-bar" class="bar">
+      <span id="chat-grip" class="grip" data-tip="moveChat"><i class="fa-solid fa-grip-vertical"></i></span>
       <button type="button" id="chat-home" class="tool icon" data-tip="chatHome"><i class="fa-solid fa-house"></i></button>
       <button type="button" id="chat-back" class="tool icon" data-tip="back"><i class="fa-solid fa-arrow-left"></i></button>
       <button type="button" id="chat-forward" class="tool icon" data-tip="forward"><i class="fa-solid fa-arrow-right"></i></button>
@@ -59,16 +73,7 @@
       <p id="chat-failed" class="error-text" hidden></p>
     </div>
     <div id="chat-view"></div>
-  </section>
-  <div id="splitter"></div>
-  <section id="canvas" class="pane">
-    <nav id="tabs" class="tabs">
-      <button type="button" data-tab="code"><i class="fa-solid fa-code"></i><span data-t="tabCode"></span></button>
-      <button type="button" data-tab="diff"><i class="fa-solid fa-code-compare"></i><span data-t="tabDiff"></span><span id="diff-badge" class="badge" hidden>1</span></button>
-      <button type="button" data-tab="preview"><i class="fa-regular fa-eye"></i><span data-t="tabPreview"></span></button>
-      <button type="button" data-tab="history"><i class="fa-solid fa-clock-rotate-left"></i><span data-t="tabHistory"></span></button>
-      <button type="button" data-tab="output"><i class="fa-solid fa-terminal"></i><span data-t="tabOutput"></span><span id="output-badge" class="badge error" hidden>!</span></button>
-    </nav>
+  </div>
 
     <div id="welcome" class="panel start">
       <h2 data-t="welcomeTitle"></h2>
@@ -242,7 +247,6 @@
       </div>
       <pre id="output" class="output"></pre>
     </div>
-  </section>
 </div>
 
 <footer>

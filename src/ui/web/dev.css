@@ -76,18 +76,30 @@ button.big {
 button.big i { width: 18px; color: var(--accent); }
 
 #panes { flex: 1; display: flex; min-height: 0; }
-body.swap #panes { flex-direction: row-reverse; }
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-#chat { flex: 0 0 42%; border-right: 1px solid var(--border); }
-body.swap #chat { border-right: 0; border-left: 1px solid var(--border); }
-#canvas { flex: 1 1 0; }
-body[data-mode=chat] #canvas, body[data-mode=chat] #splitter { display: none; }
-body[data-mode=chat] #chat { flex: 1 1 auto !important; border: 0; }
-body[data-mode=canvas] #chat, body[data-mode=canvas] #splitter { display: none; }
-#splitter { flex: 0 0 5px; cursor: col-resize; background: var(--bg); }
-#splitter:hover, body.dragging #splitter { background: var(--accent); }
+/* The groups of tabs side by side (dev.js layout). */
+.group { min-width: 120px; }
+.group-body { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.group.solo-chat > .tabs { display: none; }
+.splitter { flex: 0 0 5px; cursor: col-resize; background: var(--bg); border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.splitter:hover, body.dragging .splitter:active { background: var(--accent); }
 body.dragging { cursor: col-resize; }
 body.dragging iframe { pointer-events: none; }
+#stash { display: none; }
+#chat-bar { cursor: grab; }
+#chat-bar .grip { color: var(--muted); padding: 0 2px 0 4px; cursor: grab; }
+
+/* A tab being dragged: the tab under the mouse and where it would go. */
+body.tab-dragging, body.tab-dragging * { cursor: grabbing !important; }
+body.tab-dragging iframe { pointer-events: none; }
+.tab-ghost {
+  position: fixed; z-index: 1001; pointer-events: none;
+  padding: 4px 10px; border: 1px solid var(--accent); border-radius: var(--radius-box);
+  background: var(--panel); color: var(--fg); box-shadow: 0 2px 8px rgba(0, 0, 0, .25); white-space: nowrap;
+}
+.tab-ghost .badge { display: none; }
+.drop-hint { position: fixed; z-index: 1000; pointer-events: none; background: var(--accent); border-radius: 2px; }
+.drop-hint.area { background: color-mix(in srgb, var(--accent) 18%, transparent); border: 2px solid var(--accent); border-radius: 4px; box-sizing: border-box; }
 
 .bar {
   display: flex; align-items: center; gap: var(--sp-s);
@@ -112,7 +124,8 @@ body.dragging iframe { pointer-events: none; }
 .recent { list-style: none; padding: 0; margin: 0; }
 .recent li { margin: 4px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.tabs { display: flex; gap: 2px; padding: 4px 8px 0; border-bottom: 1px solid var(--border); background: var(--panel); }
+.tabs { display: flex; gap: 2px; padding: 4px 8px 0; border-bottom: 1px solid var(--border); background: var(--panel); overflow-x: auto; scrollbar-width: thin; }
+.tabs button { flex-shrink: 0; }
 .tabs button {
   min-width: 0; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
   background: none; box-shadow: none; padding: 6px 12px; color: var(--muted);
@@ -204,3 +217,11 @@ body.drop-over::after {
   color: var(--accent); font-size: 18px; font-weight: bold;
 }
 body.drop-over iframe { pointer-events: none; }
+
+/* A narrow chat pane: the bar's buttons show their icons only. */
+#panel-chat { container-type: inline-size; }
+@container (max-width: 480px) {
+  #chat-intro span { display: none; }
+  #chat-bar { gap: 2px; }
+  #chat-bar .tool.icon { padding: 0 6px; }
+}
