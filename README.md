@@ -414,6 +414,36 @@ shell.openExternal("https://example.com/");   // ブラウザで開く
 
 パス・ハンドル・`File` のどれでも渡せます。mock UI では実際には開かず、ログに出すだけです。
 
+### ショートカット（.lnk・.url）
+
+```js
+// 作成（名前に .lnk がなければ付ける。URL なら .url のインターネットショートカット）
+const desktop = fs.knownFolder("desktop");
+shell.writeShortcutLink(path.join(desktop, "売上集計"), {
+  target: "\\\\server\\共有\\売上.xlsx",   // リンク先（相対パスはカレントディレクトリから）
+  cwd: "\\\\server\\共有",                // 作業フォルダー
+  args: "",                                // 引数
+  description: "毎月の売上集計",            // コメント
+  icon: "%SystemRoot%\\System32\\shell32.dll", iconIndex: 21,
+  windowState: "maximized",                // "normal"（既定）・"maximized"・"minimized"
+  hotkey: "Ctrl+Alt+U",                    // ショートカットキー（"" でなし）
+  runAsAdmin: false,                       // 管理者として実行
+});
+shell.writeShortcutLink(path.join(desktop, "社内ポータル"), { target: "https://portal.example.com/" });
+
+// リンク先などの取得
+const link = shell.readShortcutLink(path.join(desktop, "売上集計.lnk"));
+console.log(link.target, link.args, link.cwd, link.description, link.hotkey);
+
+// 編集: "update" は指定した項目だけ変える（"create" は作り直し、"replace" は既存のものを作り直す）
+shell.writeShortcutLink(path.join(desktop, "売上集計.lnk"), "update", { target: "\\\\server2\\共有\\売上.xlsx" });
+
+// フォルダ内のショートカットのリンク先を一覧にする
+for (const h of fs.dir(desktop).walk({ glob: "*.lnk" })) console.log(h.name, shell.readShortcutLink(h).target);
+```
+
+Electron の `shell.readShortcutLink` / `shell.writeShortcutLink` と同じ形です（`windowState` `hotkey` `runAsAdmin` と .url は xljs の追加）。`writeShortcutLink` は書いたファイルのパスを返し、失敗すると例外を投げます。リンク先・アイコンの `%SystemRoot%` などの環境変数はそのまま保存され、読み取ると展開された値が返ります（Windows はアイコンの `C:\Windows\...` を `%SystemRoot%\...` として保存しますが、読み取ると元のパスになります）。
+
 ### Active Directory（`ad`）
 
 ドメインに参加している Windows で、サインイン中のユーザーの権限でディレクトリを検索します（RSAT の ActiveDirectory モジュールは不要）。PowerShell の `Get-ADUser` / `Get-ADComputer` / `Get-ADGroup` / `Search-ADAccount` に当たるものを `ad.search` 1 つで行います。
