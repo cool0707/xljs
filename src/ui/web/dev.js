@@ -166,7 +166,7 @@
   function groupEl(g) {
     let e = groupEls.get(g.id);
     if (!e) {
-      e = el("section", { className: "pane group" }, el("nav", { className: "tabs" }), el("div", { className: "group-body" }));
+      e = el("section", { className: "pane tab-group" }, el("nav", { className: "tabs" }), el("div", { className: "group-body" }));
       e.dataset.gid = g.id;
       $("panes").append(e);
       groupEls.set(g.id, e);
@@ -318,7 +318,7 @@
   // group ({kind: "split", side}).
   function dropTarget(tab, x, y) {
     const at = document.elementFromPoint(x, y);
-    const ge = at && at.closest("#panes > .group");
+    const ge = at && at.closest("#panes > .tab-group");
     if (!ge) return null;
     const g = st.layout.groups.find((x) => x.id === ge.dataset.gid);
     if (!g) return null;
