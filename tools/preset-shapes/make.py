@@ -7,6 +7,12 @@ what drawing needs (avLst, gdLst, rect, pathLst) without the namespaces
 and whitespace.
 
     python3 tools/preset-shapes/make.py presetShapeDefinitions.xml > src/api/preset_shapes.xml
+
+The text warps of WordArt (the annex "Preset Text Warp Definitions";
+LibreOffice: oox/source/export/presetTextWarpDefinitions.xml) the same way:
+
+    python3 tools/preset-shapes/make.py presetTextWarpDefinitions.xml \
+        | sed 's/presetShapeDefinitions>/presetTextWarpDefinitions>/' > src/api/preset_text_warps.xml
 """
 import sys
 import xml.etree.ElementTree as ET

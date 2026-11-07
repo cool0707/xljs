@@ -173,7 +173,7 @@ equal(workbooks.open("shrink-saved.xlsx").sheets[0].getValue("B1"), "前イン�
 const sh = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "shapes.xlsx")).sheets[0].toHtml();
 for (const t of ["テキストボックスの文字", "太字で赤", "角丸", "楕円", "ここに注意", "四角", "ひし形", "縦書きの文字", "雲の吹き出し"]) ok(sh.includes(`>${t}<`), t);
 ok(!sh.includes("見えない") && !sh.includes(">印刷しない<"), "hidden shapes and shapes not printed");
-equal(sh.match(/class="xljs-print-shape"/g).length, 14, "top-level objects");
+equal(sh.match(/class="xljs-print-shape"/g).length, 20, "top-level objects");
 ok(sh.includes('fill="#70AD47"'), "own fill");
 ok(sh.includes('fill="#4F81BD"'), "theme fill by style (accent1 of the workbook's theme, Office 2007 in openpyxl)");
 ok(sh.includes("marker-end=") && sh.includes("marker-start="), "arrowheads");
@@ -183,6 +183,18 @@ ok(sh.includes("transform:rotate(20deg)"), "rotation");
 ok(/<path d="M[^"]*C[^"]*" fill="none"/.test(sh), "freeform");
 ok(/<path d="M[^"]*C[^"]*" fill="#FF0000"/.test(sh), "a heart (presets from their definitions)");
 ok(sh.includes('fill="#CC9A00"'), "the eyes of a smiley face: a darker shade of its fill (darkenLess)");
+// WordArt: text effects and text warps (laid out by the print page).
+for (const t of ["影付きの文字", "アーチの文字", "WAVE", "二行目", "反射", "円に沿った文字の並び", "spaced caps"]) ok(sh.includes(`>${t}<`), t);
+ok(sh.includes("filter:drop-shadow(2.121pt 2.121pt 1.5pt rgba(0,0,0,0.4))"), "a shadow of the text");
+ok(/filter:drop-shadow\(0 0 4pt rgba\(192,80,77,0\.4\)\) drop-shadow\(0 0 4pt/.test(sh), "a glow (accent2 of the theme)");
+ok(sh.includes("background-image:linear-gradient(180deg,#FFC000 0%,#C00000 100%);-webkit-background-clip:text"), "a gradient fill of the text");
+ok(sh.includes("-webkit-text-stroke:1pt #002060;"), "an outline");
+ok(sh.includes("color:transparent;-webkit-text-stroke:1.5pt #7030A0;"), "an outline only");
+ok(sh.includes("-webkit-box-reflect:below 1pt linear-gradient(rgba(0,0,0,0.53) 0%,rgba(0,0,0,0.003) 35.5%,transparent 35.5%)"), "a reflection");
+ok(sh.includes("text-transform:uppercase;letter-spacing:3pt;"), "capitals and spacing");
+const warps = [...sh.matchAll(/class="xljs-warp" data-warp="([^"]*)"/g)].map((m) => JSON.parse(m[1].replace(/&quot;/g, '"')));
+equal(warps.map((w) => w.paths.length).join(","), "1,2,2,1", "arch up, wave, inflate, circle");
+ok(warps.every((w) => w.w > 0 && w.h > 0 && w.paths.every((p) => p.length >= 4 && p.every(Number.isFinite))), "the paths of the warps");
 // Pictures placed in cells and cells that refer to them (testdata/xlsx/make_cellimages.py).
 const ci = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "cellimages.xlsx"));
 const srcs = (h) => [...h.matchAll(/<img class="xljs-cell-image" alt="([^"]*)" src="(data:[^"]+)" style="([^"]*)"/g)].map((m) => ({ alt: m[1], src: m[2], pos: m[3] }));

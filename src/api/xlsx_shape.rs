@@ -143,6 +143,13 @@ fn object_html(ctx: &Ctx, obj: &Node, place: Option<(f64, f64, f64, f64)>, size:
     if x.rot != 0.0 {
         let _ = write!(style, "transform:rotate({}deg);", n(x.rot));
     }
+    // The shape's effects (shadow, glow, reflection) on all of it, its text
+    // too (as Excel shows them on the text of a shape without fill).
+    if obj.name != "grpSp" {
+        let fx = obj.child("spPr").and_then(|p| p.child("effectLst"));
+        style.push_str(&effect_css(fx, &ctx.theme, x.rot));
+        style.push_str(&reflect_css(fx));
+    }
     let inner = match obj.name.as_str() {
         "grpSp" => group_html(ctx, obj, &x, w, h),
         "pic" => picture_html(ctx, obj, &x),
@@ -388,13 +395,19 @@ fn shape_html(ctx: &Ctx, sp: &Node, x: &Xfrm, w: f64, h: f64) -> String {
         let (t, b) = if x.flip_v { (h - b, h - t) } else { (t, b) };
         (l.max(0.0), t.max(0.0), (w - r).max(0.0), (h - b).max(0.0))
     });
-    let text = sp.child("txBody").map(|t| text_html(ctx, sp, t, rect.unwrap_or_default())).unwrap_or_default();
+    let text = sp.child("txBody").map(|t| text_html(ctx, sp, t, rect.unwrap_or_default(), (w, h), x.rot)).unwrap_or_default();
     format!("{svg}{text}")
 }
 
 /// The text of a shape (txBody). bx is the distance of the geometry's text
-/// box from the shape's edges (left, top, right, bottom).
-fn text_html(ctx: &Ctx, sp: &Node, tx: &Node, bx: (f64, f64, f64, f64)) -> String {
+/// box from the shape's edges (left, top, right, bottom); size is the
+/// shape's size and rot its rotation (degrees).
+///
+/// WordArt is text with effects (text_fill, the outline, effect_css) and
+/// maybe a text warp (bodyPr's prstTxWarp): its lines are put in a
+/// .xljs-warp box with the warp's paths, and the print page lays the
+/// characters out along them (warpText in print-page.js).
+fn text_html(ctx: &Ctx, sp: &Node, tx: &Node, bx: (f64, f64, f64, f64), size: (f64, f64), rot: f64) -> String {
     let body = tx.child("bodyPr");
     let ins = |k: &str, d: f64| body.and_then(|b| b.attr(k)).and_then(|v| v.parse::<f64>().ok()).unwrap_or(d) / EMU_PT;
     let (l, t, r, b) = (bx.0 + ins("lIns", 91440.0), bx.1 + ins("tIns", 45720.0), bx.2 + ins("rIns", 91440.0), bx.3 + ins("bIns", 45720.0));
@@ -410,6 +423,8 @@ fn text_html(ctx: &Ctx, sp: &Node, tx: &Node, bx: (f64, f64, f64, f64)) -> Strin
     let lst = tx.child("lstStyle").and_then(|l| l.child("lvl1pPr"));
     let mut paras = String::new();
     let mut any = false;
+    // The reflection of the text (of its first run with one).
+    let mut reflect = String::new();
     for p in tx.all("p") {
         let ppr = p.child("pPr");
         let algn = ppr.and_then(|x| x.attr("algn")).or_else(|| lst.and_then(|x| x.attr("algn")));
@@ -434,7 +449,10 @@ fn text_html(ctx: &Ctx, sp: &Node, tx: &Node, bx: (f64, f64, f64, f64)) -> Strin
                     }
                     any = true;
                     let rpr = c.child("rPr");
-                    let css = run_css(ctx, rpr, def, &base_color);
+                    let css = run_css(ctx, rpr, def, &base_color, rot);
+                    if reflect.is_empty() {
+                        reflect = reflect_css(rpr.and_then(|r| r.child("effectLst")).or_else(|| def.and_then(|d| d.child("effectLst"))));
+                    }
                     if let Some(sz) = rpr.and_then(|x| x.attr("sz")).and_then(|v| v.parse::<f64>().ok()) {
                         size_last = Some(sz / 100.0);
                     }
@@ -454,13 +472,36 @@ fn text_html(ctx: &Ctx, sp: &Node, tx: &Node, bx: (f64, f64, f64, f64)) -> Strin
     if !any {
         return String::new();
     }
+    let family = esc(&font_family(&ctx.font.0));
+    // A text warp: in the text box less its insets.
+    let (ww, wh) = (size.0 - l - r, size.1 - t - b);
+    if let Some(warp) = body.and_then(|b| b.child("prstTxWarp"))
+        && ww > 0.0
+        && wh > 0.0
+        && let Some(paths) = geom::text_warp(warp.attr("prst").unwrap_or(""), Some(warp), ww, wh)
+    {
+        let paths: Vec<String> = paths.iter().map(|p| format!("[{}]", p.iter().map(|(x, y)| format!("{},{}", n(*x), n(*y))).collect::<Vec<_>>().join(","))).collect();
+        let spec = format!("{{\"w\":{},\"h\":{},\"paths\":[{}]}}", n(ww), n(wh), paths.join(","));
+        return format!(
+            "<div class=\"xljs-warp\" data-warp=\"{}\" style=\"position:absolute;left:{}pt;top:{}pt;width:{}pt;height:{}pt;overflow:visible;line-height:1.2;white-space:pre;font-family:{family};font-size:11pt;color:{base_color};{reflect}\">{paras}</div>",
+            esc(&spec),
+            n(l),
+            n(t),
+            n(ww),
+            n(wh)
+        );
+    }
+    if !reflect.is_empty() {
+        // Reflected below the text, not below the box.
+        paras = format!("<div style=\"{reflect}\">{paras}</div>");
+    }
     let mut style = format!(
         "position:absolute;inset:0;box-sizing:border-box;padding:{}pt {}pt {}pt {}pt;display:flex;flex-direction:column;justify-content:{anchor};overflow:visible;line-height:1.2;font-family:{};font-size:11pt;color:{base_color};",
         n(t),
         n(r),
         n(b),
         n(l),
-        esc(&font_family(&ctx.font.0))
+        family
     );
     style.push_str(if nowrap { "white-space:pre;" } else { "white-space:pre-wrap;overflow-wrap:anywhere;" });
     if vert {
@@ -469,7 +510,7 @@ fn text_html(ctx: &Ctx, sp: &Node, tx: &Node, bx: (f64, f64, f64, f64)) -> Strin
     format!("<div style=\"{style}\">{paras}</div>")
 }
 
-fn run_css(ctx: &Ctx, rpr: Option<&Node>, def: Option<&Node>, base_color: &str) -> String {
+fn run_css(ctx: &Ctx, rpr: Option<&Node>, def: Option<&Node>, base_color: &str, rot: f64) -> String {
     let get = |k: &str| rpr.and_then(|x| x.attr(k)).or_else(|| def.and_then(|x| x.attr(k)));
     let mut css = String::new();
     if let Some(sz) = get("sz").and_then(|v| v.parse::<f64>().ok()) {
@@ -491,6 +532,14 @@ fn run_css(ctx: &Ctx, rpr: Option<&Node>, def: Option<&Node>, base_color: &str) 
     if !deco.is_empty() {
         let _ = write!(css, "text-decoration:{};", deco.join(" "));
     }
+    match get("cap") {
+        Some("all") => css.push_str("text-transform:uppercase;"),
+        Some("small") => css.push_str("font-variant:small-caps;"),
+        _ => {}
+    }
+    if let Some(spc) = get("spc").and_then(|v| v.parse::<f64>().ok()).filter(|v| *v != 0.0) {
+        let _ = write!(css, "letter-spacing:{}pt;", n(spc / 100.0));
+    }
     let face = |n0: Option<&Node>| -> Option<String> {
         let n0 = n0?;
         for k in ["ea", "latin"] {
@@ -506,13 +555,133 @@ fn run_css(ctx: &Ctx, rpr: Option<&Node>, def: Option<&Node>, base_color: &str) 
     if let Some(f) = face(rpr).or_else(|| face(def)) {
         let _ = write!(css, "font-family:{};", esc(&font_family(&f)));
     }
-    let color = rpr.and_then(|x| x.child("solidFill")).or_else(|| def.and_then(|x| x.child("solidFill"))).and_then(|f| color_of(f, &ctx.theme));
-    if let Some(c) = color
-        && c != base_color
-    {
-        let _ = write!(css, "color:{c};");
+    css.push_str(&text_fill(rpr, def, &ctx.theme, base_color));
+    // The outline of the characters.
+    let ln = rpr.and_then(|x| x.child("ln")).or_else(|| def.and_then(|x| x.child("ln")));
+    if let Some((c, a)) = paint(ln, &ctx.theme).filter(|(c, _)| c != "none") {
+        let w = ln.and_then(|l| l.attr("w")).and_then(|v| v.parse::<f64>().ok()).map(|v| v / EMU_PT).unwrap_or(0.75).max(0.25);
+        let _ = write!(css, "-webkit-text-stroke:{}pt {};", n(w), rgba(&c, a));
     }
+    let fx = rpr.and_then(|x| x.child("effectLst")).or_else(|| def.and_then(|x| x.child("effectLst")));
+    css.push_str(&effect_css(fx, &ctx.theme, rot));
     css
+}
+
+/// The fill of a run's characters: a color, a gradient (as the background
+/// of the text) or none (only the outline shows).
+fn text_fill(rpr: Option<&Node>, def: Option<&Node>, theme: &HashMap<String, String>, base_color: &str) -> String {
+    fn fill(r: Option<&Node>) -> Option<&Node> {
+        r?.children.iter().find(|c| matches!(c.name.as_str(), "solidFill" | "gradFill" | "noFill" | "pattFill"))
+    }
+    let Some(f) = fill(rpr).or_else(|| fill(def)) else { return String::new() };
+    match f.name.as_str() {
+        "noFill" => "color:transparent;".into(),
+        "gradFill" => match gradient_css(f, theme) {
+            Some(g) => format!("background-image:{g};-webkit-background-clip:text;background-clip:text;color:transparent;"),
+            None => String::new(),
+        },
+        _ => {
+            let f = if f.name == "pattFill" { f.child("fgClr").unwrap_or(f) } else { f };
+            match color_of(f, theme) {
+                Some(c) if c != base_color || alpha_of(f) < 1.0 => format!("color:{};", rgba(&c, alpha_of(f))),
+                _ => String::new(),
+            }
+        }
+    }
+}
+
+/// The alpha of a fill's color (alpha 100000 = opaque).
+fn alpha_of(fill: &Node) -> f64 {
+    fill.children
+        .iter()
+        .find(|c| matches!(c.name.as_str(), "srgbClr" | "schemeClr" | "sysClr" | "prstClr"))
+        .and_then(|c| c.child("alpha"))
+        .and_then(|a| a.attr("val"))
+        .and_then(|v| v.parse::<f64>().ok())
+        .map(|v| (v / 100000.0).clamp(0.0, 1.0))
+        .unwrap_or(1.0)
+}
+
+/// A CSS color of "#RRGGBB" with an alpha.
+fn rgba(color: &str, alpha: f64) -> String {
+    if alpha >= 1.0 {
+        return color.to_string();
+    }
+    let v = color.strip_prefix('#').and_then(|h| u32::from_str_radix(h, 16).ok()).unwrap_or(0);
+    format!("rgba({},{},{},{})", (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff, n(alpha))
+}
+
+/// The CSS color of a node with a color (a fill, a gradient stop, an effect).
+fn css_color(node: &Node, theme: &HashMap<String, String>) -> Option<String> {
+    Some(rgba(&color_of(node, theme)?, alpha_of(node)))
+}
+
+/// A gradient fill (gradFill) as a CSS gradient: linear at its angle, or
+/// radial from the center of its fillToRect.
+fn gradient_css(g: &Node, theme: &HashMap<String, String>) -> Option<String> {
+    let mut stops: Vec<(f64, String)> = g
+        .child("gsLst")?
+        .all("gs")
+        .filter_map(|s| Some((s.attr("pos").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / 1000.0, css_color(s, theme)?)))
+        .collect();
+    if stops.is_empty() {
+        return None;
+    }
+    stops.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let list = stops.iter().map(|(p, c)| format!("{c} {}%", n(*p))).collect::<Vec<_>>().join(",");
+    if let Some(path) = g.child("path") {
+        let r = path.child("fillToRect");
+        let v = |k: &str| r.and_then(|r| r.attr(k)).and_then(|v| v.parse::<f64>().ok()).unwrap_or(50000.0) / 1000.0;
+        let (cx, cy) = ((v("l") + 100.0 - v("r")) / 2.0, (v("t") + 100.0 - v("b")) / 2.0);
+        let shape = if path.attr("path") == Some("circle") { "circle" } else { "ellipse" };
+        return Some(format!("radial-gradient({shape} farthest-corner at {}% {}%,{list})", n(cx), n(cy)));
+    }
+    // DrawingML: 0 is left to right, clockwise; CSS: 90deg is left to right.
+    let ang = g.child("lin").and_then(|l| l.attr("ang")).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / 60000.0;
+    Some(format!("linear-gradient({}deg,{list})", n(ang + 90.0)))
+}
+
+/// The glow and outer shadow of an effect list as a CSS filter. rot is the
+/// rotation of the shape (a shadow that does not turn with it is turned back).
+fn effect_css(fx: Option<&Node>, theme: &HashMap<String, String>, rot: f64) -> String {
+    let Some(fx) = fx else { return String::new() };
+    let emu = |e: &Node, k: &str| e.attr(k).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / EMU_PT;
+    let mut f = Vec::new();
+    // The glow first: the shadow falls from the glowing text.
+    if let Some(g) = fx.child("glow")
+        && let Some(c) = css_color(g, theme)
+    {
+        let r = n(emu(g, "rad") / 2.0);
+        f.push(format!("drop-shadow(0 0 {r}pt {c}) drop-shadow(0 0 {r}pt {c})"));
+    }
+    if let Some(s) = fx.child("outerShdw")
+        && let Some(c) = css_color(s, theme)
+    {
+        let mut dir = s.attr("dir").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / 60000.0;
+        if matches!(s.attr("rotWithShape"), Some("0" | "false")) {
+            dir -= rot;
+        }
+        let (dist, dir) = (emu(s, "dist"), dir.to_radians());
+        f.push(format!("drop-shadow({}pt {}pt {}pt {c})", n(dist * dir.cos()), n(dist * dir.sin()), n(emu(s, "blurRad") / 2.0)));
+    }
+    if f.is_empty() { String::new() } else { format!("filter:{};", f.join(" ")) }
+}
+
+/// The reflection of an effect list as -webkit-box-reflect (below, fading
+/// from stA at stPos to endA at endPos).
+fn reflect_css(fx: Option<&Node>) -> String {
+    let Some(r) = fx.and_then(|f| f.child("reflection")) else { return String::new() };
+    let num = |k: &str, d: f64| r.attr(k).and_then(|v| v.parse::<f64>().ok()).unwrap_or(d);
+    let (st_a, st_pos, end_a, end_pos) = (num("stA", 100000.0) / 100000.0, num("stPos", 0.0) / 1000.0, num("endA", 0.0) / 100000.0, num("endPos", 100000.0) / 1000.0);
+    format!(
+        "-webkit-box-reflect:below {}pt linear-gradient(rgba(0,0,0,{}) {}%,rgba(0,0,0,{}) {}%,transparent {}%);",
+        n(num("dist", 0.0) / EMU_PT),
+        n(st_a),
+        n(st_pos),
+        n(end_a),
+        n(end_pos),
+        n(end_pos)
+    )
 }
 
 #[cfg(test)]
