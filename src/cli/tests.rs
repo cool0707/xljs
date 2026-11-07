@@ -102,6 +102,17 @@ fn watchdog_flag() {
 }
 
 #[test]
+fn memory_floor_value() {
+    let def = Some(crate::engine::memory::DEFAULT_FLOOR);
+    for (v, want) in [("", def), ("on", def), ("off", None), ("0", None), ("200", Some(200 << 20))] {
+        assert_eq!(parse_memory_floor(v).unwrap(), want, "{v:?}");
+    }
+    for v in ["-1", "abc", "1.5"] {
+        assert!(parse_memory_floor(v).is_err(), "{v:?}");
+    }
+}
+
+#[test]
 fn stop_key_flag() {
     let key = |s: &str| Some(watchdog::StopKey::parse(s).unwrap());
     for (v, native, want) in [

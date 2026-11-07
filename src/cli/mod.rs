@@ -334,6 +334,21 @@ fn parse_stop_key(value: &str, native: bool) -> Result<Option<watchdog::StopKey>
     watchdog::StopKey::parse(key).map(Some).ok_or_else(|| err!("cli.unknownStopKey", value))
 }
 
+/// Parses XLJS_MEMORY_FLOOR: the free memory of the computer, in MB, below
+/// which the script is stopped with an error. "" = the default (100 MB);
+/// off or 0 = off.
+fn parse_memory_floor(value: &str) -> Result<Option<u64>> {
+    let v = value.trim().to_lowercase();
+    match v.as_str() {
+        "" | "on" | "true" | "yes" => Ok(Some(crate::engine::memory::DEFAULT_FLOOR)),
+        "off" | "false" | "no" | "0" => Ok(None),
+        _ => match v.parse::<u64>() {
+            Ok(mb) => Ok(Some(mb << 20)),
+            _ => Err(err!("cli.unknownMemoryFloor", value)),
+        },
+    }
+}
+
 /// How the user can stop a running script (--watchdog, --stop-key).
 #[derive(Default)]
 pub(super) struct Stop {
@@ -351,6 +366,7 @@ fn set_stop(o: &mut Options, s: &Stop, u: &dyn Ui) -> Result<()> {
     let native = u.name() == "native";
     o.watchdog = parse_watchdog(&s.watchdog, native)?;
     o.stop_key = parse_stop_key(&s.key, native)?;
+    o.memory_floor = parse_memory_floor(&env("XLJS_MEMORY_FLOOR"))?;
     Ok(())
 }
 

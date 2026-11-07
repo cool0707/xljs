@@ -3,6 +3,7 @@
 
 mod bundle;
 mod debug;
+pub mod memory;
 pub(crate) mod loop_;
 mod sourcemap;
 pub mod watchdog;
@@ -77,6 +78,10 @@ pub struct Options {
     /// while it runs JavaScript (see watchdog.rs). None turns it off; it
     /// only works on Windows. Not used by debug_script either.
     pub stop_key: Option<watchdog::StopKey>,
+    /// Stops the script with an error when the computer's free memory falls
+    /// below this many bytes while it runs JavaScript (see memory.rs). None
+    /// turns it off. Not used by debug_script either.
+    pub memory_floor: Option<u64>,
     /// Run from the development mode (xljs dev): fs.remove asks before it
     /// deletes a folder with its contents or a second file.
     pub dev_guard: bool,
@@ -217,7 +222,7 @@ pub fn run(mut o: Options) -> Result<i32> {
             }
         })));
     }
-    let stop = watchdog::install(&rt, Rc::downgrade(&host), o.watchdog, o.stop_key.clone());
+    let stop = watchdog::install(&rt, Rc::downgrade(&host), o.watchdog, o.stop_key.clone(), o.memory_floor);
     let res = ctx.with(|ctx| run_in(&ctx, &host, &code));
     rt.set_interrupt_handler(None);
     drop(stop);
@@ -230,11 +235,13 @@ pub fn run(mut o: Options) -> Result<i32> {
 }
 
 fn run_in<'js>(ctx: &Ctx<'js>, host: &Rc<Host>, code: &str) -> Result<i32> {
-    install_stack_mapper(ctx, host).map_err(|e| err!("engine.internalError", e))?;
-    host.install_loop(ctx).map_err(|e| err!("engine.internalError", e))?;
+    // The setup runs JavaScript too: it can be stopped for lack of memory.
+    let internal = |e: String| host.stop_error.take().map(script_error).unwrap_or_else(|| err!("engine.internalError", e));
+    install_stack_mapper(ctx, host).map_err(|e| internal(e.to_string()))?;
+    host.install_loop(ctx).map_err(|e| internal(e.to_string()))?;
     let natives = match api::install(ctx, host) {
         Ok(n) => n,
-        Err(e) => return Err(err!("engine.internalError", describe_error(ctx, e))),
+        Err(e) => return Err(internal(describe_error(ctx, e))),
     };
     let mut opts = rquickjs::context::EvalOptions::default();
     opts.global = true;
@@ -242,7 +249,7 @@ fn run_in<'js>(ctx: &Ctx<'js>, host: &Rc<Host>, code: &str) -> Result<i32> {
     opts.filename = Some(BUNDLE_NAME.into());
     let main: Value = match ctx.eval_with_options(code.as_bytes().to_vec(), opts).catch(ctx) {
         Ok(v) => v,
-        Err(e) => return Err(script_error(describe_caught(ctx, e))),
+        Err(e) => return finish_caught(ctx, host, e),
     };
     // An app opens its main window before the script runs; the script ends
     // when the window is closed (the window keeps the event loop busy).
@@ -270,6 +277,9 @@ fn run_in<'js>(ctx: &Ctx<'js>, host: &Rc<Host>, code: &str) -> Result<i32> {
     if let Err(e) = host.lp.run(ctx, host).catch(ctx) {
         return finish_caught(ctx, host, e);
     }
+    if let Some(msg) = host.stop_error.take() {
+        return Err(script_error(msg));
+    }
     if host.exited() {
         return Ok(host.exit_code());
     }
@@ -295,10 +305,15 @@ fn run_in<'js>(ctx: &Ctx<'js>, host: &Rc<Host>, code: &str) -> Result<i32> {
 
 /// The outcome of an exception that ended the script: the exit code after
 /// exit() (and, when the user stopped the script, where it was running, on
-/// stderr), else the error.
+/// stderr), else the error (with where it was running when the engine
+/// stopped it for lack of memory).
 fn finish_caught(ctx: &Ctx, host: &Rc<Host>, e: rquickjs::CaughtError) -> Result<i32> {
     if !host.exited() {
         return Err(script_error(describe_caught(ctx, e)));
+    }
+    if let Some(msg) = host.stop_error.take() {
+        let at = stopped_at(&describe_caught(ctx, e));
+        return Err(script_error(if at.is_empty() { msg } else { format!("{msg}\n{at}") }));
     }
     if host.exit_code() == watchdog::STOPPED_CODE {
         let at = stopped_at(&describe_caught(ctx, e));
