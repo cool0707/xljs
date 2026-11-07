@@ -121,16 +121,19 @@ impl Loop {
             if host.exited() {
                 return Ok(());
             }
-            let (posted, pending) = {
+            let pending = self.shared.st.lock().unwrap().pending;
+            let mut had_posted = false;
+            // One at a time: the rest stay visible to Shared::idle (the
+            // debugger ends the run when nothing is left).
+            while let Some(f) = {
                 let mut st = self.shared.st.lock().unwrap();
-                (std::mem::take(&mut st.posted), st.pending)
-            };
-            let had_posted = !posted.is_empty();
-            if had_posted {
-                // Something came from the UI: the script is responding.
-                super::watchdog::waited();
-            }
-            for f in posted {
+                if st.posted.is_empty() { None } else { Some(st.posted.remove(0)) }
+            } {
+                if !had_posted {
+                    // Something came from the UI: the script is responding.
+                    super::watchdog::waited();
+                    had_posted = true;
+                }
                 f(ctx, host)?;
                 drain_jobs(ctx);
                 if host.exited() {

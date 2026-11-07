@@ -213,6 +213,9 @@ impl Ui for Threaded {
         // done comes later, from the UI thread.
         let u = self.u.clone();
         self.t.post(Box::new(move || u.print_pdf(job, done)));
+    }    fn credentials(&self, p: &crate::net::auth::LoginPrompt) -> Option<crate::net::auth::Login> {
+        let p = p.clone();
+        self.on(move |u| u.credentials(&p))
     }
 }
 

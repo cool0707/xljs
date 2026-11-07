@@ -11,10 +11,10 @@ description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows �
 ## 実行環境
 
 - ES2023 の JavaScript（`async`/`await`、トップレベル `await`、`?.`、`??`、クラス、分割代入、`Object.groupBy`、`Array.prototype.toSorted` など）。TypeScript（`.ts`）もそのまま実行できる。
-- 使えないもの: `require`、npm パッケージ、`process`、`Buffer`、Node.js の `fs`/`path` モジュール、`fetch`/`XMLHttpRequest`（ネットワーク）、`document`/`window`（DOM）、Excel の COM/VBA。
+- 使えないもの: `require`、npm パッケージ、`process`、`Buffer`、Node.js の `fs`/`path` モジュール、`XMLHttpRequest`・`WebSocket`、`document`/`window`（DOM）、Excel の COM/VBA。
 - `import` は同じフォルダの自作ファイル（`import { f } from "./lib.js"`）と JSON（`import master from "./master.json"`）だけ。
-- 使えるグローバル: `console`、`setTimeout`/`setInterval`、`sleep(ms)`、`exit(code)`、`structuredClone`、`TextEncoder`/`TextDecoder`（Shift_JIS 対応）、`atob`/`btoa`、`Blob`/`File`、`Intl`（簡易）、数値・日付の `toLocaleString()`（日本語形式）。
-- ファイル系の API は同期（`await` 不要）。`await` が必要なのはダイアログ（`showOpenFilePicker` など）、`ui.form`、`ui.table`（選択するとき）、`sleep`、`h.getFile()` など Promise を返すものだけ（`ui.chart` はすぐ戻る。閉じるまで待つなら `.closed`）。
+- 使えるグローバル: `console`、`setTimeout`/`setInterval`、`sleep(ms)`、`exit(code)`、`structuredClone`、`TextEncoder`/`TextDecoder`（Shift_JIS 対応）、`atob`/`btoa`、`Blob`/`File`、`fetch`（HTTP 通信。下の「Web API（fetch）」）、`URL`/`URLSearchParams`、`AbortController`、`Intl`（簡易）、数値・日付の `toLocaleString()`（日本語形式）。
+- ファイル系の API は同期（`await` 不要）。`await` が必要なのはダイアログ（`showOpenFilePicker` など）、`ui.form`、`ui.table`（選択するとき）、`sleep`、`fetch`、`h.getFile()` など Promise を返すものだけ（`ui.chart` はすぐ戻る。閉じるまで待つなら `.closed`）。
 - パスを受け取る引数には、文字列のパス・ハンドル・`File` のどれでも渡せる。相対パスはカレントフォルダ基準。エクスプローラーから起動した（ダブルクリック・ドロップ）ときはスクリプトのあるフォルダ（exe ならその exe のフォルダ）がカレントフォルダになる。
 - エラーが起きると、行番号付きのエラーダイアログを表示して終了する。
 
@@ -309,6 +309,44 @@ const list = db.all("SELECT 品名, 金額, ランク(金額) AS ランク FROM 
 ```
 - **共有モード**（ファイルサーバーに置いて複数人で使う）: `sqlite.open(p, { shared: true })`。ネットワークドライブ・`\\server\share` 上なら自動で共有モードになる。呼び出しのたびにファイルを開いてロックを取り、すぐ閉じる（遅いが壊れにくい）。他の人の書き込み中は最大 `timeout`（既定 30 秒）待つ。書き込みの前に 1 時間ごとに検査と自動バックアップをし、変更をすべて記録する。トランザクションの中で `confirm` など人を待つ処理をしない。
 - 壊れたときは、次の呼び出しで「修復しますか？」と聞かれ、はいなら修復してやり直す（`onCorrupt: "repair"` で確認なし、`"error"` で例外）。修復は 索引の作り直し → 自動バックアップ＋その後の変更の再実行 → 読める行だけで作り直し の順に試し、壊れたファイルは残す。`sqlite.repair(p)` / `db.repair()` で明示的にも実行でき、データベースのファイルを xljs.exe にドロップしても修復できる。
+
+## Web API（fetch）
+
+ブラウザと同じ `fetch` で社内・社外の Web API を呼べる（Windows の WinHTTP を使う。プロキシは Windows の設定（PAC も）のまま、HTTPS の証明書は Windows の証明書ストアで確かめる）。
+
+```js
+// GET して JSON を受け取る
+const res = await fetch("https://api.example.com/items?" + new URLSearchParams({ 分類: "部品", 件数: 100 }));
+if (!res.ok) throw new Error(`取得に失敗しました: ${res.status} ${res.statusText}`);  // 404・500 では reject しない
+const items = await res.json();
+
+// JSON を POST する
+const r2 = await fetch("https://api.example.com/orders", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", Authorization: "Bearer " + xljs.env("API_TOKEN") },
+  body: JSON.stringify({ 番号: "A001", 金額: 12000 }),
+  timeout: 30000,                          // xljs 拡張: 30 秒で応答がなければ TimeoutError
+});
+
+// フォームとファイルを送る（multipart/form-data）
+const form = new FormData();
+form.append("title", "月次報告");
+form.append("file", await fs.file("報告.xlsx").getFile());  // ディスクのファイル
+await fetch("https://intra.example.com/upload", { method: "POST", body: form });
+
+// ダウンロードして保存する
+const file = await fetch("https://intra.example.com/files/master.xlsx");
+const data = await file.arrayBuffer();
+fs.writeBytes("master.xlsx", data);
+const book = workbooks.open(data);         // 保存せずに開くこともできる
+```
+
+- `res.text()` は Content-Type の charset（`Shift_JIS` なども）で読む。`res.text("cp932")` で文字コードを指定できる（xljs 拡張）。本文は 1 回しか読めない（2 回読むなら先に `res.clone()`）。
+- オプション: `method`、`headers`（オブジェクト・`Headers`）、`body`（文字列は UTF-8、`URLSearchParams` はフォーム、`FormData`、`Blob`、`ArrayBuffer`）、`signal`（`AbortController` で中止、`AbortSignal.timeout(ms)`）、`redirect`（`"follow"` 既定・`"manual"`・`"error"`）、`timeout`（ミリ秒、xljs 拡張）。
+- 社内サーバーの Windows 認証（Negotiate / NTLM）はサインイン中のユーザーで自動で通る（イントラネットのサーバーだけ。ほかのサーバーにも使うなら `credentials: "include"`）。Cookie はその実行の間だけ保たれる。
+- 認証付きのプロキシも通る（Windows 認証はそのまま、Basic 認証は初回にユーザー名とパスワードを尋ねて Windows の資格情報マネージャーに保存する）。プロキシの ID・パスワードをスクリプトに書かない。
+- つながらない・サーバーが見つからない・証明書の問題は `TypeError`、中止は `AbortError`、時間切れは `TimeoutError` で reject する。ヘッダーの値に日本語は使えない（必要なら `encodeURIComponent`）。
+- `URL` / `URLSearchParams` は URL の組み立てに使える（`new URL("/api/a", base)`、`url.searchParams.set("q", "日本語")`）。
 
 ## 進捗表示
 

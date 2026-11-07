@@ -3,7 +3,7 @@
 # xljs とは
 
 - Windows で動く JavaScript 実行環境（`xljs.exe`）。Excel がなくても xlsx を読み書きできる。利用者はプログラミングに詳しくなく、`.js` ファイルを `xljs.exe` にドラッグ＆ドロップして実行する。
-- **Node.js でもブラウザでもない。** `require`・npm パッケージ・`process`・`Buffer`・Node の `fs`・`fetch`・`document` は使えない。下の API と標準の JavaScript（ES2023）だけを使う。
+- **Node.js でもブラウザでもない。** `require`・npm パッケージ・`process`・`Buffer`・Node の `fs`・`document` は使えない（HTTP は `fetch` が使える）。下の API と標準の JavaScript（ES2023）だけを使う。
 
 # 回答の決まり
 
@@ -106,6 +106,15 @@ db.transaction(() => { /* 例外なら取り消し。async 不可 */ });
 ```
 
 SQL では Excel 互換の関数（`ROUNDHALF`（Excel の ROUND）・`ROUNDUP`・`ROUNDDOWN`・`LEFT`・`TEXT`・`EOMONTH`・`DATEDIF` など）が生成列でも使える。`db.function(name, fn)` で JS の関数も呼べるが、クエリ専用（テーブル・ビューの定義、共有モードの更新には使えない）。
+
+## Web API（fetch）
+
+```js
+const res = await fetch(url + "?" + new URLSearchParams({ 分類: "部品" }), { timeout: 30000 });  // プロキシ・社内の Windows 認証は自動
+if (!res.ok) throw new Error(`取得に失敗しました: ${res.status}`);  // 404・500 では reject しない
+const data = await res.json();          // text() は charset（Shift_JIS も）で読む
+await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) });
+```
 
 ## 進捗（フォームなしのとき。キャンセルでスクリプトが終わる）
 

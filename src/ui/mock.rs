@@ -26,7 +26,8 @@ pub type LogSink = Arc<dyn Fn(&str) + Send + Sync>;
 ///   "form": [{"src": "data", "tax": true}, null],
 ///   "table": [[0, 2], null],
 ///   "app": [[{"invoke": "aggregate", "args": ["2026-04"]}, {"close": true}]],
-///   "choose": [0, null]
+///   "choose": [0, null],
+///   "credentials": [{"user": "yamada", "password": "secret"}, null]
 /// }
 /// ```
 ///
@@ -150,6 +151,21 @@ impl Ui for Mock {
 
     fn notify(&self, title: &str, message: &str) {
         self.logf(&format!("notify({}, {})", quote(title), quote(message)));
+    }
+
+    fn credentials(&self, p: &crate::net::auth::LoginPrompt) -> Option<crate::net::auth::Login> {
+        #[derive(serde::Deserialize)]
+        struct A {
+            user: String,
+            password: String,
+        }
+        let a: Option<A> = self.next("credentials");
+        let what = format!("{}{}{}", if p.proxy { "proxy " } else { "" }, quote(&p.realm), if p.failed { ", failed" } else { "" });
+        match &a {
+            Some(a) => self.logf(&format!("credentials({what}) -> {}", quote(&a.user))),
+            None => self.logf(&format!("credentials({what}) -> null")),
+        }
+        a.map(|a| crate::net::auth::Login { user: a.user, password: a.password })
     }
 
     fn print_pdf(&self, job: PdfJob, done: PdfDone) {

@@ -456,6 +456,856 @@
   };
   const mimeOf = (p) => MIME[native.pathExtname(p).toLowerCase()] || "";
 
+  // ---------------------------------------------------------------- URL
+
+  function utf8Bytes(s) {
+    const out = [];
+    for (const ch of String(s)) {
+      let c = ch.codePointAt(0);
+      if (c >= 0xd800 && c <= 0xdfff) c = 0xfffd;
+      if (c < 0x80) out.push(c);
+      else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+      else if (c < 0x10000) out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+      else out.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 63), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+    }
+    return out;
+  }
+  /** UTF-8 bytes to a string (invalid sequences become U+FFFD). */
+  function utf8String(b) {
+    let s = "";
+    for (let i = 0; i < b.length;) {
+      const c = b[i];
+      const n = c < 0x80 ? 0 : c >= 0xc2 && c < 0xe0 ? 1 : c >= 0xe0 && c < 0xf0 ? 2 : c >= 0xf0 && c < 0xf5 ? 3 : -1;
+      let cp = n === 0 ? c : n === 1 ? c & 31 : n === 2 ? c & 15 : c & 7;
+      let ok = n >= 0 && i + n < b.length;
+      for (let k = 1; ok && k <= n; k++) {
+        if ((b[i + k] & 0xc0) !== 0x80) ok = false;
+        else cp = (cp << 6) | (b[i + k] & 63);
+      }
+      if (ok && ((n === 2 && (cp < 0x800 || (cp >= 0xd800 && cp <= 0xdfff))) || (n === 3 && (cp < 0x10000 || cp > 0x10ffff)))) ok = false;
+      if (!ok) { s += "�"; i++; continue; }
+      s += String.fromCodePoint(cp);
+      i += n + 1;
+    }
+    return s;
+  }
+  const hexByte = (b) => "%" + (b < 16 ? "0" : "") + b.toString(16).toUpperCase();
+  /** Percent-encodes the characters of s for which enc(code) is true, and every non-ASCII character. */
+  function pctEncode(s, enc) {
+    let out = "";
+    for (const ch of String(s)) {
+      const c = ch.codePointAt(0);
+      if (c < 0x80 && !enc(c)) out += ch;
+      else for (const b of utf8Bytes(ch)) out += hexByte(b);
+    }
+    return out;
+  }
+  function pctDecode(s) {
+    if (!s.includes("%")) return s;
+    const bytes = [];
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c === 0x25 && /^[0-9A-Fa-f]{2}$/.test(s.slice(i + 1, i + 3))) {
+        bytes.push(parseInt(s.slice(i + 1, i + 3), 16));
+        i += 2;
+      } else if (c < 0x80) bytes.push(c);
+      else {
+        const cp = s.codePointAt(i);
+        if (cp > 0xffff) i++;
+        bytes.push(...utf8Bytes(String.fromCodePoint(cp)));
+      }
+    }
+    return utf8String(bytes);
+  }
+  // The percent-encode sets of the URL Standard.
+  const C0_SET = (c) => c < 0x20 || c === 0x7f;
+  const FRAGMENT_SET = (c) => C0_SET(c) || c === 0x20 || c === 0x22 || c === 0x3c || c === 0x3e || c === 0x60;
+  const QUERY_SET = (c) => C0_SET(c) || c === 0x20 || c === 0x22 || c === 0x23 || c === 0x3c || c === 0x3e;
+  const SPECIAL_QUERY_SET = (c) => QUERY_SET(c) || c === 0x27;
+  const PATH_SET = (c) => QUERY_SET(c) || c === 0x3f || c === 0x5e || c === 0x60 || c === 0x7b || c === 0x7d;
+  const USERINFO_SET = (c) => PATH_SET(c) || c === 0x2f || c === 0x3a || c === 0x3b || c === 0x3d || c === 0x40 ||
+    (c >= 0x5b && c <= 0x5d) || c === 0x7c;
+  const FORM_KEEP = (c) => (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5a) || (c >= 0x61 && c <= 0x7a) ||
+    c === 0x2a || c === 0x2d || c === 0x2e || c === 0x5f;
+  const formEncode = (s) => pctEncode(s, (c) => c !== 0x20 && !FORM_KEEP(c)).replace(/ /g, "+");
+  const formDecode = (s) => pctDecode(s.replace(/\+/g, " "));
+  const SPECIAL_SCHEMES = { "http:": "80", "https:": "443", "ws:": "80", "wss:": "443", "ftp:": "21", "file:": "" };
+
+  /** The path of a hierarchical URL with "." and ".." resolved and the segments encoded. */
+  function normPath(p, special) {
+    if (special) p = p.replace(/\\/g, "/");
+    if (p === "") return special ? "/" : "";
+    const segs = p.split("/");
+    if (segs[0] === "") segs.shift();
+    const out = [];
+    segs.forEach((seg, i) => {
+      const low = seg.toLowerCase(), last = i === segs.length - 1;
+      if (low === ".." || low === ".%2e" || low === "%2e." || low === "%2e%2e") {
+        out.pop();
+        if (last) out.push("");
+      } else if (low === "." || low === "%2e") {
+        if (last) out.push("");
+      } else out.push(pctEncode(seg, PATH_SET));
+    });
+    return "/" + out.join("/");
+  }
+  /** Fills the path, query and fragment of u from s. */
+  function urlTail(u, s, opaque) {
+    const special = u.protocol in SPECIAL_SCHEMES;
+    let q = null, frag = null;
+    const h = s.indexOf("#");
+    if (h >= 0) { frag = s.slice(h + 1); s = s.slice(0, h); }
+    const qi = s.indexOf("?");
+    if (qi >= 0) { q = s.slice(qi + 1); s = s.slice(0, qi); }
+    if (opaque) { u.opaque = true; u.path = pctEncode(s, C0_SET); } else u.path = normPath(s, special);
+    u.query = q === null ? null : pctEncode(q, special ? SPECIAL_QUERY_SET : QUERY_SET);
+    u.fragment = frag === null ? null : pctEncode(frag, FRAGMENT_SET);
+    return u;
+  }
+  /** The host of a URL (lowercased, decoded), or null when it is invalid. */
+  function urlHost(h, special) {
+    if (h.startsWith("[")) return /^\[[0-9A-Fa-f:.]+\]$/.test(h) ? h.toLowerCase() : null;
+    if (special) h = pctDecode(h).toLowerCase();
+    if (/[\u0000- #/:<>?@[\\\]^|%\u007f]/.test(h)) return null;
+    return h;
+  }
+  /** Fills the authority (user, host, port) of u from s, then the rest. */
+  function urlAuthority(u, s) {
+    const special = u.protocol in SPECIAL_SCHEMES;
+    const end = s.search(special ? /[/\\?#]/ : /[/?#]/);
+    const auth = end < 0 ? s : s.slice(0, end), after = end < 0 ? "" : s.slice(end);
+    const at = auth.lastIndexOf("@");
+    let hp = auth;
+    if (at >= 0) {
+      const ui = auth.slice(0, at), c = ui.indexOf(":");
+      hp = auth.slice(at + 1);
+      u.username = pctEncode(c < 0 ? ui : ui.slice(0, c), USERINFO_SET);
+      u.password = c < 0 ? "" : pctEncode(ui.slice(c + 1), USERINFO_SET);
+    }
+    const m = /^(\[[^\]]*\]|[^:]*)(?::(.*))?$/.exec(hp);
+    if (!m) return null;
+    let port = m[2] === undefined ? "" : m[2];
+    if (port !== "") {
+      if (!/^\d+$/.test(port) || Number(port) > 65535) return null;
+      port = String(Number(port));
+      if (SPECIAL_SCHEMES[u.protocol] === port) port = "";
+    }
+    const host = urlHost(m[1], special);
+    if (host === null || (host === "" && special && u.protocol !== "file:")) return null;
+    u.hostname = host;
+    u.port = port;
+    return urlTail(u, after, false);
+  }
+  /** Parses input (against the parsed base, if any) into URL records, or null. */
+  function parseURL(input, base) {
+    const s = String(input).replace(/^[\u0000- ]+|[\u0000- ]+$/g, "").replace(/[\t\n\r]/g, "");
+    const u = { protocol: "", username: "", password: "", hostname: null, port: "", path: "", query: null, fragment: null, opaque: false };
+    const m = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(s);
+    if (m) {
+      u.protocol = m[1].toLowerCase() + ":";
+      let rest = s.slice(m[0].length);
+      if (u.protocol === "file:") {
+        if (/^[/\\]{2}/.test(rest)) return urlAuthority(u, rest.slice(2));
+        u.hostname = "";
+        return urlTail(u, rest, false);
+      }
+      if (u.protocol in SPECIAL_SCHEMES) {
+        if (base && base.protocol === u.protocol && !/^[/\\]/.test(rest)) return urlRelative(u, rest, base);
+        return urlAuthority(u, rest.replace(/^[/\\]*/, ""));
+      }
+      if (rest.startsWith("//")) return urlAuthority(u, rest.slice(2));
+      if (rest.startsWith("/")) return urlTail(u, rest, false);
+      return urlTail(u, rest, true);
+    }
+    if (!base) return null;
+    u.protocol = base.protocol;
+    if (base.opaque) {
+      if (!s.startsWith("#")) return null;
+      return Object.assign(u, base, { fragment: pctEncode(s.slice(1), FRAGMENT_SET) });
+    }
+    const special = u.protocol in SPECIAL_SCHEMES;
+    if (special ? /^[/\\]{2}/.test(s) : s.startsWith("//")) {
+      return urlAuthority(u, u.protocol === "file:" ? s.slice(2) : s.replace(/^[/\\]*/, ""));
+    }
+    return urlRelative(u, s, base);
+  }
+  function urlRelative(u, s, base) {
+    const special = u.protocol in SPECIAL_SCHEMES;
+    Object.assign(u, { username: base.username, password: base.password, hostname: base.hostname, port: base.port });
+    if (s === "") return Object.assign(u, { path: base.path, query: base.query });
+    if (s[0] === "/" || (special && s[0] === "\\")) return urlTail(u, s, false);
+    if (s[0] === "?") return Object.assign(urlTail(u, s, false), { path: base.path });
+    if (s[0] === "#") return Object.assign(u, { path: base.path, query: base.query, fragment: pctEncode(s.slice(1), FRAGMENT_SET) });
+    return urlTail(u, base.path.slice(0, base.path.lastIndexOf("/") + 1) + s, false);
+  }
+  function urlHref(u, noUserFragment) {
+    let s = u.protocol;
+    if (u.hostname !== null) {
+      s += "//";
+      if (!noUserFragment && (u.username || u.password)) s += u.username + (u.password ? ":" + u.password : "") + "@";
+      s += u.hostname + (u.port ? ":" + u.port : "");
+    }
+    s += u.path;
+    if (u.query !== null) s += "?" + u.query;
+    if (u.fragment !== null && !noUserFragment) s += "#" + u.fragment;
+    return s;
+  }
+  const toBase = (base) => {
+    if (base === undefined) return null;
+    const b = parseURL(base instanceof URL ? base.href : String(base), null);
+    if (!b) throw new TypeError(T("net.invalidUrl", String(base)));
+    return b;
+  };
+
+  class URL {
+    constructor(url, base) {
+      const u = parseURL(url instanceof URL ? url.href : String(url), toBase(base));
+      if (!u) throw new TypeError(T("net.invalidUrl", String(url)));
+      define(this, "_u", u);
+      define(this, "_sp", null);
+    }
+    static canParse(url, base) { try { new URL(url, base); return true; } catch (e) { return false; } }
+    static parse(url, base) { try { return new URL(url, base); } catch (e) { return null; } }
+    get href() { return urlHref(this._u); }
+    set href(v) {
+      const u = parseURL(String(v), null);
+      if (!u) throw new TypeError(T("net.invalidUrl", String(v)));
+      this._u = u;
+      this._syncParams();
+    }
+    get origin() {
+      const u = this._u;
+      return u.protocol in SPECIAL_SCHEMES && u.protocol !== "file:" ? `${u.protocol}//${this.host}` : "null";
+    }
+    get protocol() { return this._u.protocol; }
+    set protocol(v) {
+      const p = String(v).replace(/:.*$/, "").toLowerCase() + ":";
+      const u = this._u;
+      if (!/^[a-z][a-z0-9+.-]*:$/.test(p) || (p in SPECIAL_SCHEMES) !== (u.protocol in SPECIAL_SCHEMES) || p === "file:" || u.protocol === "file:") return;
+      u.protocol = p;
+      if (SPECIAL_SCHEMES[p] === u.port) u.port = "";
+    }
+    get username() { return this._u.username; }
+    set username(v) { if (this._u.hostname) this._u.username = pctEncode(String(v), USERINFO_SET); }
+    get password() { return this._u.password; }
+    set password(v) { if (this._u.hostname) this._u.password = pctEncode(String(v), USERINFO_SET); }
+    get host() { const u = this._u; return u.hostname === null ? "" : u.hostname + (u.port ? ":" + u.port : ""); }
+    set host(v) {
+      if (this._u.opaque) return;
+      const m = /^(\[[^\]]*\]|[^:/\\?#]*)(?::(\d*))?/.exec(String(v));
+      const h = m && urlHost(m[1], this._u.protocol in SPECIAL_SCHEMES);
+      if (!h) return;
+      this._u.hostname = h;
+      if (m[2] !== undefined && m[2] !== "") this.port = m[2];
+    }
+    get hostname() { return this._u.hostname === null ? "" : this._u.hostname; }
+    set hostname(v) {
+      if (this._u.opaque) return;
+      const h = urlHost(String(v), this._u.protocol in SPECIAL_SCHEMES);
+      if (h) this._u.hostname = h;
+    }
+    get port() { return this._u.port; }
+    set port(v) {
+      const s = String(v);
+      if (s === "") { this._u.port = ""; return; }
+      const m = /^\d+/.exec(s);
+      if (!m || Number(m[0]) > 65535) return;
+      const p = String(Number(m[0]));
+      this._u.port = SPECIAL_SCHEMES[this._u.protocol] === p ? "" : p;
+    }
+    get pathname() { return this._u.path; }
+    set pathname(v) {
+      if (this._u.opaque) return;
+      const special = this._u.protocol in SPECIAL_SCHEMES;
+      let s = String(v);
+      if (s && !s.startsWith("/") && !(special && s.startsWith("\\"))) s = "/" + s;
+      this._u.path = normPath(s, special);
+    }
+    get search() { const q = this._u.query; return q ? "?" + q : ""; }
+    set search(v) {
+      let s = String(v);
+      if (s.startsWith("?")) s = s.slice(1);
+      this._u.query = s === "" ? null : pctEncode(s, this._u.protocol in SPECIAL_SCHEMES ? SPECIAL_QUERY_SET : QUERY_SET);
+      this._syncParams();
+    }
+    get searchParams() {
+      if (this._sp === null) {
+        this._sp = new URLSearchParams(this._u.query || "");
+        define(this._sp, "_url", this);
+      }
+      return this._sp;
+    }
+    _syncParams() { if (this._sp !== null) this._sp._l = parseForm(this._u.query || ""); }
+    get hash() { const f = this._u.fragment; return f ? "#" + f : ""; }
+    set hash(v) {
+      let s = String(v);
+      if (s.startsWith("#")) s = s.slice(1);
+      this._u.fragment = s === "" ? null : pctEncode(s, FRAGMENT_SET);
+    }
+    toString() { return this.href; }
+    toJSON() { return this.href; }
+    [inspectSymbol]() { return `URL { ${JSON.stringify(this.href)} }`; }
+  }
+
+  const parseForm = (s) => String(s).split("&").filter((p) => p !== "").map((p) => {
+    const i = p.indexOf("=");
+    return i < 0 ? [formDecode(p), ""] : [formDecode(p.slice(0, i)), formDecode(p.slice(i + 1))];
+  });
+
+  class URLSearchParams {
+    constructor(init = "") {
+      define(this, "_l", []);
+      define(this, "_url", null);
+      if (init instanceof URLSearchParams) this._l = init._l.map((e) => e.slice());
+      else if (init !== null && typeof init === "object" && typeof init[Symbol.iterator] === "function") {
+        for (const pair of init) {
+          const p = Array.from(pair);
+          if (p.length !== 2) throw new TypeError(T("net.badParamPair"));
+          this._l.push([String(p[0]), String(p[1])]);
+        }
+      } else if (init !== null && typeof init === "object") {
+        for (const k of Object.keys(init)) this._l.push([k, String(init[k])]);
+      } else {
+        const s = String(init === undefined || init === null ? "" : init);
+        this._l = parseForm(s.startsWith("?") ? s.slice(1) : s);
+      }
+    }
+    _update() {
+      if (this._url) {
+        const s = this.toString();
+        this._url._u.query = s === "" && this._url._u.query === null ? null : s || null;
+      }
+    }
+    get size() { return this._l.length; }
+    append(name, value) { this._l.push([String(name), String(value)]); this._update(); }
+    delete(name, value) {
+      name = String(name);
+      this._l = this._l.filter(([k, v]) => k !== name || (value !== undefined && v !== String(value)));
+      this._update();
+    }
+    get(name) { const e = this._l.find(([k]) => k === String(name)); return e ? e[1] : null; }
+    getAll(name) { return this._l.filter(([k]) => k === String(name)).map((e) => e[1]); }
+    has(name, value) { return this._l.some(([k, v]) => k === String(name) && (value === undefined || v === String(value))); }
+    set(name, value) {
+      name = String(name);
+      const i = this._l.findIndex(([k]) => k === name);
+      if (i < 0) this._l.push([name, String(value)]);
+      else {
+        this._l[i] = [name, String(value)];
+        this._l = this._l.filter(([k], j) => j <= i || k !== name);
+      }
+      this._update();
+    }
+    sort() {
+      this._l = this._l.map((e, i) => [e, i]).sort((a, b) => (a[0][0] < b[0][0] ? -1 : a[0][0] > b[0][0] ? 1 : a[1] - b[1])).map((x) => x[0]);
+      this._update();
+    }
+    forEach(fn, thisArg) { for (const [k, v] of this._l.slice()) fn.call(thisArg, v, k, this); }
+    *entries() { for (const e of this._l.slice()) yield e.slice(); }
+    *keys() { for (const e of this._l.slice()) yield e[0]; }
+    *values() { for (const e of this._l.slice()) yield e[1]; }
+    [Symbol.iterator]() { return this.entries(); }
+    toString() { return this._l.map(([k, v]) => formEncode(k) + "=" + formEncode(v)).join("&"); }
+    [inspectSymbol]() { return `URLSearchParams { ${this._l.map(([k, v]) => `${JSON.stringify(k)} => ${JSON.stringify(v)}`).join(", ")} }`; }
+  }
+  if (typeof G.URL !== "function") defineGlobal("URL", URL);
+  if (typeof G.URLSearchParams !== "function") defineGlobal("URLSearchParams", URLSearchParams);
+
+  // ---------------------------------------------------------------- AbortController
+
+  const abortKey = Symbol("AbortSignal");
+  const abortError = () => new G.DOMException(T("net.aborted"), "AbortError");
+  const timeoutError = () => new G.DOMException(T("net.signalTimeout"), "TimeoutError");
+
+  /**
+   * The timer of AbortSignal.timeout() and the links of AbortSignal.any() exist only while
+   * something listens, so that an unused signal does not keep the script running.
+   */
+  class AbortSignal {
+    constructor(key) {
+      if (key !== abortKey) throw new TypeError(T("net.illegalConstructor", "AbortSignal"));
+      define(this, "_aborted", false);
+      define(this, "_reason", undefined);
+      define(this, "_listeners", []);
+      define(this, "_onabort", null);
+      define(this, "_deadline", null);
+      define(this, "_sources", []);
+      define(this, "_timer", null);
+      define(this, "_follow", (e) => this._abort(e.target.reason));
+    }
+    static abort(reason) {
+      const s = new AbortSignal(abortKey);
+      s._abort(reason);
+      return s;
+    }
+    static timeout(ms) {
+      const s = new AbortSignal(abortKey);
+      s._deadline = Date.now() + Math.max(0, Number(ms) || 0);
+      return s;
+    }
+    static any(signals) {
+      const s = new AbortSignal(abortKey);
+      for (const x of signals) {
+        if (x.aborted) { s._abort(x.reason); break; }
+        s._sources.push(x);
+      }
+      return s;
+    }
+    _check() {
+      if (this._aborted) return;
+      if (this._deadline !== null && Date.now() >= this._deadline) { this._abort(timeoutError()); return; }
+      for (const x of this._sources) if (x.aborted) { this._abort(x.reason); return; }
+    }
+    get aborted() { this._check(); return this._aborted; }
+    get reason() { this._check(); return this._reason; }
+    throwIfAborted() { if (this.aborted) throw this._reason; }
+    get onabort() { return this._onabort; }
+    set onabort(fn) {
+      const was = this._watched();
+      this._onabort = typeof fn === "function" ? fn : null;
+      this._rewatch(was);
+    }
+    addEventListener(type, fn, options) {
+      if (type !== "abort" || typeof fn !== "function" && !(fn && typeof fn.handleEvent === "function")) return;
+      if (this._listeners.some((l) => l.fn === fn)) return;
+      if (options && options.signal && options.signal.aborted) return;
+      const was = this._watched();
+      this._listeners.push({ fn, once: !!(options && typeof options === "object" && options.once) });
+      this._rewatch(was);
+    }
+    removeEventListener(type, fn) {
+      if (type !== "abort") return;
+      const was = this._watched();
+      this._listeners = this._listeners.filter((l) => l.fn !== fn);
+      this._rewatch(was);
+    }
+    dispatchEvent(event) {
+      for (const l of this._listeners.slice()) {
+        if (l.once) this.removeEventListener("abort", l.fn);
+        try { typeof l.fn === "function" ? l.fn.call(this, event) : l.fn.handleEvent(event); } catch (e) { console.error(e); }
+      }
+      return true;
+    }
+    _watched() { return !this._aborted && (this._listeners.length > 0 || this._onabort !== null); }
+    _rewatch(was) {
+      const now = this._watched();
+      if (now === was) return;
+      if (now) {
+        this._check();
+        if (this._aborted) return;
+        if (this._deadline !== null) this._timer = setTimeout(() => this._abort(timeoutError()), Math.max(0, this._deadline - Date.now()));
+        for (const x of this._sources) x.addEventListener("abort", this._follow);
+      } else this._unwatch();
+    }
+    _unwatch() {
+      if (this._timer !== null) { clearTimeout(this._timer); this._timer = null; }
+      for (const x of this._sources) x.removeEventListener("abort", this._follow);
+    }
+    _abort(reason) {
+      if (this._aborted) return;
+      this._unwatch();
+      this._aborted = true;
+      this._reason = reason === undefined ? abortError() : reason;
+      const event = { type: "abort", target: this, currentTarget: this };
+      if (this._onabort) {
+        try { this._onabort.call(this, event); } catch (e) { console.error(e); }
+      }
+      this.dispatchEvent(event);
+      this._listeners = [];
+      this._onabort = null;
+    }
+    [inspectSymbol]() { return `AbortSignal { aborted: ${this.aborted} }`; }
+  }
+  class AbortController {
+    constructor() { define(this, "_signal", new AbortSignal(abortKey)); }
+    get signal() { return this._signal; }
+    abort(reason) { this._signal._abort(reason); }
+  }
+  if (typeof G.AbortSignal !== "function") defineGlobal("AbortSignal", AbortSignal);
+  if (typeof G.AbortController !== "function") defineGlobal("AbortController", AbortController);
+
+  // ---------------------------------------------------------------- fetch
+
+  const TOKEN_RE = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+  function headerName(n) {
+    n = String(n);
+    if (!TOKEN_RE.test(n)) throw new TypeError(T("net.badHeaderName", n));
+    return n.toLowerCase();
+  }
+  function headerValue(v) {
+    v = String(v).replace(/^[\t\n\r ]+|[\t\n\r ]+$/g, "");
+    if (/[\0\r\n]/.test(v) || /[^\u0000-ÿ]/.test(v)) throw new TypeError(T("net.badHeaderValue", v));
+    return v;
+  }
+
+  class Headers {
+    constructor(init) {
+      define(this, "_l", []);
+      if (init === undefined || init === null) return;
+      if (init instanceof Headers) this._l = init._l.map((e) => e.slice());
+      else if (typeof init === "object" && typeof init[Symbol.iterator] === "function") {
+        for (const pair of init) {
+          const p = Array.from(pair);
+          if (p.length !== 2) throw new TypeError(T("net.badHeaderPair"));
+          this.append(p[0], p[1]);
+        }
+      } else if (typeof init === "object") {
+        for (const k of Object.keys(init)) this.append(k, init[k]);
+      } else throw new TypeError(T("net.badHeaders"));
+    }
+    append(name, value) { this._l.push([headerName(name), headerValue(value)]); }
+    delete(name) { const n = headerName(name); this._l = this._l.filter(([k]) => k !== n); }
+    get(name) {
+      const n = headerName(name);
+      const vs = this._l.filter(([k]) => k === n).map((e) => e[1]);
+      return vs.length ? vs.join(", ") : null;
+    }
+    getSetCookie() { return this._l.filter(([k]) => k === "set-cookie").map((e) => e[1]); }
+    has(name) { const n = headerName(name); return this._l.some(([k]) => k === n); }
+    set(name, value) {
+      const n = headerName(name), v = headerValue(value);
+      const i = this._l.findIndex(([k]) => k === n);
+      if (i < 0) this._l.push([n, v]);
+      else {
+        this._l[i] = [n, v];
+        this._l = this._l.filter(([k], j) => j <= i || k !== n);
+      }
+    }
+    /** The entries sorted by name, the values of a name combined (Set-Cookie apart). */
+    _sorted() {
+      const names = Array.from(new Set(this._l.map((e) => e[0]))).sort();
+      const out = [];
+      for (const n of names) {
+        if (n === "set-cookie") for (const v of this.getSetCookie()) out.push([n, v]);
+        else out.push([n, this.get(n)]);
+      }
+      return out;
+    }
+    forEach(fn, thisArg) { for (const [k, v] of this._sorted()) fn.call(thisArg, v, k, this); }
+    *entries() { yield* this._sorted(); }
+    *keys() { for (const e of this._sorted()) yield e[0]; }
+    *values() { for (const e of this._sorted()) yield e[1]; }
+    [Symbol.iterator]() { return this.entries(); }
+    [inspectSymbol]() { return `Headers { ${this._sorted().map(([k, v]) => `${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(", ")} }`; }
+  }
+
+  class FormData {
+    constructor(form) {
+      if (form !== undefined) throw new TypeError(T("net.formDataArg"));
+      define(this, "_l", []);
+    }
+    static _entry(name, value, filename) {
+      if (value instanceof Blob) {
+        if (!(value instanceof File) || filename !== undefined) {
+          const f = new File([value], filename !== undefined ? String(filename) : value instanceof File ? value.name : "blob",
+            { type: value.type, lastModified: value instanceof File ? value.lastModified : undefined });
+          value = f;
+        }
+        return [String(name), value];
+      }
+      return [String(name), String(value)];
+    }
+    append(name, value, filename) { this._l.push(FormData._entry(name, value, filename)); }
+    delete(name) { this._l = this._l.filter(([k]) => k !== String(name)); }
+    get(name) { const e = this._l.find(([k]) => k === String(name)); return e ? e[1] : null; }
+    getAll(name) { return this._l.filter(([k]) => k === String(name)).map((e) => e[1]); }
+    has(name) { return this._l.some(([k]) => k === String(name)); }
+    set(name, value, filename) {
+      const e = FormData._entry(name, value, filename);
+      const i = this._l.findIndex(([k]) => k === e[0]);
+      if (i < 0) this._l.push(e);
+      else {
+        this._l[i] = e;
+        this._l = this._l.filter(([k], j) => j <= i || k !== e[0]);
+      }
+    }
+    forEach(fn, thisArg) { for (const [k, v] of this._l.slice()) fn.call(thisArg, v, k, this); }
+    *entries() { for (const e of this._l.slice()) yield e.slice(); }
+    *keys() { for (const e of this._l.slice()) yield e[0]; }
+    *values() { for (const e of this._l.slice()) yield e[1]; }
+    [Symbol.iterator]() { return this.entries(); }
+    [inspectSymbol]() { return `FormData { ${this._l.map(([k, v]) => `${JSON.stringify(k)}: ${typeof v === "string" ? JSON.stringify(v) : inspect(v)}`).join(", ")} }`; }
+  }
+
+  function multipart(form) {
+    let boundary = "----xljsFormBoundary";
+    for (let i = 0; i < 16; i++) boundary += "0123456789abcdef"[Math.floor(Math.random() * 16)];
+    const esc = (s) => s.replace(/\r/g, "%0D").replace(/\n/g, "%0A").replace(/"/g, "%22");
+    const parts = [];
+    for (const [name, value] of form._l) {
+      let head = `--${boundary}\r\nContent-Disposition: form-data; name="${esc(name)}"`;
+      if (typeof value === "string") {
+        parts.push(head + "\r\n\r\n", value.replace(/\r?\n|\r/g, "\r\n"), "\r\n");
+      } else {
+        head += `; filename="${esc(value.name)}"\r\nContent-Type: ${value.type || "application/octet-stream"}\r\n\r\n`;
+        parts.push(head, value, "\r\n");
+      }
+    }
+    parts.push(`--${boundary}--\r\n`);
+    return { buf: concatBytes(parts), type: "multipart/form-data; boundary=" + boundary };
+  }
+
+  /** The bytes (ArrayBuffer or null) and the Content-Type of a body. */
+  function extractBody(body) {
+    if (body === undefined || body === null) return { buf: null, type: null };
+    if (typeof body === "string") return { buf: concatBytes([body]), type: "text/plain;charset=UTF-8" };
+    if (body instanceof G.URLSearchParams || body instanceof URLSearchParams) {
+      return { buf: concatBytes([body.toString()]), type: "application/x-www-form-urlencoded;charset=UTF-8" };
+    }
+    if (body instanceof FormData) return multipart(body);
+    if (body instanceof Blob) return { buf: body._bytes().slice(0), type: body.type || null };
+    if (body instanceof ArrayBuffer || ArrayBuffer.isView(body)) return { buf: concatBytes([body]), type: null };
+    return { buf: concatBytes([String(body)]), type: "text/plain;charset=UTF-8" };
+  }
+
+  function charsetOf(headers) {
+    const m = /;\s*charset\s*=\s*"?([^";\s]+)/i.exec(headers.get("content-type") || "");
+    return m ? m[1] : "utf8";
+  }
+
+  /** The methods that read a body (Request and Response). */
+  const bodyMethods = {
+    get bodyUsed() { return this._used; },
+    _take() {
+      if (this._used) throw new TypeError(T("net.bodyUsed"));
+      if (this._body !== null) this._used = true;
+      return this._body === null ? new ArrayBuffer(0) : this._body;
+    },
+    async arrayBuffer() { return this._take(); },
+    async bytes() { return new Uint8Array(this._take()); },
+    async blob() { return new Blob([this._take()], { type: this.headers.get("content-type") || "" }); },
+    /** text(encoding): xljs extension. Without it, the charset of Content-Type (UTF-8 if none). */
+    async text(encoding) {
+      const buf = this._take();
+      if (encoding) return native.decode(buf, encoding);
+      try { return native.decode(buf, charsetOf(this.headers)); } catch (e) { return native.decode(buf, "utf8"); }
+    },
+    async json() { return JSON.parse(await this.text()); },
+    async formData() {
+      const type = (this.headers.get("content-type") || "").toLowerCase();
+      if (!type.startsWith("application/x-www-form-urlencoded")) throw new TypeError(T("net.formDataType"));
+      const f = new FormData();
+      for (const [k, v] of parseForm(await this.text())) f.append(k, v);
+      return f;
+    },
+  };
+  function withBody(cls) {
+    for (const k of Object.keys(bodyMethods)) {
+      Object.defineProperty(cls.prototype, k, Object.assign(Object.getOwnPropertyDescriptor(bodyMethods, k), { enumerable: false }));
+    }
+  }
+
+  const METHODS = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"];
+  const REDIRECTS = ["follow", "error", "manual"];
+  const CREDENTIALS = ["omit", "same-origin", "include"];
+  const pick = (v, list, what) => {
+    v = String(v);
+    if (!list.includes(v)) throw new TypeError(T("net.badOption", what, v));
+    return v;
+  };
+
+  class Request {
+    constructor(input, init = {}) {
+      init = init || {};
+      const src = input instanceof Request ? input : null;
+      let url;
+      if (src) url = src.url;
+      else {
+        const u = URL.parse(String(input));
+        if (!u) throw new TypeError(T("net.invalidUrl", String(input)));
+        url = u.href;
+      }
+      let method = init.method !== undefined ? String(init.method) : src ? src.method : "GET";
+      if (!TOKEN_RE.test(method)) throw new TypeError(T("net.badMethod", method));
+      if (METHODS.includes(method.toUpperCase())) method = method.toUpperCase();
+      if (["CONNECT", "TRACE", "TRACK"].includes(method.toUpperCase())) throw new TypeError(T("net.badMethod", method));
+      define(this, "_url", url);
+      define(this, "_method", method);
+      define(this, "_headers", new Headers(init.headers !== undefined ? init.headers : src ? src.headers : undefined));
+      let body = { buf: null, type: null };
+      if (init.body !== undefined && init.body !== null) body = extractBody(init.body);
+      else if (init.body === undefined && src && src._body !== null) {
+        if (src._used) throw new TypeError(T("net.bodyUsed"));
+        body = { buf: src._body.slice(0), type: null };
+      }
+      if (body.buf !== null && (method === "GET" || method === "HEAD")) throw new TypeError(T("net.bodyNotAllowed", method));
+      if (body.type && !this._headers.has("content-type")) this._headers.set("content-type", body.type);
+      define(this, "_body", body.buf);
+      define(this, "_used", false);
+      define(this, "_signal", init.signal !== undefined && init.signal !== null ? init.signal : src ? src._signal : new AbortController().signal);
+      define(this, "_redirect", pick(init.redirect !== undefined ? init.redirect : src ? src._redirect : "follow", REDIRECTS, "redirect"));
+      define(this, "_credentials", pick(init.credentials !== undefined ? init.credentials : src ? src._credentials : "same-origin", CREDENTIALS, "credentials"));
+      define(this, "_timeout", init.timeout !== undefined ? Number(init.timeout) : src ? src._timeout : 0);
+    }
+    get url() { return this._url; }
+    get method() { return this._method; }
+    get headers() { return this._headers; }
+    get signal() { return this._signal; }
+    get redirect() { return this._redirect; }
+    get credentials() { return this._credentials; }
+    /** The time limit of fetch in milliseconds (xljs extension; 0: none). */
+    get timeout() { return this._timeout; }
+    clone() {
+      if (this._used) throw new TypeError(T("net.bodyUsed"));
+      return new Request(this);
+    }
+    [inspectSymbol]() { return `Request { method: ${JSON.stringify(this.method)}, url: ${JSON.stringify(this.url)} }`; }
+  }
+  withBody(Request);
+
+  const NULL_BODY = [101, 103, 204, 205, 304];
+  class Response {
+    constructor(body = null, init = {}) {
+      init = init || {};
+      const status = init.status === undefined ? 200 : Number(init.status);
+      if (!Number.isInteger(status) || status < 200 || status > 599) throw new RangeError(T("net.badStatus", String(init.status)));
+      const b = extractBody(body);
+      if (b.buf !== null && NULL_BODY.includes(status)) throw new TypeError(T("net.bodyNotAllowed", status));
+      define(this, "_status", status);
+      define(this, "_statusText", init.statusText === undefined ? "" : String(init.statusText));
+      define(this, "_headers", new Headers(init.headers));
+      if (b.type && !this._headers.has("content-type")) this._headers.set("content-type", b.type);
+      define(this, "_body", b.buf);
+      define(this, "_used", false);
+      define(this, "_url", "");
+      define(this, "_redirected", false);
+      define(this, "_type", "default");
+    }
+    static error() {
+      const r = new Response();
+      Object.assign(r, { _status: 0, _type: "error" });
+      return r;
+    }
+    static redirect(url, status = 302) {
+      if (![301, 302, 303, 307, 308].includes(status)) throw new RangeError(T("net.badStatus", String(status)));
+      return new Response(null, { status, headers: { location: new URL(url).href } });
+    }
+    static json(data, init = {}) {
+      const r = new Response(JSON.stringify(data), init);
+      if (!(init && init.headers && new Headers(init.headers).has("content-type"))) r._headers.set("content-type", "application/json");
+      return r;
+    }
+    get status() { return this._status; }
+    get statusText() { return this._statusText; }
+    get ok() { return this._status >= 200 && this._status <= 299; }
+    get headers() { return this._headers; }
+    get url() { return this._url; }
+    get redirected() { return this._redirected; }
+    get type() { return this._type; }
+    clone() {
+      if (this._used) throw new TypeError(T("net.bodyUsed"));
+      const r = Object.create(Response.prototype);
+      for (const k of ["_status", "_statusText", "_url", "_redirected", "_type", "_used"]) define(r, k, this[k]);
+      define(r, "_headers", new Headers(this._headers));
+      define(r, "_body", this._body === null ? null : this._body.slice(0));
+      return r;
+    }
+    [inspectSymbol]() {
+      return `Response { status: ${this.status}, statusText: ${JSON.stringify(this.statusText)}, url: ${JSON.stringify(this.url)}, ` +
+        `headers: ${inspect(this.headers)} }`;
+    }
+  }
+  withBody(Response);
+
+  let fetchToken = 0;
+  /** One request (no redirects): [status, statusText, headers, body]; rejects with signal's reason or a TypeError. */
+  function sendOnce(href, method, headers, body, req, deadline) {
+    return new Promise((resolve, reject) => {
+      const token = ++fetchToken;
+      const signal = req.signal;
+      let done = false, timer = null;
+      const finish = () => {
+        done = true;
+        if (signal && typeof signal.removeEventListener === "function") signal.removeEventListener("abort", onAbort);
+        if (timer !== null) clearTimeout(timer);
+      };
+      const fail = (e) => {
+        if (done) return;
+        finish();
+        native.httpAbort(token);
+        reject(e);
+      };
+      const onAbort = () => fail(signal.reason);
+      if (signal && typeof signal.addEventListener === "function") signal.addEventListener("abort", onAbort);
+      if (deadline) timer = setTimeout(() => fail(new G.DOMException(T("net.fetchTimeout", req.timeout, href), "TimeoutError")), Math.max(0, deadline - Date.now()));
+      native.httpRequest(token, method, href, JSON.stringify(headers), body,
+        deadline ? Math.max(1, deadline - Date.now()) : 0, req.credentials).then((r) => {
+        if (done) return;
+        finish();
+        if (r[0] === 0) reject(new TypeError(r[1]));
+        else resolve(r);
+      }, (e) => {
+        if (done) return;
+        finish();
+        reject(e);
+      });
+    });
+  }
+
+  /**
+   * fetch(input, init): HTTP and HTTPS requests (through WinHTTP: the proxy settings of Windows, Windows authentication
+   * for intranet servers, or every server with credentials: "include"). xljs extension: init.timeout (milliseconds).
+   */
+  async function fetch(input, init) {
+    const req = new Request(input, init);
+    const signal = req.signal;
+    if (signal && signal.aborted) throw signal.reason;
+    const deadline = req.timeout > 0 ? Date.now() + req.timeout : 0;
+    let url = new URL(req.url);
+    let method = req.method;
+    let body = req._body;
+    const headers = new Headers(req.headers);
+    req._used = req._body !== null;
+    let redirected = false;
+    for (let hop = 0; ; hop++) {
+      if (url.protocol !== "http:" && url.protocol !== "https:") throw new TypeError(T("net.badScheme", url.href));
+      const list = headers._l.map((e) => e.slice());
+      if (!headers.has("accept")) list.push(["accept", "*/*"]);
+      if ((url.username || url.password) && !headers.has("authorization")) {
+        const cred = utf8Bytes(pctDecode(url.username) + ":" + pctDecode(url.password));
+        list.push(["authorization", "Basic " + bytesToBase64(new Uint8Array(cred))]);
+      }
+      const href = urlHref(url._u, true);
+      const [status, statusText, headersJSON, buf] = await sendOnce(href, method, list, body, req, deadline);
+      const resHeaders = new Headers();
+      for (const [k, v] of JSON.parse(headersJSON)) {
+        try { resHeaders.append(k, v); } catch (e) { /* not a valid header */ }
+      }
+      const location = resHeaders.get("location");
+      if ([301, 302, 303, 307, 308].includes(status) && location !== null && req.redirect !== "manual") {
+        if (req.redirect === "error") throw new TypeError(T("net.redirected", href));
+        if (hop >= 20) throw new TypeError(T("net.tooManyRedirects", req.url));
+        const next = URL.parse(location, url);
+        if (!next) throw new TypeError(T("net.invalidUrl", location));
+        if ((status === 303 && method !== "HEAD") || ((status === 301 || status === 302) && method === "POST")) {
+          method = "GET";
+          body = null;
+          for (const h of ["content-type", "content-length", "content-encoding", "content-language", "content-location"]) headers.delete(h);
+        }
+        if (next.origin !== url.origin) for (const h of ["authorization", "proxy-authorization", "cookie"]) headers.delete(h);
+        if (!next.hash && url.hash) next.hash = url.hash;
+        url = next;
+        redirected = true;
+        continue;
+      }
+      const res = Object.create(Response.prototype);
+      define(res, "_status", status);
+      define(res, "_statusText", statusText);
+      define(res, "_headers", resHeaders);
+      define(res, "_body", method === "HEAD" || NULL_BODY.includes(status) ? null : buf);
+      define(res, "_used", false);
+      define(res, "_url", urlHref(url._u, true).replace(/#.*$/, ""));
+      define(res, "_redirected", redirected);
+      define(res, "_type", "basic");
+      return res;
+    }
+  }
+  if (typeof G.Headers !== "function") defineGlobal("Headers", Headers);
+  if (typeof G.FormData !== "function") defineGlobal("FormData", FormData);
+  if (typeof G.Request !== "function") defineGlobal("Request", Request);
+  if (typeof G.Response !== "function") defineGlobal("Response", Response);
+  if (typeof G.fetch !== "function") defineGlobal("fetch", fetch);
+
   // ---------------------------------------------------------------- handles
 
   /**

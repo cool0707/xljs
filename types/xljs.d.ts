@@ -997,6 +997,188 @@ declare global {
   /** 文字列のパスは %USERPROFILE% のような環境変数を展開して使う */
   type PathLike = string | FileSystemHandle | File;
 
+  // ------------------------------------------------------------------ fetch
+
+  /** URL（WHATWG URL Standard 相当。日本語のパスやクエリは自動で %エンコードされる） */
+  interface URL {
+    href: string;
+    readonly origin: string;
+    protocol: string;
+    username: string;
+    password: string;
+    host: string;
+    hostname: string;
+    port: string;
+    pathname: string;
+    search: string;
+    readonly searchParams: URLSearchParams;
+    hash: string;
+    toString(): string;
+    toJSON(): string;
+  }
+  var URL: {
+    prototype: URL;
+    new (url: string | URL, base?: string | URL): URL;
+    canParse(url: string | URL, base?: string | URL): boolean;
+    /** 解釈できなければ null */
+    parse(url: string | URL, base?: string | URL): URL | null;
+  };
+
+  /** クエリ文字列（application/x-www-form-urlencoded。UTF-8） */
+  interface URLSearchParams {
+    readonly size: number;
+    append(name: string, value: string): void;
+    delete(name: string, value?: string): void;
+    get(name: string): string | null;
+    getAll(name: string): string[];
+    has(name: string, value?: string): boolean;
+    set(name: string, value: string): void;
+    sort(): void;
+    forEach(callback: (value: string, key: string, parent: URLSearchParams) => void, thisArg?: any): void;
+    entries(): IterableIterator<[string, string]>;
+    keys(): IterableIterator<string>;
+    values(): IterableIterator<string>;
+    [Symbol.iterator](): IterableIterator<[string, string]>;
+    toString(): string;
+  }
+  var URLSearchParams: {
+    prototype: URLSearchParams;
+    new (init?: string | URLSearchParams | Record<string, string | number | boolean> | Iterable<[string, string]>): URLSearchParams;
+  };
+
+  interface AbortSignal {
+    readonly aborted: boolean;
+    readonly reason: any;
+    onabort: ((this: AbortSignal, ev: { type: "abort"; target: AbortSignal }) => any) | null;
+    throwIfAborted(): void;
+    addEventListener(type: "abort", listener: (ev: { type: "abort"; target: AbortSignal }) => any, options?: { once?: boolean }): void;
+    removeEventListener(type: "abort", listener: (ev: { type: "abort"; target: AbortSignal }) => any): void;
+  }
+  var AbortSignal: {
+    prototype: AbortSignal;
+    abort(reason?: any): AbortSignal;
+    /** ms ミリ秒後に TimeoutError で中止される signal（使われていなければスクリプトの終了を妨げない） */
+    timeout(ms: number): AbortSignal;
+    any(signals: Iterable<AbortSignal>): AbortSignal;
+  };
+  interface AbortController {
+    readonly signal: AbortSignal;
+    abort(reason?: any): void;
+  }
+  var AbortController: { prototype: AbortController; new (): AbortController };
+
+  type HeadersInit = Headers | Record<string, string> | [string, string][];
+  /** HTTP ヘッダー（名前の大文字小文字は区別しない。値に日本語や改行は使えない） */
+  interface Headers {
+    append(name: string, value: string): void;
+    delete(name: string): void;
+    /** 同じ名前の値は ", " でつないで返す。なければ null */
+    get(name: string): string | null;
+    getSetCookie(): string[];
+    has(name: string): boolean;
+    set(name: string, value: string): void;
+    forEach(callback: (value: string, key: string, parent: Headers) => void, thisArg?: any): void;
+    entries(): IterableIterator<[string, string]>;
+    keys(): IterableIterator<string>;
+    values(): IterableIterator<string>;
+    [Symbol.iterator](): IterableIterator<[string, string]>;
+  }
+  var Headers: { prototype: Headers; new (init?: HeadersInit): Headers };
+
+  /** multipart/form-data で送るフォーム（ファイルは Blob・File。ディスクのファイルは handle.getFile() で） */
+  interface FormData {
+    append(name: string, value: string | Blob, filename?: string): void;
+    delete(name: string): void;
+    get(name: string): string | File | null;
+    getAll(name: string): (string | File)[];
+    has(name: string): boolean;
+    set(name: string, value: string | Blob, filename?: string): void;
+    forEach(callback: (value: string | File, key: string, parent: FormData) => void, thisArg?: any): void;
+    entries(): IterableIterator<[string, string | File]>;
+    keys(): IterableIterator<string>;
+    values(): IterableIterator<string | File>;
+    [Symbol.iterator](): IterableIterator<[string, string | File]>;
+  }
+  var FormData: { prototype: FormData; new (): FormData };
+
+  /** 本文: 文字列は UTF-8。URLSearchParams はフォーム、FormData は multipart/form-data で送る */
+  type BodyInit = string | ArrayBuffer | ArrayBufferView | Blob | URLSearchParams | FormData;
+
+  interface Body {
+    readonly bodyUsed: boolean;
+    arrayBuffer(): Promise<ArrayBuffer>;
+    bytes(): Promise<Uint8Array>;
+    blob(): Promise<Blob>;
+    /** encoding は xljs 拡張。省略時は Content-Type の charset（Shift_JIS なども）、なければ UTF-8 */
+    text(encoding?: Encoding): Promise<string>;
+    json<T = any>(): Promise<T>;
+    /** application/x-www-form-urlencoded の本文だけ */
+    formData(): Promise<FormData>;
+  }
+
+  interface RequestInit {
+    /** 既定 "GET" */
+    method?: string;
+    headers?: HeadersInit;
+    /** GET・HEAD には付けられない */
+    body?: BodyInit | null;
+    signal?: AbortSignal | null;
+    /** リダイレクト: "follow"（既定。最大 20 回）、"error"（エラーにする）、"manual"（3xx の応答をそのまま返す） */
+    redirect?: "follow" | "error" | "manual";
+    /**
+     * Windows 認証（Negotiate / NTLM。サインイン中のユーザー）と Cookie:
+     * "same-origin"（既定。イントラネットのサーバーにだけ Windows 認証）、"include"（どのサーバーにも）、"omit"（使わない）
+     */
+    credentials?: "omit" | "same-origin" | "include";
+    /** xljs 拡張: 応答（リダイレクトを含む）を待つ時間の上限（ミリ秒）。過ぎると TimeoutError */
+    timeout?: number;
+  }
+
+  interface Request extends Body {
+    readonly url: string;
+    readonly method: string;
+    readonly headers: Headers;
+    readonly signal: AbortSignal;
+    readonly redirect: "follow" | "error" | "manual";
+    readonly credentials: "omit" | "same-origin" | "include";
+    /** xljs 拡張（0 = 上限なし） */
+    readonly timeout: number;
+    clone(): Request;
+  }
+  var Request: { prototype: Request; new (input: string | URL | Request, init?: RequestInit): Request };
+
+  interface ResponseInit {
+    status?: number;
+    statusText?: string;
+    headers?: HeadersInit;
+  }
+  interface Response extends Body {
+    readonly status: number;
+    readonly statusText: string;
+    /** status が 200〜299 */
+    readonly ok: boolean;
+    readonly headers: Headers;
+    /** 最後に応答した URL（リダイレクト後） */
+    readonly url: string;
+    readonly redirected: boolean;
+    readonly type: "basic" | "default" | "error";
+    clone(): Response;
+  }
+  var Response: {
+    prototype: Response;
+    new (body?: BodyInit | null, init?: ResponseInit): Response;
+    json(data: any, init?: ResponseInit): Response;
+    redirect(url: string | URL, status?: number): Response;
+    error(): Response;
+  };
+
+  /**
+   * HTTP / HTTPS のリクエスト（Windows では WinHTTP: Windows のプロキシ設定（PAC も）、証明書ストア、gzip）。
+   * 404 や 500 でも reject しない（res.ok / res.status で確かめる）。つながらない・名前が見つからない・証明書の問題は TypeError、
+   * signal で中止すると AbortError、timeout を過ぎると TimeoutError（どちらも DOMException）で reject する。
+   */
+  function fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
+
   /**
    * "utf8" / "utf8bom" / "cp932"（= "shift_jis", "sjis"）/ "euc-jp" / "iso-2022-jp" / "utf16le" / "utf16be" / "auto"
    */

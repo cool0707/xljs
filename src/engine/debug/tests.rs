@@ -44,6 +44,9 @@ impl Ui for FakeDebugUi {
     fn prompt(&self, a: &str, b: &str, c: &str) -> Option<String> {
         self.inner.prompt(a, b, c)
     }
+    fn credentials(&self, p: &crate::net::auth::LoginPrompt) -> Option<crate::net::auth::Login> {
+        self.inner.credentials(p)
+    }
     fn open_files(&self, o: &PickerOptions) -> Vec<String> {
         self.inner.open_files(o)
     }

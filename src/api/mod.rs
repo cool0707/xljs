@@ -8,6 +8,7 @@ mod csv;
 mod dayjs;
 mod encoding;
 mod fs;
+mod net;
 pub(crate) mod numfmt;
 mod pdf;
 mod process;
@@ -95,6 +96,8 @@ pub struct Host {
     pub(crate) books: RefCell<HashMap<u64, xlsx::Book>>,
     pub(crate) pdfs: RefCell<HashMap<u64, crate::pdf::PdfDoc>>,
     pub(crate) dbs: RefCell<HashMap<u64, crate::db::Db>>,
+    /// The fetch requests in progress by the prelude's token.
+    pub(crate) requests: RefCell<HashMap<u64, crate::net::Cancel>>,
     callbacks: RefCell<HashMap<u64, Persistent<Function<'static>>>>,
     values: RefCell<HashMap<u64, Persistent<Value<'static>>>>,
     natives: RefCell<Option<Persistent<Object<'static>>>>,
@@ -120,6 +123,7 @@ impl Host {
             books: RefCell::new(HashMap::new()),
             pdfs: RefCell::new(HashMap::new()),
             dbs: RefCell::new(HashMap::new()),
+            requests: RefCell::new(HashMap::new()),
             callbacks: RefCell::new(HashMap::new()),
             values: RefCell::new(HashMap::new()),
             natives: RefCell::new(None),
@@ -167,6 +171,11 @@ impl Host {
         // released.
         let dbs = std::mem::take(&mut *self.dbs.borrow_mut());
         drop(dbs);
+        // Requests in progress stop.
+        let reqs = std::mem::take(&mut *self.requests.borrow_mut());
+        for c in reqs.into_values() {
+            c.abort();
+        }
     }
 
     /// Drops every JavaScript value the host keeps (before the runtime goes
@@ -366,6 +375,7 @@ pub(crate) fn install_natives<'js>(ctx: &Ctx<'js>, host: &Rc<Host>) -> rquickjs:
     process::install(&n);
     app::install(&n);
     ad::install(&n);
+    net::install(&n);
     Ok(obj)
 }
 

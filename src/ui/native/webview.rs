@@ -499,6 +499,9 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
         let non_client = st.o.custom_title_bar
             && core.Settings().ok().and_then(|s| s.cast::<ICoreWebView2Settings9>().ok()).is_some_and(|s| s.SetIsNonClientRegionSupportEnabled(true).is_ok());
 
+        // Basic authentication (proxies) with the logins of fetch.
+        super::auth::attach(&core);
+
         // Messages from the page, with the paths of attached files.
         let on_message = st.o.on_message.clone();
         let hwnd_id = hwnd.0 as isize;

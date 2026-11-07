@@ -1,0 +1,6 @@
+{
+  "credentials": [
+    { "user": "wrong", "password": "x" },
+    { "user": "proxyuser", "password": "proxypass" }
+  ]
+}
