@@ -29,7 +29,12 @@ await xljs.htmlToPdf("<h1>報告書</h1>", "報告書.pdf", { paper: "A4" }); //
 - `toPdf` は書き出したファイルの絶対パスで resolve する。WebView2 がない UI（コンソール）ではエラー。mock は書かずにログだけ出す
   （`pdf("…/a.pdf", 4 pages, 1/1 charts)`）。
 - `options`（`PrintOptions`）: `sheets` `paper` `landscape` `scale` `zoom`（シートの倍率・「次のページ数に合わせて」の結果にさらに掛ける %）`fitToWidth` `fitToHeight` `fitToPage` `margin`（mm）`gridLines`
-  `blackAndWhite` `centerHorizontally` `charts: false` `title` `skipBlankPages`。省略した項目はシートのページ設定に従う。
+  `blackAndWhite` `centerHorizontally` `charts: false` `title` `skipBlankPages` `condense`。省略した項目はシートのページ設定に従う。
+- `condense`（`true` は 4、0〜20）: セルと図形の文字の間隔を文字の大きさの n% ずつ詰める（`letter-spacing:-0.0nem`）。Excel の印刷・PDF は画面より文字の幅がやや広く、
+  折り返しの行が増えたり右端が切れたりするので、画面の見た目に近づけるためのもの。`font-feature-settings: "palt"` は使わない
+  （游ゴシックなどのかなだけが大きく詰まり、Excel の画面とも違う形になるため）。em は要素ごとの文字の大きさなので、規則はセルの `div` と図形の段落の中のすべての要素に付ける
+  （`condense_css`）。ワードアートの変形した文字（`.xljs-warp`）は外す。ランの文字間隔（`spc`。インラインの `letter-spacing`）があればそちらが勝つ。
+  列幅・行の高さ・ページの分かれ方は変わらない。「縮小して全体を表示」の倍率と数値の `###` は `print-page.js` が詰めたあとの幅を測るので合う（`toHtml` の縮小の倍率は詰めない幅で見積もる）。
 - `skipBlankPages`（native には 1 / 2 で渡す）: ページを分けたあとで、本体（印刷タイトルを除く行・列）に何もないページを外す（`blank_page`）。
   `true` は値・塗り・罫線（斜線・テーブルのスタイルも）・画像・図形・グラフのどれもないページ、`"values"` は値と画像・図形・グラフのないページ。
   結合セルは切られたページそれぞれに値があるとみなす。空白だけの文字列は値なし。枠線（`gridLines`）は数えない。

@@ -137,6 +137,10 @@ pub struct PrintOptions {
     /// Leave out pages that print nothing: 1 = no values, fills, borders or
     /// objects; 2 = no values or objects (only fills and borders). 0 = keep all.
     pub skip_blank_pages: u8,
+    /// Tighten the text of the cells and shapes by this percent of the font
+    /// size per character (negative letter-spacing), for text that prints
+    /// wider than Excel shows it on screen. None or 0 = as the font is.
+    pub condense: Option<f64>,
     /// Only work out how the pages are cut (PrintOut::sheets); no HTML.
     #[serde(skip)]
     pub layout_only: bool,
@@ -1162,14 +1166,30 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
     }
     let title = if o.title.is_empty() { file.clone() } else { o.title.clone() };
     let lang = if crate::i18n::lang() == "ja" { "ja" } else { "en" };
+    let condense = condense_css(o.condense);
     let mut html = String::with_capacity(body.len() + 4096);
     let _ = write!(
         html,
-        "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n<title>{}</title>\n<style>\n{BASE_CSS}{page_css}{}</style>\n</head>\n<body class=\"xljs-print\">\n{body}</body>\n</html>\n",
+        "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n<title>{}</title>\n<style>\n{BASE_CSS}{page_css}{}{condense}</style>\n</head>\n<body class=\"xljs-print\">\n{body}</body>\n</html>\n",
         esc(&title),
         classes.css
     );
     Ok(PrintOut { html, charts, pages, sheets })
+}
+
+/// The rule that tightens the text (PrintOptions::condense). The em of
+/// letter-spacing is each element's own font size, so it goes on every
+/// element of the text; WordArt's warped text is left out (print-page.js
+/// lays its characters along the paths), and a run's own spacing (spc,
+/// inline) wins.
+fn condense_css(c: Option<f64>) -> String {
+    match c.filter(|c| *c > 0.0) {
+        Some(c) => format!(
+            ".xljs-sheet td>div,.xljs-sheet td>div *,.xljs-shape p:not(.xljs-warp p),.xljs-shape p:not(.xljs-warp p) *{{letter-spacing:-{}em}}\n",
+            n(c.min(50.0) / 100.0)
+        ),
+        None => String::new(),
+    }
 }
 
 fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setup> {
