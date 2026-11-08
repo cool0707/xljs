@@ -375,6 +375,19 @@ fn wizard_prompts() {
     assert!(p.contains("「在庫_管理.js」") && p.contains("## やりたいこと\n\n在庫を一覧で見たい") && p.contains("ui/index.html"), "{p}");
     assert!(!p.contains("- 入力:") && !p.contains("入力ファイル"), "{p}");
     assert_eq!(wizard::file_name(&wizard::Answers { name_mode: "name".into(), name: "a.ts".into(), ..Default::default() }), "a.ts");
+    assert!(!p.contains("見た目"), "{p}");
+
+    // The look: the app's metadata and CSS, the form's options, nothing without a window.
+    let look = wizard::Answers { title_bar: "custom".into(), accent: "#c42b1c".into(), background: "#fff8e1".into(), radius: "large".into(), ..a };
+    let p = wizard::prompt(&look);
+    assert!(p.contains("- 見た目: メタデータに @titlebar custom（自前のタイトルバー）、画面の CSS で アクセントカラー #c42b1c"), "{p}");
+    assert!(p.contains("背景色 #fff8e1") && p.contains("角丸 10px") && !p.contains("ui.form のオプション"), "{p}");
+    let p = wizard::prompt(&wizard::Answers { mode: "script".into(), ..look.clone() });
+    assert!(p.contains(r##"- 見た目: ui.form のオプションに `titleBar: "custom", accent: "#c42b1c", background: "#fff8e1", radius: "large"`"##), "{p}");
+    assert!(!p.contains("@titlebar"), "{p}");
+    let p = wizard::prompt(&wizard::Answers { mode: "auto".into(), accent: "red; x".into(), ..look.clone() });
+    assert!(p.contains("。アプリにする場合は メタデータに @titlebar custom") && !p.contains("red; x"), "{p}");
+    assert!(!wizard::prompt(&wizard::Answers { mode: "script".into(), form: "no".into(), ..look }).contains("見た目"));
 }
 
 #[test]

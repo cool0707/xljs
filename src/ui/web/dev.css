@@ -202,6 +202,35 @@ footer { padding: var(--sp-xs) var(--sp-m); }
 .wizard #wz-text { font: 12px/1.5 var(--mono); -webkit-user-select: text; user-select: text; }
 .wizard[data-kind=new] .port-only { display: none; }
 .wizard[data-mode=app] .no-app { display: none; }
+.wizard[data-form=no]:not([data-mode=app]) .look { display: none; }
+.wizard:not([data-mode=app]) .app-note { display: none; }
+.look-grid { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; align-items: center; }
+.look-grid input[type=color] { width: 44px; height: 24px; padding: 0 2px; margin-left: 4px; }
+.look-grid input[type=color]:disabled { opacity: .4; }
+/* The preview window of the look (dev.js lookPreview): a title bar drawn here and the form page in a frame. */
+.wz-window {
+  display: flex; flex-direction: column; width: min(560px, 100%); height: 330px; margin: 8px 0;
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .18);
+}
+.wz-window iframe { flex: 1; border: 0; width: 100%; background: var(--bg); }
+.wz-sysbar, .wz-custombar { flex: none; display: flex; align-items: stretch; -webkit-user-select: none; user-select: none; }
+.wz-window[data-bar=system] .wz-custombar, .wz-window[data-bar=custom] .wz-sysbar { display: none; }
+.wz-sysbar { height: 32px; background: #ffffff; color: #1b1b1b; font: 12px/32px "Segoe UI", "Yu Gothic UI", system-ui, sans-serif; }
+.wz-sysbar-title { flex: 1; padding: 0 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wz-custombar {
+  height: 40px; background: var(--wz-bar-bg, #f3f3f3); color: var(--wz-bar-fg, #1b1b1b);
+  font: 20px/40px "Yu Gothic UI", "Meiryo UI", "Segoe UI", system-ui, sans-serif;
+}
+.wz-custombar i { flex: none; align-self: center; margin-left: 14px; font-size: 18px; color: var(--wz-bar-accent, #1261d1); }
+.wz-custombar-title { flex: 1; min-width: 0; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.wz-caption { flex: none; width: 46px; text-align: center; font: 10px/32px "Segoe Fluent Icons", "Segoe MDL2 Assets"; }
+.wz-custombar .wz-caption { line-height: 40px; }
+@media (prefers-color-scheme: dark) {
+  .wz-sysbar { background: #202020; color: #f3f3f3; }
+  .wz-custombar { background: var(--wz-bar-bg, #202020); color: var(--wz-bar-fg, #f3f3f3); }
+  .wz-custombar i { color: var(--wz-bar-accent, #43a2fa); }
+}
 .book-list { list-style: none; padding: 0; margin: 6px 0; }
 .book-list li { margin: 2px 0; }
 .book-list .err { color: var(--error); }

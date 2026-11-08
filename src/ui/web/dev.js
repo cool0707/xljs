@@ -711,13 +711,15 @@
   }
 
   // Messages of the form in the preview frame (bridge.js): "\x01" + JSON.
+  // The wizard's preview of the look (lookPreview) talks the same way.
   window.addEventListener("message", (e) => {
-    const f = $("preview-frame");
-    if (e.source !== f.contentWindow || typeof e.data !== "string" || e.data[0] !== "\x01") return;
+    const f = [$("preview-frame"), $("wz-look-frame")].find((x) => e.source === x.contentWindow);
+    if (!f || typeof e.data !== "string" || e.data[0] !== "\x01") return;
     let m;
     try { m = JSON.parse(e.data.slice(1)); } catch { return; }
     const reply = (x) => f.contentWindow.postMessage("\x02" + JSON.stringify(x), "*");
-    if (m.type === "ready" && previewForm) reply(previewForm);
+    const form = f.id === "wz-look-frame" ? lookForm : previewForm;
+    if (m.type === "ready" && form) reply(form);
     else if (m.type === "submit" || m.type === "button") reply({ type: "errors", errors: {}, error: L.previewNoRun });
   });
 
@@ -904,6 +906,10 @@
     const w = $("wizard"), port = radio("wz-kind") === "port";
     w.dataset.kind = port ? "port" : "new";
     w.dataset.mode = radio("wz-mode");
+    w.dataset.form = radio("wz-form");
+    $("wz-accent").disabled = !$("wz-accent-on").checked;
+    $("wz-background").disabled = !$("wz-background-on").checked;
+    if (!$("wz-look-box").hidden) lookPreview();
     $("wz-overview-title").textContent = port ? L.wzOverviewPort : L.wzOverviewNew;
     $("wz-overview").placeholder = port ? L.wzOverviewPortHint : L.wzOverviewNewHint;
     $("wz-input-note").disabled = radio("wz-input") === "no";
@@ -926,7 +932,55 @@
       nameMode: radio("wz-name-mode"), name: $("wz-name").value,
       overview: $("wz-overview").value,
       intro: $("wz-intro").checked,
+      titleBar: radio("wz-titlebar"),
+      accent: $("wz-accent-on").checked ? $("wz-accent").value : "",
+      background: $("wz-background-on").checked ? $("wz-background").value : "",
+      radius: $("wz-radius").value === "medium" ? "" : $("wz-radius").value,
     };
+  }
+
+  // The preview of the look: a sample form (one button) in a frame under a
+  // title bar drawn here (the system one or a copy of titlebar.js's), with
+  // the colors and corners applied by the form page itself (form.js
+  // applyColors). An app's page is the AI's HTML, so for it this is only a
+  // likeness.
+  const RADIUS = { none: "0px", small: "4px", medium: "", large: "10px", full: "9999px" };
+  let lookForm = null;
+  function lookPreview() {
+    const a = answers();
+    const box = $("wz-look-box"), win = $("wz-window");
+    box.hidden = false;
+    win.dataset.bar = a.titleBar === "custom" ? "custom" : "system";
+    const title = (a.nameMode === "name" && a.name.trim()) || L.wzPvTitle;
+    win.querySelector(".wz-sysbar-title").textContent = title;
+    win.querySelector(".wz-custombar-title").textContent = title;
+    // The custom bar takes the background and the accent (as titlebar.js with form.js's variables).
+    const bar = win.querySelector(".wz-custombar");
+    bar.style.setProperty("--wz-bar-accent", a.accent || "");
+    bar.style.setProperty("--wz-bar-bg", a.background || "");
+    bar.style.setProperty("--wz-bar-fg", a.background ? (luminance(a.background) <= 0.18 ? "#fafafa" : "#18181b") : "");
+    const color = (c) => ({ light: c, dark: c });
+    lookForm = {
+      type: "init", texts: st.formTexts || {}, lang: st.lang || "ja",
+      description: L.wzPvDescription, submit: L.wzPvSubmit, submitIcon: "fa-solid fa-play",
+      accent: color(a.accent), background: color(a.background), radius: RADIUS[$("wz-radius").value] || "",
+      tabs: [], tabIcons: [], groups: [], buttons: [], buttonIcons: [], buttonTooltips: [],
+      fields: [
+        { name: "name", label: L.wzPvText, type: "text", value: L.wzPvTextValue, tab: -1, group: -1 },
+        { name: "kind", label: L.wzPvSelect, type: "radio", options: [{ value: "a", label: L.wzPvOptionA }, { value: "b", label: L.wzPvOptionB }], value: "a", tab: -1, group: -1 },
+        { name: "open", label: L.wzPvCheck, type: "checkbox", value: true, tab: -1, group: -1 },
+      ],
+    };
+    $("wz-look-frame").src = "form.html?preview=" + Date.now();
+  }
+
+  function luminance(c) {
+    const probe = document.body.appendChild(el("span", { hidden: true }));
+    probe.style.color = c;
+    const [r, g, b] = (getComputedStyle(probe).color.match(/[\d.]+/g) || [0, 0, 0]).map(Number);
+    probe.remove();
+    const lin = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
   }
 
   function wizardError(text) {
@@ -982,6 +1036,7 @@
       if (!$("wz-folder").value.trim()) { wizardError(L.wzNeedFolder); return; }
       send({ op: "wizardCreate", answers: a, path: $("wz-folder").value.trim(), text: $("wz-text").value });
     };
+    $("wz-look-preview").onclick = lookPreview;
     $("wz-copy").onclick = () => copy($("wz-text").value, L.wzCopiedOnly);
     $("wz-cancel").onclick = () => { st.wizard = false; setTab("code"); };
     $("w-wizard").onclick = () => openWizard("new");
@@ -1005,6 +1060,8 @@
         initChat(m.services || []);
         renderRecent(m.recent || []);
         st.home = m.home || "";
+        st.formTexts = m.formTexts || {};
+        st.lang = m.lang || "ja";
         $("wz-rows").options[0].textContent = L.wzRowsNone;
         $("wz-rows").value = "3";
         $("wz-input-note").placeholder = L.wzInputHint;

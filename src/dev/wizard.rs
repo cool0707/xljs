@@ -38,6 +38,13 @@ pub struct Answers {
     pub overview: String,
     /// Puts the instructions for AIs (docs/ai/prompt.md) first.
     pub intro: bool,
+    /// The look of the windows: "system" or "custom" (the title bar), a CSS
+    /// color for the accent and the background ("" = the default) and the
+    /// corners ("none" | "small" | "large" | "full", "" = the default).
+    pub title_bar: String,
+    pub accent: String,
+    pub background: String,
+    pub radius: String,
 }
 
 /// What a workbook holds, for the wizard's list.
@@ -151,6 +158,9 @@ pub fn prompt(a: &Answers) -> String {
     if a.mode != "app" {
         items.push(format!("{}: {}", t!("wizard.formLabel"), choice(&a.form, "wizard.formYes", "wizard.formNo", "wizard.formAuto")));
     }
+    if let Some(look) = look(a) {
+        items.push(format!("{}: {look}", t!("wizard.lookLabel")));
+    }
     let name = match a.name_mode.as_str() {
         "name" if !a.name.trim().is_empty() => t!("wizard.nameGiven", file),
         "later" => t!("wizard.nameLater", file),
@@ -210,6 +220,72 @@ pub fn prompt(a: &Answers) -> String {
         s.push_str(&format!("- {}\n", t!("wizard.askApp")));
     }
     s
+}
+
+/// A color for the prompt: what the color input gives (#rrggbb), else nothing.
+fn color(c: &str) -> Option<&str> {
+    let c = c.trim();
+    (c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit())).then_some(c)
+}
+
+/// The look asked for (None = the defaults): the options of ui.form, or
+/// for an app the metadata and the page's CSS.
+fn look(a: &Answers) -> Option<String> {
+    if a.mode != "app" && a.form == "no" {
+        return None;
+    }
+    let custom = a.title_bar == "custom";
+    let accent = color(&a.accent);
+    let background = color(&a.background);
+    let radius = ["none", "small", "large", "full"].contains(&a.radius.as_str()).then_some(a.radius.as_str());
+    if !custom && accent.is_none() && background.is_none() && radius.is_none() {
+        return None;
+    }
+    // The form's options.
+    let mut opts = Vec::new();
+    if custom {
+        opts.push(r#"titleBar: "custom""#.to_string());
+    }
+    if let Some(c) = accent {
+        opts.push(format!(r#"accent: "{c}""#));
+    }
+    if let Some(c) = background {
+        opts.push(format!(r#"background: "{c}""#));
+    }
+    if let Some(r) = radius {
+        opts.push(format!(r#"radius: "{r}""#));
+    }
+    let form = t!("wizard.lookForm", format!("`{}`", opts.join(", ")));
+    // The app's page.
+    let mut css = Vec::new();
+    if let Some(c) = accent {
+        css.push(t!("wizard.lookAccent", c));
+    }
+    if let Some(c) = background {
+        css.push(t!("wizard.lookBackground", c));
+    }
+    if let Some(r) = radius {
+        let px = match r {
+            "none" => 0,
+            "small" => 4,
+            "large" => 10,
+            _ => 9999,
+        };
+        css.push(t!("wizard.lookRadius", format!("{px}px")));
+    }
+    let mut app = Vec::new();
+    if custom {
+        app.push(t!("wizard.lookAppTitleBar"));
+    }
+    if !css.is_empty() {
+        app.push(t!("wizard.lookAppCss", css.join(t!("wizard.lookSep").as_str())));
+    }
+    let app = app.join(t!("wizard.lookSep").as_str());
+    Some(match a.mode.as_str() {
+        "app" => app,
+        "script" => form,
+        _ => t!("wizard.lookAuto", form, app),
+    })
 }
 
 /// The file the wizard creates before the AI answers: a script that only
