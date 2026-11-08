@@ -902,11 +902,22 @@
     $("wizard").scrollTop = 0;
   }
 
+  // The format of the program: a form app (ui.form), an app with its own
+  // page (@mode app) or a script going step by step without a form.
+  function format() {
+    switch (radio("wz-format")) {
+      case "app": return { mode: "app", form: "yes" };
+      case "script": return { mode: "script", form: "no" };
+      default: return { mode: "script", form: "yes" };
+    }
+  }
+
   function updateWizard() {
     const w = $("wizard"), port = radio("wz-kind") === "port";
     w.dataset.kind = port ? "port" : "new";
-    w.dataset.mode = radio("wz-mode");
-    w.dataset.form = radio("wz-form");
+    const f = format();
+    w.dataset.mode = f.mode;
+    w.dataset.form = f.form;
     $("wz-accent").disabled = !$("wz-accent-on").checked;
     $("wz-background").disabled = !$("wz-background-on").checked;
     if (!$("wz-look-box").hidden) lookPreview();
@@ -928,7 +939,7 @@
       sampleRows: Number($("wz-rows").value) || 0,
       input: radio("wz-input"), inputNote: $("wz-input-note").value,
       output: radio("wz-output"), outputNote: $("wz-output-note").value,
-      form: radio("wz-form"), mode: radio("wz-mode"),
+      ...format(),
       nameMode: radio("wz-name-mode"), name: $("wz-name").value,
       overview: $("wz-overview").value,
       intro: $("wz-intro").checked,

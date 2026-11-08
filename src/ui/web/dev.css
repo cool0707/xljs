@@ -201,7 +201,6 @@ footer { padding: var(--sp-xs) var(--sp-m); }
 .wizard .row { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
 .wizard #wz-text { font: 12px/1.5 var(--mono); -webkit-user-select: text; user-select: text; }
 .wizard[data-kind=new] .port-only { display: none; }
-.wizard[data-mode=app] .no-app { display: none; }
 .wizard[data-form=no]:not([data-mode=app]) .look { display: none; }
 .wizard:not([data-mode=app]) .app-note { display: none; }
 .look-grid { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; align-items: center; }

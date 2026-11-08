@@ -27,7 +27,8 @@ pub struct Answers {
     pub input_note: String,
     pub output: String,
     pub output_note: String,
-    /// "yes" (ui.form), "no" (no window at all) or "auto".
+    /// "yes" (ui.form), "no" (a script going step by step with the
+    /// standard dialogs, Windows ones or the console's) or "auto".
     pub form: String,
     /// "script", "app" or "auto".
     pub mode: String,
@@ -133,8 +134,8 @@ pub fn workbook_text(a: &Answers) -> String {
 
 fn choice(v: &str, yes: &str, no: &str, auto: &str) -> String {
     match v {
-        "yes" | "name" | "script" => t!(yes),
-        "no" | "app" | "later" => t!(no),
+        "yes" | "name" => t!(yes),
+        "no" | "later" => t!(no),
         _ => t!(auto),
     }
 }
@@ -153,11 +154,13 @@ pub fn prompt(a: &Answers) -> String {
 
     // The conditions.
     let mut items = Vec::new();
-    let mode = choice(&a.mode, "wizard.modeScript", "wizard.modeApp", "wizard.modeAuto");
-    items.push(format!("{}: {mode}", t!("wizard.modeLabel")));
-    if a.mode != "app" {
-        items.push(format!("{}: {}", t!("wizard.formLabel"), choice(&a.form, "wizard.formYes", "wizard.formNo", "wizard.formAuto")));
-    }
+    let format = match (a.mode.as_str(), a.form.as_str()) {
+        ("app", _) => "wizard.formatApp",
+        (_, "no") => "wizard.formatScript",
+        (_, "yes") => "wizard.formatForm",
+        _ => "wizard.formatAuto",
+    };
+    items.push(format!("{}: {}", t!("wizard.formatLabel"), t!(format)));
     if let Some(look) = look(a) {
         items.push(format!("{}: {look}", t!("wizard.lookLabel")));
     }
