@@ -517,7 +517,7 @@ fn cmd_init(con: &ConsoleState, args: &[String]) -> i32 {
         return con.fail(None, &Error::path("mkdir", dir, e));
     }
     let dts = Path::new(&dir).join("xljs.d.ts");
-    if let Err(e) = std::fs::write(&dts, crate::DTS) {
+    if let Err(e) = std::fs::write(&dts, crate::dts()) {
         return con.fail(None, &Error::path("open", dts.display().to_string(), e));
     }
     println!("{}", t!("cli.created", dts.display()));

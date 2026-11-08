@@ -145,7 +145,7 @@ pub fn prompt(a: &Answers) -> String {
     let file = file_name(a);
     let mut s = String::new();
     if a.intro {
-        s.push_str(super::AI_PROMPT.trim_end());
+        s.push_str(super::ai_prompt().trim_end());
         s.push_str("\n\n---\n\n");
     }
     s.push_str(&format!("# {}\n\n", t!(if port { "wizard.titlePort" } else { "wizard.titleNew" })));

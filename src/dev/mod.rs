@@ -36,7 +36,9 @@ use project::{Project, read_text, write_text};
 use runner::{Run, RunEvent};
 
 /// The instructions for AI chats (docs/ai/prompt.md).
-pub const AI_PROMPT: &str = include_str!("../../docs/ai/prompt.md");
+pub fn ai_prompt() -> &'static str {
+    crate::embed::AI_PROMPT.text()
+}
 
 /// The page of the development window.
 pub const DEV_PAGE: &str = "dev.html";
@@ -464,7 +466,7 @@ impl Session {
             "recent": recent,
             "home": default_dir(&gs),
             // For the editor's completion (dev-types.js).
-            "dts": crate::DTS,
+            "dts": crate::dts(),
         })
     }
 

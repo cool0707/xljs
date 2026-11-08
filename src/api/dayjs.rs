@@ -19,14 +19,14 @@ pub fn bundle() -> String {
     let names = |dir: &str| -> Vec<String> {
         let mut v: Vec<String> = files
             .iter()
-            .filter_map(|(n, _)| n.strip_prefix(&format!("{dir}/")).and_then(|r| r.strip_suffix(".js")).map(str::to_string))
+            .filter_map(|f| f.name.strip_prefix(&format!("{dir}/")).and_then(|r| r.strip_suffix(".js")).map(str::to_string))
             .collect();
         v.sort();
         v
     };
     let file = |name: &str| -> String {
-        let d = files.iter().find(|(n, _)| *n == name).map(|(_, d)| *d).unwrap_or_else(|| panic!("dayjs: {name} is missing"));
-        String::from_utf8_lossy(d).into_owned()
+        let d = files.iter().find(|f| f.name == name).unwrap_or_else(|| panic!("dayjs: {name} is missing"));
+        String::from_utf8_lossy(d.bytes()).into_owned()
     };
     let mut b = String::new();
     b.push_str("(function () { const mods = {}; const require = (name) => mods[name]; ");

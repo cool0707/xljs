@@ -103,7 +103,7 @@ pub fn prompt(p: &Project, stopped: bool, message: &str, loc: Option<&Location>)
 /// The instructions for an AI chat that does not know xljs yet
 /// (docs/ai/prompt.md) and the script so far.
 pub fn intro(p: Option<&Project>) -> String {
-    let mut s = crate::dev::AI_PROMPT.trim_end().to_string();
+    let mut s = crate::dev::ai_prompt().trim_end().to_string();
     if let Some(p) = p {
         let name = p.entry_name();
         if let Ok(text) = read_text(&p.entry)

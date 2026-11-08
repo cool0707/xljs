@@ -24,7 +24,7 @@ use windows::core::{BOOL, Interface, PCWSTR, PWSTR, w};
 
 use super::{WINDOWS, hstr, loader};
 use crate::ui::{
-    ASSET_ORIGIN, BUILTIN_PREFIX, BuiltinAssets, PAGE_SCRIPT, PdfDone, PdfJob, TITLE_BAR_HEIGHT, Window, WindowOptions, icon_image, title_bar_script,
+    ASSET_ORIGIN, BUILTIN_PREFIX, BuiltinAssets, PdfDone, PdfJob, TITLE_BAR_HEIGHT, Window, WindowOptions, icon_image, title_bar_script,
 };
 use crate::{Error, Result, err, i18n};
 
@@ -603,7 +603,7 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
         }
 
         // The page runtime, in every page.
-        let _ = core.AddScriptToExecuteOnDocumentCreated(&hstr(PAGE_SCRIPT), None);
+        let _ = core.AddScriptToExecuteOnDocumentCreated(&hstr(crate::ui::page_script()), None);
         if st.o.custom_title_bar {
             let _ = core.AddScriptToExecuteOnDocumentCreated(&hstr(&title_bar_script(&st.o, non_client)), None);
         }
