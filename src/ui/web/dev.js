@@ -29,8 +29,9 @@
     pending: null, // a downloaded answer: { name, text, target, old }
     versionView: null, // { file, n, text } compared in the diff tab
     failure: null, // the last failed run: { prompt, location }
-    layout: null, // { mode: "both" | "chat" | "canvas", groups: [{ id, tabs, active, size }] } (layout)
+    layout: null, // { mode: "both" | "chat" | "canvas", groups: [{ id, tabs, active, size }], closed: [tab] } (layout)
     tabDrag: false, // a tab is being dragged
+    menu: null, // the open menu's element (menu)
   };
 
   // ------------------------------------------------------------ drop
@@ -66,6 +67,9 @@
   // dragged to reorder it, into another group, or to a group's left or
   // right edge (a new group there); the chat is also dragged by its bar.
   // A group with the chat alone shows no tabs (the chat's bar instead).
+  // A tab is closed from its menu (right click) and opened again with the
+  // "+" at the end of a group's tabs (or of the chat's bar); a closed tab
+  // that something shows (setTab) opens again by itself.
   // The layout is kept per user (localStorage).
   const TABS = ["chat", "code", "diff", "preview", "history", "output"];
   const MAX_GROUPS = 4;
@@ -79,12 +83,14 @@
         { id: "g1", tabs: ["chat"], active: "chat", size: 42 },
         { id: "g2", tabs: ["code", "diff", "preview", "history", "output"], active: "code", size: 58 },
       ],
+      closed: [],
     };
   }
 
-  // Every tab in exactly one group, no empty group, sizes adding up to 100.
+  // Every tab in exactly one group or closed, no empty group, sizes adding
+  // up to 100.
   function normalizeLayout(l) {
-    const out = { mode: ["both", "chat", "canvas"].includes(l && l.mode) ? l.mode : "both", groups: [] };
+    const out = { mode: ["both", "chat", "canvas"].includes(l && l.mode) ? l.mode : "both", groups: [], closed: [] };
     const seen = new Set();
     for (const g of (l && Array.isArray(l.groups) ? l.groups : [])) {
       const tabs = (Array.isArray(g.tabs) ? g.tabs : []).filter((t) => TABS.includes(t) && !seen.has(t));
@@ -93,7 +99,8 @@
       out.groups.push({ id: String(g.id || ""), tabs, active: tabs.includes(g.active) ? g.active : tabs[0], size: Number(g.size) > 0 ? Number(g.size) : 50 });
     }
     if (!out.groups.length) return defaultLayout();
-    const rest = TABS.filter((t) => !seen.has(t));
+    out.closed = TABS.filter((t) => !seen.has(t) && l && Array.isArray(l.closed) && l.closed.includes(t));
+    const rest = TABS.filter((t) => !seen.has(t) && !out.closed.includes(t));
     if (rest.length) (out.groups.find((g) => g.tabs.includes("code")) || out.groups[out.groups.length - 1]).tabs.push(...rest);
     while (out.groups.length > MAX_GROUPS) {
       const g = out.groups.pop();
@@ -137,6 +144,12 @@
   }
 
   const groupOf = (tab) => st.layout.groups.find((g) => g.tabs.includes(tab));
+  const isSoloChat = (g) => g.tabs.length === 1 && g.tabs[0] === "chat";
+  // The group of the code (or, when the code is closed, the first group
+  // that is not the chat alone): the welcome and the wizard cover it and a
+  // closed tab opens there again.
+  const homeGroup = () => groupOf("code") || st.layout.groups.find((g) => !isSoloChat(g)) || st.layout.groups[0];
+  const openTabs = () => st.layout.groups.reduce((n, g) => n + g.tabs.length, 0);
   // The tabs a group shows: "canvas only" hides the chat.
   const shownTabs = (g) => (st.layout.mode === "canvas" ? g.tabs.filter((t) => t !== "chat") : g.tabs);
   function visibleGroups() {
@@ -149,8 +162,7 @@
   }
   // The welcome or the wizard covers the group of the code.
   function covered() {
-    const g = groupOf("code");
-    const a = activeOf(g);
+    const a = activeOf(homeGroup());
     if (st.wizard) return "wizard";
     if (st.showWelcome || (!st.project && (a === "code" || a === "history" || a === "preview"))) return "welcome";
     return "";
@@ -158,15 +170,17 @@
   // Whether a tab's panel is on screen.
   function shown(tab) {
     const g = groupOf(tab);
-    if (!visibleGroups().includes(g) || activeOf(g) !== tab) return false;
-    return g !== groupOf("code") || !covered();
+    if (!g || !visibleGroups().includes(g) || activeOf(g) !== tab) return false;
+    return g !== homeGroup() || !covered();
   }
 
   const groupEls = new Map(); // group id -> element
   function groupEl(g) {
     let e = groupEls.get(g.id);
     if (!e) {
-      e = el("section", { className: "pane tab-group" }, el("nav", { className: "tabs" }), el("div", { className: "group-body" }));
+      const add = el("button", { type: "button", className: "tab-add" }, icon("fa-solid fa-plus"));
+      add.onclick = () => addMenu(add, e.dataset.gid);
+      e = el("section", { className: "pane tab-group" }, el("nav", { className: "tabs" }, add), el("div", { className: "group-body" }));
       e.dataset.gid = g.id;
       $("panes").append(e);
       groupEls.set(g.id, e);
@@ -189,22 +203,34 @@
   function applyLayout() {
     const groups = st.layout.groups;
     const vis = visibleGroups();
+    const home = homeGroup();
+    // Closed tabs wait in the stash.
+    for (const t of st.layout.closed) {
+      if (tabButton(t).parentNode !== $("tabs")) $("tabs").append(tabButton(t));
+      moveTo($("stash"), panelOf(t));
+    }
     groups.forEach((g, i) => {
       const e = groupEl(g);
       const nav = e.querySelector(".tabs");
+      const add = nav.querySelector(".tab-add");
       const body = e.querySelector(".group-body");
-      for (const t of g.tabs) {
+      g.tabs.forEach((t, j) => {
         const b = tabButton(t);
-        if (b.parentNode !== nav || nav.lastElementChild !== b) nav.append(b);
+        if (nav.children[j] !== b) nav.insertBefore(b, nav.children[j] || null);
         moveTo(body, panelOf(t));
-      }
-      if (g.tabs.includes("code")) { moveTo(body, $("welcome")); moveTo(body, $("wizard")); }
+      });
+      if (nav.lastElementChild !== add) nav.append(add);
+      add.hidden = !st.layout.closed.length;
+      add.title = L.tabAdd || "";
+      if (g === home) { moveTo(body, $("welcome")); moveTo(body, $("wizard")); }
       e.hidden = !vis.includes(g);
       e.style.order = String(i * 2);
       e.style.flex = `${g.size} 1 0`;
       const tabs = shownTabs(g);
       e.classList.toggle("solo-chat", tabs.length === 1 && tabs[0] === "chat");
     });
+    const chat = groupOf("chat");
+    $("chat-add").hidden = !st.layout.closed.length || !chat || !groupEl(chat).classList.contains("solo-chat");
     for (const [id, e] of groupEls) {
       if (groups.some((g) => g.id === id)) continue;
       e.remove();
@@ -225,7 +251,7 @@
 
   function showPanels() {
     const cover = covered();
-    const codeGroup = groupOf("code");
+    const codeGroup = homeGroup();
     for (const g of st.layout.groups) {
       const tabs = shownTabs(g);
       const active = activeOf(g);
@@ -243,19 +269,136 @@
   }
 
   function setTab(tab) {
+    const reopened = st.layout.closed.includes(tab);
+    if (reopened) openTab(tab, tab === "chat" ? st.layout.groups[0] : homeGroup());
     const g = groupOf(tab);
     g.active = tab;
-    if (tab !== "code" && g === groupOf("code")) { st.showWelcome = false; st.wizard = false; }
+    if (tab !== "code" && g === homeGroup()) { st.showWelcome = false; st.wizard = false; }
     saveLayout();
-    showPanels();
+    if (reopened) applyLayout();
+    else showPanels();
     if (tab === "code" && shown("code")) editor.focus();
   }
 
   function setMode(mode) {
+    if (mode === "chat" && st.layout.closed.includes("chat")) openTab("chat", st.layout.groups[0]);
     st.layout.mode = mode;
     if (mode === "chat") groupOf("chat").active = "chat";
     saveLayout();
     applyLayout();
+  }
+
+  // Puts a closed tab at the end of a group's tabs (the caller saves and
+  // lays out).
+  function openTab(tab, g) {
+    st.layout.closed = st.layout.closed.filter((t) => t !== tab);
+    g.tabs.push(tab);
+    g.active = tab;
+  }
+
+  // Closes a tab (not the last one). A group left empty goes away and its
+  // width goes to its neighbour.
+  function closeTab(tab) {
+    const g = groupOf(tab);
+    if (!g || openTabs() <= 1) return;
+    const i = g.tabs.indexOf(tab);
+    g.tabs.splice(i, 1);
+    if (g.active === tab) g.active = g.tabs[Math.min(i, g.tabs.length - 1)];
+    const groups = st.layout.groups;
+    if (!g.tabs.length) {
+      const k = groups.indexOf(g);
+      groups.splice(k, 1);
+      groups[Math.max(0, k - 1)].size += g.size;
+    }
+    st.layout.closed.push(tab);
+    // Something stays on screen.
+    if (!visibleGroups().length) st.layout.mode = "both";
+    st.layout = normalizeLayout(st.layout);
+    saveLayout();
+    applyLayout();
+  }
+
+  // The "+" of a group: a menu of the closed tabs; the one chosen opens in
+  // that group.
+  function addMenu(anchor, gid) {
+    const r = anchor.getBoundingClientRect();
+    openMenu(r.left, r.bottom, st.layout.closed.map((tab) => ({
+      label: tabLabel(tab),
+      action: () => {
+        const g = st.layout.groups.find((x) => x.id === gid);
+        if (!g || !st.layout.closed.includes(tab)) return;
+        openTab(tab, g);
+        if ((st.layout.mode === "canvas" && tab === "chat") || (st.layout.mode === "chat" && !g.tabs.includes("chat"))) st.layout.mode = "both";
+        if (tab !== "code" && g === homeGroup()) { st.showWelcome = false; st.wizard = false; }
+        st.layout = normalizeLayout(st.layout);
+        saveLayout();
+        applyLayout();
+        if (tab === "code" && shown("code")) editor.focus();
+      },
+    })));
+  }
+
+  // The menu of a tab (right click).
+  function tabMenu(tab, x, y) {
+    openMenu(x, y, [
+      { label: el("span", {}, icon("fa-solid fa-xmark"), el("span", { textContent: L.tabClose || "" })), disabled: openTabs() <= 1, action: () => closeTab(tab) },
+    ]);
+  }
+
+  // ------------------------------------------------------------ menu
+
+  // A small menu at (x, y): items {label (an element), action, disabled}.
+  // It closes on a choice, a press elsewhere, Esc or when the window loses
+  // the focus. The browser pane hides while the menu is over it.
+  function closeMenu() {
+    if (!st.menu) return;
+    st.menu.remove();
+    st.menu = null;
+    document.removeEventListener("pointerdown", outside, true);
+    document.removeEventListener("keydown", menuKey, true);
+    window.removeEventListener("blur", closeMenu);
+    window.removeEventListener("resize", closeMenu);
+    syncBrowser();
+  }
+  function outside(e) { if (st.menu && !st.menu.contains(e.target)) closeMenu(); }
+  function menuKey(e) {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu(); return; }
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const items = Array.from(st.menu.querySelectorAll("button:not(:disabled)"));
+    if (!items.length) return;
+    const i = items.indexOf(document.activeElement);
+    const n = e.key === "ArrowDown" ? (i + 1) % items.length : (i <= 0 ? items.length - 1 : i - 1);
+    items[n].focus();
+  }
+  function openMenu(x, y, items) {
+    closeMenu();
+    if (!items.length) return;
+    const m = el("div", { className: "menu" }, ...items.map((it) => {
+      const b = el("button", { type: "button", disabled: !!it.disabled }, it.label);
+      b.onclick = () => { closeMenu(); it.action(); };
+      return b;
+    }));
+    m.addEventListener("contextmenu", (e) => e.preventDefault());
+    document.body.append(m);
+    const r = m.getBoundingClientRect();
+    m.style.left = Math.max(0, Math.min(x, window.innerWidth - r.width - 2)) + "px";
+    m.style.top = Math.max(0, Math.min(y, window.innerHeight - r.height - 2)) + "px";
+    st.menu = m;
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("keydown", menuKey, true);
+    window.addEventListener("blur", closeMenu);
+    window.addEventListener("resize", closeMenu);
+    const first = m.querySelector("button:not(:disabled)");
+    if (first) first.focus();
+    syncBrowser();
+  }
+  // Whether the open menu is over an element.
+  function menuOver(e) {
+    if (!st.menu) return false;
+    const a = st.menu.getBoundingClientRect();
+    const b = e.getBoundingClientRect();
+    return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
   }
 
   // The native browser pane follows #chat-view; it is hidden while the
@@ -268,7 +411,7 @@
     requestAnimationFrame(() => {
       syncQueued = false;
       const view = $("chat-view");
-      const show = st.chat && shown("chat") && !st.tabDrag && !document.hidden;
+      const show = st.chat && shown("chat") && !st.tabDrag && !document.hidden && !menuOver(view);
       $("chat-start").hidden = !!st.chat;
       view.hidden = !st.chat;
       if (!show) { send({ op: "browser", path: "hide" }); return; }
@@ -326,7 +469,7 @@
     const nav = ge.querySelector(".tabs");
     const nr = nav.getBoundingClientRect();
     if (!ge.classList.contains("solo-chat") && y >= nr.top && y <= nr.bottom) {
-      const btns = Array.from(nav.children).filter((b) => !b.hidden);
+      const btns = Array.from(nav.children).filter((b) => b.dataset.tab && !b.hidden);
       let before = null;
       for (const b of btns) {
         const r = b.getBoundingClientRect();
@@ -374,7 +517,7 @@
     dst.active = tab;
     // Arranging the panes shows them all.
     st.layout.mode = "both";
-    if (tab !== "code" && dst === groupOf("code")) { st.showWelcome = false; st.wizard = false; }
+    if (tab !== "code" && dst === homeGroup()) { st.showWelcome = false; st.wizard = false; }
     st.layout = normalizeLayout(st.layout);
     saveLayout();
     applyLayout();
@@ -451,6 +594,7 @@
       const b = tabButton(tab);
       b.onclick = () => { st.wizard = false; st.showWelcome = false; setTab(tab); };
       b.addEventListener("pointerdown", (e) => startTabDrag(e, tab, b, () => tabLabel(tab)));
+      b.addEventListener("contextmenu", (e) => { e.preventDefault(); tabMenu(tab, e.clientX, e.clientY); });
     }
     // The chat's bar: its empty space, the grip and its buttons (not the
     // address, where a press selects text).
@@ -460,6 +604,13 @@
       const handle = e.target.closest("button") || bar;
       startTabDrag(e, "chat", handle, () => tabLabel("chat"));
     });
+    // The chat alone in its group has no tab: its bar has the menu and the "+".
+    bar.addEventListener("contextmenu", (e) => {
+      if (e.target.closest("input, select, textarea")) return;
+      e.preventDefault();
+      tabMenu("chat", e.clientX, e.clientY);
+    });
+    $("chat-add").onclick = () => addMenu($("chat-add"), groupOf("chat").id);
     document.addEventListener("pointerdown", () => { dragEnded = false; }, true);
     document.addEventListener("click", (e) => {
       if (dragEnded) { dragEnded = false; e.preventDefault(); e.stopPropagation(); }

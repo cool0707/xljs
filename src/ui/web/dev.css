@@ -131,6 +131,23 @@ body.tab-dragging iframe { pointer-events: none; }
   background: none; box-shadow: none; padding: 6px 12px; color: var(--muted);
 }
 .tabs button.on { color: var(--fg); border-bottom-color: var(--accent); }
+.tabs button.tab-add { padding: 6px 10px; border-bottom: 0; }
+.tabs button.tab-add:hover { color: var(--fg); background: var(--hover); }
+.tabs button[hidden] { display: none; }
+
+/* A small menu (dev.js menu): a tab's menu and the "+" of the tabs. */
+.menu {
+  position: fixed; z-index: 1002; display: flex; flex-direction: column; min-width: 140px; padding: 4px;
+  border: 1px solid var(--border); border-radius: var(--radius-box); background: var(--panel); box-shadow: 0 2px 8px rgba(0, 0, 0, .2);
+}
+.menu button {
+  display: flex; align-items: center; justify-content: flex-start; min-width: 0; padding: 5px 10px;
+  border: 0; border-radius: var(--radius-check); background: none; box-shadow: none; color: var(--fg); text-align: left; white-space: nowrap;
+}
+.menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--hover); }
+.menu button:disabled { color: var(--muted); }
+.menu button i { width: 16px; margin-right: 8px; text-align: center; }
+.menu button .badge { display: none; }
 .badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: var(--accent); color: var(--accent-fg); font-size: 11px; }
 .badge.error { background: var(--error); }
 .panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
