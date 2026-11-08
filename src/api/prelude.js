@@ -4255,6 +4255,11 @@
     if (o.blackAndWhite !== undefined && o.blackAndWhite !== null) r.blackAndWhite = !!o.blackAndWhite;
     if (o.centerHorizontally !== undefined && o.centerHorizontally !== null) r.centerHorizontally = !!o.centerHorizontally;
     if (o.charts === false) r.charts = false;
+    if (o.condense !== undefined && o.condense !== null && o.condense !== false) {
+      const c = o.condense === true ? 4 : Number(o.condense);
+      if (!(c >= 0 && c <= 20)) throw new TypeError(T("pdf.badNumber", "condense"));
+      r.condense = c;
+    }
     if (o.skipBlankPages !== undefined && o.skipBlankPages !== null && o.skipBlankPages !== false) {
       if (o.skipBlankPages === true) r.skipBlankPages = 1;
       else if (o.skipBlankPages === "values") r.skipBlankPages = 2;

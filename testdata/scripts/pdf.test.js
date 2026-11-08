@@ -32,6 +32,12 @@ ok(ws.toHtml({ margin: 10 }).includes("margin:28.346pt 28.346pt 28.346pt 28.346p
 ok(ws.toHtml({ scale: 50 }).includes("zoom:0.5"), "scale");
 ok(ws.toHtml({ scale: 50, zoom: 90 }).includes("zoom:0.45"), "zoom: on top of the scale");
 throws(() => ws.toHtml({ zoom: 5 }), /zoom/);
+ok(!html.includes("letter-spacing"), "condense: off by default");
+ok(ws.toHtml({ condense: true }).includes("{letter-spacing:-0.04em}"), "condense: true is 4%");
+const cd = ws.toHtml({ condense: 2.5 });
+ok(cd.includes(".xljs-sheet td>div *,") && cd.includes("{letter-spacing:-0.025em}"), "condense: a percent");
+ok(!ws.toHtml({ condense: 0 }).includes("letter-spacing"), "condense: 0 is off");
+throws(() => ws.toHtml({ condense: 30 }), /condense/);
 throws(() => ws.toHtml({ paper: "A9" }), /用紙のサイズ A9/);
 throws(() => ws.toHtml({ scale: 1000 }), /scale/);
 throws(() => wb.toHtml({ sheets: ["ない"] }), /シート ない/);
