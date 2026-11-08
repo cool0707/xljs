@@ -29,7 +29,7 @@
     pending: null, // a downloaded answer: { name, text, target, old }
     versionView: null, // { file, n, text } compared in the diff tab
     failure: null, // the last failed run: { prompt, location }
-    layout: null, // { mode: "both" | "chat" | "canvas", groups: [{ id, tabs, active, size }], closed: [tab] } (layout)
+    layout: null, // { groups: [{ id, tabs, active, size }], closed: [tab] } (layout)
     tabDrag: false, // a tab is being dragged
     menu: null, // the open menu's element (menu)
   };
@@ -78,7 +78,6 @@
 
   function defaultLayout() {
     return {
-      mode: "both",
       groups: [
         { id: "g1", tabs: ["chat"], active: "chat", size: 42 },
         { id: "g2", tabs: ["code", "diff", "preview", "history", "output"], active: "code", size: 58 },
@@ -90,7 +89,7 @@
   // Every tab in exactly one group or closed, no empty group, sizes adding
   // up to 100.
   function normalizeLayout(l) {
-    const out = { mode: ["both", "chat", "canvas"].includes(l && l.mode) ? l.mode : "both", groups: [], closed: [] };
+    const out = { groups: [], closed: [] };
     const seen = new Set();
     for (const g of (l && Array.isArray(l.groups) ? l.groups : [])) {
       const tabs = (Array.isArray(g.tabs) ? g.tabs : []).filter((t) => TABS.includes(t) && !seen.has(t));
@@ -134,7 +133,6 @@
       d.groups[0].size = split * 100;
       d.groups[1].size = (1 - split) * 100;
       if (l.swap) d.groups.reverse();
-      d.mode = l.mode;
       l = d;
     }
     st.layout = normalizeLayout(l || defaultLayout());
@@ -150,16 +148,7 @@
   // closed tab opens there again.
   const homeGroup = () => groupOf("code") || st.layout.groups.find((g) => !isSoloChat(g)) || st.layout.groups[0];
   const openTabs = () => st.layout.groups.reduce((n, g) => n + g.tabs.length, 0);
-  // The tabs a group shows: "canvas only" hides the chat.
-  const shownTabs = (g) => (st.layout.mode === "canvas" ? g.tabs.filter((t) => t !== "chat") : g.tabs);
-  function visibleGroups() {
-    if (st.layout.mode === "chat") return st.layout.groups.filter((g) => g.tabs.includes("chat"));
-    return st.layout.groups.filter((g) => shownTabs(g).length);
-  }
-  function activeOf(g) {
-    const tabs = shownTabs(g);
-    return tabs.includes(g.active) ? g.active : tabs[0];
-  }
+  const activeOf = (g) => (g.tabs.includes(g.active) ? g.active : g.tabs[0]);
   // The welcome or the wizard covers the group of the code.
   function covered() {
     const a = activeOf(homeGroup());
@@ -170,7 +159,7 @@
   // Whether a tab's panel is on screen.
   function shown(tab) {
     const g = groupOf(tab);
-    if (!g || !visibleGroups().includes(g) || activeOf(g) !== tab) return false;
+    if (!g || activeOf(g) !== tab) return false;
     return g !== homeGroup() || !covered();
   }
 
@@ -202,7 +191,6 @@
   // when its group changes: a moved frame reloads) and shows the active ones.
   function applyLayout() {
     const groups = st.layout.groups;
-    const vis = visibleGroups();
     const home = homeGroup();
     // Closed tabs wait in the stash.
     for (const t of st.layout.closed) {
@@ -223,11 +211,9 @@
       add.hidden = !st.layout.closed.length;
       add.title = L.tabAdd || "";
       if (g === home) { moveTo(body, $("welcome")); moveTo(body, $("wizard")); }
-      e.hidden = !vis.includes(g);
       e.style.order = String(i * 2);
       e.style.flex = `${g.size} 1 0`;
-      const tabs = shownTabs(g);
-      e.classList.toggle("solo-chat", tabs.length === 1 && tabs[0] === "chat");
+      e.classList.toggle("solo-chat", isSoloChat(g));
     });
     const chat = groupOf("chat");
     $("chat-add").hidden = !st.layout.closed.length || !chat || !groupEl(chat).classList.contains("solo-chat");
@@ -238,14 +224,12 @@
     }
     // A splitter between each two visible groups.
     for (const s of $("panes").querySelectorAll(":scope > .splitter")) s.remove();
-    for (let i = 1; i < vis.length; i++) {
+    for (let i = 1; i < groups.length; i++) {
       const s = el("div", { className: "splitter" });
-      s.style.order = String(groups.indexOf(vis[i]) * 2 - 1);
-      initSplitter(s, vis[i - 1], vis[i]);
+      s.style.order = String(i * 2 - 1);
+      initSplitter(s, groups[i - 1], groups[i]);
       $("panes").append(s);
     }
-    const mode = st.layout.mode;
-    for (const m of ["both", "chat", "canvas"]) $("lay-" + m).classList.toggle("on", mode === m);
     showPanels();
   }
 
@@ -253,11 +237,9 @@
     const cover = covered();
     const codeGroup = homeGroup();
     for (const g of st.layout.groups) {
-      const tabs = shownTabs(g);
       const active = activeOf(g);
       for (const t of g.tabs) {
         const b = tabButton(t);
-        b.hidden = !tabs.includes(t);
         b.classList.toggle("on", t === active);
         panelOf(t).hidden = t !== active || (g === codeGroup && !!cover);
       }
@@ -278,14 +260,6 @@
     if (reopened) applyLayout();
     else showPanels();
     if (tab === "code" && shown("code")) editor.focus();
-  }
-
-  function setMode(mode) {
-    if (mode === "chat" && st.layout.closed.includes("chat")) openTab("chat", st.layout.groups[0]);
-    st.layout.mode = mode;
-    if (mode === "chat") groupOf("chat").active = "chat";
-    saveLayout();
-    applyLayout();
   }
 
   // Puts a closed tab at the end of a group's tabs (the caller saves and
@@ -311,8 +285,6 @@
       groups[Math.max(0, k - 1)].size += g.size;
     }
     st.layout.closed.push(tab);
-    // Something stays on screen.
-    if (!visibleGroups().length) st.layout.mode = "both";
     st.layout = normalizeLayout(st.layout);
     saveLayout();
     applyLayout();
@@ -328,7 +300,6 @@
         const g = st.layout.groups.find((x) => x.id === gid);
         if (!g || !st.layout.closed.includes(tab)) return;
         openTab(tab, g);
-        if ((st.layout.mode === "canvas" && tab === "chat") || (st.layout.mode === "chat" && !g.tabs.includes("chat"))) st.layout.mode = "both";
         if (tab !== "code" && g === homeGroup()) { st.showWelcome = false; st.wizard = false; }
         st.layout = normalizeLayout(st.layout);
         saveLayout();
@@ -338,10 +309,12 @@
     })));
   }
 
-  // The menu of a tab (right click).
+  // The menu of a tab (right click); the last tab has none (it cannot be
+  // closed).
   function tabMenu(tab, x, y) {
+    if (openTabs() <= 1) return;
     openMenu(x, y, [
-      { label: el("span", {}, icon("fa-solid fa-xmark"), el("span", { textContent: L.tabClose || "" })), disabled: openTabs() <= 1, action: () => closeTab(tab) },
+      { label: el("span", {}, icon("fa-solid fa-xmark"), el("span", { textContent: L.tabClose || "" })), action: () => closeTab(tab) },
     ]);
   }
 
@@ -515,8 +488,6 @@
     if (i >= 0) dst.tabs.splice(i, 0, tab);
     else dst.tabs.push(tab);
     dst.active = tab;
-    // Arranging the panes shows them all.
-    st.layout.mode = "both";
     if (tab !== "code" && dst === homeGroup()) { st.showWelcome = false; st.wizard = false; }
     st.layout = normalizeLayout(st.layout);
     saveLayout();
@@ -1332,10 +1303,6 @@
   $("w-new").onclick = () => send({ op: "new", app: false });
   $("w-new-app").onclick = () => send({ op: "new", app: true });
   $("btn-folder").onclick = () => send({ op: "showFolder" });
-  $("lay-both").onclick = () => setMode("both");
-  $("lay-chat").onclick = () => setMode("chat");
-  $("lay-canvas").onclick = () => setMode("canvas");
-  $("lay-swap").onclick = () => { st.layout.groups.reverse(); saveLayout(); applyLayout(); };
   $("lay-reset").onclick = () => { st.layout = defaultLayout(); saveLayout(); applyLayout(); };
   new ResizeObserver(syncBrowser).observe($("chat-view"));
   window.addEventListener("resize", syncBrowser);
