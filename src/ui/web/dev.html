@@ -130,17 +130,10 @@
       </section>
 
       <section>
-        <h3 data-t="wzMode"></h3>
-        <label class="opt"><input type="radio" name="wz-mode" value="script"> <span data-t="wzModeScript"></span></label>
-        <label class="opt"><input type="radio" name="wz-mode" value="app"> <span data-t="wzModeApp"></span></label>
-        <label class="opt"><input type="radio" name="wz-mode" value="auto" checked> <span data-t="wzAutoMode"></span></label>
-      </section>
-
-      <section class="no-app">
-        <h3 data-t="wzForm"></h3>
-        <label class="opt"><input type="radio" name="wz-form" value="yes"> <span data-t="wzFormYes"></span></label>
-        <label class="opt"><input type="radio" name="wz-form" value="no"> <span data-t="wzFormNo"></span></label>
-        <label class="opt"><input type="radio" name="wz-form" value="auto" checked> <span data-t="wzAuto"></span></label>
+        <h3 data-t="wzFormat"></h3>
+        <label class="opt"><input type="radio" name="wz-format" value="form" checked> <span data-t="wzFormatForm"></span></label>
+        <label class="opt"><input type="radio" name="wz-format" value="app"> <span data-t="wzFormatApp"></span></label>
+        <label class="opt"><input type="radio" name="wz-format" value="script"> <span data-t="wzFormatScript"></span></label>
       </section>
 
       <section class="look">
@@ -184,7 +177,6 @@
         <label class="opt"><input type="radio" name="wz-name-mode" value="name"> <span data-t="wzNameGiven"></span></label>
         <input type="text" id="wz-name" class="indent-input">
         <label class="opt"><input type="radio" name="wz-name-mode" value="auto" checked> <span data-t="wzNameAuto"></span></label>
-        <label class="opt"><input type="radio" name="wz-name-mode" value="later"> <span data-t="wzNameLater"></span></label>
       </section>
 
       <section>
@@ -202,7 +194,7 @@
       </section>
 
       <section>
-        <label class="opt"><input type="checkbox" id="wz-intro" checked> <span data-t="wzIntro"></span></label>
+        <label class="opt"><input type="checkbox" id="wz-intro"> <span data-t="wzIntro"></span></label>
         <div class="row">
           <button type="button" id="wz-make" class="primary"><i class="fa-solid fa-wand-magic-sparkles"></i> <span data-t="wzMake"></span></button>
           <button type="button" id="wz-cancel" data-t="wzCancel"></button>

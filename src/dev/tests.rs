@@ -352,7 +352,7 @@ fn wizard_prompts() {
     let p = wizard::prompt(&a);
     assert!(p.starts_with("# 依頼: Excel のマクロ（VBA）を xljs に移植する"), "{p}");
     assert!(p.contains("Sub 売上集計()") && p.contains("## ブックのシート構成"), "{p}");
-    assert!(p.contains("- 入力: 入力フォーム（ui.form）") && p.contains("- 入力ファイル: あり — 販売システムの売上 xlsx"), "{p}");
+    assert!(p.contains("- 形式: フォームアプリ（通常のスクリプト。@mode app にしない）。入力を 1 画面のフォーム（ui.form）") && p.contains("- 入力ファイル: あり — 販売システムの売上 xlsx"), "{p}");
     assert!(p.contains("内容が分かる短い日本語の名前") && p.contains("特になし。マクロと同じ動作"), "{p}");
     assert!(p.contains("まずマクロが何をしているか") && !p.contains("あなたは「xljs」"), "{p}");
     assert_eq!(wizard::file_name(&a), "新しいスクリプト.js");
@@ -360,7 +360,7 @@ fn wizard_prompts() {
     let p = wizard::prompt(&wizard::Answers { include_vba: false, include_sheets: false, intro: true, ..a.clone() });
     assert!(p.starts_with("あなたは「xljs」") && !p.contains("Sub 売上集計()") && !p.contains("シート構成"));
 
-    // A new app with a name: no form question, the page asked for.
+    // A new app with a name: the page asked for.
     let a = wizard::Answers {
         kind: "new".into(),
         mode: "app".into(),
@@ -372,7 +372,7 @@ fn wizard_prompts() {
     };
     let p = wizard::prompt(&a);
     assert_eq!(wizard::file_name(&a), "在庫_管理.js");
-    assert!(p.contains("「在庫_管理.js」") && p.contains("## やりたいこと\n\n在庫を一覧で見たい") && p.contains("ui/index.html"), "{p}");
+    assert!(p.contains("- 形式: 専用の HTML 画面を持つアプリ") && p.contains("「在庫_管理.js」") && p.contains("## やりたいこと\n\n在庫を一覧で見たい") && p.contains("ui/index.html"), "{p}");
     assert!(!p.contains("- 入力:") && !p.contains("入力ファイル"), "{p}");
     assert_eq!(wizard::file_name(&wizard::Answers { name_mode: "name".into(), name: "a.ts".into(), ..Default::default() }), "a.ts");
     assert!(!p.contains("見た目"), "{p}");
@@ -387,7 +387,8 @@ fn wizard_prompts() {
     assert!(!p.contains("@titlebar"), "{p}");
     let p = wizard::prompt(&wizard::Answers { mode: "auto".into(), accent: "red; x".into(), ..look.clone() });
     assert!(p.contains("。アプリにする場合は メタデータに @titlebar custom") && !p.contains("red; x"), "{p}");
-    assert!(!wizard::prompt(&wizard::Answers { mode: "script".into(), form: "no".into(), ..look }).contains("見た目"));
+    let p = wizard::prompt(&wizard::Answers { mode: "script".into(), form: "no".into(), ..look });
+    assert!(!p.contains("見た目") && p.contains("- 形式: フォームを使わず、処理をステップごとに"), "{p}");
 }
 
 #[test]
