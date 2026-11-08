@@ -458,6 +458,8 @@ impl Session {
             "type": "init",
             "lang": i18n::lang(),
             "texts": texts(),
+            // For the wizard's preview of the look (form.html).
+            "formTexts": texts_under("form."),
             "services": SERVICES.iter().map(|(n, u)| json!({"name": n, "url": u})).collect::<Vec<_>>(),
             "recent": recent,
             "home": default_dir(&gs),
@@ -838,8 +840,13 @@ fn is_script(path: &str) -> bool {
 
 /// The texts of the page (the keys under "devPage." without the prefix).
 fn texts() -> Value {
+    texts_under("devPage.")
+}
+
+/// The messages whose keys start with prefix, without it.
+fn texts_under(prefix: &str) -> Value {
     let m: serde_json::Map<String, Value> =
-        i18n::messages().into_iter().filter_map(|(k, v)| k.strip_prefix("devPage.").map(|k| (k.to_string(), json!(v)))).collect();
+        i18n::messages().into_iter().filter_map(|(k, v)| k.strip_prefix(prefix).map(|k| (k.to_string(), json!(v)))).collect();
     Value::Object(m)
 }
 

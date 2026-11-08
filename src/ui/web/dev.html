@@ -143,6 +143,42 @@
         <label class="opt"><input type="radio" name="wz-form" value="auto" checked> <span data-t="wzAuto"></span></label>
       </section>
 
+      <section class="look">
+        <h3 data-t="wzLook"></h3>
+        <p class="muted" data-t="wzLookLead"></p>
+        <div class="look-grid">
+          <span data-t="wzTitleBar"></span>
+          <div>
+            <label class="opt"><input type="radio" name="wz-titlebar" value="system" checked> <span data-t="wzTitleBarSystem"></span></label>
+            <label class="opt"><input type="radio" name="wz-titlebar" value="custom"> <span data-t="wzTitleBarCustom"></span></label>
+          </div>
+          <span data-t="wzAccent"></span>
+          <label class="opt"><input type="checkbox" id="wz-accent-on"> <span data-t="wzColorSet"></span> <input type="color" id="wz-accent" value="#c42b1c"></label>
+          <span data-t="wzBackground"></span>
+          <label class="opt"><input type="checkbox" id="wz-background-on"> <span data-t="wzColorSet"></span> <input type="color" id="wz-background" value="#fff8e1"></label>
+          <span data-t="wzRadius"></span>
+          <label class="opt"><select id="wz-radius">
+            <option value="none" data-t="wzRadiusNone"></option>
+            <option value="small" data-t="wzRadiusSmall"></option>
+            <option value="medium" data-t="wzRadiusMedium" selected></option>
+            <option value="large" data-t="wzRadiusLarge"></option>
+            <option value="full" data-t="wzRadiusFull"></option>
+          </select></label>
+        </div>
+        <div class="row">
+          <button type="button" id="wz-look-preview"><i class="fa-regular fa-eye"></i> <span data-t="wzLookPreview"></span></button>
+        </div>
+        <div id="wz-look-box" hidden>
+          <p class="muted app-note" data-t="wzLookAppNote"></p>
+          <div class="wz-window" id="wz-window">
+            <div class="wz-sysbar"><span class="wz-sysbar-title"></span><span class="wz-caption">&#xE921;</span><span class="wz-caption">&#xE922;</span><span class="wz-caption">&#xE8BB;</span></div>
+            <div class="wz-custombar"><i class="fa-solid fa-table"></i><span class="wz-custombar-title"></span><span class="wz-caption">&#xE921;</span><span class="wz-caption">&#xE922;</span><span class="wz-caption">&#xE8BB;</span></div>
+            <iframe id="wz-look-frame" title="preview"></iframe>
+          </div>
+          <p class="muted" data-t="wzLookNote"></p>
+        </div>
+      </section>
+
       <section>
         <h3 data-t="wzName"></h3>
         <label class="opt"><input type="radio" name="wz-name-mode" value="name"> <span data-t="wzNameGiven"></span></label>
