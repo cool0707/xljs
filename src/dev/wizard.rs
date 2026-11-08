@@ -27,8 +27,8 @@ pub struct Answers {
     pub input_note: String,
     pub output: String,
     pub output_note: String,
-    /// "yes" (ui.form), "no" (a script going step by step, also from the
-    /// command line) or "auto".
+    /// "yes" (ui.form), "no" (a script going step by step with the
+    /// standard dialogs, Windows ones or the console's) or "auto".
     pub form: String,
     /// "script", "app" or "auto".
     pub mode: String,

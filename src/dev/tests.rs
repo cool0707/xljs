@@ -388,7 +388,7 @@ fn wizard_prompts() {
     let p = wizard::prompt(&wizard::Answers { mode: "auto".into(), accent: "red; x".into(), ..look.clone() });
     assert!(p.contains("。アプリにする場合は メタデータに @titlebar custom") && !p.contains("red; x"), "{p}");
     let p = wizard::prompt(&wizard::Answers { mode: "script".into(), form: "no".into(), ..look });
-    assert!(!p.contains("見た目") && p.contains("- 形式: フォームを使わず、処理をステップごとに"), "{p}");
+    assert!(!p.contains("- 見た目") && p.contains("- 形式: フォーム（ui.form）を使わず、処理をステップごとに"), "{p}");
 }
 
 #[test]

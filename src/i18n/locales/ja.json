@@ -90,7 +90,7 @@
     "wizard.formatLabel": "形式",
     "wizard.formatForm": "フォームアプリ（通常のスクリプト。@mode app にしない）。入力を 1 画面のフォーム（ui.form）にまとめ、処理は onSubmit",
     "wizard.formatApp": "専用の HTML 画面を持つアプリ（@mode app、画面は ui/index.html）",
-    "wizard.formatScript": "フォームを使わず、処理をステップごとに順に進めるスクリプト。コマンドラインからも動くように（入力は xljs.args があればそれを使い、なければダイアログで 1 つずつ尋ねる。経過は console.log、失敗は exit(1)）",
+    "wizard.formatScript": "フォーム（ui.form）を使わず、処理をステップごとに順に進めるスクリプト。入力と表示は alert・confirm・prompt・ファイル／フォルダのピッカー・ui.progress・ui.error などの標準のダイアログで 1 つずつ行う（GUI で起動すると Windows のダイアログ、コンソールで起動（xljsc --ui=console）するとコンソールの対話入力・出力に xljs が自動で切り替えるので、場合分けは書かない）。複数の選択肢から選ぶなど相当するダイアログがないときだけ、その項目だけの小さな ui.form（見た目は既定のまま）で尋ねる。xljs.args に引数があればそれを使ってその入力を省く。失敗は ui.error で知らせて exit(1)",
     "wizard.formatAuto": "おまかせ（回答の決まりに従う）",
     "wizard.nameLabel": "ファイル名",
     "wizard.nameGiven": "「{0}」",

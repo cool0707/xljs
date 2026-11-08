@@ -90,7 +90,7 @@
     "wizard.formatLabel": "Kind",
     "wizard.formatForm": "a form app: a normal script (not @mode app) with all inputs in one form (ui.form) and the work in onSubmit",
     "wizard.formatApp": "an app with its own HTML window (@mode app, the page in ui/index.html)",
-    "wizard.formatScript": "a script without a form that goes step by step and also runs from the command line (inputs from xljs.args if given, else asked with dialogs one by one; progress with console.log, exit(1) on failure)",
+    "wizard.formatScript": "a script without a form (ui.form) that goes step by step: inputs and messages one at a time with the standard dialogs (alert, confirm, prompt, the file and folder pickers, ui.progress, ui.error...). xljs turns them into Windows dialogs when started as a GUI and into console input and output when started in a console (xljsc --ui=console), so do not branch on it. Only where no dialog fits, such as choosing among several options, ask with a small ui.form holding just that field (with the default look). Use xljs.args, when given, instead of asking. On failure, ui.error and exit(1)",
     "wizard.formatAuto": "up to you (follow the rules above)",
     "wizard.nameLabel": "File name",
     "wizard.nameGiven": "“{0}”",
