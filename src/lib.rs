@@ -7,6 +7,7 @@ pub mod api;
 pub mod cli;
 pub mod db;
 pub mod dev;
+pub(crate) mod embed;
 pub mod engine;
 pub mod pdf;
 mod error;
@@ -22,7 +23,9 @@ pub mod vba;
 pub use error::{Error, Result};
 
 /// The type definitions of the public API (`xljs init`).
-pub const DTS: &str = include_str!("../types/xljs.d.ts");
+pub fn dts() -> &'static str {
+    embed::DTS.text()
+}
 
 #[cfg(test)]
 pub(crate) mod testutil;

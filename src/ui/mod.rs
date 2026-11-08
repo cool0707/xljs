@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use crate::Result;
 use crate::meta::AssetFs;
 
-pub use builtin::{BUILTIN_PREFIX, BuiltinAssets, PAGE_SCRIPT, TITLE_BAR_HEIGHT, builtin_file, title_bar_script};
+pub use builtin::{BUILTIN_PREFIX, BuiltinAssets, TITLE_BAR_HEIGHT, builtin_file, page_script, title_bar_script};
 pub(crate) use builtin::dayjs_files;
 pub use console::Console;
 pub use icon::{check_icon, icon_image};

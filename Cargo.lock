@@ -2517,6 +2517,7 @@ dependencies = [
  "ctrlc",
  "embed-resource",
  "encoding_rs",
+ "flate2",
  "globset",
  "lopdf",
  "oxc",

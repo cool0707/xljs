@@ -2,7 +2,7 @@
 
 Every user-facing message of xljs lives in this folder, one JSON file per
 language. The files are embedded into the executable at build time
-(`include_str!` in `src/i18n/mod.rs`), so adding a language only needs a new file and a rebuild.
+(every `.json` file here; see `build.rs` and `src/embed.rs`), so adding a language only needs a new file and a rebuild.
 
 - `en.json` — English. **The reference and fallback**: every key must exist
   here; a key missing from another language falls back to English.
@@ -23,7 +23,7 @@ language. The files are embedded into the executable at build time
    `regex` syntax, `$1` references) that translate English messages coming
    from the JavaScript engine, the bundler or the Excel library. See
    `ja.json` for examples.
-6. Add the file to `LOCALE_FILES` in `src/i18n/mod.rs`, build, then run
+6. Build (the file is picked up automatically), then run
    `cargo test --lib i18n` — it checks that your file has no unknown keys and
    the same placeholders as `en.json`.
 

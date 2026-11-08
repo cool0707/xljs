@@ -44,15 +44,12 @@ pub struct Locale {
 
 const FALLBACK: &str = "en";
 
-static LOCALE_FILES: &[(&str, &str)] = &[
-    ("en.json", include_str!("locales/en.json")),
-    ("ja.json", include_str!("locales/ja.json")),
-];
-
 static LOCALES: LazyLock<HashMap<String, Arc<Locale>>> = LazyLock::new(|| {
     let mut m = HashMap::new();
-    for (name, data) in LOCALE_FILES {
-        let loc = parse_locale(data).unwrap_or_else(|e| panic!("i18n: locales/{name}: {e}"));
+    // Every .json file in locales/ (embedded by build.rs).
+    for f in &crate::embed::LOCALE_FILES {
+        let name = f.name;
+        let loc = parse_locale(f.text()).unwrap_or_else(|e| panic!("i18n: locales/{name}: {e}"));
         m.insert(loc.lang.clone(), Arc::new(loc));
     }
     assert!(m.contains_key(FALLBACK), "i18n: locales/en.json is missing");

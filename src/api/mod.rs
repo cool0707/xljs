@@ -330,10 +330,8 @@ impl<'js> N<'js> {
     }
 }
 
-static PRELUDE_RAW: &str = include_str!("prelude.js");
-
 /// The prelude with Day.js put in (see dayjs::bundle).
-static PRELUDE: LazyLock<String> = LazyLock::new(|| PRELUDE_RAW.replacen(dayjs::PLACEHOLDER, &dayjs::bundle(), 1));
+static PRELUDE: LazyLock<String> = LazyLock::new(|| crate::embed::PRELUDE.text().replacen(dayjs::PLACEHOLDER, &dayjs::bundle(), 1));
 
 /// The prelude: a function expression that receives the natives object.
 /// The print layout (book.toHtml) of every visible sheet of xlsx bytes.

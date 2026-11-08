@@ -49,7 +49,7 @@ pub struct Geom {
 fn presets() -> &'static HashMap<String, Node> {
     static P: OnceLock<HashMap<String, Node>> = OnceLock::new();
     P.get_or_init(|| {
-        let root = parse(include_bytes!("preset_shapes.xml")).unwrap_or_default();
+        let root = parse(crate::embed::PRESET_SHAPES.bytes()).unwrap_or_default();
         root.children.into_iter().map(|c| (c.name.clone(), c)).collect()
     })
 }
@@ -72,7 +72,7 @@ pub fn preset(prst: &str, geom: Option<&Node>, w: f64, h: f64) -> Option<Geom> {
 fn text_warps() -> &'static HashMap<String, Node> {
     static P: OnceLock<HashMap<String, Node>> = OnceLock::new();
     P.get_or_init(|| {
-        let root = parse(include_bytes!("preset_text_warps.xml")).unwrap_or_default();
+        let root = parse(crate::embed::PRESET_TEXT_WARPS.bytes()).unwrap_or_default();
         root.children.into_iter().map(|c| (c.name.clone(), c)).collect()
     })
 }

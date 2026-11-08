@@ -1,21 +1,23 @@
 use std::io;
 
+use crate::embed::{self, DAYJS_FILES, WEB_FILES};
 use crate::meta::{AssetFs, covered};
-
-mod embedded {
-    include!(concat!(env!("OUT_DIR"), "/embedded.rs"));
-}
 
 /// The folder under ASSET_ORIGIN that serves the built-in pages (forms and
 /// tables), e.g. https://app.xljs/_xljs/form.html.
 pub const BUILTIN_PREFIX: &str = "_xljs/";
 
-/// The page runtime (the xljs object, data-bind and friends) that windows
-/// run in every page of the script before the page's own scripts.
-pub const PAGE_SCRIPT: &str = include_str!("web/xljs.js");
+/// The page runtime (web/xljs.js: the xljs object, data-bind and friends)
+/// that windows run in every page of the script before the page's own
+/// scripts.
+pub fn page_script() -> &'static str {
+    builtin_text("xljs.js")
+}
 
-/// The custom title bar (WindowOptions::custom_title_bar).
-const TITLE_BAR_SCRIPT: &str = include_str!("web/titlebar.js");
+/// A built-in text file that is always there.
+fn builtin_text(name: &str) -> &'static str {
+    embed::find(&WEB_FILES, name).unwrap_or_else(|| panic!("web/{name} is missing")).text()
+}
 
 /// The height of the custom title bar in logical pixels
 /// (--xljs-titlebar-height in web/titlebar.js).
@@ -37,13 +39,13 @@ pub fn title_bar_script(o: &super::WindowOptions, non_client: bool) -> String {
             "close": crate::t!("window.close"),
         },
     });
-    format!("window.__xljsTitleBar = {cfg};\n{TITLE_BAR_SCRIPT}")
+    format!("window.__xljsTitleBar = {cfg};\n{}", builtin_text("titlebar.js"))
 }
 
 /// A built-in file (form.html, table.html, their scripts and styles, Font
 /// Awesome Free, the debugger page) by its path under web/.
 pub fn builtin_file(name: &str) -> Option<&'static [u8]> {
-    embedded::WEB_FILES.iter().find(|(n, _)| *n == name).map(|(_, d)| *d)
+    embed::find(&WEB_FILES, name).map(embed::File::bytes)
 }
 
 /// The built-in files as an AssetFs (paths relative to web/).
@@ -56,11 +58,11 @@ impl AssetFs for BuiltinAssets {
     }
     fn files(&self, root: &str) -> io::Result<Vec<String>> {
         let roots = [root.to_string()];
-        Ok(embedded::WEB_FILES.iter().map(|(n, _)| n.to_string()).filter(|n| covered(&roots, n)).collect())
+        Ok(WEB_FILES.iter().map(|f| f.name.to_string()).filter(|n| covered(&roots, n)).collect())
     }
 }
 
 /// The Day.js files (dayjs.min.js, locale/*.js, plugin/*.js).
-pub(crate) fn dayjs_files() -> &'static [(&'static str, &'static [u8])] {
-    embedded::DAYJS_FILES
+pub(crate) fn dayjs_files() -> &'static [embed::File] {
+    &DAYJS_FILES
 }
