@@ -76,6 +76,10 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 - 中止したとき（応答がなく監視で中止＝終了コード 124、停止キー・デバッグウィンドウを閉じた＝130）は、エンジンが中止した例外のスタック（ソースマップで元のファイルに対応付けたもの）を「中止した場所:」に続けて stderr に書く（`engine::finish_caught`）。開発モード以外でも出る。
 - 終了時、stderr の最後の「インデントのない行」から後ろ（エラー本文とスタック、構文エラー、中止の場所）をエラーとして扱い、その中の最初のスクリプトのファイル（`node_modules` を除く）を場所とする。
 
+## exe の作成
+
+ツールバーの［exe を作成］（`pack`）は `xljs pack` と同じ（`pack::pack_script`。ベースは開発モードの exe＝`DevOptions::exe`、埋め込み済みのスクリプトは取り除く）。編集中の内容を保存してから、保存先を尋ねて（既定はスクリプトの隣の同名の .exe、2 回目からは前回の保存先＝`.xljs/dev.json` の `exe`）バンドルし、ステータスに結果（メタデータの警告も）を出して、フォルダを開くか尋ねる。バンドルのエラー（構文エラーなど）はステータスに出る。
+
 ## フォームのプレビュー
 
 `XLJS_DEV_PREVIEW` を付けて実行すると、prelude の `ui.form` が最初のフォームのページ向けの初期メッセージ（`formInit`。フォームのウィンドウに送るものと同じ）をファイルに書いて `exit(0)` する。開発ウィンドウはそれを `form.html?preview` の iframe に渡す（`bridge.js` は `?preview` 付きで iframe の中にいると、親ページと `window.postMessage` でやりとりする）。送信はしない（「プレビューのため実行しません」）。
@@ -93,6 +97,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `read` `save` `edit` | ファイルの読み書き。`edit` は編集中のファイル（置き換え先の決定用） |
 | `apply` `versions` `version` `restore` | 置き換え（履歴に残す）、履歴の一覧・内容、前の版に戻す |
 | `run` `stop` `preview` | 実行（`debug`）・停止・フォームのプレビュー |
+| `pack` | exe の作成（保存先を尋ねる。結果は `packed`（`path`・`warnings`）） |
 | `chat` `browser` | チャットの URL（空でホーム）、枠の表示・位置・戻る・進む・再読み込み |
 | `intro` `notify` `showFolder` | AI への説明のコピー（［プロンプト］のドロップダウン。`mode` が `prompt`＝指示だけ、`script`＝スクリプトだけ、空＝両方）、自分で直したところのコピー、フォルダを開く |
 | `wizardBooks` `wizardFolder` `wizardPrompt` `wizardSave` `wizardCreate` | 新規作成ウィザード（`answers`） |

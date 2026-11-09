@@ -650,6 +650,7 @@
     $("btn-debug").disabled = !has || st.running;
     $("btn-stop").disabled = !st.running;
     $("btn-folder").disabled = !has;
+    $("btn-pack").disabled = !has;
     $("btn-save").disabled = !has;
     $("btn-format").disabled = !has;
     $("btn-notify").disabled = !has;
@@ -1378,6 +1379,9 @@
       case "info":
         status(m.message, "ok");
         break;
+      case "packed":
+        status([fmt(L.packed, m.path)].concat(m.warnings || []).join(" / "), m.warnings && m.warnings.length ? "error" : "ok");
+        break;
       case "wizardBooks": wizardBooks(m); break;
       case "wizardFolder": $("wz-folder").value = m.path; break;
       case "wizardPrompt": wizardPrompt(m); break;
@@ -1406,6 +1410,7 @@
   $("w-new-form").onclick = () => send({ op: "new", template: "form" });
   $("w-new-app").onclick = () => send({ op: "new", template: "app" });
   $("btn-folder").onclick = () => send({ op: "showFolder" });
+  $("btn-pack").onclick = () => { save(); send({ op: "pack" }); };
   $("lay-reset").onclick = () => { st.layout = defaultLayout(); saveLayout(); applyLayout(); };
   new ResizeObserver(syncBrowser).observe($("chat-view"));
   window.addEventListener("resize", syncBrowser);

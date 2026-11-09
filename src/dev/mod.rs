@@ -176,6 +176,8 @@ struct ProjectSettings {
     /// Scripts whose name is temporary (the wizard's "later" and "up to
     /// the AI"): the first answer of the AI may rename them.
     unnamed: Vec<String>,
+    /// Where each script was last packed into an exe (entry name → path).
+    exe: HashMap<String, String>,
 }
 
 fn load<T: for<'a> Deserialize<'a> + Default>(p: &Path) -> T {
@@ -501,6 +503,7 @@ impl Session {
                     self.w.browser(BrowserCommand::DragFiles(vec![path.to_string_lossy().into_owned()]));
                 }
             }
+            "pack" => self.pack()?,
             "showFolder" => {
                 let p = self.project()?;
                 self.u.show_in_folder(&[p.entry.to_string_lossy().into_owned()])?;
@@ -770,6 +773,35 @@ impl Session {
         Ok(())
     }
 
+    /// Packs the script into an exe (as xljs pack): asks where to save it,
+    /// remembers the place for the next time and offers to show it.
+    fn pack(&mut self) -> Result<()> {
+        let p = self.project()?.clone();
+        let script = p.entry.to_string_lossy().into_owned();
+        let f = settings_path(&p);
+        let mut ps: ProjectSettings = load(&f);
+        let last = ps.exe.get(&p.entry_name()).cloned().unwrap_or_else(|| crate::pack::default_output(&script));
+        let last = Path::new(&last);
+        let Some(out) = self.u.save_file(&PickerOptions {
+            title: t!("cli.packSaveTitle"),
+            start_in: last.parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
+            suggested_name: last.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
+            filters: vec![FileFilter { description: t!("cli.programs"), patterns: vec!["*.exe".into()] }],
+            ..Default::default()
+        }) else {
+            return Ok(());
+        };
+        self.post(json!({"type": "info", "message": t!("dev.packing")}));
+        let warnings = crate::pack::pack_script(&self.o.exe, &script, Path::new(&out))?;
+        ps.exe.insert(p.entry_name(), out.clone());
+        store(&f, &ps);
+        self.post(json!({"type": "packed", "path": out, "warnings": warnings}));
+        if self.u.confirm("xljs", &t!("cli.packed", out)) {
+            self.u.show_in_folder(&[out])?;
+        }
+        Ok(())
+    }
+
     /// Renames the entry script (with its versions and its chat) after the
     /// AI's first answer named it.
     fn rename_entry(&mut self, p: &Project, to: &str) -> Result<()> {
@@ -789,6 +821,9 @@ impl Session {
         ps.unnamed.retain(|u| u != &from);
         if let Some(url) = ps.chat.remove(&from) {
             ps.chat.insert(to.to_string(), url);
+        }
+        if let Some(exe) = ps.exe.remove(&from) {
+            ps.exe.insert(to.to_string(), exe);
         }
         store(&f, &ps);
         let mut gs: GlobalSettings = load(&self.o.settings);
