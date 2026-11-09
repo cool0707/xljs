@@ -15,7 +15,7 @@ const ICONS = {
   "message-square-diff": false, "messages-square": false, play: true, plus: false, "rotate-cw": false, save: false,
   square: true, table: false, terminal: false, "text-align-start": false,
   "triangle-alert": false, "wand-sparkles": false, x: false,
-  package: false, "scroll-text": false, sparkles: false,
+  package: false, "scroll-text": false, sparkles: false, "mouse-pointer-click": false,
 };
 
 const pkg = process.argv[2];

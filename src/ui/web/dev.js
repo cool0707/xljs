@@ -867,6 +867,12 @@
 
   // ------------------------------------------------------------ preview
 
+  // The preview shows by itself when its tab comes on screen: the app's
+  // page, or the form of a script that opens one (ui.form; Rust checks,
+  // previewSkipped otherwise). A form runs again when a file was saved
+  // since (gen: the changes, done: the changes the shown form has).
+  const pv = { gen: 1, done: 0, sent: 0, asked: false, auto: false, noForm: false };
+
   function showPreviewHint() {
     const p = st.project;
     if (!p) return;
@@ -877,9 +883,27 @@
       if ($("preview-frame").hidden) loadAppPreview();
     } else {
       $("preview-title").textContent = L.previewForm;
-      $("preview-hint").textContent = L.previewFormHint;
+      $("preview-hint").textContent = pv.noForm ? L.previewNoForm : L.previewFormHint;
       $("preview-refresh-label").textContent = L.previewRun;
+      autoPreview();
     }
+  }
+
+  function autoPreview() {
+    const p = st.project;
+    if (!p || p.app || st.running || pv.asked || pv.done === pv.gen || !shown("preview")) return;
+    pv.asked = true;
+    pv.auto = true;
+    pv.sent = pv.gen;
+    send({ op: "preview", auto: true });
+  }
+
+  // A file changed: the form preview is out of date (and runs again when
+  // it is on screen).
+  function previewChanged() {
+    pv.gen++;
+    pv.noForm = false;
+    if (shown("preview")) showPreviewHint();
   }
 
   function loadAppPreview() {
@@ -894,6 +918,7 @@
   let previewForm = null;
   function showFormPreview(form) {
     previewForm = form;
+    pv.noForm = false;
     const f = $("preview-frame");
     $("preview-error").hidden = true;
     f.hidden = false;
@@ -920,9 +945,180 @@
       if (!p) return;
       save();
       if (p.app) { loadAppPreview(); return; }
+      pv.asked = true;
+      pv.auto = false;
+      pv.sent = pv.gen;
       send({ op: "preview" });
       status(L.previewRunning);
     };
+    $("pick-toggle").onclick = () => (pick.on ? pickOff() : pickOn());
+    $("pick-clear").onclick = () => { pickSet([]); };
+    $("pick-copy").onclick = () => {
+      if (!st.project) return;
+      if (!pick.items.length) { status(L.pickNone, "error"); return; }
+      save();
+      send({ op: "pick", text: $("pick-text").value, full: $("pick-full").checked, elements: pick.items.map((x) => x.info) });
+    };
+    $("preview-frame").addEventListener("load", () => {
+      pick.doc = null;
+      if (!pick.on) return;
+      pickAttach();
+      // The same elements in the new page, where they are found again.
+      const d = pick.doc;
+      for (const x of pick.items) {
+        let e = null;
+        try { e = d && x.info.selector ? d.querySelector(x.info.selector) : null; } catch { /* not a selector */ }
+        x.el = e;
+      }
+      pickMark();
+    });
+  }
+
+  // ------------------------------------------------------------ pick
+
+  // Picking elements of the preview for a request to the AI: a click
+  // picks an element (Ctrl / Shift + click adds or removes one), the
+  // request (what to change, the elements: a short name, a CSS path and
+  // the HTML) is copied by Rust (op "pick", report::pick). The frame's page
+  // is on the same origin (form.html, the app's folder under _project/), so
+  // its document is reached directly; while picking, its clicks do nothing
+  // else.
+  const pick = { on: false, items: [], doc: null, hover: null };
+  const PICK_STYLE = "[data-xljs-hover]{outline:2px dashed #e8590c!important;outline-offset:1px!important;cursor:crosshair!important}"
+    + "[data-xljs-picked]{outline:2px solid #e8590c!important;outline-offset:1px!important}";
+
+  function pickOn() {
+    pick.on = true;
+    $("pick-toggle").classList.add("on");
+    $("pick-box").hidden = false;
+    pickAttach();
+    renderPick();
+  }
+
+  function pickOff() {
+    pick.on = false;
+    $("pick-toggle").classList.remove("on");
+    $("pick-box").hidden = true;
+    pickSet([]);
+    pickDetach();
+  }
+
+  function pickDoc() {
+    try { return $("preview-frame").contentDocument; } catch { return null; }
+  }
+
+  const PICK_EVENTS = [
+    ["mouseover", (e) => {
+      const t = e.target;
+      if (!t || t.nodeType !== 1 || t === pick.hover) return;
+      if (pick.hover) pick.hover.removeAttribute("data-xljs-hover");
+      pick.hover = t;
+      t.setAttribute("data-xljs-hover", "");
+    }],
+    ["mouseout", (e) => {
+      if (e.target === pick.hover && !e.relatedTarget) { pick.hover.removeAttribute("data-xljs-hover"); pick.hover = null; }
+    }],
+    ["click", (e) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const t = e.target;
+      if (!t || t.nodeType !== 1) return;
+      const has = pick.items.find((x) => x.el === t);
+      if (e.ctrlKey || e.shiftKey || e.metaKey) pickSet(has ? pick.items.filter((x) => x !== has) : [...pick.items, { el: t, info: pickInfo(t) }]);
+      else pickSet(has && pick.items.length === 1 ? [] : [{ el: t, info: pickInfo(t) }]);
+    }],
+    ...["mousedown", "mouseup", "pointerdown", "pointerup", "dblclick", "auxclick", "dragstart", "submit"].map((t) => [t, (e) => { e.preventDefault(); e.stopImmediatePropagation(); }]),
+  ];
+
+  function pickAttach() {
+    const d = pickDoc();
+    if (!d || !d.documentElement || pick.doc === d) return;
+    pickDetach();
+    pick.doc = d;
+    const s = d.createElement("style");
+    s.id = "xljs-pick-style";
+    s.textContent = PICK_STYLE;
+    (d.head || d.documentElement).append(s);
+    for (const [t, f] of PICK_EVENTS) d.addEventListener(t, f, true);
+    pickMark();
+  }
+
+  function pickDetach() {
+    const d = pick.doc;
+    pick.doc = null;
+    pick.hover = null;
+    if (!d) return;
+    try {
+      for (const [t, f] of PICK_EVENTS) d.removeEventListener(t, f, true);
+      const s = d.getElementById("xljs-pick-style");
+      if (s) s.remove();
+      for (const e of d.querySelectorAll("[data-xljs-hover], [data-xljs-picked]")) { e.removeAttribute("data-xljs-hover"); e.removeAttribute("data-xljs-picked"); }
+    } catch { /* the page is gone */ }
+  }
+
+  function pickSet(items) {
+    pick.items = items;
+    pickMark();
+    renderPick();
+  }
+
+  // Marks the picked elements in the frame.
+  function pickMark() {
+    const d = pick.doc;
+    if (!d) return;
+    try {
+      for (const e of d.querySelectorAll("[data-xljs-picked]")) e.removeAttribute("data-xljs-picked");
+      for (const x of pick.items) if (x.el && x.el.ownerDocument === d) x.el.setAttribute("data-xljs-picked", "");
+    } catch { /* the page is gone */ }
+  }
+
+  function renderPick() {
+    const list = $("pick-list");
+    if (!pick.items.length) { list.replaceChildren(el("li", { className: "none" }, L.pickNone)); return; }
+    list.replaceChildren(...pick.items.map((x) => el("li", { title: x.info.selector },
+      el("span", {}, x.info.desc),
+      el("button", { type: "button", onclick: () => pickSet(pick.items.filter((y) => y !== x)) }, icon("ic ic-x")))));
+  }
+
+  const cut = (t, n) => (t.length > n ? t.slice(0, n) + "…" : t);
+  const squeeze = (t) => String(t || "").replace(/\s+/g, " ").trim();
+
+  // What the AI is told about an element.
+  function pickInfo(e) {
+    const tag = e.tagName.toLowerCase();
+    const d = e.ownerDocument;
+    let label = "";
+    try {
+      const l = (e.id && d.querySelector(`label[for="${CSS.escape(e.id)}"]`)) || (tag !== "label" && e.closest("label"));
+      if (l) label = squeeze(l.innerText);
+    } catch { /* no label */ }
+    const text = squeeze(e.innerText) || squeeze(e.value) || squeeze(e.getAttribute("placeholder")) || squeeze(e.getAttribute("aria-label")) || squeeze(e.getAttribute("title"));
+    let desc = tag;
+    if (e.getAttribute("type")) desc += `[type=${e.getAttribute("type")}]`;
+    if (e.getAttribute("name")) desc += ` name="${e.getAttribute("name")}"`;
+    const name = label && label !== text ? label : text;
+    if (name) desc += `「${cut(name, 40)}」`;
+    const c = e.cloneNode(true);
+    for (const x of [c, ...c.querySelectorAll("[data-xljs-hover], [data-xljs-picked]")]) { x.removeAttribute("data-xljs-hover"); x.removeAttribute("data-xljs-picked"); }
+    return { desc, selector: cssPath(e), html: cut(c.outerHTML.replace(/\n\s*\n/g, "\n"), 800) };
+  }
+
+  // A CSS path from the nearest id (or the body) to the element.
+  function cssPath(e) {
+    const parts = [];
+    for (let x = e; x && x.nodeType === 1 && x.tagName !== "HTML"; x = x.parentElement) {
+      const tag = x.tagName.toLowerCase();
+      if (x.id && /^[A-Za-z][\w-]*$/.test(x.id)) { parts.unshift(tag + "#" + x.id); break; }
+      if (tag === "body") { parts.unshift("body"); break; }
+      let part = tag;
+      const cls = [...x.classList].filter((c) => /^[A-Za-z_][\w-]*$/.test(c)).slice(0, 2);
+      if (cls.length) part += "." + cls.join(".");
+      const same = x.parentElement ? [...x.parentElement.children].filter((y) => y.tagName === x.tagName) : [];
+      if (same.length > 1) part += `:nth-of-type(${same.indexOf(x) + 1})`;
+      parts.unshift(part);
+      if (parts.length >= 6) break;
+    }
+    return parts.join(" > ");
   }
 
   // ------------------------------------------------------------ runs
@@ -957,7 +1153,14 @@
   function runEnded(m) {
     st.running = false;
     updateButtons();
-    if (m.kind === "preview") { status(""); return; }
+    if (m.kind === "preview") {
+      status("");
+      pv.asked = false;
+      pv.auto = false;
+      autoPreview();
+      return;
+    }
+    autoPreview();
     const ok = m.code === 0;
     // Stopped by the user (the stop button, the stop key, the debugger
     // window closed): no failure to report.
@@ -1065,6 +1268,10 @@
     st.versionView = null;
     st.failure = null;
     previewForm = null;
+    pickOff();
+    pv.gen++;
+    pv.asked = false;
+    pv.noForm = false;
     $("preview-frame").hidden = true;
     $("preview-frame").removeAttribute("src");
     $("failure").hidden = true;
@@ -1279,6 +1486,7 @@
         document.body.dataset.dropHint = L.dropHint || "";
         $("chat-url").placeholder = L.urlPlaceholder;
         $("chat-url-start").placeholder = L.urlPlaceholder;
+        $("pick-text").placeholder = L.pickPlaceholder || "";
         document.documentElement.lang = m.lang || "ja";
         initChat(m.services || []);
         renderRecent(m.recent || []);
@@ -1326,6 +1534,7 @@
       case "saved":
         if (m.file === st.file) $("save-state").textContent = st.dirty ? L.unsaved : L.saved;
         if (st.project && st.project.app) loadAppPreviewIfShown();
+        else previewChanged();
         break;
       case "applied":
         if (m.file === st.file) {
@@ -1333,6 +1542,7 @@
         }
         status(fmt(L.appliedMsg, m.file), "ok");
         if (st.project && st.project.app) loadAppPreviewIfShown();
+        else previewChanged();
         setTab("code");
         break;
       case "versions": renderHistory(m.file, m.versions || []); break;
@@ -1357,17 +1567,33 @@
         }
         break;
       case "copy":
-        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "script" ? L.copiedScript : m.what === "wizard" ? L.wzCopied : m.what === "notify" ? L.copiedNotify : L.copied);
+        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "script" ? L.copiedScript : m.what === "wizard" ? L.wzCopied : m.what === "notify" ? L.copiedNotify : m.what === "pick" ? L.copiedPick : L.copied);
         break;
       case "runStarted": runStarted(m); break;
       case "output": appendOutput(m.text, m.stream === "stderr" ? "err" : ""); break;
       case "runEnded": runEnded(m); break;
-      case "previewForm": showFormPreview(m.form); setTab("preview"); status(""); break;
+      case "previewForm":
+        pv.done = pv.sent;
+        showFormPreview(m.form);
+        if (!pv.auto) setTab("preview");
+        status("");
+        break;
       case "previewFailed":
-        $("preview-frame").hidden = true;
+        pv.done = pv.sent;
+        // A preview that ran by itself keeps the form it showed (the error
+        // above it): the script may be half edited.
+        if (!pv.auto) $("preview-frame").hidden = true;
         $("preview-error").hidden = false;
         $("preview-error").textContent = m.message || "";
-        setTab("preview");
+        if (!pv.auto) setTab("preview");
+        break;
+      case "previewSkipped":
+        pv.asked = false;
+        pv.auto = false;
+        if (m.busy) break;
+        pv.done = pv.sent;
+        pv.noForm = true;
+        if (shown("preview")) showPreviewHint();
         break;
       case "browserFailed":
         $("chat-failed").hidden = false;

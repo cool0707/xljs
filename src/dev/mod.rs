@@ -299,6 +299,12 @@ struct Request {
     mode: String,
     /// The wizard's answers.
     answers: wizard::Answers,
+    /// Shown by itself (preview): only when the script opens a form.
+    auto: bool,
+    /// The elements picked in the preview (pick).
+    elements: Vec<report::Picked>,
+    /// With the whole file (pick).
+    full: bool,
 }
 
 /// The state of the development window.
@@ -454,7 +460,32 @@ impl Session {
                 self.post_versions(&r.file);
             }
             "run" => self.start_run(if r.debug { RunKind::Debug } else { RunKind::Run })?,
-            "preview" => self.start_run(RunKind::Preview)?,
+            "preview" => {
+                if r.auto {
+                    // Shown by itself: not while something runs, and only
+                    // for a script that opens a form.
+                    let busy = self.running.as_ref().is_some_and(|r| r.run.running());
+                    if busy || !self.project()?.opens_form() {
+                        self.post(json!({"type": "previewSkipped", "busy": busy}));
+                        return Ok(());
+                    }
+                }
+                self.start_run(RunKind::Preview)?
+            }
+            "pick" => {
+                let p = self.project()?;
+                if r.elements.is_empty() {
+                    return Ok(());
+                }
+                let text = report::pick(p, &r.elements, &r.text, r.full);
+                self.post(json!({"type": "copy", "what": "pick", "text": text}));
+                if r.full {
+                    let file = report::pick_file(p);
+                    if let Ok(text) = read_text(&p.dir.join(&file)) {
+                        notify::remember(&p.dir, &file, &text)?;
+                    }
+                }
+            }
             "stop" => {
                 if let Some(r) = &self.running {
                     r.run.kill();
