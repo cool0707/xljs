@@ -540,19 +540,41 @@ fn form_icon() {
     assert_eq!(*u.icons.lock().unwrap(), vec![ico.len(), ico.len()]);
 }
 
+/// The skills for Copilot agents (docs/ai/copilot/skills/xljs-*): the
+/// reference split by feature, each skill a handwritten header and some
+/// `## ` sections of reference.md.
+const REFERENCE_SKILLS: [&str; 5] = ["xljs-reference", "xljs-pdf", "xljs-sqlite", "xljs-network", "xljs-chart"];
+
+/// Splits markdown into the text before the first `## ` heading and the
+/// `## ` sections (heading, text), skipping code blocks.
+fn md_sections(src: &str) -> (String, Vec<(String, String)>) {
+    let (mut head, mut secs) = (String::new(), Vec::<(String, String)>::new());
+    let mut fence = false;
+    for line in src.split_inclusive('\n') {
+        if line.starts_with("```") {
+            fence = !fence;
+        }
+        if !fence && line.starts_with("## ") {
+            secs.push((line.trim_end().to_string(), String::new()));
+        }
+        match secs.last_mut() {
+            Some((_, t)) => t.push_str(line),
+            None => head.push_str(line),
+        }
+    }
+    (head, secs)
+}
+
 /// The code in the documents for AI chats (docs/ai) is valid syntax, since
 /// the models copy it as is; prompt.md and the Copilot instructions stay
-/// within the size limits of the chats' input boxes.
+/// within the size limits of the chats' input boxes, and the skills within
+/// the limit of Copilot (30,000 characters).
 #[test]
 fn ai_docs() {
     let re = regex::Regex::new("(?s)```js\n(.*?)```").unwrap();
-    for (name, limit) in [
-        ("prompt.md", 15000),
-        ("reference.md", 0),
-        ("copilot/instructions.md", 8000),
-        ("copilot/skills/xljs-reference/SKILL.md", 0),
-        ("copilot/skills/vba-port/SKILL.md", 0),
-    ] {
+    let skills: Vec<_> = REFERENCE_SKILLS.iter().map(|n| (format!("copilot/skills/{n}/SKILL.md"), 30000)).collect();
+    let docs = [("prompt.md".to_string(), 15000), ("reference.md".into(), 0), ("copilot/instructions.md".into(), 8000), ("copilot/skills/vba-port/SKILL.md".into(), 30000)];
+    for (name, limit) in docs.into_iter().chain(skills) {
         let src = std::fs::read_to_string(repo_path(&format!("docs/ai/{name}"))).unwrap().replace("\r\n", "\n");
         let n = src.chars().count();
         assert!(limit == 0 || n <= limit, "{name} is {n} characters; keep it within {limit}");
@@ -565,10 +587,44 @@ fn ai_docs() {
             }
         }
     }
-    // The reference skill for Copilot agents is a copy of reference.md.
-    let want = std::fs::read_to_string(repo_path("docs/ai/reference.md")).unwrap().replace("\r\n", "\n");
-    let got = std::fs::read_to_string(repo_path("docs/ai/copilot/skills/xljs-reference/SKILL.md")).unwrap().replace("\r\n", "\n");
-    assert_eq!(got, want, "copilot/skills/xljs-reference/SKILL.md differs from reference.md");
+}
+
+/// The reference skills hold each section of reference.md once, as is and
+/// in its order. XLJS_UPDATE_SKILLS=1 copies the sections of reference.md
+/// into the skills (a new section goes to xljs-reference).
+#[test]
+fn ai_reference_skills() {
+    let read = |p: &str| std::fs::read_to_string(repo_path(p)).unwrap().replace("\r\n", "\n");
+    let (_, refs) = md_sections(&read("docs/ai/reference.md"));
+    let paths: Vec<_> = REFERENCE_SKILLS.iter().map(|n| format!("docs/ai/copilot/skills/{n}/SKILL.md")).collect();
+    let skills: Vec<_> = paths.iter().map(|p| md_sections(&read(p))).collect();
+    let owner = |h: &str| skills.iter().position(|(_, s)| s.iter().any(|(t, _)| t == h));
+    if std::env::var_os("XLJS_UPDATE_SKILLS").is_some() {
+        let mut out: Vec<String> = skills.iter().map(|(head, _)| head.clone()).collect();
+        for (h, t) in &refs {
+            out[owner(h).unwrap_or(0)].push_str(t);
+        }
+        for (p, s) in paths.iter().zip(out) {
+            std::fs::write(repo_path(p), s).unwrap();
+        }
+        return;
+    }
+    let mut seen = Vec::new();
+    for ((head, secs), p) in skills.iter().zip(&paths) {
+        assert!(head.starts_with("---\nname: ") && head.contains("\ndescription: "), "{p}: no front matter");
+        let mut last = None;
+        for (h, t) in secs {
+            let i = refs.iter().position(|(rh, _)| rh == h).unwrap_or_else(|| panic!("{p}: {h} is not in reference.md"));
+            let want = refs[i].1.trim_end();
+            assert_eq!(t.trim_end(), want, "{p}: {h} differs from reference.md (XLJS_UPDATE_SKILLS=1 cargo test --lib ai_reference_skills copies it)");
+            assert!(last < Some(i), "{p}: {h} is out of the order of reference.md");
+            assert!(!seen.contains(&i), "{p}: {h} is in two skills");
+            (last, seen) = (Some(i), [seen, vec![i]].concat());
+        }
+    }
+    for (i, (h, _)) in refs.iter().enumerate() {
+        assert!(seen.contains(&i), "{h} of reference.md is in no skill (XLJS_UPDATE_SKILLS=1 cargo test --lib ai_reference_skills adds it to xljs-reference)");
+    }
 }
 
 mod pages;
