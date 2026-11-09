@@ -75,7 +75,7 @@ fn requested(args: ICoreWebView2BasicAuthenticationRequestedEventArgs) {
             let p = p.clone();
             super::thread::run_on_ui(move || {
                 let (title, message) = p.texts();
-                super::notify::watching(&title, &message, || super::dialogs::credentials(&title, &message, &p.user, p.failed))
+                super::dialogs::credentials(&title, &message, &p.user, p.failed)
             })
         });
         let prompt = LoginPrompt { proxy: false, host, ..Default::default() };

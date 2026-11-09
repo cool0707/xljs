@@ -51,7 +51,7 @@
 
 - `types`: `[{ description: "Excel", accept: [".xlsx", ".xlsm"] }]`
 - `startIn`: `"desktop"` `"documents"` `"downloads"`、パス、ハンドル（そのファイルのフォルダから開く）
-- 他のアプリで作業中にダイアログやフォームが開くと、自動で通知が出る（`ui.autoNotify = false` で止める）。長い処理の終わりは `alert` で十分。
+- 他のアプリで作業中に `alert` が開くと、同じ内容の通知が自動で出る（`ui.autoNotify = false` で止める）。長い処理の終わりは `alert` で十分。
 - `showSaveFilePicker` は保存先を決めるだけで、ファイルはまだ作られない。`types` を省略すると `suggestedName` の拡張子が付く（利用者が `集計` と入力しても `集計.xlsx`）。
 
 ## ファイル・フォルダ

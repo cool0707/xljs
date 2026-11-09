@@ -84,13 +84,7 @@ pub(crate) fn hstr(s: &str) -> HSTRING {
 }
 
 fn message_box(title: &str, message: &str, flags: MESSAGEBOX_STYLE) -> MESSAGEBOX_RESULT {
-    notify::watching(title, message, || unsafe { MessageBoxW(owner(), &hstr(message), &hstr(title), flags | MB_SETFOREGROUND | MB_TOPMOST) })
-}
-
-/// The title of the notification shown for a picker that opens in the
-/// background.
-fn waiting_title(title: &str) -> String {
-    if title.is_empty() { "xljs".into() } else { title.to_string() }
+    unsafe { MessageBoxW(owner(), &hstr(message), &hstr(title), flags | MB_SETFOREGROUND | MB_TOPMOST) }
 }
 
 const ERROR_CANCELLED_HR: u32 = 0x800704C7;
@@ -163,7 +157,7 @@ fn file_dialog(save: bool, folder: bool, o: &PickerOptions) -> Result<Vec<String
         if save && !o.suggested_name.is_empty() {
             let _ = dlg.SetFileName(&hstr(&o.suggested_name));
         }
-        if let Err(e) = notify::watching(&waiting_title(&o.title), &crate::t!("ui.waiting"), || dlg.Show(owner())) {
+        if let Err(e) = dlg.Show(owner()) {
             if e.code().0 as u32 == ERROR_CANCELLED_HR {
                 return Ok(Vec::new());
             }
@@ -194,7 +188,9 @@ impl Ui for Native {
     }
 
     fn alert(&self, title: &str, message: &str) {
-        message_box(title, message, MB_OK | MB_ICONINFORMATION);
+        // Only an alert shows a notification when it opens in the
+        // background: the same title and text as the alert.
+        notify::watching(title, message, || message_box(title, message, MB_OK | MB_ICONINFORMATION));
     }
 
     fn confirm(&self, title: &str, message: &str) -> bool {
@@ -202,7 +198,7 @@ impl Ui for Native {
     }
 
     fn prompt(&self, title: &str, message: &str, def: &str) -> Option<String> {
-        notify::watching(title, message, || dialogs::prompt(title, message, def))
+        dialogs::prompt(title, message, def)
     }
 
     fn open_files(&self, o: &PickerOptions) -> Vec<String> {
@@ -243,7 +239,7 @@ impl Ui for Native {
     /// Shows the error in a dialog whose text can be selected and copied,
     /// falling back to a message box.
     fn show_error(&self, title: &str, message: &str) {
-        if !notify::watching(title, message, || dialogs::error_dialog(title, message)) {
+        if !dialogs::error_dialog(title, message) {
             message_box(title, message, MB_OK | MB_ICONERROR);
         }
     }
@@ -282,7 +278,7 @@ impl Ui for Native {
 
     fn credentials(&self, p: &crate::net::auth::LoginPrompt) -> Option<crate::net::auth::Login> {
         let (title, message) = p.texts();
-        notify::watching(&title, &message, || dialogs::credentials(&title, &message, &p.user, p.failed))
+        dialogs::credentials(&title, &message, &p.user, p.failed)
     }
 
     fn print_pdf(&self, job: PdfJob, done: PdfDone) {

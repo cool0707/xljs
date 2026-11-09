@@ -111,7 +111,7 @@ Stop-XljsMute; Stop-XljsAwake
 - コンソール版（`--features console`）は終了時に「Enter キーで閉じます...」で止まることがある。GUI の確認は GUI 版（既定のビルド）で。
 - **`claude rc` から起動したウィンドウは前面に来ない**（フォアグラウンドの制限）。`Save-XljsScreenshot -Window` は画面の
   その範囲を撮るので、上に重なったウィンドウが写る。撮る前に `SetWindowPos(h, HWND_TOPMOST, …, SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE)`
-  で一時的に最前面にし、撮ったら `HWND_NOTOPMOST` に戻す。同じ理由で alert などには自動の通知（「入力を待っています」）が出る。
+  で一時的に最前面にし、撮ったら `HWND_NOTOPMOST` に戻す。同じ理由で alert には自動の通知（alert と同じ内容）が出る。
 - PDF の見た目は、Read ツールでは開けない（pdftoppm がない）。`%TEMP%` に venv を作って PyMuPDF を入れ、`get_pixmap` で
   PNG にして見る（`get_page_fonts` で埋め込みフォントも確認できる）。終わったら venv は消す。
 - `stay-awake.ps1` は同時に 1 つだけ動く（Mutex）。元のスクリーンセーバー設定はレジストリから読む

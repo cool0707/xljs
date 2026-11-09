@@ -234,8 +234,8 @@ declare global {
      */
     notify(message: unknown, options?: string | { title?: string }): void;
     /**
-     * 他のアプリで作業中に alert・confirm・prompt・ui.error・ピッカー・フォームなどが開いたとき、
-     * 自動で通知を出すか（既定 true）
+     * 他のアプリで作業中に alert が開いたとき、alert と同じタイトル・内容の通知を
+     * 自動で出すか（既定 true）
      */
     autoNotify: boolean;
   }
