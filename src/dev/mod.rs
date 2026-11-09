@@ -208,7 +208,8 @@ struct Request {
     text: String,
     note: String,
     url: String,
-    app: bool,
+    /// The template of a new script (new): "script", "form" or "app".
+    template: String,
     debug: bool,
     n: u32,
     x: f64,
@@ -300,7 +301,7 @@ impl Session {
                 }
             }
             "drop" => self.drop(&files)?,
-            "new" => self.create(r.app)?,
+            "new" => self.create(Template::parse(&r.template))?,
             "read" => {
                 let p = self.project()?;
                 let path = p.path(&r.file)?;
@@ -571,9 +572,14 @@ impl Session {
         self.post(json!({"type": "versions", "file": file, "versions": list}));
     }
 
-    /// Creates a new script (and for an app its page) and opens it.
-    fn create(&mut self, app: bool) -> Result<()> {
-        let name = if app { t!("dev.newAppName") } else { t!("dev.newScriptName") };
+    /// Creates a new script from a template (and for an app its page) and
+    /// opens it.
+    fn create(&mut self, tpl: Template) -> Result<()> {
+        let name = match tpl {
+            Template::Script => t!("dev.newScriptName"),
+            Template::Form => t!("dev.newFormName"),
+            Template::App => t!("dev.newAppName"),
+        };
         let Some(path) = self.u.save_file(&PickerOptions {
             title: t!("dev.newTitle"),
             suggested_name: format!("{name}.js"),
@@ -582,7 +588,7 @@ impl Session {
         }) else {
             return Ok(());
         };
-        write_template(Path::new(&path), app, false)?;
+        write_template(Path::new(&path), tpl)?;
         self.open(&path)
     }
 
@@ -594,7 +600,11 @@ impl Session {
             return Err(err!("wizard.noFolder"));
         }
         let path = wizard::free_path(dir, &wizard::file_name(a));
-        write_template(&path, a.mode == "app", true)?;
+        if a.mode == "app" {
+            write_template(&path, Template::App)?;
+        } else {
+            write_text(&path, &wizard::placeholder(&path_title(&path)))?;
+        }
         let entry = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         if a.name_mode != "name" || a.name.trim().is_empty() {
             let f = dir.join(project::DATA_DIR).join("dev.json");
@@ -637,27 +647,59 @@ impl Session {
     }
 }
 
-/// Writes a new script at p: an app (with ui/index.html) or a script;
-/// placeholder: only a note that the AI's answer replaces it.
-fn write_template(p: &Path, app: bool, placeholder: bool) -> Result<()> {
-    let title = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    if app {
-        write_text(p, &format!(
-            "// ==xljs==\n// @mode   app\n// @html   ui/index.html\n// @assets ui/\n// @title  {title}\n// ==/xljs==\n\n// {}\nexport function hello() {{\n  return \"{}\";\n}}\n",
-            t!("dev.templateAppComment"),
-            t!("dev.templateHello"),
-        ))?;
-        let html = p.parent().unwrap_or(Path::new(".")).join("ui").join("index.html");
-        if !html.exists() {
-            write_text(&html, &format!(
-                "<!doctype html>\n<html lang=\"{}\">\n<head>\n<meta charset=\"utf-8\">\n<title>{title}</title>\n</head>\n<body>\n  <h1>{title}</h1>\n  <button data-action=\"hello\" data-result=\"message\">OK</button>\n  <p data-bind=\"message\"></p>\n</body>\n</html>\n",
-                i18n::lang()
+/// The templates of a new script.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Template {
+    Script,
+    Form,
+    App,
+}
+
+impl Template {
+    fn parse(s: &str) -> Template {
+        match s {
+            "form" => Template::Form,
+            "app" => Template::App,
+            _ => Template::Script,
+        }
+    }
+}
+
+/// The title of a new script: its file name without the extension.
+fn path_title(p: &Path) -> String {
+    p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// Writes a new script at p from a template (an app also gets ui/index.html).
+fn write_template(p: &Path, tpl: Template) -> Result<()> {
+    let title = path_title(p);
+    match tpl {
+        Template::App => {
+            write_text(p, &format!(
+                "// ==xljs==\n// @mode   app\n// @html   ui/index.html\n// @assets ui/\n// @title  {title}\n// ==/xljs==\n\n// {}\nexport function hello() {{\n  return \"{}\";\n}}\n",
+                t!("dev.templateAppComment"),
+                t!("dev.templateHello"),
+            ))?;
+            let html = p.parent().unwrap_or(Path::new(".")).join("ui").join("index.html");
+            if !html.exists() {
+                write_text(&html, &format!(
+                    "<!doctype html>\n<html lang=\"{}\">\n<head>\n<meta charset=\"utf-8\">\n<title>{title}</title>\n</head>\n<body>\n  <h1>{title}</h1>\n  <button data-action=\"hello\" data-result=\"message\">OK</button>\n  <p data-bind=\"message\"></p>\n</body>\n</html>\n",
+                    i18n::lang()
+                ))?;
+            }
+        }
+        Template::Form => {
+            let js_title = serde_json::to_string(&title).unwrap_or_default();
+            write_text(p, &format!(
+                "// ==xljs==\n// @title {title}\n// ==/xljs==\n\n// {}\nconst values = await ui.form({{\n  title: {js_title},\n  fields: [\n    {{ name: \"name\", label: {}, required: true }},\n  ],\n  submit: \"OK\",\n}});\nif (values) {{\n  alert({});\n}}\n",
+                t!("dev.templateFormComment"),
+                serde_json::to_string(&t!("dev.templateFormLabel")).unwrap_or_default(),
+                format!("`{}`", t!("dev.templateFormHello", "${values.name}")),
             ))?;
         }
-    } else if placeholder {
-        write_text(p, &wizard::placeholder(&title))?;
-    } else {
-        write_text(p, &format!("// ==xljs==\n// @title {title}\n// ==/xljs==\n\nalert(\"{}\");\n", t!("dev.templateHello")))?;
+        Template::Script => {
+            write_text(p, &format!("// ==xljs==\n// @title {title}\n// ==/xljs==\n\nalert(\"{}\");\n", t!("dev.templateHello")))?;
+        }
     }
     Ok(())
 }
