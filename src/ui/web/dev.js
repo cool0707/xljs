@@ -638,9 +638,23 @@
     $("btn-save").disabled = !has;
     $("btn-format").disabled = !has;
     $("btn-notify").disabled = !has;
-    $("script-name").textContent = has ? st.project.entry : L.noScript || "";
-    $("script-dir").textContent = has ? st.project.dir : "";
-    document.title = has ? `${st.project.entry} - ${L.title}` : L.title;
+    document.title = has ? `${st.project.entry} - ${L.title}` : L.title || "";
+    $("app-title").textContent = document.title;
+    // The window's text in the taskbar (web/titlebar.js's messages).
+    if (window.__xljsTitleBar && window.chrome && chrome.webview) chrome.webview.postMessage("\x01window:title:" + document.title);
+    showFileDir();
+  }
+
+  // The folder of the file in the editor, next to the file's choice.
+  function showFileDir() {
+    let dir = "";
+    if (st.project) {
+      const sep = st.project.dir.includes("\\") ? "\\" : "/";
+      const sub = (st.file || "").split("/").slice(0, -1).join(sep);
+      dir = sub ? st.project.dir.replace(/[\\/]+$/, "") + sep + sub : st.project.dir;
+    }
+    $("file-dir").textContent = dir;
+    $("file-dir").title = dir;
   }
 
   // ------------------------------------------------------------ editor
@@ -653,6 +667,7 @@
     st.dirty = false;
     editor.set(file, text);
     $("file-select").value = file;
+    showFileDir();
     $("save-state").textContent = "";
     $("history-title").textContent = fmt(L.historyOf, file);
     send({ op: "edit", file });
@@ -1360,6 +1375,8 @@
 
   // ------------------------------------------------------------ start
 
+  // The title bar only in a window without the OS one (web/titlebar.js).
+  $("titlebar").hidden = !window.__xljsTitleBar;
   loadLayout();
   initEditor();
   initDiff();

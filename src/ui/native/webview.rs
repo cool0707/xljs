@@ -823,6 +823,11 @@ fn window_command(hwnd: HWND, cmd: &str) {
                 let _ = PostMessageW(Some(hwnd), WM_NCLBUTTONDOWN, WPARAM(HTCAPTION as usize), LPARAM(pos as i32 as isize));
             }
             "state" => sync_title_bar(hwnd, &st),
+            // The window's text (taskbar, Alt+Tab) for a page that draws its
+            // own bar (the development mode: the file's name).
+            _ if cmd.starts_with("title:") && st.o.custom_title_bar => {
+                let _ = SetWindowTextW(hwnd, &hstr(&cmd["title:".len()..]));
+            }
             _ => {}
         }
     }

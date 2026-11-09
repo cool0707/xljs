@@ -240,6 +240,8 @@ pub fn run(u: Arc<dyn Ui>, o: DevOptions) -> Result<i32> {
         title: t!("dev.title"),
         width: 1280,
         height: 820,
+        // The page draws the bar (dev.html #titlebar) with the file's name.
+        custom_title_bar: true,
         url: format!("{ASSET_ORIGIN}{BUILTIN_PREFIX}{DEV_PAGE}"),
         assets: Some(Arc::new(DevAssets { dir: dir.clone() })),
         debug: std::env::var("XLJS_DEV_DEBUG").is_ok_and(|v| !v.is_empty()),
