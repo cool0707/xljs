@@ -651,6 +651,110 @@ fn call(name: &str, args: Vec<V>) -> V {
     r.unwrap_or_else(V::Err)
 }
 
+/// A value worked out for conditional formatting (xlsx_cond.rs).
+#[derive(Clone, Debug, PartialEq)]
+pub enum CalcVal {
+    Num(f64),
+    Str(String),
+    Bool(bool),
+    Empty,
+    Err,
+}
+
+impl From<V> for CalcVal {
+    fn from(v: V) -> CalcVal {
+        match v {
+            V::Num(n) => CalcVal::Num(n),
+            V::Str(s) => CalcVal::Str(s),
+            V::Bool(b) => CalcVal::Bool(b),
+            V::Empty => CalcVal::Empty,
+            V::Err(_) | V::Image(_) => CalcVal::Err,
+            V::Range(r) => r.into_iter().next().and_then(|row| row.into_iter().next()).map(CalcVal::from).unwrap_or(CalcVal::Empty),
+        }
+    }
+}
+
+/// A formula tokenized once, to be worked out for many cells (eval_at).
+pub struct Prepared(Vec<Tok>);
+
+pub fn prepare(formula: &str) -> Option<Prepared> {
+    tokenize(formula.trim().trim_start_matches('=')).ok().map(Prepared)
+}
+
+/// Moves the relative parts of a reference ("A1", "$A1", "Sheet1!B2:C3",
+/// "A:A") by dc columns and dr rows.
+fn shift_ref(r: &str, dc: i64, dr: i64) -> String {
+    let (prefix, body) = match r.rsplit_once('!') {
+        Some((s, b)) => (format!("{s}!"), b),
+        None => (String::new(), r),
+    };
+    let part = |p: &str| -> String {
+        let b = p.as_bytes();
+        let mut i = 0;
+        let col_abs = b.first() == Some(&b'$');
+        if col_abs {
+            i += 1;
+        }
+        let cs = i;
+        while i < b.len() && b[i].is_ascii_alphabetic() {
+            i += 1;
+        }
+        let col = &p[cs..i];
+        let row_abs = b.get(i) == Some(&b'$');
+        if row_abs {
+            i += 1;
+        }
+        let rs = i;
+        while i < b.len() && b[i].is_ascii_digit() {
+            i += 1;
+        }
+        let row = &p[rs..i];
+        if i != b.len() || (col.is_empty() && row.is_empty()) {
+            return p.to_string();
+        }
+        let mut out = String::new();
+        if !col.is_empty() {
+            let n = column_number(col).unwrap_or(1) as i64;
+            let n = if col_abs { n } else { n + dc };
+            if col_abs {
+                out.push('$');
+            }
+            out.push_str(&super::xlsx::column_name(n.clamp(1, 16384)).unwrap_or_default());
+        }
+        if !row.is_empty() {
+            let n: i64 = row.parse().unwrap_or(1);
+            let n = if row_abs { n } else { n + dr };
+            if row_abs {
+                out.push('$');
+            }
+            out.push_str(&n.clamp(1, 1048576).to_string());
+        }
+        out
+    };
+    let body: Vec<String> = body.split(':').map(part).collect();
+    format!("{prefix}{}", body.join(":"))
+}
+
+/// The value of a prepared formula for the cell dc columns right and dr rows
+/// below the cell it was written for (relative references move with it).
+pub fn eval_at(b: &Book, sheet: &str, f: &Prepared, dc: i64, dr: i64) -> CalcVal {
+    let toks = f.0.iter().map(|t| match t {
+        Tok::Ref(r) if dc != 0 || dr != 0 => Tok::Ref(shift_ref(r, dc, dr)),
+        t => t.clone(),
+    });
+    let mut ev = Ev { b, sheet: sheet.to_string(), toks: toks.collect(), pos: 0, depth: 0 };
+    match ev.expr() {
+        Ok(v) if ev.pos >= ev.toks.len() => v.into(),
+        _ => CalcVal::Err,
+    }
+}
+
+/// The value of a cell (a formula without a saved result is worked out).
+pub fn value_at(b: &Book, sheet: &str, col: u32, row: u32) -> CalcVal {
+    let mut ev = Ev { b, sheet: sheet.to_string(), toks: Vec::new(), pos: 0, depth: 0 };
+    ev.cell(sheet, col, row).map(CalcVal::from).unwrap_or(CalcVal::Err)
+}
+
 /// The value of the formula in the cell, as text.
 pub fn calc_cell(b: &Book, sheet: &str, r: &str) -> Result<String> {
     let (col, row) = parse_ref(r)?;

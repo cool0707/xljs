@@ -24,6 +24,10 @@ pub struct Dxf {
     pub bold: Option<bool>,
     pub italic: Option<bool>,
     pub color: Option<Color>,
+    pub strike: Option<bool>,
+    pub underline: Option<bool>,
+    /// The number format code (conditional formats).
+    pub num_fmt: Option<String>,
     /// left, right, top, bottom, vertical (inside), horizontal (inside).
     pub sides: [Option<Side>; 6],
 }
@@ -59,7 +63,7 @@ pub fn custom_styles(styles_xml: &[u8]) -> HashMap<String, StyleDef> {
     out
 }
 
-fn color(n: &Node) -> Option<Color> {
+pub(super) fn color(n: &Node) -> Option<Color> {
     let mut c = Color::default();
     if n.attr("auto").is_some_and(|v| v == "1" || v == "true") {
         return None;
@@ -85,13 +89,19 @@ fn color(n: &Node) -> Option<Color> {
     Some(c)
 }
 
-fn dxf(n: &Node) -> Dxf {
+pub(super) fn dxf(n: &Node) -> Dxf {
     let mut d = Dxf::default();
     let on = |e: Option<&Node>| e.map(|e| !matches!(e.attr("val"), Some("0" | "false")));
     if let Some(f) = n.child("font") {
         d.bold = on(f.child("b"));
         d.italic = on(f.child("i"));
         d.color = f.child("color").and_then(color);
+        d.strike = on(f.child("strike"));
+        d.underline = f.child("u").map(|u| u.attr("val") != Some("none"));
+    }
+    if let Some(nf) = n.child("numFmt") {
+        let id = nf.attr("numFmtId").and_then(|v| v.parse().ok()).unwrap_or(0);
+        d.num_fmt = nf.attr("formatCode").map(str::to_string).or_else(|| super::xlsx::builtin_code(id).map(str::to_string));
     }
     if let Some(p) = n.child("fill").and_then(|f| f.child("patternFill")) {
         let t = p.attr("patternType").unwrap_or("solid");
