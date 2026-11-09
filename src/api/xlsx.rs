@@ -322,7 +322,9 @@ pub fn date_format_code(code: &str) -> bool {
         }
         i += 1;
     }
-    out.replace("general", "").contains(['y', 'm', 'd', 'h', 's'])
+    let out = out.replace("general", "");
+    // g / e: Japanese era and era year (e is the exponent when the code has digits).
+    out.contains(['y', 'm', 'd', 'h', 's', 'g']) || (out.contains('e') && !out.contains(['0', '#', '?']))
 }
 
 /// Whether a style's number format displays dates.
@@ -357,7 +359,14 @@ pub fn builtin_code(id: u32) -> Option<&'static str> {
         20 => "h:mm",
         21 => "h:mm:ss",
         22 => "yyyy/m/d h:mm",
-        27..=36 | 50..=58 => "yyyy/m/d",
+        27 | 36 | 50 | 57 => "[$-411]ge.m.d",
+        28 | 29 | 51 | 54 | 58 => "[$-411]ggge\"年\"m\"月\"d\"日\"",
+        30 => "m/d/yy",
+        31 => "yyyy\"年\"m\"月\"d\"日\"",
+        32 => "h\"時\"mm\"分\"",
+        33 => "h\"時\"mm\"分\"ss\"秒\"",
+        34 | 52 | 55 => "yyyy\"年\"m\"月\"",
+        35 | 53 | 56 => "m\"月\"d\"日\"",
         37 => "#,##0 ;(#,##0)",
         38 => "#,##0 ;[Red](#,##0)",
         39 => "#,##0.00;(#,##0.00)",
