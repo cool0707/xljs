@@ -88,6 +88,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `ready` | 初期化。`init`（文言・AI の一覧・最近使ったスクリプト）を返し、起動時に指定されたスクリプトを開く |
 | `open` `new` | スクリプトを開く（`path` なしはピッカー）/ テンプレートから新規作成（`template`: `script`＝スクリプト、`form`＝フォームアプリ（`ui.form`）、`app`＝カスタムアプリ（`@mode app`＋`ui/index.html`）） |
 | `drop` | ウィンドウにドロップしたファイル（`postMessageWithAdditionalObjects` で渡し、Rust 側でパスにする）。最初のスクリプト（.js・.mjs・.ts）を開く。フォルダならその中でピッカー、スクリプトがなければエラー。チャットの枠（別の WebView2）へのドロップはチャット側のもの |
+| `dragFile` | コードタブのファイル名の左のつまみ（`#file-drag`）を動かしたとき、編集中のファイル（`file`）をウィンドウの外へドラッグする。Rust がシェルのデータオブジェクト（`SHParseDisplayName` → `SHCreateShellItemArrayFromIDLists` → `BHID_DataObject`。エクスプローラーと同じ CF_HDROP など）で `SHDoDragDrop` を始める（`BrowserCommand::DragFiles`。届いたときにボタンが離されていれば何もしない）ので、チャットの枠へのドロップはエクスプローラーからのドロップと同じになる。ドラッグ中は自分のページへのドロップを無視する（`st.fileDrag`） |
 | `read` `save` `edit` | ファイルの読み書き。`edit` は編集中のファイル（置き換え先の決定用） |
 | `apply` `versions` `version` `restore` | 置き換え（履歴に残す）、履歴の一覧・内容、前の版に戻す |
 | `run` `stop` `preview` | 実行（`debug`）・停止・フォームのプレビュー |

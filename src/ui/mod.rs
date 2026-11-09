@@ -153,6 +153,10 @@ pub enum BrowserCommand {
     Back,
     Forward,
     Reload,
+    /// Starts dragging these files from the window while the mouse button
+    /// is down, as Explorer would (a drop on the pane's page gives it the
+    /// files); nothing if the button is up already.
+    DragFiles(Vec<String>),
 }
 
 /// What happens in a window's browser pane.

@@ -31,6 +31,7 @@
     failure: null, // the last failed run: { prompt, location }
     layout: null, // { groups: [{ id, tabs, active, size }], closed: [tab] } (layout)
     tabDrag: false, // a tab is being dragged
+    fileDrag: false, // the file in the editor is dragged out (initFileDrag)
     menu: null, // the open menu's element (menu)
   };
 
@@ -38,7 +39,7 @@
 
   // A script dropped on the window is opened (Rust checks what it is).
   function initDrop() {
-    const hasFiles = (e) => canAttach && e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+    const hasFiles = (e) => canAttach && !st.fileDrag && e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
     let depth = 0;
     const over = (on) => document.body.classList.toggle("drop-over", on);
     document.addEventListener("dragenter", (e) => { if (hasFiles(e)) { depth++; over(true); } });
@@ -58,6 +59,39 @@
       save();
       wv.postMessageWithAdditionalObjects(JSON.stringify({ op: "drop" }), files);
     });
+  }
+
+  // The handle by the file's name drags the file out of the window (Rust
+  // starts a drag as from Explorer): dropped on the chat, it is attached.
+  // Its own drop on this page is not one to open.
+  function initFileDrag() {
+    const h = $("file-drag");
+    h.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !st.project || !st.file) return;
+      const x0 = e.clientX;
+      const y0 = e.clientY;
+      const move = (ev) => {
+        if (Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) < 6) return;
+        done();
+        save();
+        st.fileDrag = true;
+        send({ op: "dragFile", file: st.file });
+      };
+      const done = () => {
+        h.removeEventListener("pointermove", move);
+        h.removeEventListener("pointerup", done);
+        h.removeEventListener("pointercancel", done);
+      };
+      try { h.setPointerCapture(e.pointerId); } catch { /* not down any more */ }
+      h.addEventListener("pointermove", move);
+      h.addEventListener("pointerup", done);
+      h.addEventListener("pointercancel", done);
+    });
+    // The drag has ended once the mouse moves with no button down.
+    const end = (e) => { if (st.fileDrag && !(e.buttons & 1)) st.fileDrag = false; };
+    document.addEventListener("pointermove", end, true);
+    document.addEventListener("pointerdown", () => { st.fileDrag = false; }, true);
+    document.addEventListener("drop", () => { st.fileDrag = false; });
   }
 
   // ------------------------------------------------------------ layout
@@ -1351,6 +1385,7 @@
     if (st.project && !st.dirty && st.file && !st.wantEditor) { st.reloadCheck = true; send({ op: "read", file: st.file }); }
   });
   initDrop();
+  initFileDrag();
   if (wv) {
     wv.addEventListener("message", (e) => {
       if (typeof e.data !== "string" || e.data[0] !== "\x02") return;

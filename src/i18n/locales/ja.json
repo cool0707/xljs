@@ -401,6 +401,7 @@
     "devPage.formatTip": "コードを整形します（Shift+Alt+F）",
     "devPage.notify": "AI に変更を通知",
     "devPage.notifyTip": "AI の回答のあとに自分で直したところ（差分）をコピーします。チャットに貼り付けて送ると、次の回答で直したところが元に戻りにくくなります",
+    "devPage.fileDragTip": "AI チャットへドラッグすると、このファイルを添付できます（エクスプローラーからドラッグしたときと同じ）",
     "devPage.copiedNotify": "変更をコピーしました。AI チャットの入力欄に貼り付けて（Ctrl+V）送信してください。",
     "devPage.formatUnsupported": "この種類のファイルは整形できません",
     "devPage.formatFailed": "整形できません: {0}",

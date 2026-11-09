@@ -475,6 +475,15 @@ impl Session {
                     notify::remember(&p.dir, &c.file, &c.text)?;
                 }
             }
+            "dragFile" => {
+                // A file of the project dragged out of the page (to the chat,
+                // as from Explorer).
+                let p = self.project()?;
+                let path = p.path(&r.file)?;
+                if path.is_file() {
+                    self.w.browser(BrowserCommand::DragFiles(vec![path.to_string_lossy().into_owned()]));
+                }
+            }
             "showFolder" => {
                 let p = self.project()?;
                 self.u.show_in_folder(&[p.entry.to_string_lossy().into_owned()])?;
