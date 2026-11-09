@@ -1330,8 +1330,9 @@
   applyLayout();
   $("btn-open").onclick = $("w-open").onclick = () => { save(); send({ op: "open" }); };
   $("btn-new").onclick = () => { save(); st.showWelcome = true; setTab("code"); };
-  $("w-new").onclick = () => send({ op: "new", app: false });
-  $("w-new-app").onclick = () => send({ op: "new", app: true });
+  $("w-new").onclick = () => send({ op: "new", template: "script" });
+  $("w-new-form").onclick = () => send({ op: "new", template: "form" });
+  $("w-new-app").onclick = () => send({ op: "new", template: "app" });
   $("btn-folder").onclick = () => send({ op: "showFolder" });
   $("lay-reset").onclick = () => { st.layout = defaultLayout(); saveLayout(); applyLayout(); };
   new ResizeObserver(syncBrowser).observe($("chat-view"));

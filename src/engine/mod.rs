@@ -427,4 +427,4 @@ pub(crate) fn natives_of<'js>(ctx: &Ctx<'js>, host: &Host) -> Option<Object<'js>
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

@@ -428,6 +428,37 @@ fn wizard_creates_and_ai_names() {
 }
 
 #[test]
+fn templates_run() {
+    let _l = lock_lang("ja");
+    let dir = tempdir();
+    let script = dir.join("新しいスクリプト.js");
+    write_template(&script, Template::Script).unwrap();
+    let r = crate::engine::tests::run_script(&script.to_string_lossy(), "", &[]);
+    assert_eq!(r.code, 0, "{:?} {}", r.err, r.stderr);
+    assert!(r.stderr.contains("こんにちは！"), "{}", r.stderr);
+
+    let form = dir.join("新しいフォームアプリ.js");
+    write_template(&form, Template::Form).unwrap();
+    let text = read_text(&form).unwrap();
+    assert!(text.contains("title: \"新しいフォームアプリ\""), "{text}");
+    let answers = dir.join("a.json");
+    write_text(&answers, r#"{"form": [{"name": "山田"}]}"#).unwrap();
+    let r = crate::engine::tests::run_script(&form.to_string_lossy(), &answers.to_string_lossy(), &[]);
+    assert_eq!(r.code, 0, "{:?} {}", r.err, r.stderr);
+    assert!(r.stderr.contains("山田 さん、こんにちは！"), "{}", r.stderr);
+
+    let app = dir.join("新しいカスタムアプリ.js");
+    write_template(&app, Template::App).unwrap();
+    let p = Project::open(&app.to_string_lossy()).unwrap();
+    assert!(p.meta.is_app());
+    assert!(dir.join("ui").join("index.html").is_file());
+
+    assert_eq!(Template::parse("form"), Template::Form);
+    assert_eq!(Template::parse("app"), Template::App);
+    assert_eq!(Template::parse(""), Template::Script);
+}
+
+#[test]
 fn exe_settings_default_chat() {
     let _l = lock_lang("ja");
     let dir = tempdir();
