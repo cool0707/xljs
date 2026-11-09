@@ -200,12 +200,8 @@ fn dev(con: &ConsoleState, u: Arc<dyn Ui>, path: String, explicit_lang: bool) ->
     if explicit_lang || !env("XLJS_LANG").is_empty() {
         run_args.push(format!("--lang={}", i18n::lang()));
     }
-    let o = crate::dev::DevOptions {
-        path,
-        exe: std::env::current_exe().unwrap_or_else(|_| "xljs".into()),
-        run_args,
-        settings: crate::dev::default_settings(),
-    };
+    let exe = std::env::current_exe().unwrap_or_else(|_| "xljs".into());
+    let o = crate::dev::DevOptions { path, exe_settings: crate::dev::exe_settings(&exe), exe, run_args, settings: crate::dev::default_settings() };
     match ui::run(u.clone(), move |su| crate::dev::run(su, o)) {
         Ok(c) => c,
         Err(e) => con.fail(Some(&*u), &e),
