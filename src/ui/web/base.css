@@ -217,3 +217,8 @@ footer .status { flex: 1; color: var(--muted); overflow: hidden; text-overflow: 
 .error-text { color: var(--error); }
 main { flex: 1; overflow: auto; padding: var(--sp-xxl); }
 .icon { margin-right: 6px; }
+/* Font Awesome Free has most icons in the solid style (weight 900) only, and in
+   a button next to 13-14px text they look heavy: draw them a little smaller and
+   softer. Zero specificity, so a rule that sets an icon's size still wins. */
+:where(button) :where(.fa-solid, .fas) { font-size: .9em; opacity: .75; }
+:where(button:disabled) :where(.fa-solid, .fas) { opacity: 1; }
