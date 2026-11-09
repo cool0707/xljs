@@ -970,15 +970,19 @@ impl Session {
             self.post(json!({"type": "runEnded", "kind": "preview", "code": code}));
             return;
         }
-        let stopped = code == Some(crate::engine::watchdog::STOPPED_CODE);
-        let failed = code != Some(0);
-        let mut ev = json!({"type": "runEnded", "kind": format!("{:?}", r.kind).to_lowercase(), "code": code, "stopped": stopped});
+        use crate::engine::watchdog::{STOPPED_CODE, STUCK_CODE};
+        // Stopped by the user (the stop key, the debugger window closed):
+        // not a failure to ask the AI about.
+        let stopped = code == Some(STOPPED_CODE);
+        let stuck = code == Some(STUCK_CODE);
+        let failed = code != Some(0) && !stopped;
+        let mut ev = json!({"type": "runEnded", "kind": format!("{:?}", r.kind).to_lowercase(), "code": code, "stopped": stopped, "stuck": stuck});
         if failed {
             let message = report::last_error(&r.stderr);
             let loc = report::find_location(&message, &p.dir).or_else(|| report::find_location(&r.stderr, &p.dir));
             ev["message"] = json!(message);
             ev["location"] = json!(loc);
-            ev["prompt"] = json!(report::prompt(&p, stopped, &message, loc.as_ref()));
+            ev["prompt"] = json!(report::prompt(&p, stuck, &message, loc.as_ref()));
         }
         self.post(ev);
     }

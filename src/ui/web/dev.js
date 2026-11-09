@@ -894,12 +894,15 @@
     updateButtons();
     if (m.kind === "preview") { status(""); return; }
     const ok = m.code === 0;
-    const text = ok ? L.finished : m.stopped ? L.stoppedLoop : m.code === null ? L.killed : fmt(L.failedCode, m.code);
+    // Stopped by the user (the stop button, the stop key, the debugger
+    // window closed): no failure to report.
+    const byUser = m.code === null || m.stopped;
+    const text = ok ? L.finished : m.stuck ? L.stoppedStuck : byUser ? L.killed : fmt(L.failedCode, m.code);
     $("run-state").textContent = text;
-    status(text, ok ? "ok" : "error");
-    if (ok || m.code === null) return;
+    status(text, ok ? "ok" : byUser ? "" : "error");
+    if (ok || byUser) return;
     st.failure = { prompt: m.prompt || "", location: m.location || null };
-    $("failure-title").textContent = m.stopped ? L.stoppedTitle : L.errorTitle;
+    $("failure-title").textContent = m.stuck ? L.stuckTitle : L.errorTitle;
     $("failure-message").textContent = m.message || "";
     const at = $("failure-at");
     if (m.location) {
