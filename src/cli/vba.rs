@@ -50,7 +50,7 @@ pub(crate) fn book_text(books: &[String], inc: &Include) -> Result<(String, usiz
             if !s.is_empty() {
                 s.push('\n');
             }
-            match book::read(&data) {
+            match book::read(&data, inc) {
                 Ok(wb) => s.push_str(&book::text(&name, &wb, inc)),
                 Err(e) => s.push_str(&book::error_text(&name, inc, &e)),
             }
@@ -98,7 +98,7 @@ fn split_include(args: &[String]) -> Result<(Include, Vec<String>)> {
     Ok((inc, rest))
 }
 
-/// xljs vba [--include=vba,formulas,validation,names,conditional,charts | --all]
+/// xljs vba [--include=vba,formulas,validation,names,conditional,charts,columns | --all]
 /// <book>... [-o out.txt]: the VBA code (and what else is asked for) of
 /// the workbooks in one text file (next to the first workbook by default,
 /// - for stdout).
@@ -129,13 +129,13 @@ pub(crate) fn cmd_vba(con: &ConsoleState, args: &[String]) -> i32 {
 }
 
 /// The size of the form's window (its page).
-const FORM_SIZE: (i64, i64) = (520, 300);
+const FORM_SIZE: (i64, i64) = (520, 330);
 
 /// Asks what to write of the workbooks; None when cancelled. The VBA code
 /// is checked when one of them has macros.
 fn ask_include(u: &Arc<dyn Ui>, books: &[String]) -> Option<Include> {
     let has_vba = books.iter().any(|b| matches!(vba::read_file(b), Ok(Some(_))));
-    let labels = ["cli.bookVBA", "cli.bookFormulas", "cli.bookValidation", "cli.bookNames", "cli.bookConditional", "cli.bookCharts"];
+    let labels = ["cli.bookVBA", "cli.bookFormulas", "cli.bookValidation", "cli.bookNames", "cli.bookConditional", "cli.bookCharts", "cli.bookColumns"];
     // The workbooks' names (three of them and how many more).
     let mut names = books.iter().take(3).map(|b| base(b)).collect::<Vec<_>>().join(&t!("vba.separator"));
     if books.len() > 3 {
@@ -168,7 +168,8 @@ fn ask_include(u: &Arc<dyn Ui>, books: &[String]) -> Option<Include> {
 
 /// Handles workbooks given instead of a script (dropped onto xljs.exe or
 /// chosen in its picker): asks what to write of them (the VBA code, the
-/// formulas, the input rules, the names, the conditional formats) and
+/// formulas, the input rules, the names, the conditional formats, the
+/// charts, the columns of the tables) and
 /// where to save it as one text file, and offers to open it. Without the
 /// native UI the text is written next to the first workbook.
 pub(crate) fn drop_vba(con: &ConsoleState, u: Arc<dyn Ui>, books: &[String]) -> i32 {

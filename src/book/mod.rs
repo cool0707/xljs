@@ -1,7 +1,9 @@
 //! What a workbook holds besides its values, as text for an AI chat (with
 //! the VBA code, `xljs vba`): the formulas, the input rules (data
 //! validation), the defined names, the conditional formats and the charts
-//! of an Office Open XML workbook (.xlsx/.xlsm/.xltx/.xltm/.xlam).
+//! of an Office Open XML workbook (.xlsx/.xlsm/.xltx/.xltm/.xlam), and the
+//! columns of its tables with many rows (what their values are like, for
+//! making input rules).
 //!
 //! Formulas filled down or across (the same in R1C1 form) are written once
 //! with the ranges they cover, and so are rules with the same condition
@@ -9,6 +11,7 @@
 //! copied).
 
 mod chart;
+mod columns;
 mod formula;
 mod rules;
 mod xml;
@@ -32,18 +35,20 @@ pub struct Include {
     pub names: bool,
     pub conditional: bool,
     pub charts: bool,
+    pub columns: bool,
 }
 
 impl Include {
     /// The names of the parts (the CLI's --include, the form's values).
-    pub const KEYS: [&str; 6] = ["vba", "formulas", "validation", "names", "conditional", "charts"];
+    pub const KEYS: [&str; 7] = ["vba", "formulas", "validation", "names", "conditional", "charts", "columns"];
 
-    pub const VBA: Include = Include { vba: true, formulas: false, validation: false, names: false, conditional: false, charts: false };
-    pub const ALL: Include = Include { vba: true, formulas: true, validation: true, names: true, conditional: true, charts: true };
+    pub const NONE: Include = Include { vba: false, formulas: false, validation: false, names: false, conditional: false, charts: false, columns: false };
+    pub const VBA: Include = Include { vba: true, ..Include::NONE };
+    pub const ALL: Include = Include { vba: true, formulas: true, validation: true, names: true, conditional: true, charts: true, columns: true };
 
     /// The parts named (Include::KEYS); an unknown name is an error.
     pub fn parse<S: AsRef<str>>(keys: &[S]) -> Result<Include> {
-        let mut i = Include { vba: false, formulas: false, validation: false, names: false, conditional: false, charts: false };
+        let mut i = Include::NONE;
         for k in keys {
             match k.as_ref().trim() {
                 "vba" => i.vba = true,
@@ -52,6 +57,7 @@ impl Include {
                 "names" => i.names = true,
                 "conditional" => i.conditional = true,
                 "charts" => i.charts = true,
+                "columns" => i.columns = true,
                 "all" => i = Include::ALL,
                 "" => {}
                 other => return Err(err!("book.badInclude", other, Include::KEYS.join(", "))),
@@ -61,13 +67,13 @@ impl Include {
     }
 
     pub fn keys(&self) -> Vec<&'static str> {
-        let on = [self.vba, self.formulas, self.validation, self.names, self.conditional, self.charts];
+        let on = [self.vba, self.formulas, self.validation, self.names, self.conditional, self.charts, self.columns];
         Include::KEYS.iter().zip(on).filter(|(_, on)| *on).map(|(k, _)| *k).collect()
     }
 
     /// Whether anything but the VBA code is asked for.
     pub fn sheets(&self) -> bool {
-        self.formulas || self.validation || self.names || self.conditional || self.charts
+        self.formulas || self.validation || self.names || self.conditional || self.charts || self.columns
     }
 
     pub fn is_empty(&self) -> bool {
@@ -101,6 +107,16 @@ struct Sheet {
     validations: Vec<Rule>,
     conditional: Vec<Rule>,
     charts: Vec<chart::Chart>,
+    // For the columns of the tables (read only when they are asked for):
+    /// The cells with a value or a formula, by row and column.
+    cells: Vec<columns::Cell>,
+    /// The last row read when the sheet has more cells than are read.
+    cut: Option<u32>,
+    /// The rows frozen at the top.
+    frozen: Option<u32>,
+    /// The range of the sheet's filter.
+    filter: Option<Rect>,
+    tables: Vec<columns::Table>,
 }
 
 #[derive(Debug)]
@@ -121,17 +137,23 @@ pub struct Workbook {
     dxfs: Vec<Node>,
     theme: rules::Theme,
     date1904: bool,
+    /// The shared strings (read with the cells).
+    strings: Vec<String>,
+    /// The number format of each cell style: (id, code).
+    formats: Vec<(u32, String)>,
 }
 
-/// Reads the workbook at path.
-pub fn read_file(path: &str) -> Result<Workbook> {
+/// Reads the workbook at path (what inc asks for).
+pub fn read_file(path: &str, inc: &Include) -> Result<Workbook> {
     let data = std::fs::read(path).map_err(|e| Error::path("open", path, e))?;
-    read(&data)
+    read(&data, inc)
 }
 
-/// Reads a workbook held in memory. Binary workbooks (.xls, .xlsb) and
-/// encrypted ones cannot be read.
-pub fn read(data: &[u8]) -> Result<Workbook> {
+/// Reads a workbook held in memory; its cells only when the columns of
+/// its tables are asked for. Binary workbooks (.xls, .xlsb) and encrypted
+/// ones cannot be read.
+pub fn read(data: &[u8], inc: &Include) -> Result<Workbook> {
+    let values = inc.columns;
     if data.starts_with(&[0xD0, 0xCF, 0x11, 0xE0]) {
         return Err(err!("book.oldFormat"));
     }
@@ -151,6 +173,15 @@ pub fn read(data: &[u8]) -> Result<Workbook> {
     };
     if let Some(s) = pkg.xml("xl/styles.xml") {
         out.dxfs = s.child("dxfs").map(|d| d.children("dxf").cloned().collect()).unwrap_or_default();
+        if values {
+            out.formats = number_formats(&s);
+        }
+    }
+    if values {
+        let part = rels.iter().find(|r| r.1.ends_with("/sharedStrings")).map(|r| r.2.clone()).unwrap_or_else(|| "xl/sharedStrings.xml".into());
+        if let Some(sst) = pkg.xml(&part) {
+            out.strings = sst.children("si").map(columns::rich_text).collect();
+        }
     }
     let theme_path = rels.iter().find(|r| r.1.ends_with("/theme")).map(|r| r.2.clone()).unwrap_or_else(|| "xl/theme/theme1.xml".into());
     if let Some(th) = pkg.xml(&theme_path) {
@@ -165,9 +196,12 @@ pub fn read(data: &[u8]) -> Result<Workbook> {
             };
             if let Some(part) = s.attr("id").and_then(target) {
                 if let Some(data) = pkg.open(&part) {
-                    read_sheet(&data, &mut sh);
+                    read_sheet(&data, &mut sh, values);
                 }
                 sh.charts = pkg.charts(&part);
+                if values {
+                    sh.tables = pkg.tables(&part);
+                }
             }
             out.sheets.push(sh);
         }
@@ -223,6 +257,19 @@ impl Package<'_> {
             .collect()
     }
 
+    /// The Excel tables of a worksheet.
+    fn tables(&mut self, sheet: &str) -> Vec<columns::Table> {
+        let mut out = Vec::new();
+        for (_, kind, part) in self.rels(sheet) {
+            if kind.ends_with("/table")
+                && let Some(t) = self.xml(&part).as_ref().and_then(columns::table)
+            {
+                out.push(t);
+            }
+        }
+        out
+    }
+
     /// The charts in the drawings of a worksheet or a chart sheet, in their
     /// order.
     fn charts(&mut self, sheet: &str) -> Vec<chart::Chart> {
@@ -259,6 +306,22 @@ impl Package<'_> {
     }
 }
 
+/// The number format of each cell style (cellXfs): its id and code.
+fn number_formats(styles: &Node) -> Vec<(u32, String)> {
+    let custom: HashMap<u32, String> = styles
+        .child("numFmts")
+        .map(|n| n.children("numFmt").filter_map(|f| Some((f.attr("numFmtId")?.parse().ok()?, f.attr("formatCode").unwrap_or("").to_string()))).collect())
+        .unwrap_or_default();
+    let Some(xfs) = styles.child("cellXfs") else { return Vec::new() };
+    xfs.children("xf")
+        .map(|x| {
+            let id: u32 = x.attr("numFmtId").and_then(|v| v.parse().ok()).unwrap_or(0);
+            let code = custom.get(&id).cloned().or_else(|| crate::api::xlsx::builtin_code(id).map(str::to_string)).unwrap_or_else(|| "General".into());
+            (id, code)
+        })
+        .collect()
+}
+
 /// The cells a drawing's anchor covers ("L2:S16"), or where it starts
 /// ("L2", false) without its end; "" for an absolute anchor.
 fn anchor_range(a: &Node) -> (String, bool) {
@@ -281,9 +344,9 @@ struct CellFormula {
     f: Node,
 }
 
-/// Reads the formulas and the rules of a worksheet, streaming through its
-/// cells.
-fn read_sheet(data: &[u8], sh: &mut Sheet) {
+/// Reads the formulas and the rules of a worksheet (and its cells with
+/// values), streaming through its cells.
+fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
     let mut r = Reader::from_reader(data);
     let mut buf = Vec::new();
     let (mut row, mut col) = (0u32, 0u32);
@@ -313,11 +376,30 @@ fn read_sheet(data: &[u8], sh: &mut Sheet) {
                     Some((c, rr)) => (col, row) = (c, rr),
                     None => col += 1,
                 }
+                if empty {
+                    continue;
+                }
+                let c = xml::subtree(&mut r, n);
+                if let Some(f) = c.child("f") {
+                    cells.push(CellFormula { col, row, f: f.clone() });
+                }
+                if values && sh.cut.is_none() {
+                    if sh.cells.len() >= columns::MAX_CELLS {
+                        sh.cut = Some(row.saturating_sub(1));
+                    } else if let Some(v) = columns::cell(&c, col, row) {
+                        sh.cells.push(v);
+                    }
+                }
             }
-            b"f" => {
+            b"pane" if sh.frozen.is_none() => {
                 let n = xml::element(&e);
-                let f = if empty { n } else { xml::subtree(&mut r, n) };
-                cells.push(CellFormula { col, row, f });
+                let y = n.attr("ySplit").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
+                if matches!(n.attr("state"), Some("frozen" | "frozenSplit")) && y >= 1.0 {
+                    sh.frozen = Some(y as u32);
+                }
+            }
+            b"autoFilter" if sh.filter.is_none() => {
+                sh.filter = xml::element(&e).attr("ref").and_then(formula::parse_range);
             }
             b"dataValidations" | b"conditionalFormatting" | b"extLst" if !empty => {
                 let n = xml::element(&e);
@@ -327,6 +409,7 @@ fn read_sheet(data: &[u8], sh: &mut Sheet) {
         }
     }
     sh.formulas = formula_groups(cells);
+    sh.cells.sort_by_key(|c| (c.row, c.col));
     // The rules of Excel 2010 (x14) in extLst are read like the others; a
     // conditional format that only adds to one of those (a data bar's
     // details) names it by id and is left out.
@@ -622,6 +705,17 @@ pub fn text(file: &str, wb: &Workbook, inc: &Include) -> String {
         let body = (!body.is_empty()).then_some(body);
         part(t!("book.chartsTitle", file), None, body, t!("book.chartsNone"));
     }
+    if inc.columns {
+        let mut body = String::new();
+        for s in &wb.sheets {
+            if let Some(t) = columns::sheet_text(wb, s) {
+                body.push_str(&sheet_heading(s));
+                body.push_str(&t);
+            }
+        }
+        let body = (!body.is_empty()).then_some(body);
+        part(t!("book.columnsTitle", file), Some(t!("book.columnsIntro", columns::MIN_ROWS)), body, t!("book.columnsNone", columns::MIN_ROWS));
+    }
     b
 }
 
@@ -636,6 +730,7 @@ pub fn error_text(file: &str, inc: &Include, e: &Error) -> String {
         (inc.names, "book.namesTitle"),
         (inc.conditional, "book.conditionalTitle"),
         (inc.charts, "book.chartsTitle"),
+        (inc.columns, "book.columnsTitle"),
     ] {
         if on {
             b.push_str(&format!("# {}\n\n{msg}\n\n", t!(key, file)));

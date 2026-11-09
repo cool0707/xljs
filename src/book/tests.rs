@@ -4,7 +4,7 @@ use crate::testutil::{lock_lang, repo_path};
 #[test]
 fn rules_book() {
     let _l = lock_lang("ja");
-    let wb = read_file(&repo_path("testdata/book/rules.xlsx").to_string_lossy()).unwrap();
+    let wb = read_file(&repo_path("testdata/book/rules.xlsx").to_string_lossy(), &Include::ALL).unwrap();
     let s = text("rules.xlsx", &wb, &Include::ALL);
     for want in [
         "# rules.xlsx の数式",
@@ -63,7 +63,7 @@ fn sheet_parts() {
 </x14:conditionalFormattings></ext>
 <ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:dataValidations count="1"><x14:dataValidation type="list" allowBlank="1" showErrorMessage="1"><x14:formula1><xm:f>他!$A$1:$A$3</xm:f></x14:formula1><xm:sqref>B1:B9</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst></worksheet>"#;
     let mut sh = Sheet { name: "S".into(), ..Default::default() };
-    read_sheet(xml.as_bytes(), &mut sh);
+    read_sheet(xml.as_bytes(), &mut sh, false);
     let wb = Workbook { sheets: vec![sh], theme: ["FFFFFF", "000000", "E7E6E6", "44546A", "4472C4"].map(String::from).to_vec(), ..Default::default() };
     let s = text("b.xlsx", &wb, &Include::ALL);
     for want in [
@@ -81,9 +81,9 @@ fn sheet_parts() {
 #[test]
 fn unreadable() {
     let _l = lock_lang("ja");
-    let e = read(&std::fs::read(repo_path("testdata/vba/macro.xls")).unwrap()).unwrap_err();
+    let e = read(&std::fs::read(repo_path("testdata/vba/macro.xls")).unwrap(), &Include::ALL).unwrap_err();
     assert_eq!(e.key(), Some("book.oldFormat"));
-    assert_eq!(read(b"not a workbook").unwrap_err().key(), Some("book.notWorkbook"));
+    assert_eq!(read(b"not a workbook", &Include::ALL).unwrap_err().key(), Some("book.notWorkbook"));
     let s = error_text("a.xls", &Include::ALL, &e);
     assert!(s.starts_with("# a.xls の数式\n\n") && s.contains("# a.xls の条件付き書式"), "{s}");
     assert!(Include::parse(&["vba", "nope"]).is_err());
@@ -143,4 +143,52 @@ fn charts() {
     assert!(s.contains("## グラフ\n\n### グラフ 2\n\n- 種類: ウォーターフォール\n"), "{s}");
     let s = text("b.xlsx", &Workbook::default(), &Include::parse(&["charts"]).unwrap());
     assert_eq!(s, "# b.xlsx のグラフ\n\nグラフはありません。\n\n");
+}
+
+/// The columns of the tables with many rows.
+#[test]
+fn columns_book() {
+    let _l = lock_lang("ja");
+    let inc = Include::parse(&["columns"]).unwrap();
+    let wb = read_file(&repo_path("testdata/book/columns.xlsx").to_string_lossy(), &inc).unwrap();
+    let s = text("columns.xlsx", &wb, &inc);
+    for want in [
+        "# columns.xlsx の表の列\n\nデータが 100 行以上ある表",
+        "## 受注\n\n### A2:I153\n\n見出しは 2 行目、データは 3〜152 行目（150 行）、153 行目は合計の行として除外、ウィンドウ枠の固定から推定。\n\n",
+        "- A 列「受注番号」: 文字列のみ、空白なし、7 文字、形式 `A999999`、重複なし\n",
+        "- B 列「顧客コード」: 文字列のみ、空白なし、6 文字、数字のみ、0 始まり 150 行、値は 120 種類\n",
+        "- C 列「受注日」: 日付のみ、空白 3 行（2%）、2025/01/01 〜 2025/05/29、重複なし、表示形式 `yyyy-mm-dd`\n",
+        "- D 列「区分」: 文字列のみ、空白なし、2 文字、全角のみ、値は 3 種類: 「通常」（76 行）、「至急」（37 行）、「返品」（37 行）、入力規則あり\n",
+        "- E 列「数量」: 整数 98.7%・文字列 1.3%（例: 「未定」）、空白なし、1 〜 100、1〜3 桁、値は 101 種類\n",
+        "- F 列「単価」: 数値のみ、空白なし、100 〜 286.25、小数点以下 最大 2 桁、重複なし\n",
+        // openpyxl leaves no values of the formulas.
+        "- G 列「金額」: すべて空白、すべて数式\n",
+        "- H 列「備考」: 文字列のみ、空白 147 行（98%）、2〜5 文字、前後に空白のある値 1 行、重複なし\n",
+        "- I 列「郵便番号」: 文字列のみ、空白なし、8 文字、形式 `999-9999`、重複なし\n",
+        "## 社員\n\n### テーブル「社員一覧」（A1:D121）\n\n見出しは 1 行目、データは 2〜121 行目（120 行）。\n\n",
+        "- A 列「社員番号」: 整数のみ、空白なし、1001 〜 1120、4 桁、重複なし、表示形式 `00000`（5 桁の 0 埋め）\n",
+        "- B 列「氏名」: 文字列のみ、空白なし、4〜5 文字、全角のみ、値は 2 種類: 「佐藤花子」（60 行）、「山田　太郎」（60 行）\n",
+        "- C 列「入社日時」: 日時のみ、空白なし、2020/04/01 09:30 〜 2020/07/29 09:30、重複なし",
+        "- D 列「在籍」: TRUE/FALSEのみ、空白なし、値は 2 種類: TRUE（80 行）、FALSE（40 行）\n",
+        "## 記録\n\n### A4:C104\n\n見出しは 4 行目、データは 5〜104 行目（100 行）、フィルターから推定。\n\n",
+        "- A 列「時刻」: 時刻のみ、空白なし、09:00 〜 16:55、重複なし",
+        "- B 列「値」: 数値のみ、空白なし、-10 〜 39.5、小数点以下 最大 1 桁、重複なし\n",
+        "- C 列「コメント」: 文字列のみ、空白なし、2 文字、形式 `aa`、値は 1 種類: 「ok」（100 行）\n",
+        "### E1:E120\n\n見出しなし、データは 1〜120 行目（120 行）、セルの並びから推定。\n\n- E 列: 整数のみ、空白なし、0 〜 6、1 桁、値は 7 種類: 0（18 行）、1（17 行）",
+        "### A2:C102\n\n見出しは 2 行目、データは 3〜102 行目（100 行）、セルの並びから推定。\n\n",
+        "- A 列「品番」: 文字列のみ、空白なし、6 文字、形式 `aa-999`、重複なし\n",
+        "- B 列「品名」: 文字列のみ、空白なし、2〜3 文字、半角を含む値 10 行、半角カナを含む値 10 行、値は 2 種類: 「ガム」（90 行）、「ｶﾞﾑ」（10 行）\n",
+        "- C 列「価格」: 整数 75%・文字列 25%（例: 「0」、「40」、「80」）、空白なし、10 〜 990、2〜3 桁、重複なし\n",
+    ] {
+        assert!(s.contains(want), "want {want:?} in\n{s}");
+    }
+    // The small tables and blocks, the notes next to a table.
+    for not in ["小さい", "テーブル「小」", "L1", "メモ"] {
+        assert!(!s.contains(not), "{not:?} in\n{s}");
+    }
+    // The other parts read no cells.
+    let wb = read_file(&repo_path("testdata/book/columns.xlsx").to_string_lossy(), &Include::parse(&["formulas"]).unwrap()).unwrap();
+    assert!(wb.sheets.iter().all(|s| s.cells.is_empty()) && wb.strings.is_empty());
+    let s = text("rules.xlsx", &read_file(&repo_path("testdata/book/rules.xlsx").to_string_lossy(), &inc).unwrap(), &inc);
+    assert_eq!(s, "# rules.xlsx の表の列\n\nデータが 100 行以上ある表はありません。\n\n");
 }
