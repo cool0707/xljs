@@ -25,6 +25,17 @@ ok(/border-top:1\.5pt solid/.test(html), "borders");
 ok(/background-color:#DDEBF7/i.test(html), "fill");
 ok(html.includes("font-family:&quot;游ゴシック&quot;,&quot;Yu Gothic&quot;"), "the default font");
 
+// Diagonal borders are SVG lines (vectors in the PDF), not CSS gradients.
+const dg = wb.addSheet("斜め");
+dg.setValue("A1", "x");
+dg.range("B2").border({ diagonalDown: "thin" });
+dg.range("C2").border({ diagonalUp: { style: "dashed", color: "#FF0000" }, diagonalDown: { style: "dashed", color: "#FF0000" } });
+const dh = dg.toHtml();
+ok(dh.includes('<svg class="xljs-diag"><line x1="0" y1="0" x2="100%" y2="100%" style="stroke:#000000;stroke-width:0.75pt"/></svg>'), "a diagonal border (a cell with only it is printed)");
+ok(dh.includes('<line x1="0" y1="100%" x2="100%" y2="0" style="stroke:#FF0000;stroke-width:0.75pt;stroke-dasharray:3pt 1.5pt"/>'), "both diagonals, dashed");
+ok(!/linear-gradient\(to top/.test(dh), "no gradients for the diagonals");
+wb.removeSheet("斜め");
+
 // Options: paper, orientation, scale, fit, margins, grid lines.
 ok(ws.toHtml({ paper: "A3", landscape: true }).includes("size:1190.551pt 841.89pt"), "A3 landscape");
 ok(ws.toHtml({ gridLines: true }).includes('class="xljs-sheet grid"'), "grid lines");

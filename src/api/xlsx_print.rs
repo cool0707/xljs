@@ -330,6 +330,49 @@ fn border_css(style: &str, color: &str) -> Option<String> {
     Some(format!("{}pt {s} {color}", n(w)))
 }
 
+/// The diagonal borders of a cell as an SVG over the cell, so that the lines
+/// stay vectors in the PDF (a CSS gradient was printed as a coarse image).
+/// The coordinates are percentages of the cell, so the line widths and
+/// dashes keep their sizes whatever the cell's shape. `bg` is the cell's
+/// fill, for the gap of a double line.
+fn diagonal_svg(style: &str, color: &str, up: bool, down: bool, bg: &str) -> String {
+    // (width pt, dashes pt)
+    let (w, dash): (f64, &[f64]) = match style {
+        "thin" => (0.75, &[]),
+        "hair" => (0.5, &[]),
+        "dotted" => (0.75, &[0.75, 0.75]),
+        "dashed" => (0.75, &[3.0, 1.5]),
+        "dashDot" => (0.75, &[3.0, 1.5, 0.75, 1.5]),
+        "dashDotDot" => (0.75, &[3.0, 1.5, 0.75, 1.5, 0.75, 1.5]),
+        "medium" => (1.5, &[]),
+        "mediumDashed" => (1.5, &[6.0, 3.0]),
+        "mediumDashDot" | "slantDashDot" => (1.5, &[6.0, 3.0, 1.5, 3.0]),
+        "mediumDashDotDot" => (1.5, &[6.0, 3.0, 1.5, 3.0, 1.5, 3.0]),
+        "thick" | "double" => (2.25, &[]),
+        _ => return String::new(),
+    };
+    let dash = if dash.is_empty() { String::new() } else { format!(";stroke-dasharray:{}", dash.iter().map(|d| format!("{}pt", n(*d))).collect::<Vec<_>>().join(" ")) };
+    let mut lines = Vec::new();
+    if up {
+        lines.push(r#"x1="0" y1="100%" x2="100%" y2="0""#);
+    }
+    if down {
+        lines.push(r#"x1="0" y1="0" x2="100%" y2="100%""#);
+    }
+    let mut out = String::from(r#"<svg class="xljs-diag">"#);
+    for l in &lines {
+        let _ = write!(out, r#"<line {l} style="stroke:{color};stroke-width:{}pt{dash}"/>"#, n(w));
+    }
+    if style == "double" {
+        // The gap between the two lines.
+        for l in &lines {
+            let _ = write!(out, r#"<line {l} style="stroke:{bg};stroke-width:.75pt"/>"#);
+        }
+    }
+    out.push_str("</svg>");
+    out
+}
+
 /// The color of a number format's section for a value ([Red], [赤] ...).
 fn format_color(code: &str, v: Option<f64>) -> Option<&'static str> {
     let mut secs = vec![String::new()];
@@ -679,11 +722,12 @@ impl<'a> Sheet<'a> {
             return true;
         }
         if let Some(b) = st.borders() {
-            for side in [b.left(), b.right(), b.top(), b.bottom()] {
+            let line = |side: &umya_spreadsheet::Border| {
                 let s = side.border_style();
-                if !s.is_empty() && s != "none" {
-                    return true;
-                }
+                !s.is_empty() && s != "none"
+            };
+            if [b.left(), b.right(), b.top(), b.bottom()].into_iter().any(line) || ((b.diagonal_up() || b.diagonal_down()) && line(b.diagonal())) {
+                return true;
             }
         }
         false
@@ -1060,6 +1104,7 @@ body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .xljs-sheet.grid td{border:0.5pt solid #c8c8c8}
 .xljs-sheet td>.xljs-bar,.xljs-sheet td>.xljs-icon{position:absolute;box-sizing:border-box}
 .xljs-sheet td>.xljs-icon>svg{display:block}
+.xljs-sheet td>svg.xljs-diag{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}
 .xljs-objs{position:absolute;overflow:hidden;pointer-events:none}
 .xljs-objs>*{position:absolute}
 .xljs-objs img{display:block}
@@ -1465,6 +1510,8 @@ fn blank_page(sh: &Sheet, cs: Seg, rs: Seg, objects: &[(Anchor, String, String)]
 struct CellCss {
     td: String,
     div: String,
+    /// The diagonal borders (an SVG over the whole cell).
+    diag: String,
     wrap: bool,
     rotated: bool,
     halign: String,
@@ -1494,25 +1541,15 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table
     let mut div = String::new();
     let cf_fill = if sh.mono { None } else { cf.and_then(|x| x.fill.clone()) };
     let fill = cf_fill.or_else(|| sh.fill(st)).or_else(|| if sh.mono { None } else { table.and_then(|t| t.fill.as_ref()).and_then(|c| css_color(c, sh.theme)) });
-    let mut bg: Vec<String> = Vec::new();
-    if let Some(b) = st.borders() {
-        let ds = b.diagonal().border_style();
-        if (b.diagonal_up() || b.diagonal_down()) && !ds.is_empty() && ds != "none" {
-            let color = b.diagonal().color().as_ref().and_then(|c| sh.color(c)).unwrap_or_else(|| "#000".into());
-            let line = |dir: &str| format!("linear-gradient(to {dir},transparent calc(50% - .5pt),{color} calc(50% - .5pt),{color} calc(50% + .5pt),transparent calc(50% + .5pt))");
-            if b.diagonal_up() {
-                bg.push(line("top left"));
-            }
-            if b.diagonal_down() {
-                bg.push(line("top right"));
-            }
-        }
+    let mut diag = String::new();
+    if let Some(b) = st.borders()
+        && (b.diagonal_up() || b.diagonal_down())
+    {
+        let color = b.diagonal().color().as_ref().and_then(|c| sh.color(c)).unwrap_or_else(|| "#000".into());
+        diag = diagonal_svg(b.diagonal().border_style(), &color, b.diagonal_up(), b.diagonal_down(), fill.as_deref().unwrap_or("#fff"));
     }
     if let Some(f) = &fill {
         let _ = write!(td, "background-color:{f};");
-    }
-    if !bg.is_empty() {
-        let _ = write!(td, "background-image:{};", bg.join(","));
     }
     for (i, side) in ["top", "right", "bottom", "left"].into_iter().enumerate() {
         if let Some(v) = &sides[i] {
@@ -1644,7 +1681,7 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table
     } else if rotated {
         div.push_str("align-items:center;justify-content:center;text-align:center;");
     }
-    CellCss { td, div, wrap, rotated, halign }
+    CellCss { td, div, diag, wrap, rotated, halign }
 }
 
 /// The size (pt) of the icons of icon sets.
@@ -1903,6 +1940,7 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                 let _ = write!(out, " rowspan=\"{rspan}\"");
             }
             out.push('>');
+            out.push_str(&css.diag);
             if val != Val::Empty {
                 let w: f64 = cols[ci..ci + cspan].iter().map(|c| sh.w(*c)).sum();
                 let h: f64 = rows[ri..ri + rspan].iter().map(|r| sh.h(*r)).sum();
