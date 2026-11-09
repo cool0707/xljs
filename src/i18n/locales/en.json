@@ -39,6 +39,7 @@
     "engine.lowMemory": "The computer is running out of memory ({0} MB left), so the script was stopped. Check that an array or object does not keep growing (an endless loop such as pushing to the array its condition reads).",
     "dev.title": "xljs development mode",
     "dev.needsWindows": "The development mode needs the Windows UI (WebView2).",
+    "dev.exeSettingsInvalid": "The settings {0} could not be read: {1}",
     "dev.noScript": "No script is open.",
     "dev.dropNotScript": "{0} is not a script (.js, .mjs, .ts).",
     "dev.badFile": "not a file of the script's folder: {0}",

@@ -70,6 +70,76 @@ pub struct DevOptions {
     /// Where the development mode keeps what is not a script's (the
     /// recent scripts).
     pub settings: PathBuf,
+    /// The settings distributed with the exe (xljs.json next to it; ""
+    /// = none): the default chat and more chats to choose from.
+    pub exe_settings: PathBuf,
+}
+
+/// The name of the settings file read from the folder of the exe.
+pub const EXE_SETTINGS: &str = "xljs.json";
+
+/// The settings file next to exe.
+pub fn exe_settings(exe: &Path) -> PathBuf {
+    exe.parent().map(|d| d.join(EXE_SETTINGS)).unwrap_or_default()
+}
+
+/// The settings distributed with the exe (xljs.json):
+/// `{"dev": {"chat": URL, "services": [{name, url, icon}], "builtinServices": bool}}`.
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct ExeSettings {
+    dev: DevDefaults,
+}
+
+#[derive(Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+struct DevDefaults {
+    /// The chat opened when a script has none of its own, and at the start.
+    chat: String,
+    /// Chats offered before the built-in ones.
+    services: Vec<Service>,
+    /// Whether the built-in chats (SERVICES) are offered too.
+    builtin_services: bool,
+}
+
+impl Default for DevDefaults {
+    fn default() -> Self {
+        DevDefaults { chat: String::new(), services: Vec::new(), builtin_services: true }
+    }
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct Service {
+    name: String,
+    url: String,
+    icon: String,
+}
+
+fn is_web(url: &str) -> bool {
+    url.starts_with("https://") || url.starts_with("http://")
+}
+
+/// Reads the exe's settings; a missing file is the defaults.
+fn load_exe_settings(p: &Path) -> Result<DevDefaults> {
+    if p.as_os_str().is_empty() || !p.is_file() {
+        return Ok(DevDefaults::default());
+    }
+    let text = read_text(p)?;
+    let s: ExeSettings = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| err!("dev.exeSettingsInvalid", p.display(), e))?;
+    let mut d = s.dev;
+    d.chat = d.chat.trim().to_string();
+    if !is_web(&d.chat) {
+        d.chat.clear();
+    }
+    d.services.retain(|s| is_web(s.url.trim()));
+    for s in &mut d.services {
+        s.url = s.url.trim().to_string();
+        if s.name.trim().is_empty() {
+            s.name = s.url.clone();
+        }
+    }
+    Ok(d)
 }
 
 /// The settings file of the development mode in the user's profile.
@@ -239,11 +309,13 @@ pub struct Session {
     ready: bool,
     /// The page the chat pane shows ("" = none).
     chat_url: String,
+    /// The settings distributed with the exe.
+    defaults: DevDefaults,
 }
 
 impl Session {
     pub fn new(u: Arc<dyn Ui>, w: Arc<dyn Window>, o: DevOptions, tx: Sender<Event>, dir: Arc<Mutex<Option<PathBuf>>>) -> Session {
-        Session { u, w, o, tx, dir, project: None, current: String::new(), saved: Vec::new(), running: None, next_run: 1, ready: false, chat_url: String::new() }
+        Session { u, w, o, tx, dir, project: None, current: String::new(), saved: Vec::new(), running: None, next_run: 1, ready: false, chat_url: String::new(), defaults: DevDefaults::default() }
     }
 
     fn post(&self, v: Value) {
@@ -281,7 +353,17 @@ impl Session {
         match r.op.as_str() {
             "ready" => {
                 self.ready = true;
+                let failed = match load_exe_settings(&self.o.exe_settings) {
+                    Ok(d) => {
+                        self.defaults = d;
+                        None
+                    }
+                    Err(e) => Some(e),
+                };
                 self.post(self.init());
+                if let Some(e) = &failed {
+                    self.fail(e);
+                }
                 let path = std::mem::take(&mut self.o.path);
                 if !path.is_empty() {
                     if Path::new(&path).is_dir() {
@@ -289,6 +371,12 @@ impl Session {
                     } else {
                         self.open(&path)?;
                     }
+                }
+                // Nothing to show yet: the default chat.
+                if self.project.is_none() && self.chat_url.is_empty() && !self.defaults.chat.is_empty() {
+                    self.chat_url = self.defaults.chat.clone();
+                    self.w.browser(BrowserCommand::Navigate(self.chat_url.clone()));
+                    self.post(json!({"type": "url", "url": self.chat_url}));
                 }
             }
             "open" => {
@@ -464,12 +552,26 @@ impl Session {
             "texts": texts(),
             // For the wizard's preview of the look (form.html).
             "formTexts": texts_under("form."),
-            "services": SERVICES.iter().map(|(n, u, i)| json!({"name": n, "url": u, "icon": i})).collect::<Vec<_>>(),
+            "services": self.services(),
             "recent": recent,
             "home": default_dir(&gs),
             // For the editor's completion (dev-types.js).
             "dts": crate::dts(),
         })
+    }
+
+    /// The chats offered on the start of the chat pane: those of the exe's
+    /// settings, then the built-in ones.
+    fn services(&self) -> Vec<Value> {
+        let d = &self.defaults;
+        let own = d.services.iter().map(|s| json!({"name": s.name, "url": s.url, "icon": s.icon}));
+        let builtin = SERVICES.iter().filter(|_| d.builtin_services).map(|(n, u, i)| json!({"name": n, "url": u, "icon": i}));
+        let mut v: Vec<Value> = own.chain(builtin).collect();
+        // The default chat is always among them (to come back to it).
+        if !d.chat.is_empty() && !v.iter().any(|s| s["url"] == d.chat.as_str()) {
+            v.insert(0, json!({"name": d.chat, "url": d.chat, "icon": ""}));
+        }
+        v
     }
 
     fn open_dialog(&mut self, start: &str) {
@@ -511,12 +613,15 @@ impl Session {
         let settings = p.dir.join(project::DATA_DIR).join("dev.json");
         let mut ps: ProjectSettings = load(&settings);
         let mut chat = ps.chat.get(&p.entry_name()).cloned().unwrap_or_default();
-        // A script without a chat of its own takes the one open now.
+        // A script without a chat of its own takes the one open now, else
+        // the default chat (remembered once the chat shows it).
         let keep_chat = chat.is_empty() && !self.chat_url.is_empty();
         if keep_chat {
             chat = self.chat_url.clone();
             ps.chat.insert(p.entry_name(), chat.clone());
             store(&settings, &ps);
+        } else if chat.is_empty() {
+            chat = self.defaults.chat.clone();
         }
         // The recent scripts, newest first.
         let mut gs: GlobalSettings = load(&self.o.settings);

@@ -39,6 +39,7 @@
     "engine.lowMemory": "パソコンの空きメモリが残り {0} MB になったため、スクリプトを中止しました。配列やオブジェクトが増え続けていないか（ループの終了条件で見ている配列に push し続けているなど）確認してください。",
     "dev.title": "xljs 開発モード",
     "dev.needsWindows": "開発モードには Windows の画面（WebView2）が必要です。",
+    "dev.exeSettingsInvalid": "設定ファイル {0} を読み込めません: {1}",
     "dev.noScript": "スクリプトが開かれていません。",
     "dev.dropNotScript": "{0} はスクリプト（.js・.mjs・.ts）ではありません。",
     "dev.badFile": "スクリプトのフォルダのファイルではありません: {0}",

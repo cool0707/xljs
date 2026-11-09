@@ -146,7 +146,7 @@ fn session(dir: &Path, answers: &str) -> (Session, Arc<Rec>, mpsc::Receiver<Even
     let w = Arc::new(Rec::default());
     let u = Arc::new(Mock::from_json(answers, None).unwrap());
     let (tx, rx) = mpsc::channel();
-    let o = DevOptions { path: String::new(), exe: "xljs".into(), run_args: vec![], settings: dir.join("settings.json") };
+    let o = DevOptions { path: String::new(), exe: "xljs".into(), run_args: vec![], settings: dir.join("settings.json"), exe_settings: dir.join("exe").join("xljs.json") };
     (Session::new(u, w.clone(), o, tx, Arc::new(Mutex::new(None))), w, rx)
 }
 
@@ -425,4 +425,57 @@ fn wizard_creates_and_ai_names() {
     write(&dl, "売上集計_v2.js", "alert(2);\n");
     s.event(Event::Browser(BrowserEvent::Downloaded { path: dl.join("売上集計_v2.js").to_string_lossy().into(), name: "売上集計_v2.js".into() }));
     assert_eq!(w.take("download")[0]["rename"], Value::Null);
+}
+
+#[test]
+fn exe_settings_default_chat() {
+    let _l = lock_lang("ja");
+    let dir = tempdir();
+    write(&dir, "main.js", "alert(1);\n");
+    write(&dir, "other.js", "alert(2);\n");
+    let agent = "https://m365.cloud.microsoft/chat/?titleId=T_agent";
+    write(
+        &dir.join("exe"),
+        "xljs.json",
+        &format!("\u{feff}{}", json!({"dev": {"chat": agent, "services": [{"name": "部署のエージェント", "url": agent, "icon": "m365"}, {"name": "bad", "url": "file:///x"}], "builtinServices": false}})),
+    );
+    let (mut s, w, _rx) = session(&dir, "{}");
+
+    // At the start: the default chat, offered on the start of the pane.
+    page(&mut s, json!({"op": "ready"}));
+    let posts = w.posts.lock().unwrap().clone();
+    let services = posts.iter().find(|v| v["type"] == "init").unwrap()["services"].clone();
+    assert_eq!(services, json!([{"name": "部署のエージェント", "url": agent, "icon": "m365"}]));
+    assert_eq!(posts.iter().find(|v| v["type"] == "url").unwrap()["url"], agent);
+    assert_eq!(w.cmds.lock().unwrap().last(), Some(&BrowserCommand::Navigate(agent.into())));
+
+    // Home: a script without a chat of its own opens the default chat.
+    page(&mut s, json!({"op": "chat", "url": ""}));
+    page(&mut s, json!({"op": "open", "path": dir.join("main.js").to_string_lossy()}));
+    assert_eq!(w.take("project")[0]["chat"], agent);
+    assert_eq!(w.cmds.lock().unwrap().last(), Some(&BrowserCommand::Navigate(agent.into())));
+
+    // A script with its own chat keeps it.
+    s.event(Event::Browser(BrowserEvent::Url("https://chat.example/c/1".into())));
+    page(&mut s, json!({"op": "open", "path": dir.join("main.js").to_string_lossy()}));
+    assert_eq!(w.take("project")[0]["chat"], "https://chat.example/c/1");
+    page(&mut s, json!({"op": "chat", "url": ""}));
+    page(&mut s, json!({"op": "open", "path": dir.join("other.js").to_string_lossy()}));
+    assert_eq!(w.take("project")[0]["chat"], agent);
+
+    // With the built-in chats on (the default), they follow those of the settings;
+    // a file that cannot be read is reported.
+    write(&dir.join("exe"), "xljs.json", &json!({"dev": {"chat": agent}}).to_string());
+    let (mut s, w, _rx) = session(&dir, "{}");
+    page(&mut s, json!({"op": "ready"}));
+    let services = w.take("init")[0]["services"].as_array().unwrap().clone();
+    assert_eq!(services[0]["url"], agent);
+    assert_eq!(services.len(), crate::dev::SERVICES.len() + 1);
+    write(&dir.join("exe"), "xljs.json", "{ broken");
+    let (mut s, w, _rx) = session(&dir, "{}");
+    page(&mut s, json!({"op": "ready"}));
+    let posts = w.posts.lock().unwrap().clone();
+    assert!(posts.iter().find(|v| v["type"] == "error").unwrap()["message"].as_str().unwrap().contains("xljs.json"));
+    assert_eq!(posts.iter().find(|v| v["type"] == "init").unwrap()["services"].as_array().unwrap().len(), crate::dev::SERVICES.len());
+    assert!(posts.iter().all(|v| v["type"] != "url"));
 }
