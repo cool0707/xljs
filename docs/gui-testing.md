@@ -64,7 +64,7 @@ Stop-XljsMute; Stop-XljsAwake
 
 | ケース | 操作 | 確認 |
 |---|---|---|
-| launch-screen | 引数なしで起動 → 「キャンセル」 | 開始画面の 4 つのボタンがある、終了する |
+| launch-screen | 引数なしで起動 → ウィンドウを閉じる | 開始画面（WebView2）の 5 つのボタンがある、終了する |
 | dialog-aggregate | フォルダー選択 → 進捗 → 保存ダイアログ → alert の OK | alert の文言、出力ブックの集計・明細、終了。`shell.showItemInFolder` で開いたエクスプローラーは閉じる |
 | form-aggregate | WebView2 のフォーム: 参照…（フォルダー／保存）、ラジオ、チェックボックス → 集計 → 閉じる | フォームのログ（件数・保存先）と「完了しました」、出力ブック（明細シートなし・商品名で集計） |
 | progress-cancel | IProgressDialog のキャンセル | 「キャンセルされました」の alert、終了 |
@@ -77,7 +77,7 @@ Stop-XljsMute; Stop-XljsAwake
 
 できる:
 - スクリーンショット（全モニター／ウィンドウ単位）。**画面（モニター）を消していても撮れる**。DPI 拡大率に関係なく物理ピクセル。
-- Win32 ダイアログ（MessageBox、IFileDialog、IProgressDialog、開始画面）の文言の読み取りとボタン操作・パス入力。
+- Win32 ダイアログ（MessageBox、IFileDialog、IProgressDialog）の文言の読み取りとボタン操作・パス入力。
 - WebView2 の中身の操作。Chromium が UIA を出すので、HTML の要素が **id を AutomationId として** 見え、
   ボタン（Invoke）、テキスト（Value）、チェックボックス（Toggle）、ラジオ（SelectionItem）、ログの文言（Text の Name）が扱える。
 - 画面を消したまま操作（入力を使わないので画面が点かない）。スリープ・ロックの抑止（`stay-awake.ps1`）。
@@ -96,7 +96,7 @@ Stop-XljsMute; Stop-XljsAwake
 
 ## はまりどころ（実際に踏んだもの）
 
-- **xljs の Win32 ボタン・Edit は UIA で `Pane` に見え、パターンがない**（開始画面、ファイルダイアログ下部のファイル名欄・
+- **xljs の Win32 ボタン・Edit は UIA で `Pane` に見え、パターンがない**（ファイルダイアログ下部のファイル名欄・
   ボタン、MessageBox の OK）。UIA 経由では押せないので、`NativeWindowHandle` に `BM_CLICK`／`WM_SETTEXT` を送る。
   探すときは `-ControlType` ではなく `-ClassName Button` / `Edit` で。
   （スクリーンリーダーなど支援技術からも操作しにくい可能性がある。xljs 側の課題として未調査）

@@ -143,7 +143,7 @@ function Find-XljsElement {
 
 <#
 .SYNOPSIS ボタンなどを押す。Invoke → Toggle → SelectionItem → ネイティブボタンへの BM_CLICK の順に試す。
-xljs の起動画面のボタンは UIA では Pane に見えてパターンがないので BM_CLICK になる。
+MessageBox などの Win32 のボタンは UIA では Pane に見えてパターンがないので BM_CLICK になる。
 #>
 function Invoke-XljsElement {
     param([Parameter(Mandatory, ValueFromPipeline)][System.Windows.Automation.AutomationElement]$Element)
