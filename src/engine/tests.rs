@@ -667,7 +667,7 @@ fn watchdog_stops_endless_loops() {
     for (name, src) in cases {
         let start = Instant::now();
         let r = run_watched(src, "[false, true]", limit);
-        assert_eq!(r.code, watchdog::STOPPED_CODE, "{name}: err {} stderr {:?}", r.err_text(), r.stderr);
+        assert_eq!(r.code, watchdog::STUCK_CODE, "{name}: err {} stderr {:?}", r.err_text(), r.stderr);
         assert!(r.err.is_none() && r.stdout.is_empty(), "{name}: err {} stdout {:?}", r.err_text(), r.stdout);
         // "keep running" the first time, then "stop".
         assert_eq!(r.stderr.matches("confirm(").count(), 2, "{name}: {:?}", r.stderr);
@@ -681,7 +681,7 @@ fn watchdog_tells_where_it_stopped() {
     let _l = lock_lang("ja");
     let src = "let n = 0;\nfunction spin() {\n  while (true) { n++; }\n}\nspin();\n";
     let r = run_watched(src, "[true]", Duration::from_millis(200));
-    assert_eq!(r.code, watchdog::STOPPED_CODE, "{:?}", r.stderr);
+    assert_eq!(r.code, watchdog::STUCK_CODE, "{:?}", r.stderr);
     assert!(r.stderr.contains("中止した場所:\n    at spin (loop.js:3:"), "{:?}", r.stderr);
 }
 

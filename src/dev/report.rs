@@ -83,12 +83,13 @@ pub fn fence(file: &str) -> &'static str {
     }
 }
 
-/// The request for the AI chat after a failed or stopped run.
-pub fn prompt(p: &Project, stopped: bool, message: &str, loc: Option<&Location>) -> String {
+/// The request for the AI chat after a failed run, or one stopped because
+/// it did not respond (stuck).
+pub fn prompt(p: &Project, stuck: bool, message: &str, loc: Option<&Location>) -> String {
     let file = loc.map(|l| l.file.clone()).unwrap_or_else(|| p.entry_name());
-    let mut s = if stopped { t!("dev.promptStopped", file) } else { t!("dev.promptError", file) };
+    let mut s = if stuck { t!("dev.promptStopped", file) } else { t!("dev.promptError", file) };
     s.push_str("\n\n");
-    if !stopped && !message.is_empty() {
+    if !stuck && !message.is_empty() {
         s.push_str(&format!("{}\n```\n{}\n```\n\n", t!("dev.promptMessage"), message.trim_end()));
     }
     if let Some(l) = loc

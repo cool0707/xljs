@@ -315,7 +315,7 @@ fn finish_caught(ctx: &Ctx, host: &Rc<Host>, e: rquickjs::CaughtError) -> Result
         let at = stopped_at(&describe_caught(ctx, e));
         return Err(script_error(if at.is_empty() { msg } else { format!("{msg}\n{at}") }));
     }
-    if host.exit_code() == watchdog::STOPPED_CODE {
+    if matches!(host.exit_code(), watchdog::STOPPED_CODE | watchdog::STUCK_CODE) {
         let at = stopped_at(&describe_caught(ctx, e));
         if !at.is_empty() {
             let _ = writeln!(host.env.stderr.lock().unwrap(), "{}\n{at}", t!("engine.stoppedAt"));

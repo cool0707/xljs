@@ -11,7 +11,8 @@
 //! that tells where the script was running.
 //!
 //! The script is paused while the question is open; "stop" ends it like
-//! exit(130) with an uncatchable exception. The waits mark themselves with
+//! exit() with an uncatchable exception: exit code 124 (STUCK_CODE) after
+//! the watchdog, 130 (STOPPED_CODE) after the stop key. The waits mark themselves with
 //! `waited()` (the event loop and the UI calls of ui::run); the checks run
 //! in the QuickJS interrupt handler on the script thread. The key is read
 //! by a thread of its own (GetAsyncKeyState, so it works without a window
@@ -27,8 +28,14 @@ use std::time::{Duration, Instant};
 use crate::api::Host;
 use crate::t;
 
-/// The exit code of a script stopped by the user (like Ctrl+C).
+/// The exit code of a script stopped by the user (the stop key, closing
+/// the debugger window; like Ctrl+C).
 pub const STOPPED_CODE: i32 = 130;
+
+/// The exit code of a script stopped because it did not respond (the
+/// watchdog; like the timeout command). The development mode tells the
+/// user about a possible endless loop only then.
+pub const STUCK_CODE: i32 = 124;
 
 /// The limit the CLI uses when nothing else is given.
 pub const DEFAULT_LIMIT: Duration = Duration::from_secs(15);
@@ -236,12 +243,12 @@ pub(crate) fn install(rt: &rquickjs::Runtime, host: Weak<Host>, limit: Option<Du
         }
         let active = st.active_since.load(Ordering::SeqCst);
         let pressed = st.pressed.swap(0, Ordering::SeqCst);
-        let message = if pressed != 0 && pressed.saturating_sub(active) >= grace {
-            t!("engine.stopKeyConfirm", key_name.as_deref().unwrap_or_default())
+        let (message, code) = if pressed != 0 && pressed.saturating_sub(active) >= grace {
+            (t!("engine.stopKeyConfirm", key_name.as_deref().unwrap_or_default()), STOPPED_CODE)
         } else if let Some(l) = limit
             && st.now().saturating_sub(active) >= l.as_nanos() as u64
         {
-            t!("engine.stuckConfirm", l.as_secs_f64())
+            (t!("engine.stuckConfirm", l.as_secs_f64()), STUCK_CODE)
         } else {
             return false;
         };
@@ -251,7 +258,7 @@ pub(crate) fn install(rt: &rquickjs::Runtime, host: Weak<Host>, limit: Option<Du
         if stop {
             stopped = true;
             let _ = writeln!(h.env.stderr.lock().unwrap(), "{}", t!("engine.stopped"));
-            h.set_exit(STOPPED_CODE);
+            h.set_exit(code);
         }
         stop
     })));

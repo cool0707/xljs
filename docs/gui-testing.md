@@ -68,7 +68,7 @@ Stop-XljsMute; Stop-XljsAwake
 | dialog-aggregate | フォルダー選択 → 進捗 → 保存ダイアログ → alert の OK | alert の文言、出力ブックの集計・明細、終了。`shell.showItemInFolder` で開いたエクスプローラーは閉じる |
 | form-aggregate | WebView2 のフォーム: 参照…（フォルダー／保存）、ラジオ、チェックボックス → 集計 → 閉じる | フォームのログ（件数・保存先）と「完了しました」、出力ブック（明細シートなし・商品名で集計） |
 | progress-cancel | IProgressDialog のキャンセル | 「キャンセルされました」の alert、終了 |
-| watchdog | 無限ループのスクリプトを `--watchdog=2` で実行 → キャンセル → OK | 確認の文言、キャンセル後に再度尋ねる、終了コード 130 |
+| watchdog | 無限ループのスクリプトを `--watchdog=2` で実行 → キャンセル → OK | 確認の文言、キャンセル後に再度尋ねる、終了コード 124 |
 
 2026-10-31 時点で 4 件とも PASS（`-MonitorOff` で画面を消した状態でも同じ）。あわせて `cargo test --lib`
 （68 件、ネイティブダイアログと WebView2 のテストを含む）も実機で PASS。

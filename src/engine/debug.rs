@@ -176,7 +176,7 @@ impl Session {
             return;
         }
         self.done.set(true);
-        self.code.set(130);
+        self.code.set(super::watchdog::STOPPED_CODE);
         (self.trace)("closed while running".into());
         let mut e = host.env.stderr.lock().unwrap();
         let _ = writeln!(e, "{}", t!("debug.aborted"));
