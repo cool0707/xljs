@@ -5,27 +5,28 @@
 <title>xljs</title>
 <link rel="stylesheet" href="fontawesome/css/all.min.css">
 <link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="icons.css">
 <link rel="stylesheet" href="dev.css">
 </head>
 <body>
 <header id="toolbar">
   <div class="script">
-    <i class="fa-regular fa-file-code"></i>
+    <i class="ic ic-file-code"></i>
     <span id="script-name"></span>
     <span id="script-dir" class="muted"></span>
   </div>
   <div class="group">
-    <button type="button" id="btn-open" class="tool"><i class="fa-regular fa-folder-open"></i><span data-t="open"></span></button>
-    <button type="button" id="btn-new" class="tool"><i class="fa-regular fa-file"></i><span data-t="new"></span></button>
-    <button type="button" id="btn-folder" class="tool icon" data-tip="showFolder"><i class="fa-regular fa-folder"></i></button>
+    <button type="button" id="btn-open" class="tool"><i class="ic ic-folder-open"></i><span data-t="open"></span></button>
+    <button type="button" id="btn-new" class="tool"><i class="ic ic-file"></i><span data-t="new"></span></button>
+    <button type="button" id="btn-folder" class="tool icon" data-tip="showFolder"><i class="ic ic-folder"></i></button>
   </div>
   <div class="group">
-    <button type="button" id="btn-run" class="tool run"><i class="fa-solid fa-play"></i><span data-t="run"></span></button>
-    <button type="button" id="btn-debug" class="tool"><i class="fa-solid fa-bug"></i><span data-t="debugRun"></span></button>
-    <button type="button" id="btn-stop" class="tool stop"><i class="fa-solid fa-stop"></i><span data-t="stop"></span></button>
+    <button type="button" id="btn-run" class="tool run"><i class="ic ic-play"></i><span data-t="run"></span></button>
+    <button type="button" id="btn-debug" class="tool"><i class="ic ic-bug"></i><span data-t="debugRun"></span></button>
+    <button type="button" id="btn-stop" class="tool stop"><i class="ic ic-square"></i><span data-t="stop"></span></button>
   </div>
   <div class="group layout">
-    <button type="button" id="lay-reset" class="tool icon" data-tip="layoutReset"><i class="fa-solid fa-table-cells-large"></i></button>
+    <button type="button" id="lay-reset" class="tool icon" data-tip="layoutReset"><i class="ic ic-layout-grid"></i></button>
   </div>
 </header>
 
@@ -34,24 +35,24 @@
 <div id="panes"></div>
 <div id="stash" hidden>
   <nav id="tabs">
-    <button type="button" data-tab="chat" data-tip="tabMoveTip"><i class="fa-regular fa-comments"></i><span data-t="tabChat"></span></button>
-    <button type="button" data-tab="code" data-tip="tabMoveTip"><i class="fa-solid fa-code"></i><span data-t="tabCode"></span></button>
-    <button type="button" data-tab="diff" data-tip="tabMoveTip"><i class="fa-solid fa-code-compare"></i><span data-t="tabDiff"></span><span id="diff-badge" class="badge" hidden>1</span></button>
-    <button type="button" data-tab="preview" data-tip="tabMoveTip"><i class="fa-regular fa-eye"></i><span data-t="tabPreview"></span></button>
-    <button type="button" data-tab="history" data-tip="tabMoveTip"><i class="fa-solid fa-clock-rotate-left"></i><span data-t="tabHistory"></span></button>
-    <button type="button" data-tab="output" data-tip="tabMoveTip"><i class="fa-solid fa-terminal"></i><span data-t="tabOutput"></span><span id="output-badge" class="badge error" hidden>!</span></button>
+    <button type="button" data-tab="chat" data-tip="tabMoveTip"><i class="ic ic-messages-square"></i><span data-t="tabChat"></span></button>
+    <button type="button" data-tab="code" data-tip="tabMoveTip"><i class="ic ic-code"></i><span data-t="tabCode"></span></button>
+    <button type="button" data-tab="diff" data-tip="tabMoveTip"><i class="ic ic-git-compare"></i><span data-t="tabDiff"></span><span id="diff-badge" class="badge" hidden>1</span></button>
+    <button type="button" data-tab="preview" data-tip="tabMoveTip"><i class="ic ic-eye"></i><span data-t="tabPreview"></span></button>
+    <button type="button" data-tab="history" data-tip="tabMoveTip"><i class="ic ic-history"></i><span data-t="tabHistory"></span></button>
+    <button type="button" data-tab="output" data-tip="tabMoveTip"><i class="ic ic-terminal"></i><span data-t="tabOutput"></span><span id="output-badge" class="badge error" hidden>!</span></button>
   </nav>
 
   <div id="panel-chat" class="panel">
     <div id="chat-bar" class="bar">
-      <span id="chat-grip" class="grip" data-tip="moveChat"><i class="fa-solid fa-grip-vertical"></i></span>
-      <button type="button" id="chat-home" class="tool icon" data-tip="chatHome"><i class="fa-regular fa-house"></i></button>
-      <button type="button" id="chat-back" class="tool icon" data-tip="back"><i class="fa-solid fa-arrow-left"></i></button>
-      <button type="button" id="chat-forward" class="tool icon" data-tip="forward"><i class="fa-solid fa-arrow-right"></i></button>
-      <button type="button" id="chat-reload" class="tool icon" data-tip="reload"><i class="fa-solid fa-rotate-right"></i></button>
+      <span id="chat-grip" class="grip" data-tip="moveChat"><i class="ic ic-grip-vertical"></i></span>
+      <button type="button" id="chat-home" class="tool icon" data-tip="chatHome"><i class="ic ic-house"></i></button>
+      <button type="button" id="chat-back" class="tool icon" data-tip="back"><i class="ic ic-arrow-left"></i></button>
+      <button type="button" id="chat-forward" class="tool icon" data-tip="forward"><i class="ic ic-arrow-right"></i></button>
+      <button type="button" id="chat-reload" class="tool icon" data-tip="reload"><i class="ic ic-rotate-cw"></i></button>
       <input type="text" id="chat-url" spellcheck="false">
-      <button type="button" id="chat-intro" class="tool" data-tip="introTip"><i class="fa-regular fa-clipboard"></i><span data-t="intro"></span></button>
-      <button type="button" id="chat-add" class="tool icon" data-tip="tabAdd" hidden><i class="fa-solid fa-plus"></i></button>
+      <button type="button" id="chat-intro" class="tool" data-tip="introTip"><i class="ic ic-clipboard"></i><span data-t="intro"></span></button>
+      <button type="button" id="chat-add" class="tool icon" data-tip="tabAdd" hidden><i class="ic ic-plus"></i></button>
     </div>
     <div id="chat-start" class="start">
       <h2 data-t="chatTitle"></h2>
@@ -66,7 +67,7 @@
         <li data-t="step2"></li>
         <li data-t="step3"></li>
       </ol>
-      <button type="button" id="chat-intro2"><i class="fa-regular fa-clipboard"></i> <span data-t="intro"></span></button>
+      <button type="button" id="chat-intro2"><i class="ic ic-clipboard"></i> <span data-t="intro"></span></button>
       <p id="chat-failed" class="error-text" hidden></p>
     </div>
     <div id="chat-view"></div>
@@ -76,9 +77,9 @@
       <h2 data-t="welcomeTitle"></h2>
       <p class="muted" data-t="welcomeLead"></p>
       <div class="services">
-        <button type="button" id="w-open" class="big"><i class="fa-regular fa-folder-open"></i><span data-t="openScript"></span></button>
-        <button type="button" id="w-wizard" class="big"><i class="fa-solid fa-wand-magic-sparkles"></i><span data-t="wzStart"></span></button>
-        <button type="button" id="w-port" class="big"><i class="fa-regular fa-file-excel"></i><span data-t="wzStartPort"></span></button>
+        <button type="button" id="w-open" class="big"><i class="ic ic-folder-open"></i><span data-t="openScript"></span></button>
+        <button type="button" id="w-wizard" class="big"><i class="ic ic-wand-sparkles"></i><span data-t="wzStart"></span></button>
+        <button type="button" id="w-port" class="big"><i class="ic ic-file-spreadsheet"></i><span data-t="wzStartPort"></span></button>
       </div>
       <p class="muted small-links">
         <span data-t="templateOnly"></span>
@@ -103,7 +104,7 @@
       <section class="port-only">
         <h3 data-t="wzBooks"></h3>
         <p class="muted" data-t="wzBooksLead"></p>
-        <button type="button" id="wz-books"><i class="fa-regular fa-folder-open"></i> <span data-t="wzChooseBooks"></span></button>
+        <button type="button" id="wz-books"><i class="ic ic-folder-open"></i> <span data-t="wzChooseBooks"></span></button>
         <ul id="wz-book-list" class="book-list"></ul>
         <label class="opt"><input type="checkbox" id="wz-vba" checked> <span data-t="wzIncludeVba"></span></label>
         <label class="opt"><input type="checkbox" id="wz-sheets" checked> <span data-t="wzIncludeSheets"></span></label>
@@ -111,7 +112,7 @@
           <select id="wz-rows"><option value="0"></option><option value="3">3</option><option value="5">5</option><option value="10">10</option></select>
         </label>
         <p class="muted indent" data-t="wzPrivacy"></p>
-        <button type="button" id="wz-save-text"><i class="fa-regular fa-floppy-disk"></i> <span data-t="wzSaveText"></span></button>
+        <button type="button" id="wz-save-text"><i class="ic ic-save"></i> <span data-t="wzSaveText"></span></button>
       </section>
 
       <section class="port-only">
@@ -157,13 +158,13 @@
           </select></label>
         </div>
         <div class="row">
-          <button type="button" id="wz-look-preview"><i class="fa-regular fa-eye"></i> <span data-t="wzLookPreview"></span></button>
+          <button type="button" id="wz-look-preview"><i class="ic ic-eye"></i> <span data-t="wzLookPreview"></span></button>
         </div>
         <div id="wz-look-box" hidden>
           <p class="muted app-note" data-t="wzLookAppNote"></p>
           <div class="wz-window" id="wz-window">
             <div class="wz-sysbar"><span class="wz-sysbar-title"></span><span class="wz-caption">&#xE921;</span><span class="wz-caption">&#xE922;</span><span class="wz-caption wz-close">&#xE8BB;</span></div>
-            <div class="wz-custombar"><i class="fa-solid fa-table"></i><span class="wz-custombar-title"></span><span class="wz-caption">&#xE921;</span><span class="wz-caption">&#xE922;</span><span class="wz-caption wz-close">&#xE8BB;</span></div>
+            <div class="wz-custombar"><i class="ic ic-table"></i><span class="wz-custombar-title"></span><span class="wz-caption">&#xE921;</span><span class="wz-caption">&#xE922;</span><span class="wz-caption wz-close">&#xE8BB;</span></div>
             <iframe id="wz-look-frame" title="preview"></iframe>
           </div>
           <p class="muted" data-t="wzLookNote"></p>
@@ -194,7 +195,7 @@
       <section>
         <label class="opt"><input type="checkbox" id="wz-intro"> <span data-t="wzIntro"></span></label>
         <div class="row">
-          <button type="button" id="wz-make" class="primary"><i class="fa-solid fa-wand-magic-sparkles"></i> <span data-t="wzMake"></span></button>
+          <button type="button" id="wz-make" class="primary"><i class="ic ic-wand-sparkles"></i> <span data-t="wzMake"></span></button>
           <button type="button" id="wz-cancel" data-t="wzCancel"></button>
         </div>
       </section>
@@ -204,7 +205,7 @@
         <p class="muted" id="wz-count"></p>
         <textarea id="wz-text" rows="16" spellcheck="false"></textarea>
         <div class="row">
-          <button type="button" id="wz-create" class="primary"><i class="fa-regular fa-clipboard"></i> <span data-t="wzCreate"></span></button>
+          <button type="button" id="wz-create" class="primary"><i class="ic ic-clipboard"></i> <span data-t="wzCreate"></span></button>
           <button type="button" id="wz-copy"><span data-t="wzCopyOnly"></span></button>
         </div>
         <p class="muted" data-t="wzAfter"></p>
@@ -216,8 +217,8 @@
         <select id="file-select"></select>
         <span id="save-state" class="muted"></span>
         <span class="spacer"></span>
-        <button type="button" id="btn-format" class="tool" data-tip="formatTip"><i class="fa-solid fa-align-left"></i><span data-t="format"></span></button>
-        <button type="button" id="btn-save" class="tool"><i class="fa-regular fa-floppy-disk"></i><span data-t="save"></span></button>
+        <button type="button" id="btn-format" class="tool" data-tip="formatTip"><i class="ic ic-text-align-start"></i><span data-t="format"></span></button>
+        <button type="button" id="btn-save" class="tool"><i class="ic ic-save"></i><span data-t="save"></span></button>
       </div>
       <div class="editor">
         <div id="code"></div>
@@ -231,7 +232,7 @@
         <label id="diff-rename-label" class="check" hidden><input type="checkbox" id="diff-rename" checked> <span id="diff-rename-text"></span></label>
         <span id="diff-stats" class="stats"></span>
         <span class="spacer"></span>
-        <button type="button" id="diff-apply" class="primary"><i class="fa-solid fa-check"></i> <span id="diff-apply-label"></span></button>
+        <button type="button" id="diff-apply" class="primary"><i class="ic ic-check"></i> <span id="diff-apply-label"></span></button>
         <button type="button" id="diff-discard"><span data-t="discard"></span></button>
       </div>
       <p id="diff-empty" class="hint muted" data-t="diffEmpty"></p>
@@ -242,7 +243,7 @@
       <div class="bar">
         <span id="preview-title"></span>
         <span class="spacer"></span>
-        <button type="button" id="preview-refresh" class="tool"><i class="fa-solid fa-rotate-right"></i><span id="preview-refresh-label"></span></button>
+        <button type="button" id="preview-refresh" class="tool"><i class="ic ic-rotate-cw"></i><span id="preview-refresh-label"></span></button>
       </div>
       <p id="preview-hint" class="hint muted"></p>
       <pre id="preview-error" class="error-box" hidden></pre>
@@ -259,14 +260,14 @@
       <div class="bar">
         <span id="run-state"></span>
         <span class="spacer"></span>
-        <button type="button" id="output-clear" class="tool"><i class="fa-solid fa-eraser"></i><span data-t="clear"></span></button>
+        <button type="button" id="output-clear" class="tool"><i class="ic ic-eraser"></i><span data-t="clear"></span></button>
       </div>
       <div id="failure" class="failure" hidden>
         <h3 id="failure-title"></h3>
         <button type="button" id="failure-at" class="link" hidden></button>
         <pre id="failure-message" class="error-box"></pre>
         <div class="row">
-          <button type="button" id="failure-copy" class="primary"><i class="fa-regular fa-clipboard"></i> <span data-t="copyPrompt"></span></button>
+          <button type="button" id="failure-copy" class="primary"><i class="ic ic-clipboard"></i> <span data-t="copyPrompt"></span></button>
           <label class="check"><input type="checkbox" id="failure-full"> <span data-t="includeCode"></span></label>
         </div>
         <p class="muted" data-t="copyHint"></p>

@@ -167,7 +167,7 @@
   function groupEl(g) {
     let e = groupEls.get(g.id);
     if (!e) {
-      const add = el("button", { type: "button", className: "tab-add" }, icon("fa-solid fa-plus"));
+      const add = el("button", { type: "button", className: "tab-add" }, icon("ic ic-plus"));
       add.onclick = () => addMenu(add, e.dataset.gid);
       e = el("section", { className: "pane tab-group" }, el("nav", { className: "tabs" }, add), el("div", { className: "group-body" }));
       e.dataset.gid = g.id;
@@ -314,7 +314,7 @@
   function tabMenu(tab, x, y) {
     if (openTabs() <= 1) return;
     openMenu(x, y, [
-      { label: el("span", {}, icon("fa-solid fa-xmark"), el("span", { textContent: L.tabClose || "" })), action: () => closeTab(tab) },
+      { label: el("span", {}, icon("ic ic-x"), el("span", { textContent: L.tabClose || "" })), action: () => closeTab(tab) },
     ]);
   }
 
@@ -969,7 +969,7 @@
   const SERVICE_FA = { openai: "fa-openai" };
   function serviceIcon(name) {
     if (SERVICE_SVGS[name]) return el("img", { className: "service-icon", src: `vendor/lobe-icons/${SERVICE_SVGS[name]}.svg`, alt: "" });
-    return icon(SERVICE_FA[name] ? `fa-brands ${SERVICE_FA[name]} service-icon` : "fa-regular fa-comments");
+    return icon(SERVICE_FA[name] ? `fa-brands ${SERVICE_FA[name]} service-icon` : "ic ic-messages-square");
   }
 
   function initChat(services) {
@@ -1105,7 +1105,7 @@
     const color = (c) => ({ light: c, dark: c });
     lookForm = {
       type: "init", texts: st.formTexts || {}, lang: st.lang || "ja",
-      description: L.wzPvDescription, submit: L.wzPvSubmit, submitIcon: "fa-solid fa-play",
+      description: L.wzPvDescription, submit: L.wzPvSubmit, submitIcon: "ic ic-play",
       accent: color(a.accent), background: color(a.background), radius: RADIUS[$("wz-radius").value] || "",
       tabs: [], tabIcons: [], groups: [], buttons: [], buttonIcons: [], buttonTooltips: [],
       fields: [
@@ -1150,7 +1150,7 @@
   function wizardBooks(m) {
     wz.books = m.books || [];
     $("wz-book-list").replaceChildren(...wz.books.map((b) => el("li", { className: b.error ? "err" : "" },
-      icon("fa-regular fa-file-excel"), " ", b.name, " — ",
+      icon("ic ic-file-spreadsheet"), " ", b.name, " — ",
       b.error ? b.error : b.modules ? fmt(L.wzModules, b.modules) : L.wzNoMacros)));
     const f = $("wz-folder");
     if (m.dir && (!f.value || f.value === st.home)) f.value = m.dir;

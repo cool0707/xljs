@@ -136,7 +136,7 @@ function init(m) {
 /** Makes a group's heading open and close it (collapsed: closed at first). */
 function collapsible(sec, head, collapsed) {
   head.classList.add("toggle");
-  head.prepend(el("i", { className: "fa-solid fa-chevron-right chevron" }));
+  head.prepend(el("i", { className: "ic ic-chevron-right chevron" }));
   head.tabIndex = 0;
   head.setAttribute("role", "button");
   const set = (closed) => {
@@ -321,7 +321,7 @@ function buildControl(f, id) {
       };
     }
     case "note": {
-      const icons = { info: "fa-solid fa-circle-info", success: "fa-solid fa-circle-check", warning: "fa-solid fa-triangle-exclamation", error: "fa-solid fa-circle-xmark" };
+      const icons = { info: "ic ic-info", success: "ic ic-circle-check", warning: "ic ic-triangle-alert", error: "ic ic-circle-x" };
       const variant = icons[f.variant] ? f.variant : "info";
       const body = el("div", { className: "note-body" });
       const node = el("div", { className: "note " + variant, id },
@@ -541,7 +541,7 @@ function tagsControl(f, id) {
   function render() {
     for (const n of [...box.querySelectorAll(".tag")]) n.remove();
     removes = tags.map((t, k) => {
-      const x = el("button", { type: "button", className: "tag-x", title: texts.removeTag, tabIndex: -1 }, el("i", { className: "fa-solid fa-xmark" }));
+      const x = el("button", { type: "button", className: "tag-x", title: texts.removeTag, tabIndex: -1 }, el("i", { className: "ic ic-x" }));
       x.setAttribute("aria-label", texts.removeTag + " " + t);
       x.disabled = i.disabled;
       x.onclick = (e) => { e.stopPropagation(); tags.splice(k, 1); render(); changedBy(box); i.focus(); };
@@ -1045,11 +1045,11 @@ function menuButton(b, k, spec, variant) {
   if (spec.split) {
     b.onclick = () => submit(k, undefined, b);
     toggle = el("button", { type: "button", className: "split-toggle " + variantClass(variant), title: texts.moreActions },
-      el("i", { className: "fa-solid fa-chevron-down" }));
+      el("i", { className: "ic ic-chevron-down" }));
     toggle.setAttribute("aria-label", texts.moreActions);
     extraButtons.push(toggle);
   } else {
-    b.append(el("i", { className: "fa-solid fa-chevron-down caret" }));
+    b.append(el("i", { className: "ic ic-chevron-down caret" }));
   }
   toggle.setAttribute("aria-haspopup", "menu");
   toggle.setAttribute("aria-expanded", "false");
