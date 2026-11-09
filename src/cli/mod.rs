@@ -4,6 +4,7 @@
 mod console;
 mod launch;
 mod db;
+mod form;
 mod vba;
 
 use std::path::Path;

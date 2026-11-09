@@ -50,11 +50,11 @@ pub(super) fn launch(con: &ConsoleState, u: Arc<dyn Ui>, explicit_lang: bool, st
         }
         LAUNCH_VBA => {
             let books = u.open_files(&PickerOptions {
-                title: t!("cli.selectMacroBooks"),
+                title: t!("cli.selectBooks"),
                 multiple: true,
                 filters: vec![FileFilter {
-                    description: t!("cli.macroBooks"),
-                    patterns: super::vba::MACRO_PATTERNS.iter().map(|s| s.to_string()).collect(),
+                    description: t!("cli.excelBooks"),
+                    patterns: super::vba::BOOK_PATTERNS.iter().map(|s| s.to_string()).collect(),
                 }],
                 ..Default::default()
             });
@@ -145,7 +145,7 @@ fn ask_window(u: &dyn Ui, data: String) -> Result<Option<i64>> {
 }
 
 /// Serves the built-in files under BUILTIN_PREFIX.
-struct LaunchAssets;
+pub(super) struct LaunchAssets;
 
 impl AssetFs for LaunchAssets {
     fn read(&self, name: &str) -> std::io::Result<Vec<u8>> {
