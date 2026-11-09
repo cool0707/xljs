@@ -133,6 +133,25 @@ umya-spreadsheet の図形のモデルは一部しか持たないので使わな
 | 印刷しないもの | 非表示（`cNvPr hidden`）と「オブジェクトを印刷する」をオフにしたもの（`clientData fPrintsWithSheet="0"`） |
 - 画面で開いたとき（`@media screen`）はページを灰色の背景の上に用紙の大きさで並べる（`toHtml` の確認用）。
 
+### 条件付き書式（`src/api/xlsx_cond.rs`）
+
+規則は umya-spreadsheet のもの（`Worksheet::conditional_formatting_collection`）を印刷のときに読む（`xlsx_cond::sheet_rules`）。
+Excel 2010 の拡張（`extLst` の `x14:conditionalFormattings`。負の値と軸のあるデータバー、`3Stars` など）は `conditional_formatting_2010_collection` で、
+両方に書かれたデータバーは `ext_id`（`<x14:id>`）と拡張側の `id` で結ぶ。アイコンセットの種類・データバーの設定・拡張・差分の書式の表示形式はフォークで読み書きできるようにした（7 章）。
+
+- 規則は優先順位（`priority`）の順に当てる。書式の項目（塗り・文字の色・太字・斜体・取り消し線・下線・表示形式・罫線）は先に当たった規則が勝ち、
+  「条件を満たす場合は停止」（`stopIfTrue`）で後ろの規則を止める。条件付き書式はセルの書式・テーブルスタイルより優先。白黒印刷では塗りと文字の色を出さない。
+- 規則の種類: `cellIs`（比較・範囲内外。値は数式で、`xlsx_calc::eval_at` が相対参照を範囲の先頭のセルからのずれだけ動かして評価）、`expression`、
+  `top10`（件数・%、上位・下位）、`aboveAverage`（以上・以下、標準偏差）、`duplicateValues` / `uniqueValues`、`containsText` などの文字列（`text` 属性。大文字・小文字は区別しない）、
+  空白・エラー、`timePeriod`（今日・昨日・明日・過去 7 日・今週/先週/来週（日曜始まり）・今月/先月/来月）。
+- しきい値（`cfvo`）: `min` `max` `num` `percent` `percentile`（PERCENTILE.INC）`formula` `autoMin` `autoMax`。範囲のうち数値のセルで求める。
+- カラースケール: 2 色・3 色を RGB で線形に補間してセルの塗りにする。
+- データバー: `<span class="xljs-bar">` をセルの中（上下左右 1.5pt 内側）に絶対配置する。長さは `minLength`〜`maxLength`（2007 形式は 10〜90%）。
+  拡張があれば単色/グラデーション（グラデーションは色から白に近い色へ）、枠線、負の値の色、軸（自動＝最小と最大の比、中央、なし。破線）、右から左。値を表示しない設定も。
+- アイコンセット: すべての組み込みのセット（3〜5 個の矢印・旗・信号・記号・評価・四分円・星・三角・ボックス）を SVG で描き、セルの左に置く（大きさは既定のフォントの 12/11 倍。
+  縦はセルの縦の配置）。値の文字はアイコンの分だけ左を空ける。逆順（`reverse`）、個別に選んだアイコン（`cfIcon`、「セルのアイコンなし」）、アイコンのみ表示（`showValue="0"`）。
+- umya のモデルを読むので、スクリプトで行・列を挿入・削除すれば範囲も動き、保存したブックにも残る（条件付き書式を書く xljs の API はない）。
+
 ### セルに配置した画像（`src/api/xlsx_cellimage.rs`）
 
 Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は読まない（セルはエラー `#VALUE!` になる）。ブックを開いたときに読んでおく（`Book::cell_images`）。
@@ -166,7 +185,7 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
 
 ## 4. できないこと・違い
 
-- 条件付き書式、SmartArt、図形と文字の 3-D（面取り・奥行き・`scene3d`）・内側の影・ぼかし・テーマの効果（`effectRef`）・グラデーション（図形は最初の色で塗る）・パターン、
+- SmartArt、図形と文字の 3-D（面取り・奥行き・`scene3d`）・内側の影・ぼかし・テーマの効果（`effectRef`）・グラデーション（図形は最初の色で塗る）・パターン、
   文字の変形は文字の形そのものは曲げず短冊ごとのアフィン変換（大きい字の曲がりは近似）、変形した文字は PDF の中で短冊の数だけ重なる（文字の検索・コピーで重複する）、
   画像のトリミング、EMF/WMF の画像、Web の画像（`IMAGE` 関数）、コメント、フォームのコントロール、ヘッダー/フッターの画像、先頭ページ・偶数ページ用のヘッダー。
 - 塗りのパターン（単色以外は前景色で塗る）、グラデーションの塗り。
@@ -179,6 +198,7 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
 
 - `src/api/xlsx_geom.rs` の単体テスト: すべての既定の形が評価できること、形の path（`arcTo` の楕円・調整値）、文字の枠、塗りの濃淡、フリーフォームのガイド、すべての文字の変形が評価できること（平ら・アーチ・調整値）。
 - `src/api/xlsx_table.rs` の単体テスト: テーブルスタイルの読み方、要素の罫線の当て方。
+- `src/api/xlsx_cond/tests.rs`: `testdata/xlsx/conditional.xlsx`（`make_conditional.py`。openpyxl の出力に Excel 2010 の拡張のデータバー（負の値・軸）と `3Stars` を足す）で、強調表示（停止・相対参照の数式・重複・文字列）、カラースケール、データバー、アイコンセット、期間、HTML。
 - `src/api/xlsx_print.rs` の単体テスト: 範囲の読み方、ページの分け方（印刷タイトル・改ページ・非表示）、ヘッダー/フッター、表示形式の色、ページ設定の XML。
 - `testdata/scripts/pdf.test.js`（mock）: 新しいブックの HTML（値・結合・罫線・塗り・負数の赤）、オプション、検査、複数シート、
   `charts.xlsx` のグラフの枠、`testdata/xlsx/print.xlsx`（`make_print.py` で openpyxl から生成。横向き・横 1 ページ・印刷タイトル・
@@ -208,6 +228,11 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
   `getStyle().alignment.shrink` で読める。開いて保存したブックにも残る。
 - **インライン文字列のリッチテキスト**: 本家は `t="inlineStr"` の `<is>` の中の `<t>` を読むたびに値を上書きするので、最後のラン
   （`<rPh>` があればふりがな）しか残らなかった。`<is>` を共有文字列の `<si>` と同じに読む。
+
+- **条件付き書式**: 本家はアイコンセットの種類（`iconSet` 属性）を持たず `<dataBar>` として書き、データバーの `minLength` などの属性、
+  `cfvo` の `gte`、規則の `text`・2 つ目の数式（範囲内）、差分の書式の表示形式（`numFmt`）も落としていた。Excel 2010 の拡張（`x14:conditionalFormattings`）も読まなかった。
+  これらを読み書きし（拡張は `Worksheet::conditional_formatting_2010_collection`。規則・データバー・アイコンセット・`cfvo` の構造体は 2007 形式と共用で、
+  要素名は接頭辞を除いて読む）、空の `<dxf/>` で後ろの `dxfId` がずれるのも直した。
 
 本家の版を上げるときは、`xljs` ブランチを新しいタグへ載せ替える（本家に取り込まれた修正は落とす）。どちらも取り込まれたら
 `[patch.crates-io]` を消して本家に戻す。

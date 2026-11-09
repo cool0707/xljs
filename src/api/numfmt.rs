@@ -204,6 +204,21 @@ const MONTHS: [&str; 12] = ["January", "February", "March", "April", "May", "Jun
 const DAYS: [&str; 7] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const DAYS_JA: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];
 
+/// Japanese eras: start date, initial, name.
+const ERAS: [((i32, u32, u32), &str, &str); 5] = [
+    ((1868, 9, 8), "M", "明治"),
+    ((1912, 7, 30), "T", "大正"),
+    ((1926, 12, 25), "S", "昭和"),
+    ((1989, 1, 8), "H", "平成"),
+    ((2019, 5, 1), "R", "令和"),
+];
+
+/// The era (index into ERAS) and the year in it. Dates before Meiji count as Meiji.
+fn era_of(y: i32, mo: u32, d: u32) -> (usize, i32) {
+    let k = ERAS.iter().rposition(|(s, _, _)| (y, mo, d) >= *s).unwrap_or(0);
+    (k, y - ERAS[k].0.0 + 1)
+}
+
 /// Formats a wall-clock time (y, month, d, h, mi, s, ms) with a date code.
 pub fn format_date(t: (i32, u32, u32, u32, u32, u32, u32), code: &str) -> String {
     let (y, mo, d, h, mi, s, ms) = t;
@@ -218,7 +233,10 @@ pub fn format_date(t: (i32, u32, u32, u32, u32, u32, u32), code: &str) -> String
     } else {
         first
     };
+    // [$-ja-JP-x-gannen]: the first year of an era as 元年.
+    let gannen = upper.contains("GANNEN");
     let sec = strip_brackets(&first);
+    let era = era_of(y, mo, d);
     let weekday = chrono::NaiveDate::from_ymd_opt(y, mo, d).map(|dt| {
         use chrono::Datelike;
         dt.weekday().num_days_from_sunday() as usize
@@ -296,6 +314,28 @@ pub fn format_date(t: (i32, u32, u32, u32, u32, u32, u32), code: &str) -> String
                 out.push(if h < 12 { 'A' } else { 'P' });
                 i += 3;
             }
+            'g' => {
+                let n = run(i, 'g');
+                let (k, _) = era;
+                match n {
+                    1 => out.push_str(ERAS[k].1),
+                    2 => out.extend(ERAS[k].2.chars().take(1)),
+                    _ => out.push_str(ERAS[k].2),
+                }
+                i += n;
+            }
+            'e' => {
+                let n = run(i, 'e');
+                let (_, ey) = era;
+                if gannen && ey == 1 && n == 1 {
+                    out.push('元');
+                } else if n >= 2 {
+                    out.push_str(&format!("{ey:02}"));
+                } else {
+                    out.push_str(&ey.to_string());
+                }
+                i += n;
+            }
             'h' => {
                 let n = run(i, 'h');
                 let hh = if ampm { if h % 12 == 0 { 12 } else { h % 12 } } else { h };
@@ -362,6 +402,22 @@ mod tests {
         assert_eq!(format_date(t, "yyyy\"年\"m\"月\"d\"日\"(aaa)"), "2026年4月1日(水)");
         assert_eq!(format_date(t, "h:mm:ss AM/PM"), "1:05:09 PM");
         assert_eq!(format_date(t, "mm-dd-yy"), "04-01-26");
+    }
+
+    #[test]
+    fn japanese_eras() {
+        let t = (2026, 4, 1, 0, 0, 0, 0);
+        assert_eq!(format_date(t, "[$-411]ggge\"年\"m\"月\"d\"日\""), "令和8年4月1日");
+        assert_eq!(format_date(t, "[$-411]ge.m.d"), "R8.4.1");
+        assert_eq!(format_date(t, "gg ee"), "令 08");
+        assert_eq!(format_date((2019, 4, 30, 0, 0, 0, 0), "ggge年"), "平成31年");
+        assert_eq!(format_date((2019, 5, 1, 0, 0, 0, 0), "ggge年"), "令和1年");
+        assert_eq!(format_date((2019, 5, 1, 0, 0, 0, 0), "[$-ja-JP-x-gannen]ggge\"年\""), "令和元年");
+        assert_eq!(format_date((1989, 1, 7, 0, 0, 0, 0), "ggge"), "昭和64");
+        assert_eq!(format_date((1926, 12, 25, 0, 0, 0, 0), "ggge"), "昭和1");
+        assert!(crate::api::xlsx::date_format_code("[$-411]ggge\"年\"m\"月\"d\"日\""));
+        assert!(crate::api::xlsx::date_format_code("ggge"));
+        assert!(!crate::api::xlsx::date_format_code("0.00E+00"));
     }
 
     #[test]

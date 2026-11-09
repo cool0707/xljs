@@ -24,6 +24,10 @@ pub struct Dxf {
     pub bold: Option<bool>,
     pub italic: Option<bool>,
     pub color: Option<Color>,
+    /// Strikethrough, underline and the number format code (conditional formats).
+    pub strike: Option<bool>,
+    pub underline: Option<bool>,
+    pub num_fmt: Option<String>,
     /// left, right, top, bottom, vertical (inside), horizontal (inside).
     pub sides: [Option<Side>; 6],
 }

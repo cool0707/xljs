@@ -480,6 +480,8 @@ struct Sheet<'a> {
     mono: bool,
     /// The cells that show a picture placed in a cell (xlsx_calc::cell_image).
     images: HashMap<(u32, u32), usize>,
+    /// What the conditional formats give the cells.
+    cond: HashMap<(u32, u32), super::xlsx_cond::Fx>,
 }
 
 impl<'a> Sheet<'a> {
@@ -555,6 +557,9 @@ impl<'a> Sheet<'a> {
             }
             merges.push(a);
         }
+        let theme = b.wb.theme();
+        let rules = super::xlsx_cond::sheet_rules(ws);
+        let cond = if rules.is_empty() { HashMap::new() } else { super::xlsx_cond::effects(b, name, &rules, &|c| css_color(c, theme), chrono::Local::now().date_naive()) };
         Ok(Sheet {
             b,
             ws,
@@ -574,6 +579,7 @@ impl<'a> Sheet<'a> {
             table: super::xlsx_table::overlays(ws, &b.table_styles),
             mono: b.print.get(name).is_some_and(|p| p.black_and_white),
             images,
+            cond,
         })
     }
 
@@ -619,8 +625,15 @@ impl<'a> Sheet<'a> {
         }
         let num = |f: f64| -> Val {
             let nf = c.style().number_format();
-            let code = format_code(nf);
-            if style_is_date(nf)
+            // A conditional format's number format wins over the cell's.
+            let (code, date) = match self.cond.get(&(col, row)).and_then(|x| x.num_fmt.clone()) {
+                Some(code) => {
+                    let d = super::xlsx::date_format_code(&code);
+                    (code, d)
+                }
+                None => (format_code(nf), style_is_date(nf)),
+            };
+            if date
                 && let Some(t) = from_serial(f, self.b.date1904)
             {
                 return Val::Num(f, super::numfmt::format_date(t, &code));
@@ -1045,6 +1058,8 @@ body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .xljs-sheet td>div{position:absolute;top:0;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;box-sizing:border-box;padding:0 1.5pt;white-space:pre;line-height:normal}
 .xljs-sheet td>div>img.xljs-cell-image{flex:1 1 0;min-height:0;width:100%;object-fit:contain;padding:1.5pt 0;box-sizing:border-box}
 .xljs-sheet.grid td{border:0.5pt solid #c8c8c8}
+.xljs-sheet td>.xljs-bar,.xljs-sheet td>.xljs-icon{position:absolute;box-sizing:border-box}
+.xljs-sheet td>.xljs-icon>svg{display:block}
 .xljs-objs{position:absolute;overflow:hidden;pointer-events:none}
 .xljs-objs>*{position:absolute}
 .xljs-objs img{display:block}
@@ -1474,10 +1489,11 @@ fn table_side_css(sh: &Sheet, s: &Side) -> Option<String> {
     border_css(&s.style, &color)
 }
 
-fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table: Option<&Overlay>) -> CellCss {
+fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table: Option<&Overlay>, cf: Option<&super::xlsx_cond::Fx>) -> CellCss {
     let mut td = String::new();
     let mut div = String::new();
-    let fill = sh.fill(st).or_else(|| if sh.mono { None } else { table.and_then(|t| t.fill.as_ref()).and_then(|c| css_color(c, sh.theme)) });
+    let cf_fill = if sh.mono { None } else { cf.and_then(|x| x.fill.clone()) };
+    let fill = cf_fill.or_else(|| sh.fill(st)).or_else(|| if sh.mono { None } else { table.and_then(|t| t.fill.as_ref()).and_then(|c| css_color(c, sh.theme)) });
     let mut bg: Vec<String> = Vec::new();
     if let Some(b) = st.borders() {
         let ds = b.diagonal().border_style();
@@ -1504,6 +1520,7 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table
         }
     }
     let (mut bold, mut italic, mut color) = (false, false, None);
+    let (mut underline, mut strike) = (String::new(), false);
     if let Some(f) = st.font() {
         let name = if f.name().is_empty() { sh.font.0.as_str() } else { f.name() };
         let size = if f.size() == 0.0 { sh.font.1 } else { f.size() };
@@ -1515,21 +1532,36 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table
         }
         bold = f.bold();
         italic = f.italic();
-        let u = f.font_underline().val().value_string();
-        let mut deco = Vec::new();
-        if u != "none" && !u.is_empty() {
-            deco.push("underline");
-        }
-        if f.strikethrough() {
-            deco.push("line-through");
-        }
-        if !deco.is_empty() {
-            let _ = write!(div, "text-decoration:{};", deco.join(" "));
-            if u.starts_with("double") {
-                div.push_str("text-decoration-style:double;");
-            }
-        }
+        underline = f.font_underline().val().value_string().to_string();
+        strike = f.strikethrough();
         color = css_color(f.color(), sh.theme);
+    }
+    // Conditional formats over the cell's font.
+    if let Some(x) = cf {
+        bold = x.bold.unwrap_or(bold);
+        italic = x.italic.unwrap_or(italic);
+        strike = x.strike.unwrap_or(strike);
+        match x.underline {
+            Some(true) if underline == "none" || underline.is_empty() => underline = "single".into(),
+            Some(false) => underline = "none".into(),
+            _ => {}
+        }
+        if x.color.is_some() {
+            color = x.color.clone();
+        }
+    }
+    let mut deco = Vec::new();
+    if underline != "none" && !underline.is_empty() {
+        deco.push("underline");
+    }
+    if strike {
+        deco.push("line-through");
+    }
+    if !deco.is_empty() {
+        let _ = write!(div, "text-decoration:{};", deco.join(" "));
+        if underline.starts_with("double") {
+            div.push_str("text-decoration-style:double;");
+        }
     }
     // A table style shows where the cell has the plain font.
     if let Some(t) = table {
@@ -1602,6 +1634,10 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table
         let side = if halign == "right" { "right" } else { "left" };
         let _ = write!(div, "padding-{side}:{}pt;", n(pad));
     }
+    // An icon of an icon set sits at the left of the cell.
+    if cf.is_some_and(|x| x.icon.is_some()) {
+        let _ = write!(div, "padding-left:{}pt;", n(icon_size(sh) + 3.0));
+    }
     let rotated = rot != 0;
     if rot == 255 {
         div.push_str("writing-mode:vertical-rl;text-orientation:upright;white-space:pre;align-items:center;justify-content:center;");
@@ -1609,6 +1645,51 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table
         div.push_str("align-items:center;justify-content:center;text-align:center;");
     }
     CellCss { td, div, wrap, rotated, halign }
+}
+
+/// The size (pt) of the icons of icon sets.
+fn icon_size(sh: &Sheet) -> f64 {
+    (sh.font.1 * 12.0 / 11.0).max(6.0)
+}
+
+/// The data bar and the icon of a cell's conditional formats, for a cell
+/// w × h pt (vertical: its vertical alignment).
+fn cond_html(sh: &Sheet, fx: &super::xlsx_cond::Fx, w: f64, h: f64, vertical: &str) -> String {
+    let mut out = String::new();
+    if let Some(b) = &fx.bar {
+        let (x0, room) = (1.5, (w - 3.0).max(0.0));
+        let (top, bh) = (1.5, (h - 3.0).max(0.0));
+        let fill = if b.gradient {
+            let light = super::xlsx_cond::mix(&b.fill, "#FFFFFF", 0.9);
+            format!("linear-gradient(to {},{},{light})", if b.leftward { "left" } else { "right" }, b.fill)
+        } else {
+            b.fill.clone()
+        };
+        let border = b.border.as_ref().map(|c| format!("border:0.75pt solid {c};")).unwrap_or_default();
+        let _ = write!(
+            out,
+            "<span class=\"xljs-bar\" style=\"left:{}pt;top:{}pt;width:{}pt;height:{}pt;background:{fill};{border}\"></span>",
+            n(x0 + b.start * room),
+            n(top),
+            n(b.len * room),
+            n(bh)
+        );
+        if let Some((a, c)) = &b.axis {
+            let _ = write!(out, "<span class=\"xljs-bar\" style=\"left:{}pt;top:0;height:{}pt;border-left:0.75pt dashed {c}\"></span>", n(x0 + a * room), n(h));
+        }
+    }
+    if let Some((set, i)) = &fx.icon
+        && let Some(svg) = super::xlsx_cond::icon_svg(set, *i)
+    {
+        let s = icon_size(sh).min((h - 2.0).max(1.0));
+        let top = match vertical {
+            "top" => 1.0,
+            "center" | "justify" | "distributed" => (h - s) / 2.0,
+            _ => h - s - 1.0,
+        };
+        let _ = write!(out, "<span class=\"xljs-icon\" style=\"left:1.5pt;top:{}pt;width:{}pt;height:{}pt\">{svg}</span>", n(top.max(0.0)), n(s), n(s));
+    }
+    out
 }
 
 /// The text of a cell as HTML (rich text runs with their fonts).
@@ -1791,6 +1872,11 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
             let default_style = Style::default();
             let st = st_of(vc, vr).or_else(|| sh.ws.row_dimension(r).map(|x| x.style())).unwrap_or(&default_style);
             let side = |cc: u32, rr: u32, s: &str| {
+                // A conditional format's border (left, right, top, bottom) wins.
+                let ci = ["left", "right", "top", "bottom"].iter().position(|x| *x == s)?;
+                if let Some(t) = sh.cond.get(&(cc, rr)).and_then(|x| x.sides[ci].as_ref()) {
+                    return table_side_css(sh, t);
+                }
                 st_of(cc, rr).and_then(|x| side_css(sh, x, s)).or_else(|| {
                     let i = ["top", "right", "bottom", "left"].iter().position(|x| *x == s)?;
                     sh.table.get(&(cc, rr))?.sides[i].as_ref().and_then(|t| table_side_css(sh, t))
@@ -1801,7 +1887,8 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                 None => [side(c, r, "top"), side(c, r, "right"), side(c, r, "bottom"), side(c, r, "left")],
             };
             let val = sh.val(vc, vr);
-            let css = cell_css(sh, st, &val, sides, sh.table.get(&(vc, vr)));
+            let cf = sh.cond.get(&(vc, vr));
+            let css = cell_css(sh, st, &val, sides, sh.table.get(&(vc, vr)), cf);
             // Shrink to fit (Excel leaves it out for wrapped and rotated text).
             let shrink = st.alignment().is_some_and(|a| a.shrink_to_fit()) && !css.wrap && !css.rotated;
             let class = classes.class(&css.td, &css.div);
@@ -1840,6 +1927,13 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                             right = m;
                         }
                         _ => {}
+                    }
+                }
+                if let Some(fx) = cf {
+                    out.push_str(&cond_html(sh, fx, w, h, st.alignment().map(|a| a.vertical().value_string()).unwrap_or("bottom")));
+                    if fx.hide_value {
+                        out.push_str("</td>");
+                        continue;
                     }
                 }
                 // data-n: a number that does not fit is shown as ### (print-page.js measures it).
