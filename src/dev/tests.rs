@@ -605,3 +605,31 @@ fn notify_own_changes() {
     page(&mut s, json!({"op": "notify", "file": "main.js"}));
     assert_eq!(w.take("info").len(), 1);
 }
+
+#[test]
+fn preview_by_itself_and_picked_elements() {
+    let _l = lock_lang("ja");
+    let dir = tempdir();
+    write(&dir, "main.js", "alert(1);\n");
+    let (mut s, w, _rx) = session(&dir, "{}");
+    page(&mut s, json!({"op": "open", "path": dir.join("main.js").to_string_lossy()}));
+    w.take("");
+
+    // Without a form, the preview tab does not run the script by itself.
+    page(&mut s, json!({"op": "preview", "auto": true}));
+    assert_eq!(w.take("previewSkipped")[0]["busy"], false);
+    assert!(!s.project().unwrap().opens_form());
+    write(&dir, "lib.ts", "export const f = () => ui .form({ fields: [] });\n");
+    assert!(s.project().unwrap().opens_form());
+
+    // The request about picked elements, with the script.
+    let el = json!({"desc": "button「OK」", "selector": "form#f > button:nth-of-type(2)", "html": "<button>OK</button>"});
+    page(&mut s, json!({"op": "pick", "text": "赤くして", "full": true, "elements": [el]}));
+    let text = w.take("copy")[0]["text"].as_str().unwrap().to_string();
+    for want in ["「main.js」のフォーム", "赤くして", "1. button「OK」", "場所: form#f > button:nth-of-type(2)", "```html\n<button>OK</button>\n```", "alert(1);", "「main.js」という名前"] {
+        assert!(text.contains(want), "{want}: {text}");
+    }
+    // Nothing picked: nothing copied.
+    page(&mut s, json!({"op": "pick", "elements": []}));
+    assert!(w.take("copy").is_empty());
+}

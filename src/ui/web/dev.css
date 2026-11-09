@@ -187,6 +187,15 @@ body.tab-dragging iframe { pointer-events: none; }
 .diff .skip { padding: 2px 12px; color: var(--muted); background: var(--bg); font-family: var(--font); font-size: 12px; }
 
 #preview-frame { flex: 1; border: 0; background: var(--bg); }
+.pick-box { padding: 6px 12px 8px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.pick-box p { margin: 0 0 6px; }
+.pick-box textarea { width: 100%; box-sizing: border-box; resize: vertical; margin: 6px 0; }
+.pick-box .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.pick-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; max-height: 84px; overflow: auto; }
+.pick-list li { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 4px 2px 8px; border: 1px solid var(--accent); border-radius: 12px; background: var(--sel); color: var(--sel-fg); font-size: 12px; }
+.pick-list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-list li button { min-width: 0; height: 18px; padding: 0 2px; border: 0; background: transparent; color: inherit; }
+.pick-list .none { border: 0; background: transparent; color: var(--muted); padding-left: 0; }
 .error-box {
   margin: 8px 12px; padding: 6px 8px;
   border: 1px solid var(--border); border-radius: var(--radius-box); background: var(--input);
