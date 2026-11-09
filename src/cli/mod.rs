@@ -474,21 +474,16 @@ fn cmd_pack(con: &ConsoleState, args: &[String]) -> i32 {
 /// The default exe for the script: its name with .exe (no extension
 /// outside Windows), next to it.
 pub(crate) fn pack_output(script: &str) -> String {
-    let p = Path::new(script);
-    let base = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let ext = if cfg!(windows) { ".exe" } else { "" };
-    p.with_file_name(format!("{base}{ext}")).to_string_lossy().into_owned()
+    pack::default_output(script)
 }
 
 /// Writes out: this exe with the bundled script embedded.
 pub(crate) fn pack_script(script: &str, out: &str) -> Result<()> {
-    let m = read_meta(script)?;
-    let code = engine::bundle(script)?;
-    let dir = Path::new(script).parent().map(Path::to_path_buf).unwrap_or_default();
-    let dir = if dir.as_os_str().is_empty() { std::path::PathBuf::from(".") } else { dir };
-    let name = Path::new(script).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let p = pack::Payload { name, code, assets: Some(Box::new(m.asset_fs(&dir))), meta: Some(m) };
-    pack::write(Path::new(out), &p)
+    let exe = std::env::current_exe()?;
+    for w in pack::pack_script(&exe, script, Path::new(out))? {
+        eprintln!("{w}");
+    }
+    Ok(())
 }
 
 const JSCONFIG: &str = r#"{

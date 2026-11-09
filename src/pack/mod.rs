@@ -169,6 +169,29 @@ pub fn write_from(base: &Path, out: &Path, p: &Payload) -> Result<()> {
     Ok(())
 }
 
+/// Bundles script and writes out: base (an xljs executable) with the
+/// script, its metadata and its assets embedded. Returns the warnings of
+/// the metadata block.
+pub fn pack_script(base: &Path, script: &str, out: &Path) -> Result<Vec<String>> {
+    let (m, warnings) = crate::meta::parse_file(script)?;
+    let code = crate::engine::bundle(script)?;
+    let dir = Path::new(script).parent().map(Path::to_path_buf).unwrap_or_default();
+    let dir = if dir.as_os_str().is_empty() { std::path::PathBuf::from(".") } else { dir };
+    let name = Path::new(script).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let p = Payload { name, code, assets: Some(Box::new(m.asset_fs(&dir))), meta: Some(m) };
+    write_from(base, out, &p)?;
+    Ok(warnings)
+}
+
+/// The default exe for the script: its name with .exe (no extension
+/// outside Windows), next to it.
+pub fn default_output(script: &str) -> String {
+    let p = Path::new(script);
+    let base = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = if cfg!(windows) { ".exe" } else { "" };
+    p.with_file_name(format!("{base}{ext}")).to_string_lossy().into_owned()
+}
+
 fn build_archive(p: &Payload) -> Result<Vec<u8>> {
     let mut zw = zip::ZipWriter::new(io::Cursor::new(Vec::new()));
     let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);

@@ -607,6 +607,43 @@ fn notify_own_changes() {
 }
 
 #[test]
+fn pack_exe() {
+    let _l = lock_lang("ja");
+    let dir = tempdir();
+    write(&dir, "app.js", "// ==xljs==\n// @mode app\n// @html ui/index.html\n// @assets ui/\n// @title アプリ\n// ==/xljs==\nimport { a } from \"./lib.js\";\nexport function hello() { return a; }\n");
+    write(&dir, "lib.js", "export const a = 1;\n");
+    write(&dir, "ui/index.html", "<p>");
+    // A stand-in for the xljs executable.
+    let base = dir.join("base.bin");
+    std::fs::write(&base, b"MZ-base").unwrap();
+    let out = dir.join("out").join("アプリ.exe");
+    std::fs::create_dir_all(out.parent().unwrap()).unwrap();
+    let out_s = out.to_string_lossy().into_owned();
+    let answers = json!({"showSaveFilePicker": [out_s, ""], "confirm": [false]}).to_string();
+    let (mut s, w, _rx) = session(&dir, &answers);
+    s.o.exe = base.clone();
+    page(&mut s, json!({"op": "ready"}));
+    page(&mut s, json!({"op": "open", "path": dir.join("app.js").to_string_lossy()}));
+    page(&mut s, json!({"op": "pack"}));
+    let posts = w.posts.lock().unwrap().clone();
+    let packed = posts.iter().find(|p| p["type"] == "packed").expect("packed");
+    assert_eq!(packed["path"], out_s.as_str());
+    let data = std::fs::read(&out).unwrap();
+    assert!(data.starts_with(b"MZ-base"));
+    let p = crate::pack::read(&out).unwrap().unwrap();
+    assert_eq!(p.name, "app.js");
+    assert!(String::from_utf8_lossy(&p.code).contains("hello"));
+    assert_eq!(p.meta.unwrap().title, "アプリ");
+    assert_eq!(p.assets.unwrap().read("ui/index.html").unwrap(), b"<p>");
+    // The place is remembered; a cancelled dialog does nothing.
+    let ps: ProjectSettings = load(&dir.join(".xljs/dev.json"));
+    assert_eq!(ps.exe.get("app.js"), Some(&out_s));
+    let n = w.posts.lock().unwrap().len();
+    page(&mut s, json!({"op": "pack"}));
+    assert_eq!(w.posts.lock().unwrap().len(), n);
+}
+
+#[test]
 fn preview_by_itself_and_picked_elements() {
     let _l = lock_lang("ja");
     let dir = tempdir();
