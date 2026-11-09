@@ -226,6 +226,12 @@ fn send_on(req: &Request, t: &Target, cancel: &Cancel, conn: *mut c_void, proxy:
         unsafe { WinHttpAddRequestHeaders(h, &line, WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE) }
             .map_err(|e| error(req, code(&e)))?;
     }
+    // The session keeps the agent of its first request: each request
+    // sends its own.
+    if !req.headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("user-agent")) {
+        let line = wide(&format!("User-Agent: {}", req.agent));
+        let _ = unsafe { WinHttpAddRequestHeaders(h, &line, WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE) };
+    }
 
     let body = req.body.as_deref().unwrap_or(&[]);
     // Answers to 401 (Windows authentication) and 407: the proxy's

@@ -85,7 +85,8 @@ pub fn exe_settings(exe: &Path) -> PathBuf {
 }
 
 /// The settings distributed with the exe (xljs.json):
-/// `{"dev": {"chat": URL, "services": [{name, url, icon}], "builtinServices": bool}}`.
+/// `{"dev": {"chat": URL, "services": [{name, url, icon}], "builtinServices": bool}}`
+/// (and `"userAgent"`, read by net::agent).
 #[derive(Deserialize, Default)]
 #[serde(default)]
 struct ExeSettings {
@@ -257,6 +258,7 @@ pub fn run(u: Arc<dyn Ui>, o: DevOptions) -> Result<i32> {
             downloads: downloads.to_string_lossy().into_owned(),
             // The answers of the chat are only read and compared.
             trusted_extensions: project::TEXT_EXTS.iter().map(|e| e.to_string()).collect(),
+            agent: crate::net::agent::for_pane(&o.exe_settings),
             on_event: Arc::new(move |e| {
                 let _ = t3.send(Event::Browser(e));
             }),

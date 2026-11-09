@@ -28,7 +28,7 @@ pub(crate) fn install(n: &N) {
             body,
             timeout: (ms.is_finite() && ms > 0.0).then(|| Duration::from_millis(ms as u64)),
             credentials: Credentials::parse(&a.str(6)),
-            agent: format!("xljs/{}", h.env.version),
+            agent: net::agent::for_fetch(&h.env.version),
             ask: Some({
                 let ui = h.env.ui.clone();
                 std::sync::Arc::new(move |p: &net::auth::LoginPrompt| ui.credentials(p))

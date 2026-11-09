@@ -135,6 +135,8 @@ pub struct BrowserOptions {
     /// asks before keeping a .js file). Only for files that are read as
     /// text, never run.
     pub trusted_extensions: Vec<String>,
+    /// The User-Agent of the pane (net::agent::for_pane; none: WebView2's).
+    pub agent: Option<crate::net::agent::PaneAgent>,
     /// Receives what happens in the pane; called on the UI thread, must not
     /// block.
     pub on_event: OnBrowser,
