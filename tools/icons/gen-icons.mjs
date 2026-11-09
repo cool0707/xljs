@@ -12,7 +12,7 @@ const ICONS = {
   clipboard: false, code: false, eraser: false, eye: false, file: false, "file-code": false,
   "file-spreadsheet": false, folder: false, "folder-open": false, "git-compare": false,
   "grip-vertical": false, history: false, house: false, info: false, "layout-grid": false,
-  "messages-square": false, play: true, plus: false, "rotate-cw": false, save: false,
+  "message-square-diff": false, "messages-square": false, play: true, plus: false, "rotate-cw": false, save: false,
   square: true, table: false, terminal: false, "text-align-start": false,
   "triangle-alert": false, "wand-sparkles": false, x: false,
 };

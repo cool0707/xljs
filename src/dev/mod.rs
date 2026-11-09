@@ -13,6 +13,7 @@
 //! The page and this side talk in JSON: the page sends {op, ...}, this
 //! side answers with {type, ...} events.
 
+pub mod notify;
 pub mod project;
 pub mod report;
 pub mod runner;
@@ -419,6 +420,8 @@ impl Session {
                 p.path(&r.file)?;
                 let note = if r.note.is_empty() { t!("dev.noteApplied") } else { t!("dev.noteAppliedFrom", r.note) };
                 versions::replace(&p.dir, &r.file, &r.text, &note)?;
+                // The AI's answer: what it knows of the file now.
+                notify::remember(&p.dir, &r.file, &r.text)?;
                 if !r.rename.is_empty() && r.rename != r.file && r.file == p.entry_name() {
                     return self.rename_entry(&p, &r.rename);
                 }
@@ -452,6 +455,25 @@ impl Session {
             }
             "intro" => {
                 self.post(json!({"type": "copy", "what": "intro", "text": report::intro(self.project.as_ref())}));
+                if let Some(p) = &self.project
+                    && let Ok(text) = read_text(&p.entry)
+                {
+                    notify::remember(&p.dir, &p.entry_name(), &text)?;
+                }
+            }
+            "notify" => {
+                // The user's own changes since the AI's answers.
+                let p = self.project()?;
+                let current = if r.file.is_empty() { self.current.clone() } else { r.file.clone() };
+                let changes = notify::changes(p, &current);
+                if changes.is_empty() {
+                    self.post(json!({"type": "info", "message": t!("dev.notifyNone")}));
+                    return Ok(());
+                }
+                self.post(json!({"type": "copy", "what": "notify", "text": notify::prompt(&changes)}));
+                for c in &changes {
+                    notify::remember(&p.dir, &c.file, &c.text)?;
+                }
             }
             "showFolder" => {
                 let p = self.project()?;
@@ -735,6 +757,7 @@ impl Session {
         if vo.is_dir() && !vn.exists() {
             let _ = std::fs::rename(vo, vn);
         }
+        notify::rename(&p.dir, &from, to);
         let f = settings_path(p);
         let mut ps: ProjectSettings = load(&f);
         ps.unnamed.retain(|u| u != &from);

@@ -603,6 +603,7 @@
     $("btn-folder").disabled = !has;
     $("btn-save").disabled = !has;
     $("btn-format").disabled = !has;
+    $("btn-notify").disabled = !has;
     $("script-name").textContent = has ? st.project.entry : L.noScript || "";
     $("script-dir").textContent = has ? st.project.dir : "";
     document.title = has ? `${st.project.entry} - ${L.title}` : L.title;
@@ -678,6 +679,8 @@
     });
     $("btn-save").onclick = save;
     $("btn-format").onclick = formatCode;
+    // Saves first: what is told is the files as they are on disk.
+    $("btn-notify").onclick = () => { save(); send({ op: "notify", file: st.file }); };
   }
 
   // ------------------------------------------------------------ diff
@@ -1286,7 +1289,7 @@
         }
         break;
       case "copy":
-        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "wizard" ? L.wzCopied : L.copied);
+        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "wizard" ? L.wzCopied : m.what === "notify" ? L.copiedNotify : L.copied);
         break;
       case "runStarted": runStarted(m); break;
       case "output": appendOutput(m.text, m.stream === "stderr" ? "err" : ""); break;
