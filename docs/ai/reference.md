@@ -1,8 +1,3 @@
----
-name: xljs-reference
-description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows 用の実行環境）の詳しい API リファレンスとレシピ。xljs のスクリプトを書く・直すときに、全オプション・書式・PDF 出力・PDF の編集・入力フォーム（ui.form）・表（ui.table）・グラフ（ui.chart）・日付（dayjs）・アプリモードを確かめるために使う。
----
-
 # xljs API リファレンス（AI チャット向け）
 
 `prompt.md` の要点リファレンスより詳しい版です。AI に資料（ナレッジ）として添付するか、`prompt.md` のあとに貼ります。
@@ -13,7 +8,7 @@ description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows �
 - ES2023 の JavaScript（`async`/`await`、トップレベル `await`、`?.`、`??`、クラス、分割代入、`Object.groupBy`、`Array.prototype.toSorted` など）。TypeScript（`.ts`）もそのまま実行できる。
 - 使えないもの: `require`、npm パッケージ、`process`、`Buffer`、Node.js の `fs`/`path` モジュール、`XMLHttpRequest`・`WebSocket`、`document`/`window`（DOM）、Excel の COM/VBA。
 - `import` は同じフォルダの自作ファイル（`import { f } from "./lib.js"`）と JSON（`import master from "./master.json"`）だけ。
-- 使えるグローバル: `console`、`setTimeout`/`setInterval`、`sleep(ms)`、`exit(code)`、`structuredClone`、`TextEncoder`/`TextDecoder`（Shift_JIS 対応）、`atob`/`btoa`、`Blob`/`File`、`fetch`（HTTP 通信。下の「Web API（fetch）」）、`URL`/`URLSearchParams`、`AbortController`、`Intl`（簡易）、数値・日付の `toLocaleString()`（日本語形式）。
+- 使えるグローバル: `console`、`setTimeout`/`setInterval`、`sleep(ms)`、`exit(code)`、`structuredClone`、`TextEncoder`/`TextDecoder`（Shift_JIS 対応）、`atob`/`btoa`、`Blob`/`File`、`fetch`（HTTP 通信。「Web API（fetch）」の節）、`URL`/`URLSearchParams`、`AbortController`、`Intl`（簡易）、数値・日付の `toLocaleString()`（日本語形式）。
 - ファイル系の API は同期（`await` 不要）。`await` が必要なのはダイアログ（`showOpenFilePicker` など）、`ui.form`、`ui.table`（選択するとき）、`sleep`、`fetch`、`h.getFile()` など Promise を返すものだけ（`ui.chart` はすぐ戻る。閉じるまで待つなら `.closed`）。
 - パスを受け取る引数には、文字列のパス・ハンドル・`File` のどれでも渡せる。相対パスはカレントフォルダ基準。エクスプローラーから起動した（ダブルクリック・ドロップ）ときはスクリプトのあるフォルダ（exe ならその exe のフォルダ）がカレントフォルダになる。
 - エラーが起きると、行番号付きのエラーダイアログを表示して終了する。
@@ -114,19 +109,6 @@ description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows �
 | `shell.runSync(cmd, [args], opts)` | run の同期版 |
 | `shell.spawn(cmd, [args], opts)` | 起動して待たない。`{ pid, running, wait(), kill(), write(s), end() }`（stdin: "pipe" で write） |
 
-### ad（Active Directory。ドメイン参加の Windows のみ）
-
-サインイン中のユーザーの権限で読むだけ。結果のキーは LDAP の属性名（`sAMAccountName` `displayName` `mail` `department` `title` `manager` `memberOf` `lastLogonTimestamp` `whenCreated` など）。日時は `Date`（無期限・なしは `null`）、`memberOf` は識別名の配列。`type`（"user" / "computer" / "group" ...）、`enabled` `lockedOut` `passwordExpired` も付く。
-
-| API | 説明 |
-|---|---|
-| `ad.available()` | ドメインに参加しているか |
-| `xljs.computerName` / `xljs.userName` | コンピューター名 / ログオン中のユーザー名（AD なしでも使える） |
-| `ad.me()` / `ad.computer()` | 自分 / このコンピューター |
-| `ad.get(id)` | 1 件（ログオン名・識別名・UPN・メール・SID・名前。なければ `null`） |
-| `ad.search("山田*")` | 名前・ログオン名・表示名・メールで検索（既定はユーザー） |
-| `ad.search({ type, filter, disabled, lockedOut, expired, expiringDays, inactiveDays, passwordExpired, passwordNeverExpires, memberOf, recursive, searchBase, properties, limit })` | 条件はすべて AND。`type`: "user"（既定）/ "computer" / "group" / "all"。`filter`: `{ department: "営業部", title: ["課長", "部長"], mail: true }` か LDAP のフィルタ文字列。`inactiveDays: 90` は 90 日ログオンなし。`memberOf` はグループ名か識別名 |
-
 ## Excel
 
 対応形式は `.xlsx` / `.xlsm`。`.xls` は不可。マクロ・ピボットテーブル・グラフは保存すると失われることがある。
@@ -142,7 +124,7 @@ description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows �
 | `book.addSheet(name)` / `book.removeSheet(name)` | 追加・削除 |
 | `book.save()` / `book.save(p)` | 上書き保存 / 別名保存 |
 | `book.close()` | 閉じる（メモリ解放） |
-| `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | Excel で印刷したときのように PDF に書き出す（下記「PDF」） |
+| `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | Excel で印刷したときのように PDF に書き出す（「PDF 出力」の節） |
 | `workbooks.readVBA(p)` | マクロブック（.xlsm / .xlsb など）の VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、マクロがなければ `null`。`type` は `"standard"` `"class"` `"document"`（ThisWorkbook とシート）`"form"`。`text` は全モジュールの Markdown |
 | `workbooks.columnName(3)` → `"C"`、`workbooks.cellName(2, 3)` → `"C2"` | 番地の変換 |
 
@@ -207,7 +189,7 @@ sheet.setRowHeight(1, 30);        // 行の高さ（ポイント）
 
 色は `"#RRGGBB"` か `red` などの色名。書式は既存の書式に重ねて適用される（`{ replace: true }` で置き換え）。
 
-### PDF
+## PDF 出力
 
 Excel がなくても、印刷したときと同じページで PDF にできる（Windows の WebView2 を使う。コンソール・mock では使えない）。
 
@@ -362,6 +344,19 @@ const book = workbooks.open(data);         // 保存せずに開くこともで�
 - 認証付きのプロキシも通る（Windows 認証はそのまま、Basic 認証は初回にユーザー名とパスワードを尋ねて Windows の資格情報マネージャーに保存する）。プロキシの ID・パスワードをスクリプトに書かない。
 - つながらない・サーバーが見つからない・証明書の問題は `TypeError`、中止は `AbortError`、時間切れは `TimeoutError` で reject する。ヘッダーの値に日本語は使えない（必要なら `encodeURIComponent`）。
 - `URL` / `URLSearchParams` は URL の組み立てに使える（`new URL("/api/a", base)`、`url.searchParams.set("q", "日本語")`）。
+
+## Active Directory（ad。ドメイン参加の Windows のみ）
+
+サインイン中のユーザーの権限で読むだけ。結果のキーは LDAP の属性名（`sAMAccountName` `displayName` `mail` `department` `title` `manager` `memberOf` `lastLogonTimestamp` `whenCreated` など）。日時は `Date`（無期限・なしは `null`）、`memberOf` は識別名の配列。`type`（"user" / "computer" / "group" ...）、`enabled` `lockedOut` `passwordExpired` も付く。
+
+| API | 説明 |
+|---|---|
+| `ad.available()` | ドメインに参加しているか |
+| `xljs.computerName` / `xljs.userName` | コンピューター名 / ログオン中のユーザー名（AD なしでも使える） |
+| `ad.me()` / `ad.computer()` | 自分 / このコンピューター |
+| `ad.get(id)` | 1 件（ログオン名・識別名・UPN・メール・SID・名前。なければ `null`） |
+| `ad.search("山田*")` | 名前・ログオン名・表示名・メールで検索（既定はユーザー） |
+| `ad.search({ type, filter, disabled, lockedOut, expired, expiringDays, inactiveDays, passwordExpired, passwordNeverExpires, memberOf, recursive, searchBase, properties, limit })` | 条件はすべて AND。`type`: "user"（既定）/ "computer" / "group" / "all"。`filter`: `{ department: "営業部", title: ["課長", "部長"], mail: true }` か LDAP のフィルタ文字列。`inactiveDays: 90` は 90 日ログオンなし。`memberOf` はグループ名か識別名 |
 
 ## 進捗表示
 
