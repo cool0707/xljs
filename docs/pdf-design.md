@@ -233,7 +233,6 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
   `cfvo` の `gte`、規則の `text`・2 つ目の数式（範囲内）、差分の書式の表示形式（`numFmt`）も落としていた。Excel 2010 の拡張（`x14:conditionalFormattings`）も読まなかった。
   これらを読み書きし（拡張は `Worksheet::conditional_formatting_2010_collection`。規則・データバー・アイコンセット・`cfvo` の構造体は 2007 形式と共用で、
   要素名は接頭辞を除いて読む）、空の `<dxf/>` で後ろの `dxfId` がずれるのも直した。
-  `cool0707/umya-spreadsheet` の `ccr-6eae5c89-nc7gnn` ブランチ（`xljs` ブランチへ取り込んだら `Cargo.toml` を `xljs` に戻す）。
 
 本家の版を上げるときは、`xljs` ブランチを新しいタグへ載せ替える（本家に取り込まれた修正は落とす）。どちらも取り込まれたら
 `[patch.crates-io]` を消して本家に戻す。
