@@ -842,6 +842,7 @@
     const reply = (x) => f.contentWindow.postMessage("\x02" + JSON.stringify(x), "*");
     const form = f.id === "wz-look-frame" ? lookForm : previewForm;
     if (m.type === "ready" && form) reply(form);
+    else if (f.id === "wz-look-frame" && (m.type === "cancel" || m.type === "close")) closeLookPreview();
     else if (m.type === "submit" || m.type === "button") reply({ type: "errors", errors: {}, error: L.previewNoRun });
   });
 
@@ -1116,6 +1117,14 @@
     $("wz-look-frame").src = "form.html?preview=" + Date.now();
   }
 
+  // The preview closes with its button again, the form's Cancel / Close or
+  // the drawn title bar's close button.
+  function closeLookPreview() {
+    $("wz-look-box").hidden = true;
+    $("wz-look-frame").removeAttribute("src");
+    lookForm = null;
+  }
+
   function luminance(c) {
     const probe = document.body.appendChild(el("span", { hidden: true }));
     probe.style.color = c;
@@ -1178,7 +1187,8 @@
       if (!$("wz-folder").value.trim()) { wizardError(L.wzNeedFolder); return; }
       send({ op: "wizardCreate", answers: a, path: $("wz-folder").value.trim(), text: $("wz-text").value });
     };
-    $("wz-look-preview").onclick = lookPreview;
+    $("wz-look-preview").onclick = () => ($("wz-look-box").hidden ? lookPreview() : closeLookPreview());
+    for (const x of document.querySelectorAll("#wz-window .wz-close")) x.onclick = closeLookPreview;
     $("wz-copy").onclick = () => copy($("wz-text").value, L.wzCopiedOnly);
     $("wz-cancel").onclick = () => { st.wizard = false; setTab("code"); };
     $("w-wizard").onclick = () => openWizard("new");
