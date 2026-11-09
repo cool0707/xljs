@@ -510,3 +510,62 @@ fn exe_settings_default_chat() {
     assert_eq!(posts.iter().find(|v| v["type"] == "init").unwrap()["services"].as_array().unwrap().len(), crate::dev::SERVICES.len());
     assert!(posts.iter().all(|v| v["type"] != "url"));
 }
+
+#[test]
+fn unified_diffs() {
+    use super::notify::unified;
+    assert_eq!(unified("a.js", "x\n", "x\n").unwrap(), "");
+    let old: String = (1..=20).map(|i| format!("l{i}\n")).collect();
+    let new = old.replace("l2\n", "L2\n").replace("l18\n", "").replace("l20\n", "l20\nl21");
+    let d = unified("a.js", &old, &new).unwrap();
+    assert_eq!(
+        d,
+        "--- a.js\n+++ a.js\n@@ -1,5 +1,5 @@\n l1\n-l2\n+L2\n l3\n l4\n l5\n@@ -15,6 +15,6 @@\n l15\n l16\n l17\n-l18\n l19\n l20\n+l21\n\\ No newline at end of file\n"
+    );
+    assert_eq!(unified("a.js", "", "a\n").unwrap(), "--- a.js\n+++ a.js\n@@ -0,0 +1 @@\n+a\n");
+    // Too different: no diff.
+    let a: String = (0..1200).map(|i| format!("a{i}\n")).collect();
+    let b: String = (0..1200).map(|i| format!("b{i}\n")).collect();
+    assert!(unified("a.js", &a, &b).is_none());
+}
+
+#[test]
+fn notify_own_changes() {
+    let _l = lock_lang("ja");
+    let dir = tempdir();
+    let body: String = (1..=30).map(|i| format!("const v{i} = {i};\n")).collect();
+    write(&dir, "main.js", &body);
+    write(&dir, "util.js", "export const a = 1;\n");
+    let (mut s, w, _rx) = session(&dir, "{}");
+    page(&mut s, json!({"op": "open", "path": dir.join("main.js").to_string_lossy()}));
+    w.take("");
+
+    // The AI has not seen the file: the whole of it (the file being edited only).
+    page(&mut s, json!({"op": "notify", "file": "main.js"}));
+    let c = w.take("copy");
+    let text = c[0]["text"].as_str().unwrap();
+    assert_eq!(c[0]["what"], "notify");
+    assert!(text.contains("main.js の今の内容です") && text.contains("const v30 = 30;") && !text.contains("util.js"), "{text}");
+    // Told: nothing more to tell.
+    page(&mut s, json!({"op": "notify", "file": "main.js"}));
+    assert_eq!(w.take("info")[0]["message"], "AI に伝えていない変更はありません。");
+
+    // The AI's answer, then the user's own fix: only the difference.
+    let ai = body.replace("const v10 = 10;", "const v10 = 100;");
+    page(&mut s, json!({"op": "apply", "file": "main.js", "text": ai, "note": "main.js"}));
+    page(&mut s, json!({"op": "save", "file": "main.js", "text": ai.replace("const v20 = 20;", "const v20 = 200;")}));
+    page(&mut s, json!({"op": "save", "file": "util.js", "text": "export const a = 2;\n"}));
+    w.take("");
+    page(&mut s, json!({"op": "notify", "file": "main.js"}));
+    let text = w.take("copy")[0]["text"].as_str().unwrap().to_string();
+    assert!(text.contains("```diff\n--- main.js\n+++ main.js\n@@ -17,7 +17,7 @@\n"), "{text}");
+    assert!(text.contains("-const v20 = 20;\n+const v20 = 200;\n") && !text.contains("v10"), "{text}");
+    assert!(!text.contains("util.js"), "the AI has not seen util.js: {text}");
+
+    // Copying the introduction: the AI has seen the entry script.
+    write(&dir, "main.js", "alert(1);\n");
+    page(&mut s, json!({"op": "intro"}));
+    w.take("");
+    page(&mut s, json!({"op": "notify", "file": "main.js"}));
+    assert_eq!(w.take("info").len(), 1);
+}
