@@ -107,6 +107,17 @@ pub(super) fn create(parent: HWND, env: &ICoreWebView2Environment, o: &BrowserOp
         if let Ok(s) = core.Settings() {
             let _ = s.SetAreDevToolsEnabled(false);
             let _ = s.SetIsStatusBarEnabled(false);
+            // The User-Agent of the Edge or Chrome installed, with its
+            // client hints (WebView2's own name WebView2 among the brands),
+            // before the first navigation. Popups keep WebView2's.
+            if let Some(a) = &o.agent {
+                if let Ok(s2) = s.cast::<ICoreWebView2Settings2>() {
+                    let _ = s2.SetUserAgent(&hstr(&a.user_agent));
+                }
+                if let Some(p) = &a.devtools {
+                    super::webview::devtools(&core, "Emulation.setUserAgentOverride", p, |_, _| {});
+                }
+            }
         }
         let _ = controller.SetIsVisible(false);
         let mut token = 0i64;

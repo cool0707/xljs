@@ -1176,6 +1176,7 @@ declare global {
    * HTTP / HTTPS のリクエスト（Windows では WinHTTP: Windows のプロキシ設定（PAC も）、証明書ストア、gzip）。
    * 404 や 500 でも reject しない（res.ok / res.status で確かめる）。つながらない・名前が見つからない・証明書の問題は TypeError、
    * signal で中止すると AbortError、timeout を過ぎると TimeoutError（どちらも DOMException）で reject する。
+   * User-Agent は既定でこのパソコンの Edge と同じもの（exe の隣の xljs.json の userAgent: "chrome" などで変更、headers の指定が優先）。
    */
   function fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
 

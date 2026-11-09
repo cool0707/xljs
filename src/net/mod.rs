@@ -7,6 +7,7 @@
 //! cookies within the run, TLS with the certificate store of Windows and
 //! gzip. Elsewhere (`plain.rs`, for the tests) only plain HTTP/1.1.
 
+pub mod agent;
 pub mod auth;
 #[cfg(not(windows))]
 mod plain;
@@ -53,7 +54,7 @@ pub struct Request {
     /// The time a send or a receive may take (None: the default).
     pub timeout: Option<Duration>,
     pub credentials: Credentials,
-    /// The User-Agent unless the headers have one.
+    /// The User-Agent unless the headers have one (agent::for_fetch).
     pub agent: String,
     /// Asks for the login of a proxy that wants Basic authentication (none:
     /// the 407 is the response).

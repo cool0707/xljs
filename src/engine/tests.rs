@@ -186,6 +186,8 @@ pub(crate) fn test_scripts(debugger: bool) {
     let _l = lock_lang("ja");
     // The server of fetch.test.js.
     unsafe { std::env::set_var("XLJS_TEST_HTTP", crate::net::testserver::url()) };
+    // fetch.test.js checks the User-Agent (else the installed Edge's).
+    unsafe { std::env::set_var(crate::net::agent::ENV, "xljs") };
     let mut fails = Vec::new();
     let filter = std::env::var("XLJS_TEST_SCRIPT").unwrap_or_default();
     for s in scripts() {

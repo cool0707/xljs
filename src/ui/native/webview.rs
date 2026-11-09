@@ -283,7 +283,7 @@ impl crate::meta::AssetFs for PrintAssets {
 }
 
 /// Calls a DevTools protocol method of the page; f gets the result JSON.
-fn devtools(core: &ICoreWebView2, method: &str, params: &str, f: impl FnOnce(windows::core::Result<()>, String) + 'static) {
+pub(super) fn devtools(core: &ICoreWebView2, method: &str, params: &str, f: impl FnOnce(windows::core::Result<()>, String) + 'static) {
     let handler = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |hr, json: String| {
         f(hr, json);
         Ok(())
