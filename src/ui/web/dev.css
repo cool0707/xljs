@@ -57,10 +57,11 @@ i + span { margin-left: 6px; }
   background: var(--panel);
   flex-wrap: wrap;
 }
-#toolbar .script { flex: 1; min-width: 160px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-#toolbar .script i { color: var(--accent); margin-right: 6px; }
-#script-name { font-weight: 600; }
-#script-dir { margin-left: 8px; font-size: 12px; }
+/* The title bar: the toolbar's colors, the size of Windows' own caption text. */
+#titlebar { --xljs-titlebar-bg: var(--panel); --xljs-titlebar-fg: var(--fg); }
+#titlebar .xljs-tb-title { font-size: 12px; gap: 8px; }
+#titlebar .xljs-tb-title img { flex: none; width: 16px; height: 16px; }
+#file-dir { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12px; -webkit-user-select: text; user-select: text; }
 .group { display: flex; gap: 4px; }
 button.tool { min-width: 0; padding: 0 10px; white-space: nowrap; }
 button.tool.icon { padding: 0 8px; }

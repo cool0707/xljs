@@ -9,12 +9,15 @@
 <link rel="stylesheet" href="dev.css">
 </head>
 <body>
+<!-- The window's own title bar (WindowOptions::custom_title_bar; web/titlebar.js
+     styles it and drives the buttons). Hidden outside such a window. -->
+<header id="titlebar" class="xljs-titlebar" data-xljs-titlebar hidden>
+  <div class="xljs-tb-title"><img src="xljs-logo.png" alt=""><span id="app-title"></span></div>
+  <button type="button" tabindex="-1" class="xljs-tb-btn xljs-tb-minimize" data-xljs-window="minimize">&#xE921;</button>
+  <button type="button" tabindex="-1" class="xljs-tb-btn xljs-tb-maximize" data-xljs-window="maximize">&#xE922;</button>
+  <button type="button" tabindex="-1" class="xljs-tb-btn xljs-tb-close" data-xljs-window="close">&#xE8BB;</button>
+</header>
 <header id="toolbar">
-  <div class="script">
-    <i class="ic ic-file-code"></i>
-    <span id="script-name"></span>
-    <span id="script-dir" class="muted"></span>
-  </div>
   <div class="group">
     <button type="button" id="btn-open" class="tool"><i class="ic ic-folder-open"></i><span data-t="open"></span></button>
     <button type="button" id="btn-new" class="tool"><i class="ic ic-file"></i><span data-t="new"></span></button>
@@ -215,6 +218,7 @@
     <div id="panel-code" class="panel">
       <div class="bar">
         <select id="file-select"></select>
+        <span id="file-dir" class="muted"></span>
         <span id="save-state" class="muted"></span>
         <span class="spacer"></span>
         <button type="button" id="btn-format" class="tool" data-tip="formatTip"><i class="ic ic-text-align-start"></i><span data-t="format"></span></button>
