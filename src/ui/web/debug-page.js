@@ -20,15 +20,12 @@
   const setStatus = (text, cls) => {
     $("status").textContent = text;
     $("status").className = "status " + (cls || "");
-  };
-  const showError = (text) => {
-    $("error").textContent = text;
-    $("error").hidden = !text;
+    $("status").title = text;
+    $("dot").className = "dot " + (cls || "");
   };
   let failed = false;
   const fail = (text) => {
     setStatus("xljs: " + String(text).split("\n")[0], "error");
-    showError(String(text));
     // The run cannot go on: Go ends it with this error instead of waiting,
     // and the window closes, as at the end of a run.
     if (wv && !failed) {
@@ -46,7 +43,6 @@
       case "done":
         if (detail.error) {
           setStatus(fmt(L.failed, detail.code), "error");
-          showError(detail.error);
         } else {
           setStatus(fmt(L.finished, detail.code), "ok");
         }
@@ -124,8 +120,9 @@
         note("ready");
         L = m.labels;
         document.title = m.title;
-        $("name").textContent = m.script;
-        $("hint").textContent = L.hint;
+        $("name").textContent = String(m.script).split(/[\\/]/).pop();
+        $("name").title = m.script;
+        setStatus(L.running);
         // Runs at once, pausing on the script's first line (not with ?autorun).
         worker.postMessage({ type: "run", breakFirst: !autorun });
         break;

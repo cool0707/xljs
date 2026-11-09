@@ -1,15 +1,42 @@
-main { flex: 1; overflow: auto; padding: 16px 20px 8px; }
-h1 { margin: 0 0 8px; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#hint { margin: 0 0 12px; color: var(--muted); white-space: pre-wrap; }
-#error {
-  margin: 12px 0 0;
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-box);
-  background: var(--input);
-  font: 12px/1.5 var(--mono);
-  white-space: pre-wrap;
-  word-break: break-all;
+/* The debugger window: a small toast with the script's name and the state. */
+body { background: var(--panel); }
+.toast {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-m);
+  min-width: 0;
+  padding: 0 var(--sp-xs) 0 var(--sp-l);
+  border-left: 4px solid var(--accent);
 }
+.dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+.dot.ok { background: var(--ok); animation: none; }
+.dot.error { background: var(--error); animation: none; }
+@keyframes pulse { 50% { opacity: .3; } }
+.text { flex: 1; min-width: 0; }
+#name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#status { font-size: 12px; line-height: 16px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #status.ok { color: var(--ok); }
 #status.error { color: var(--error); }
+.close {
+  flex: none;
+  align-self: flex-start;
+  width: 28px;
+  min-width: 0;
+  height: 28px;
+  margin-top: var(--sp-xs);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-box);
+  background: transparent;
+  color: var(--muted);
+  font: 10px/1 "Segoe Fluent Icons", "Segoe MDL2 Assets";
+}
+.close:hover { background: var(--hover); color: var(--fg); }

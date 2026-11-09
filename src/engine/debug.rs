@@ -301,8 +301,11 @@ pub(super) fn run(o: &Options, env: Env, code: Vec<u8>) -> Result<i32> {
         let (p1, p2, t1, t2) = (poster.clone(), poster.clone(), trace.clone(), trace.clone());
         let w = host.env.ui.open_window(WindowOptions {
             title: t!("debug.windowTitle", host.env.title),
-            width: 600,
-            height: 300,
+            // A small toast (web/debug.html), all of it the title bar.
+            width: 320,
+            height: 64 - crate::ui::TITLE_BAR_HEIGHT,
+            fixed_size: true,
+            custom_title_bar: true,
             url: page,
             assets: Some(Arc::new(debug_assets(&code))),
             debug: true,
