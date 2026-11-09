@@ -364,9 +364,9 @@ pub struct Choice {
 static INTERRUPTS: AtomicI32 = AtomicI32::new(0);
 static AUTO_NOTIFY: AtomicBool = AtomicBool::new(true);
 
-/// Sets whether the native UI shows a notification when a dialog or a
-/// window opens while the user is working in another application (the
-/// dialog then cannot come to the front by itself).
+/// Sets whether the native UI shows a notification (with the same title
+/// and text) when an alert opens while the user is working in another
+/// application (the alert then cannot come to the front by itself).
 pub fn set_auto_notify(on: bool) {
     AUTO_NOTIFY.store(on, Ordering::SeqCst);
 }

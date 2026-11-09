@@ -9,10 +9,10 @@
 //! notification brings the topmost window of xljs (a dialog, say) to the
 //! front.
 //!
-//! The same notifications are shown automatically when a dialog or window
-//! opens while the user works in another application (watch): Windows does
-//! not let a background process take the foreground, so the dialog would
-//! otherwise only flash on the taskbar.
+//! The same notification is shown automatically when an alert opens while
+//! the user works in another application (watch), with the title and text
+//! of the alert: Windows does not let a background process take the
+//! foreground, so the alert would otherwise only flash on the taskbar.
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -58,7 +58,7 @@ struct State {
     /// Balloons shown and not yet reported closed.
     open: u32,
     /// A notification of the script (ui.notify) was shown since the icon
-    /// was added. The automatic ones (watch) are only about a dialog that
+    /// was added. The automatic ones (watch) are only about an alert that
     /// waits, so they go when it closes and do not hold up the exit.
     explicit: bool,
 }
@@ -66,8 +66,6 @@ struct State {
 struct Watch {
     title: String,
     message: String,
-    /// unwatch is called when the dialog closes.
-    tracked: bool,
 }
 
 thread_local! {
@@ -75,8 +73,8 @@ thread_local! {
     /// The notifications to show if the dialog has not come to the front
     /// by the time the timer fires, by timer id.
     static WATCHES: RefCell<HashMap<usize, Watch>> = RefCell::new(HashMap::new());
-    /// The tracked watches whose notification is shown and whose dialog is
-    /// still open.
+    /// The watches whose notification is shown and whose alert is still
+    /// open.
     static SHOWN: RefCell<HashSet<usize>> = RefCell::new(HashSet::new());
 }
 
@@ -235,8 +233,8 @@ fn remove() {
 /// Waits (serving window messages) until the notifications still shown
 /// have closed, at most EXIT_WAIT, then removes the icon. Called when the
 /// script has ended, before the process exits. Only the notifications of
-/// the script are waited for: the automatic ones are about dialogs and
-/// windows that are gone now.
+/// the script are waited for: the automatic ones are about alerts that are
+/// gone now.
 pub(crate) fn finish() {
     let deadline = Instant::now() + EXIT_WAIT;
     let mut m = MSG::default();
@@ -295,31 +293,30 @@ unsafe extern "system" fn watch_proc(_: HWND, _: u32, id: usize, _: u32) {
         && super::super::auto_notify()
         && !app_active()
         && show_balloon(&w.title, &w.message)
-        && w.tracked
     {
         SHOWN.with(|s| s.borrow_mut().insert(id));
     }
 }
 
 /// Shows a notification shortly unless xljs is in the foreground by then
-/// (a dialog that is about to open came to the front). The timer also runs
-/// inside a dialog's modal loop. tracked: unwatch is called when the dialog
-/// closes. Returns an id for unwatch (0 = none).
-pub(crate) fn watch(title: &str, message: &str, tracked: bool) -> usize {
+/// (the alert that is about to open came to the front). The timer also
+/// runs inside the alert's modal loop. Returns an id for unwatch (0 =
+/// none).
+fn watch(title: &str, message: &str) -> usize {
     if !super::super::auto_notify() {
         return 0;
     }
     let id = unsafe { SetTimer(None, 0, WATCH_DELAY, Some(watch_proc)) };
     if id != 0 {
-        WATCHES.with(|w| w.borrow_mut().insert(id, Watch { title: title.to_string(), message: message.to_string(), tracked }));
+        WATCHES.with(|w| w.borrow_mut().insert(id, Watch { title: title.to_string(), message: message.to_string() }));
     }
     id
 }
 
-/// Ends the watch of a dialog that has closed. Its notification ("waiting
-/// for input") is taken away, unless a notification of the script or of
-/// another open dialog shares the icon.
-pub(crate) fn unwatch(id: usize) {
+/// Ends the watch of an alert that has closed. Its notification is taken
+/// away, unless a notification of the script or of another open alert
+/// shares the icon.
+fn unwatch(id: usize) {
     if id == 0 {
         return;
     }
@@ -336,9 +333,10 @@ pub(crate) fn unwatch(id: usize) {
     }
 }
 
-/// Runs f (which shows a modal dialog) with a watch.
+/// Runs f (which shows an alert, a modal message box) with a watch whose
+/// notification has the title and text of the alert.
 pub(crate) fn watching<T>(title: &str, message: &str, f: impl FnOnce() -> T) -> T {
-    let id = watch(title, message, true);
+    let id = watch(title, message);
     let r = f();
     unwatch(id);
     r

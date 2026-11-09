@@ -2036,8 +2036,9 @@
       native.uiNotify(t, msg(message));
     },
     /**
-     * Whether a notification is shown when a dialog or window opens while
-     * the user is working in another application (default true).
+     * Whether a notification with the same title and text is shown when an
+     * alert opens while the user is working in another application
+     * (default true).
      */
     get autoNotify() { return autoNotify; },
     set autoNotify(v) { autoNotify = !!v; native.uiAutoNotify(autoNotify); },
