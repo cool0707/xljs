@@ -111,8 +111,13 @@ fn error_reports() {
     assert!(pr.contains("「main.js」") && pr.contains("TypeError: x is not a function") && pr.contains(">12| line12") && pr.contains("12 行目"), "{pr}");
     let pr = report::prompt(&p, true, "", Some(&loc));
     assert!(pr.contains("中止") && !pr.contains("エラー:"), "{pr}");
-    let intro = report::intro(Some(&p));
+    let intro = report::intro(Some(&p), true, true);
     assert!(intro.starts_with("あなたは「xljs」") && intro.contains("line30"), "{}", &intro[intro.len() - 200..]);
+    let only = report::intro(Some(&p), true, false);
+    assert!(only.starts_with("あなたは「xljs」") && !only.contains("line30"));
+    let script = report::intro(Some(&p), false, true);
+    assert!(script.starts_with("今のスクリプト（main.js）です:\n```js\n") && script.contains("line30"), "{script}");
+    assert_eq!(report::intro(None, false, true), "");
 }
 
 /// A window that records what the session does.
@@ -578,10 +583,25 @@ fn notify_own_changes() {
     assert!(text.contains("-const v20 = 20;\n+const v20 = 200;\n") && !text.contains("v10"), "{text}");
     assert!(!text.contains("util.js"), "the AI has not seen util.js: {text}");
 
-    // Copying the introduction: the AI has seen the entry script.
+    // Copying the instructions alone: the AI has not seen the script.
     write(&dir, "main.js", "alert(1);\n");
+    page(&mut s, json!({"op": "intro", "mode": "prompt"}));
+    assert_eq!(w.take("copy")[0]["what"], "intro");
+    page(&mut s, json!({"op": "notify", "file": "main.js"}));
+    assert_eq!(w.take("copy").len(), 1);
+
+    // Copying the introduction: the AI has seen the entry script.
+    write(&dir, "main.js", "alert(2);\n");
     page(&mut s, json!({"op": "intro"}));
     w.take("");
+    page(&mut s, json!({"op": "notify", "file": "main.js"}));
+    assert_eq!(w.take("info").len(), 1);
+
+    // The script alone.
+    write(&dir, "main.js", "alert(3);\n");
+    page(&mut s, json!({"op": "intro", "mode": "script"}));
+    let c = w.take("copy");
+    assert!(c[0]["what"] == "script" && c[0]["text"].as_str().unwrap().contains("alert(3);"), "{c:?}");
     page(&mut s, json!({"op": "notify", "file": "main.js"}));
     assert_eq!(w.take("info").len(), 1);
 }
