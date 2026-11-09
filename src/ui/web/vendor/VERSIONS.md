@@ -7,6 +7,7 @@
 | `frappe-gantt/` | Frappe Gantt | 1.2.2 | MIT | `frappe-gantt/dist/frappe-gantt.umd.js`、`frappe-gantt.css` |
 | `codemirror/` | CodeMirror 6（state 6.7.6・view 6.43.15・commands 6.11.1・language 6.13.1・autocomplete 6.20.4・search 6.7.2・lang-javascript 6.2.5・lang-html 6.4.12・lang-css 6.3.1・lang-json 6.0.2） | 6 | MIT | `tools/codemirror` で esbuild のバンドル（`npm ci && npm run build`）。開発モードのエディタ用 |
 | `prettier/` | Prettier（standalone と babel・estree・html・postcss のプラグイン） | 3.9.10 | MIT | `prettier/standalone.js`、`prettier/plugins/*.js`（`tools/codemirror` の `npm run build:prettier` でコピー）。開発モードの整形用 |
+| `lobe-icons/` | Lobe Icons（`copilot-color.svg`・`gemini-color.svg`・`claude-color.svg`） | 1.102.0 | MIT | `@lobehub/icons-static-svg/icons/*.svg`。開発モードの AI チャットのボタンのロゴ（ChatGPT は Font Awesome の `fa-openai`） |
 
 - AG Charts は **Community 版だけ**を入れる（Enterprise 版はライセンスキーがないと透かしが出る）。
   Community 版の系列: bar, line, area, scatter, bubble, histogram, pie, donut。
