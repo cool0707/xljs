@@ -47,6 +47,7 @@ AI チャットと並べてスクリプトを作る・直すための画面。�
 - ダウンロード（`ICoreWebView2_4::DownloadStarting`）は保存先を一時フォルダ（`%TEMP%\xljs-dev\<pid>`）に変え、ダウンロードの表示を出さない（`Handled`）。完了（`StateChanged` が COMPLETED）で `BrowserEvent::Downloaded`。
 - `.js` などは WebView2 の「危険なファイルの種類」の確認（保存するかを毎回尋ねる）にかかるため、`ICoreWebView2_26::SaveFileSecurityCheckStarting` で、開発モードが読むテキストの拡張子（`project::TEXT_EXTS`。`BrowserOptions::trusted_extensions`）だけ既定の確認を外す（`SuppressDefaultPolicy`）。受け取ったファイルはテキストとして読むだけで実行しない。.exe などはそのまま確認される。SmartScreen（評判の確認）は切らない。ランタイムが 1.0.2903 より古いと、このイベントがないので従来どおり尋ねる。
 - 表示中のページ（`SourceChanged`）を `BrowserEvent::Url` で知らせ、スクリプトごとに `.xljs/dev.json` の `chat` に覚える。スクリプトを開くとその URL を開く。チャットを開いていない状態でスクリプトを開いたときは、今のチャットをそのスクリプトに紐付ける。「ホーム」でチャットを選び直す（紐付けを消し、`about:blank` にして隠す）。
+- 配布用の既定（`DevOptions::exe_settings`＝exe と同じフォルダの `xljs.json` の `dev`。`load_exe_settings`）: `chat` は既定のチャット。`ready` でスクリプトが開かれず、チャットも開いていなければそれを開き（`url` を送ってページの `st.chat` にする）、`open` で紐付けのないスクリプトに今のチャットもなければそれを開く（紐付けは表示されたときの `BrowserEvent::Url` で覚える）。`services` はチャットの選択肢の先頭に、`builtinServices: false` で `SERVICES` を出さない。`chat` が選択肢になければ先頭に足す。http(s) 以外の URL は捨てる。読めない JSON は `dev.exeSettingsInvalid` を `error` で知らせ、既定なしで続ける。
 
 ## ダウンロードの置き換え先（`Project::match_download`）
 
