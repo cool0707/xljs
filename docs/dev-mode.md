@@ -10,7 +10,7 @@ AI チャットと並べてスクリプトを作る・直すための画面。�
 | `src/dev/project.rs` | 開いているスクリプト（`Project`）。編集できるファイルの一覧、ダウンロードの置き換え先の決定（`match_download`）、テキストの読み書き（UTF-8、だめなら Shift_JIS） |
 | `src/dev/versions.rs` | 簡易バージョニング。置き換える前の内容を `<フォルダ>/.xljs/versions/<相対パス>/NNNN.<拡張子>` に、メモを同じフォルダの `log.json` に |
 | `src/dev/notify.rs` | 自分で直したところを AI に伝える（後述）。AI が最後に見た内容の記録と、行の差分（Myers）・依頼文 |
-| `src/dev/report.rs` | 失敗した実行の stderr から、エラーの部分（`last_error`）と場所（`find_location`）を取り出し、AI への依頼文（`prompt`）を作る。`intro` は `docs/ai/prompt.md`＋今のスクリプト |
+| `src/dev/report.rs` | 失敗した実行の stderr から、エラーの部分（`last_error`）と場所（`find_location`）を取り出し、AI への依頼文（`prompt`）を作る。`intro` は `docs/ai/prompt.md` と今のスクリプト（どちらか片方も） |
 | `src/dev/runner.rs` | スクリプトを別プロセス（この exe 自身）で実行し、stdout/stderr と終了をイベントで返す |
 | `src/ui/web/dev.html` `dev.js` `dev.css` `dev-diff.js` | ページ。キャンバス（タブ）、差分表示（Myers の行差分）、エディタ、プレビュー |
 | `src/ui/web/dev-editor.js` `dev-types.js` | エディタ（後述）。`vendor/codemirror/codemirror.js` は `tools/codemirror` で作る CodeMirror 6 のバンドル |
@@ -64,7 +64,7 @@ AI チャットと並べてスクリプトを作る・直すための画面。�
 
 AI の回答を取り込んだあとに自分でコードを直すと、AI は自分の前の回答をもとに次の回答を作るので、直したところが元に戻りやすい。コードのバーの［AI に変更を通知］（［整形］と［保存］の間）で、直したところをチャットに貼る依頼文としてコピーする。
 
-- AI が最後に見た内容をファイルごとに `<フォルダ>/.xljs/ai/<相対パス>` に置く。記録するのは、置き換え（`apply`。AI の回答そのもの）、AI への説明のコピー（`intro`。入口のスクリプト）、通知したとき（通知した内容）。前の版に戻す（`restore`）・保存では変えない。入口のスクリプトの名前を変えたら記録も移す。
+- AI が最後に見た内容をファイルごとに `<フォルダ>/.xljs/ai/<相対パス>` に置く。記録するのは、置き換え（`apply`。AI の回答そのもの）、AI への説明のコピー（`intro`。スクリプトを含めたときだけ、入口のスクリプト）、通知したとき（通知した内容）。前の版に戻す（`restore`）・保存では変えない。入口のスクリプトの名前を変えたら記録も移す。
 - ボタンはまず保存し（`save`）、`{op:"notify", file}` を送る。Rust はファイル一覧（`Project::files`）のうち記録と今の内容が違うものを unified diff（前後 3 行）で、記録のない編集中のファイルは全体を載せる。差分が多い（1000 編集を超える）か、差分のほうがファイルより長いときも全体。依頼文は「自分で直した → この変更を前提に・元に戻さない → 今回は短い返事でよい」。コピーしたら記録を今の内容にする。
 - 伝えることがなければ `info`（`dev.notifyNone`）。
 
@@ -94,7 +94,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `apply` `versions` `version` `restore` | 置き換え（履歴に残す）、履歴の一覧・内容、前の版に戻す |
 | `run` `stop` `preview` | 実行（`debug`）・停止・フォームのプレビュー |
 | `chat` `browser` | チャットの URL（空でホーム）、枠の表示・位置・戻る・進む・再読み込み |
-| `intro` `notify` `showFolder` | AI への説明のコピー、自分で直したところのコピー、フォルダを開く |
+| `intro` `notify` `showFolder` | AI への説明のコピー（［プロンプト］のドロップダウン。`mode` が `prompt`＝指示だけ、`script`＝スクリプトだけ、空＝両方）、自分で直したところのコピー、フォルダを開く |
 | `wizardBooks` `wizardFolder` `wizardPrompt` `wizardSave` `wizardCreate` | 新規作成ウィザード（`answers`） |
 
 | Rust → ページ（`type`） | 内容 |

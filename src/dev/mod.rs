@@ -292,6 +292,9 @@ struct Request {
     scale: f64,
     /// The new name of the file (apply).
     rename: String,
+    /// What to copy (intro): "prompt" (the instructions alone), "script"
+    /// (the current script alone) or "" (both).
+    mode: String,
     /// The wizard's answers.
     answers: wizard::Answers,
 }
@@ -456,8 +459,20 @@ impl Session {
                 }
             }
             "intro" => {
-                self.post(json!({"type": "copy", "what": "intro", "text": report::intro(self.project.as_ref())}));
-                if let Some(p) = &self.project
+                let (prompt, script) = match r.mode.as_str() {
+                    "prompt" => (true, false),
+                    "script" => (false, true),
+                    _ => (true, true),
+                };
+                let text = report::intro(self.project.as_ref(), prompt, script);
+                if text.is_empty() {
+                    self.post(json!({"type": "info", "message": t!("dev.introNoScript")}));
+                    return Ok(());
+                }
+                let what = if prompt { "intro" } else { "script" };
+                self.post(json!({"type": "copy", "what": what, "text": text}));
+                if script
+                    && let Some(p) = &self.project
                     && let Ok(text) = read_text(&p.entry)
                 {
                     notify::remember(&p.dir, &p.entry_name(), &text)?;

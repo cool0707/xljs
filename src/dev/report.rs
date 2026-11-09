@@ -102,15 +102,19 @@ pub fn prompt(p: &Project, stuck: bool, message: &str, loc: Option<&Location>) -
 }
 
 /// The instructions for an AI chat that does not know xljs yet
-/// (docs/ai/prompt.md) and the script so far.
-pub fn intro(p: Option<&Project>) -> String {
-    let mut s = crate::dev::ai_prompt().trim_end().to_string();
-    if let Some(p) = p {
+/// (docs/ai/prompt.md, with `prompt`) and the script so far (with `script`).
+/// Empty when there is nothing to copy (the script alone, and no script).
+pub fn intro(p: Option<&Project>, prompt: bool, script: bool) -> String {
+    let mut s = if prompt { crate::dev::ai_prompt().trim_end().to_string() } else { String::new() };
+    if script && let Some(p) = p {
         let name = p.entry_name();
         if let Ok(text) = read_text(&p.entry)
             && !text.trim().is_empty()
         {
-            s.push_str(&format!("\n\n---\n\n{}\n```{}\n{}\n```\n", t!("dev.introCurrent", name), fence(&name), text.trim_end()));
+            if !s.is_empty() {
+                s.push_str("\n\n---\n\n");
+            }
+            s.push_str(&format!("{}\n```{}\n{}\n```\n", t!("dev.introCurrent", name), fence(&name), text.trim_end()));
         }
     }
     s

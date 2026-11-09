@@ -343,6 +343,21 @@
     })));
   }
 
+  // The menu of the "Prompt" button: what to copy for the AI chat.
+  function introMenu(anchor) {
+    const r = anchor.getBoundingClientRect();
+    const item = (label, mode, disabled) => ({
+      label: el("span", {}, icon("ic ic-clipboard"), el("span", { textContent: label || "" })),
+      action: () => send({ op: "intro", mode }),
+      disabled,
+    });
+    openMenu(r.left, r.bottom, [
+      item(L.introPrompt, "prompt", false),
+      item(L.introBoth, "", false),
+      item(L.introScript, "script", !st.project),
+    ]);
+  }
+
   // The menu of a tab (right click); the last tab has none (it cannot be
   // closed).
   function tabMenu(tab, x, y) {
@@ -1036,7 +1051,7 @@
     $("chat-back").onclick = () => send({ op: "browser", path: "back" });
     $("chat-forward").onclick = () => send({ op: "browser", path: "forward" });
     $("chat-reload").onclick = () => send({ op: "browser", path: "reload" });
-    $("chat-intro").onclick = $("chat-intro2").onclick = () => send({ op: "intro" });
+    $("chat-intro").onclick = $("chat-intro2").onclick = (e) => introMenu(e.currentTarget);
   }
 
   // ------------------------------------------------------------ project
@@ -1341,7 +1356,7 @@
         }
         break;
       case "copy":
-        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "wizard" ? L.wzCopied : m.what === "notify" ? L.copiedNotify : L.copied);
+        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "script" ? L.copiedScript : m.what === "wizard" ? L.wzCopied : m.what === "notify" ? L.copiedNotify : L.copied);
         break;
       case "runStarted": runStarted(m); break;
       case "output": appendOutput(m.text, m.stream === "stderr" ? "err" : ""); break;
