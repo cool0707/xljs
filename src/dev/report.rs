@@ -119,3 +119,54 @@ pub fn intro(p: Option<&Project>, prompt: bool, script: bool) -> String {
     }
     s
 }
+
+/// An element picked in the preview (dev.js pickInfo).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct Picked {
+    /// A short name ("button「OK」").
+    pub desc: String,
+    /// A CSS path to it.
+    pub selector: String,
+    /// Its HTML (shortened).
+    pub html: String,
+}
+
+/// The file that a change to the preview goes to: the app's page, or the
+/// script of a form.
+pub fn pick_file(p: &Project) -> String {
+    if p.meta.is_app() && !p.meta.html.is_empty() { p.meta.html.clone() } else { p.entry_name() }
+}
+
+/// The request for the AI chat about elements picked in the preview: what
+/// to change (ask), the elements and, with full, the file to change.
+pub fn pick(p: &Project, elements: &[Picked], ask: &str, full: bool) -> String {
+    let app = p.meta.is_app();
+    let file = pick_file(p);
+    let mut s = if app { t!("dev.pickApp", file) } else { t!("dev.pickForm", p.entry_name()) };
+    s.push_str("\n\n");
+    let ask = ask.trim();
+    if !ask.is_empty() {
+        s.push_str(&format!("{}\n{}\n\n", t!("dev.pickAsk"), ask));
+    }
+    s.push_str(&t!("dev.pickElements"));
+    s.push('\n');
+    for (i, e) in elements.iter().enumerate() {
+        s.push_str(&format!("{}. {}\n", i + 1, e.desc.trim()));
+        if !e.selector.is_empty() {
+            s.push_str(&format!("   {}\n", t!("dev.pickSelector", e.selector)));
+        }
+        if !e.html.trim().is_empty() {
+            s.push_str(&format!("```html\n{}\n```\n", e.html.trim_end()));
+        }
+    }
+    if full
+        && let Ok(text) = read_text(&p.dir.join(&file))
+        && !text.trim().is_empty()
+    {
+        s.push_str(&format!("\n{}\n```{}\n{}\n```\n", t!("dev.notifyWhole", &file), fence(&file), text.trim_end()));
+    }
+    s.push('\n');
+    s.push_str(&t!("dev.pickOutput", file));
+    s
+}

@@ -68,6 +68,13 @@ impl Project {
         self.entry.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
     }
 
+    /// Whether a script of the folder opens a form (ui.form): what the
+    /// preview tab shows by itself when it is opened.
+    pub fn opens_form(&self) -> bool {
+        static FORM: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r"\bui\s*\.\s*form\s*\(").unwrap());
+        self.files().iter().filter(|f| is_script(f)).any(|f| read_text(&self.dir.join(f)).is_ok_and(|t| FORM.is_match(&t)))
+    }
+
     /// The absolute path of a file given relative to the folder (slashes);
     /// an error for paths outside it.
     pub fn path(&self, rel: &str) -> Result<PathBuf> {

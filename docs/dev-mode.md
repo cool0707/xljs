@@ -82,6 +82,10 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 
 アプリの画面のプレビューは、スクリプトのフォルダを `https://app.xljs/_project/` で配信して iframe で表示する（スクリプトは動かないので data-bind などは空）。
 
+プレビューはタブが画面に出た時点で自動で表示する。アプリの画面はそのまま読み込み、フォームはページが `preview`（`auto: true`）を送る。Rust はスクリプトのファイル（`Project::opens_form`。フォルダのスクリプトのどれかに `ui.form(`）がフォームを開かないとき、または実行中のときは実行せずに `previewSkipped`（`busy`）を返す（フォームを開かないスクリプトは［フォームを表示］を押したときだけ実行する）。ページはファイルの保存・置き換えのたびに「変更の世代」を進め、表示中のフォームが古ければ（タブが出ているとき・実行が終わったとき）もう一度実行する。自動で実行したプレビューが失敗したときは、前のフォームを残したままエラーを上に出す（編集の途中のことが多いため）。
+
+［要素を選ぶ］はプレビューの要素を選んで AI に依頼するモード。iframe のページ（`form.html`・`_project/` のアプリの画面）は開発ウィンドウと同じオリジンなので、ページから `contentDocument` に直接キャプチャのリスナーを付け、ポイントした要素に破線、選んだ要素に実線の枠（`data-xljs-hover` / `data-xljs-picked` の属性と注入した style）を付ける。選択中はクリック・mousedown・submit などを止めるのでフォームは動かない。クリックで選び直し、Ctrl / Shift＋クリックで追加・解除。要素ごとに短い名前（タグ・type・name・ラベルか文字）・CSS のパス（id のある祖先から）・HTML（800 字まで）を集め、直し方と一緒に `pick` で送ると Rust（`report::pick`）が依頼文を作ってコピーさせる（フォームならスクリプト、アプリなら `@html` のファイルを直すよう依頼。「スクリプト全体も含める」でそのファイルの全体も付け、`notify` の基準として覚える）。iframe が読み込み直されたときは CSS のパスで要素を探し直す。もう一度ボタンを押すと終わり、選択も消える。
+
 ## ページとのメッセージ（主なもの）
 
 | ページ → Rust（`op`） | 内容 |
@@ -92,7 +96,8 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `dragFile` | コードタブのファイル名の左のつまみ（`#file-drag`）を動かしたとき、編集中のファイル（`file`）をウィンドウの外へドラッグする。Rust がシェルのデータオブジェクト（`SHParseDisplayName` → `SHCreateShellItemArrayFromIDLists` → `BHID_DataObject`。エクスプローラーと同じ CF_HDROP など）で `SHDoDragDrop` を始める（`BrowserCommand::DragFiles`。届いたときにボタンが離されていれば何もしない）ので、チャットの枠へのドロップはエクスプローラーからのドロップと同じになる。ドラッグ中は自分のページへのドロップを無視する（`st.fileDrag`） |
 | `read` `save` `edit` | ファイルの読み書き。`edit` は編集中のファイル（置き換え先の決定用） |
 | `apply` `versions` `version` `restore` | 置き換え（履歴に残す）、履歴の一覧・内容、前の版に戻す |
-| `run` `stop` `preview` | 実行（`debug`）・停止・フォームのプレビュー |
+| `run` `stop` `preview` | 実行（`debug`）・停止・フォームのプレビュー（`auto` はタブを開いたときの自動表示） |
+| `pick` | プレビューで選んだ要素についての AI への依頼のコピー（`elements` `text` `full`） |
 | `chat` `browser` | チャットの URL（空でホーム）、枠の表示・位置・戻る・進む・再読み込み |
 | `intro` `notify` `showFolder` | AI への説明のコピー（［プロンプト］のドロップダウン。`mode` が `prompt`＝指示だけ、`script`＝スクリプトだけ、空＝両方）、自分で直したところのコピー、フォルダを開く |
 | `wizardBooks` `wizardFolder` `wizardPrompt` `wizardSave` `wizardCreate` | 新規作成ウィザード（`answers`） |
@@ -103,7 +108,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `file` `saved` `applied` `versions` `version` | ファイル・保存・置き換え・履歴 |
 | `download` | ダウンロードしたファイル（`name` `text` `target` `old` `files`） |
 | `runStarted` `output` `runEnded` | 実行。`runEnded` は失敗時に `message` `location` `prompt` |
-| `previewForm` `previewFailed` | フォームのプレビュー |
+| `previewForm` `previewFailed` `previewSkipped` | フォームのプレビュー（`previewSkipped` は自動表示をしなかったとき） |
 | `url` `copy` `error` `info` `browserFailed` | チャットの URL、クリップボードへのコピー、エラー・お知らせ |
 | `wizardBooks` `wizardFolder` `wizardPrompt` | ウィザードの答え |
 

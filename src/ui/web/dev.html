@@ -249,9 +249,21 @@
       <div class="bar">
         <span id="preview-title"></span>
         <span class="spacer"></span>
+        <button type="button" id="pick-toggle" class="tool" data-tip="pickTip"><i class="ic ic-mouse-pointer-click"></i><span data-t="pick"></span></button>
         <button type="button" id="preview-refresh" class="tool"><i class="ic ic-rotate-cw"></i><span id="preview-refresh-label"></span></button>
       </div>
       <p id="preview-hint" class="hint muted"></p>
+      <div id="pick-box" class="pick-box" hidden>
+        <p class="muted" data-t="pickLead"></p>
+        <ul id="pick-list" class="pick-list"></ul>
+        <textarea id="pick-text" rows="3"></textarea>
+        <div class="row">
+          <button type="button" id="pick-copy" class="primary"><i class="ic ic-clipboard"></i> <span data-t="copyPrompt"></span></button>
+          <label class="check"><input type="checkbox" id="pick-full"> <span data-t="includeCode"></span></label>
+          <span class="spacer"></span>
+          <button type="button" id="pick-clear"><span data-t="pickClear"></span></button>
+        </div>
+      </div>
       <pre id="preview-error" class="error-box" hidden></pre>
       <iframe id="preview-frame" title="preview" hidden></iframe>
     </div>
