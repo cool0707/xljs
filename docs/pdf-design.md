@@ -135,8 +135,9 @@ umya-spreadsheet の図形のモデルは一部しか持たないので使わな
 
 ### 条件付き書式（`src/api/xlsx_cond.rs`）
 
-umya-spreadsheet はアイコンセットの種類（`iconSet` 属性）も Excel 2010 の拡張（`extLst` の `x14:conditionalFormattings`。負の値と軸のあるデータバー、`3Stars` など）も持たないので、
-ブックを開いたときにシートの XML（`sheetData` より後ろ）から読んでおく（`Book::cond`。差分の書式 `dxfs` は styles.xml から `xlsx_table::dxf` で）。
+規則は umya-spreadsheet のもの（`Worksheet::conditional_formatting_collection`）を印刷のときに読む（`xlsx_cond::sheet_rules`）。
+Excel 2010 の拡張（`extLst` の `x14:conditionalFormattings`。負の値と軸のあるデータバー、`3Stars` など）は `conditional_formatting_2010_collection` で、
+両方に書かれたデータバーは `ext_id`（`<x14:id>`）と拡張側の `id` で結ぶ。アイコンセットの種類・データバーの設定・拡張・差分の書式の表示形式はフォークで読み書きできるようにした（7 章）。
 
 - 規則は優先順位（`priority`）の順に当てる。書式の項目（塗り・文字の色・太字・斜体・取り消し線・下線・表示形式・罫線）は先に当たった規則が勝ち、
   「条件を満たす場合は停止」（`stopIfTrue`）で後ろの規則を止める。条件付き書式はセルの書式・テーブルスタイルより優先。白黒印刷では塗りと文字の色を出さない。
@@ -149,7 +150,7 @@ umya-spreadsheet はアイコンセットの種類（`iconSet` 属性）も Exce
   拡張があれば単色/グラデーション（グラデーションは色から白に近い色へ）、枠線、負の値の色、軸（自動＝最小と最大の比、中央、なし。破線）、右から左。値を表示しない設定も。
 - アイコンセット: すべての組み込みのセット（3〜5 個の矢印・旗・信号・記号・評価・四分円・星・三角・ボックス）を SVG で描き、セルの左に置く（大きさは既定のフォントの 12/11 倍。
   縦はセルの縦の配置）。値の文字はアイコンの分だけ左を空ける。逆順（`reverse`）、個別に選んだアイコン（`cfIcon`、「セルのアイコンなし」）、アイコンのみ表示（`showValue="0"`）。
-- 開いたときに読むので、スクリプトで行・列を挿入・削除すると範囲がずれる（条件付き書式を書く API はない）。
+- umya のモデルを読むので、スクリプトで行・列を挿入・削除すれば範囲も動き、保存したブックにも残る（条件付き書式を書く xljs の API はない）。
 
 ### セルに配置した画像（`src/api/xlsx_cellimage.rs`）
 
@@ -227,6 +228,12 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
   `getStyle().alignment.shrink` で読める。開いて保存したブックにも残る。
 - **インライン文字列のリッチテキスト**: 本家は `t="inlineStr"` の `<is>` の中の `<t>` を読むたびに値を上書きするので、最後のラン
   （`<rPh>` があればふりがな）しか残らなかった。`<is>` を共有文字列の `<si>` と同じに読む。
+
+- **条件付き書式**: 本家はアイコンセットの種類（`iconSet` 属性）を持たず `<dataBar>` として書き、データバーの `minLength` などの属性、
+  `cfvo` の `gte`、規則の `text`・2 つ目の数式（範囲内）、差分の書式の表示形式（`numFmt`）も落としていた。Excel 2010 の拡張（`x14:conditionalFormattings`）も読まなかった。
+  これらを読み書きし（拡張は `Worksheet::conditional_formatting_2010_collection`。規則・データバー・アイコンセット・`cfvo` の構造体は 2007 形式と共用で、
+  要素名は接頭辞を除いて読む）、空の `<dxf/>` で後ろの `dxfId` がずれるのも直した。
+  `cool0707/umya-spreadsheet` の `ccr-6eae5c89-nc7gnn` ブランチ（`xljs` ブランチへ取り込んだら `Cargo.toml` を `xljs` に戻す）。
 
 本家の版を上げるときは、`xljs` ブランチを新しいタグへ載せ替える（本家に取り込まれた修正は落とす）。どちらも取り込まれたら
 `[patch.crates-io]` を消して本家に戻す。

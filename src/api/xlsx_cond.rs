@@ -3,18 +3,17 @@
 //! above / below average, duplicates, text, dates, formulas, color scales,
 //! data bars and icon sets) worked out for the cells.
 //!
-//! The rules are read from the sheets' XML when the workbook is opened:
-//! umya-spreadsheet keeps neither the kind of an icon set nor the Excel 2010
-//! extensions (x14) that most data bars and some icon sets are written with.
+//! The rules are those umya-spreadsheet reads (also the Excel 2010 rules,
+//! x14, that most data bars and some icon sets are written with), so rules a
+//! script adds count too.
 
 use std::collections::HashMap;
 
-use umya_spreadsheet::Color;
+use umya_spreadsheet::{Color, ConditionalFormatValueObject, ConditionalFormattingRule, EnumTrait, Style, Worksheet};
 
 use super::xlsx::Book;
 use super::xlsx_calc::{CalcVal, eval_at, prepare, value_at};
-use super::xlsx_chart::{Node, parse};
-use super::xlsx_table::{Dxf, Side, color, dxf};
+use super::xlsx_table::{Dxf, Side};
 
 /// A rectangle of cells (1-based, inclusive): c1, r1, c2, r2.
 type Area = (u32, u32, u32, u32);
@@ -83,71 +82,28 @@ pub struct Rule {
 
 // ---- reading ----
 
-/// The conditional formatting rules of every sheet of an xlsx file, by sheet name.
-pub fn collect(data: &[u8], styles_xml: Option<&[u8]>) -> HashMap<String, Vec<Rule>> {
-    let dxfs: Vec<Dxf> = styles_xml.and_then(parse).and_then(|r| r.child("dxfs").map(|d| d.all("dxf").map(dxf).collect())).unwrap_or_default();
-    let mut out = HashMap::new();
-    super::xlsx_print::for_each_sheet(data, |_, name, xml| {
-        let rules = sheet_rules(xml, &dxfs);
-        if !rules.is_empty() {
-            out.insert(name.to_string(), rules);
+/// The conditional formatting rules of a sheet (as umya-spreadsheet reads
+/// them, the Excel 2010 rules too), in priority order.
+pub fn sheet_rules(ws: &Worksheet) -> Vec<Rule> {
+    // Excel 2010 rules, to join the data bars written in both places by id.
+    let mut ext: Vec<Option<(&ConditionalFormattingRule, Vec<Area>)>> = Vec::new();
+    for cf in ws.conditional_formatting_2010_collection() {
+        let ranges = sqref(&cf.sequence_of_references().get_sqref());
+        for r in cf.conditional_collection() {
+            ext.push(Some((r, ranges.clone())));
         }
-    });
-    out
-}
-
-/// The part of a sheet's XML after the cells (where conditional formatting is).
-fn tail(xml: &[u8]) -> Option<Node> {
-    let s = String::from_utf8_lossy(xml);
-    if !s.contains("conditionalFormatting") {
-        return None;
     }
-    let start = s.find("</sheetData>").map(|i| i + "</sheetData>".len()).or_else(|| s.find("<sheetData/>").map(|i| i + "<sheetData/>".len()))?;
-    let end = s.rfind("</worksheet>").or_else(|| s.rfind("</x:worksheet>")).unwrap_or(s.len()).max(start);
-    parse(format!("<r>{}</r>", &s[start..end]).as_bytes())
-}
-
-fn flag(n: &Node, name: &str, default: bool) -> bool {
-    match n.attr(name) {
-        Some("1" | "true") => true,
-        Some("0" | "false") => false,
-        _ => default,
-    }
-}
-
-fn num_attr(n: &Node, name: &str) -> Option<f64> {
-    n.attr(name).and_then(|v| v.parse().ok())
-}
-
-pub(super) fn sheet_rules(xml: &[u8], dxfs: &[Dxf]) -> Vec<Rule> {
-    let Some(root) = tail(xml) else { return Vec::new() };
     let mut rules = Vec::new();
-    // Excel 2010 rules by id, to join the data bars written in both places.
-    let mut ext: HashMap<String, (Node, Vec<Area>)> = HashMap::new();
-    let mut ext_order = Vec::new();
-    if let Some(list) = root.child("extLst") {
-        for e in list.all("ext") {
-            let Some(cfs) = e.child("conditionalFormattings") else { continue };
-            for cf in cfs.all("conditionalFormatting") {
-                let ranges = cf.child("sqref").map(|s| sqref(&s.text)).unwrap_or_default();
-                for r in cf.all("cfRule") {
-                    let id = r.attr("id").unwrap_or("").to_string();
-                    ext_order.push(id.clone());
-                    ext.insert(id, (clone(r), ranges.clone()));
-                }
-            }
-        }
-    }
-    for cf in root.all("conditionalFormatting") {
-        let ranges = cf.attr("sqref").map(sqref).unwrap_or_default();
-        for r in cf.all("cfRule") {
-            let mut rule = read_rule(r, dxfs, false);
+    for cf in ws.conditional_formatting_collection() {
+        let ranges = sqref(&cf.sequence_of_references().get_sqref());
+        for r in cf.conditional_collection() {
+            let mut rule = read_rule(r, false);
             rule.ranges = ranges.clone();
-            // <extLst><ext><x14:id>{...}</x14:id></ext></extLst>
-            if let Some(id) = r.child("extLst").and_then(|l| l.find("id")).map(|i| i.text.trim().to_string())
-                && let Some((x, _)) = ext.remove(&id)
+            let id = r.ext_id();
+            if !id.is_empty()
+                && let Some((x, _)) = ext.iter_mut().find(|e| e.as_ref().is_some_and(|(x, _)| x.id() == id)).and_then(Option::take)
             {
-                let more = read_rule(&x, dxfs, true);
+                let more = read_rule(x, true);
                 if let Some(mut bar) = more.bar {
                     // The color stays in the first rule unless the extension has one.
                     if bar.color.is_none() {
@@ -160,20 +116,14 @@ pub(super) fn sheet_rules(xml: &[u8], dxfs: &[Dxf]) -> Vec<Rule> {
             rules.push(rule);
         }
     }
-    for id in ext_order {
-        if let Some((x, ranges)) = ext.remove(&id) {
-            let mut rule = read_rule(&x, dxfs, true);
-            rule.ranges = ranges;
-            rules.push(rule);
-        }
+    for (x, ranges) in ext.into_iter().flatten() {
+        let mut rule = read_rule(x, true);
+        rule.ranges = ranges;
+        rules.push(rule);
     }
     rules.retain(|r| !r.ranges.is_empty());
     rules.sort_by_key(|r| r.priority);
     rules
-}
-
-fn clone(n: &Node) -> Node {
-    Node { name: n.name.clone(), attrs: n.attrs.clone(), children: n.children.iter().map(clone).collect(), text: n.text.clone() }
 }
 
 /// "A1:B5 D1" (also whole columns and rows) as areas.
@@ -198,67 +148,102 @@ fn sqref(s: &str) -> Vec<Area> {
         .collect()
 }
 
-fn cfvo(n: &Node) -> Cfvo {
-    Cfvo {
-        kind: n.attr("type").unwrap_or("num").to_string(),
-        val: n.attr("val").map(str::to_string).or_else(|| n.child("f").map(|f| f.text.trim().to_string())).unwrap_or_default(),
-        gte: flag(n, "gte", true),
+/// A color that is given (not automatic, not the system foreground).
+fn color(c: &Color) -> Option<Color> {
+    if !c.has_value() || c.automatic() || c.indexed() == 64 {
+        return None;
     }
+    Some(c.clone())
 }
 
-fn read_rule(r: &Node, dxfs: &[Dxf], x14: bool) -> Rule {
+fn cfvo(v: &ConditionalFormatValueObject) -> Cfvo {
+    Cfvo { kind: v.get_type().value_string().to_string(), val: v.val().to_string(), gte: v.gte() }
+}
+
+/// A conditional format's differential format.
+fn style_dxf(st: &Style) -> Dxf {
+    let mut d = Dxf::default();
+    if let Some(f) = st.font() {
+        d.bold = f.bold().then_some(true);
+        d.italic = f.italic().then_some(true);
+        d.strike = f.strikethrough().then_some(true);
+        d.underline = (f.font_underline().val().value_string() != "none").then_some(true);
+        d.color = color(f.color());
+    }
+    d.num_fmt = st.numbering_format().map(|n| n.format_code().to_string());
+    // A dxf's solid fill is its background color (and no pattern type is solid).
+    if let Some(p) = st.fill().and_then(|f| f.pattern_fill()) {
+        d.fill = p.background_color().and_then(color).or_else(|| p.foreground_color().and_then(color));
+    }
+    if let Some(b) = st.borders() {
+        for (i, s) in [b.left(), b.right(), b.top(), b.bottom(), b.vertical(), b.horizontal()].into_iter().enumerate() {
+            let style = s.border_style();
+            if !style.is_empty() && style != "none" {
+                d.sides[i] = Some(Side { style: style.to_string(), color: s.color().as_ref().and_then(color) });
+            }
+        }
+    }
+    d
+}
+
+fn read_rule(r: &ConditionalFormattingRule, x14: bool) -> Rule {
+    let kind = r.get_type().value_string().to_string();
     let mut rule = Rule {
-        kind: r.attr("type").unwrap_or("").to_string(),
-        priority: r.attr("priority").and_then(|v| v.parse().ok()).unwrap_or(i32::MAX),
-        stop: flag(r, "stopIfTrue", false),
-        operator: r.attr("operator").unwrap_or("").to_string(),
-        text: r.attr("text").unwrap_or("").to_string(),
-        rank: r.attr("rank").and_then(|v| v.parse().ok()).unwrap_or(10),
-        percent: flag(r, "percent", false),
-        bottom: flag(r, "bottom", false),
-        above_average: flag(r, "aboveAverage", true),
-        equal_average: flag(r, "equalAverage", false),
-        std_dev: r.attr("stdDev").and_then(|v| v.parse().ok()).unwrap_or(0),
-        time_period: r.attr("timePeriod").unwrap_or("").to_string(),
+        operator: if kind == "cellIs" { r.operator().value_string().to_string() } else { String::new() },
+        time_period: if kind == "timePeriod" { r.time_period().value_string().to_string() } else { String::new() },
+        kind,
+        // Excel numbers its rules from 1; none comes last.
+        priority: match r.priority() {
+            0 => i32::MAX,
+            p => p,
+        },
+        stop: r.stop_if_true(),
+        text: r.text().to_string(),
+        rank: match r.rank() {
+            0 => 10,
+            n => n,
+        },
+        percent: r.percent(),
+        bottom: r.bottom(),
+        above_average: r.above_average(),
+        equal_average: r.equal_average(),
+        std_dev: r.std_dev().max(0) as u32,
+        formulas: r.formula_collection().iter().map(|f| f.address_str().trim().to_string()).collect(),
+        dxf: r.style().map(style_dxf),
         show_value: true,
         ..Default::default()
     };
-    // <formula> (x14: <xm:f>) children.
-    rule.formulas = r.children.iter().filter(|c| c.name == "formula" || c.name == "f").map(|c| c.text.trim().to_string()).collect();
-    rule.dxf = r.attr("dxfId").and_then(|v| v.parse::<usize>().ok()).and_then(|i| dxfs.get(i).cloned()).or_else(|| r.child("dxf").map(dxf));
-    if let Some(cs) = r.child("colorScale") {
-        rule.cfvo = cs.all("cfvo").map(cfvo).collect();
-        rule.colors = cs.all("color").filter_map(color).collect();
+    if let Some(cs) = r.color_scale() {
+        rule.cfvo = cs.cfvo_collection().iter().map(cfvo).collect();
+        rule.colors = cs.color_collection().iter().filter_map(color).collect();
     }
-    if let Some(db) = r.child("dataBar") {
-        rule.cfvo = db.all("cfvo").map(cfvo).collect();
-        rule.show_value = flag(db, "showValue", true);
-        let c = |name: &str| db.child(name).and_then(color);
+    if let Some(db) = r.data_bar() {
+        rule.cfvo = db.cfvo_collection().iter().map(cfvo).collect();
+        rule.show_value = db.show_value();
         rule.bar = Some(BarDef {
-            color: c("color").or_else(|| c("fillColor")),
-            min_len: num_attr(db, "minLength").unwrap_or(10.0),
-            max_len: num_attr(db, "maxLength").unwrap_or(90.0),
-            gradient: flag(db, "gradient", true),
-            border: if x14 && flag(db, "border", false) { c("borderColor") } else { None },
-            negative: c("negativeFillColor"),
-            negative_border: c("negativeBorderColor"),
-            negative_same: flag(db, "negativeBarColorSameAsPositive", false),
-            negative_border_same: flag(db, "negativeBarBorderColorSameAsPositive", true),
-            axis: db.attr("axisPosition").unwrap_or("automatic").to_string(),
-            axis_color: c("axisColor"),
-            rtl: db.attr("direction") == Some("rightToLeft"),
+            color: db.color_collection().first().and_then(color).or_else(|| db.fill_color().and_then(color)),
+            min_len: db.min_length().map_or(10.0, f64::from),
+            max_len: db.max_length().map_or(90.0, f64::from),
+            gradient: db.gradient(),
+            border: if x14 && db.border() { db.border_color().and_then(color) } else { None },
+            negative: db.negative_fill_color().and_then(color),
+            negative_border: db.negative_border_color().and_then(color),
+            negative_same: db.negative_bar_color_same_as_positive(),
+            negative_border_same: db.negative_bar_border_color_same_as_positive(),
+            axis: match db.axis_position() {
+                "" => "automatic".to_string(),
+                a => a.to_string(),
+            },
+            axis_color: db.axis_color().and_then(color),
+            rtl: db.direction() == "rightToLeft",
             ext: x14,
         });
     }
-    if let Some(is) = r.child("iconSet") {
-        rule.cfvo = is.all("cfvo").map(cfvo).collect();
-        rule.show_value = flag(is, "showValue", true);
-        let custom = if flag(is, "custom", false) {
-            is.all("cfIcon").map(|i| (i.attr("iconSet").unwrap_or("NoIcons").to_string(), i.attr("iconId").and_then(|v| v.parse().ok()).unwrap_or(0))).collect()
-        } else {
-            Vec::new()
-        };
-        rule.icons = Some(IconDef { set: is.attr("iconSet").unwrap_or("3TrafficLights1").to_string(), reverse: flag(is, "reverse", false), custom });
+    if let Some(is) = r.icon_set() {
+        rule.cfvo = is.cfvo_collection().iter().map(cfvo).collect();
+        rule.show_value = is.show_value();
+        let custom = if is.custom() { is.cf_icon_collection().iter().map(|i| (i.icon_set().to_string(), i.icon_id() as usize)).collect() } else { Vec::new() };
+        rule.icons = Some(IconDef { set: is.icon_set().to_string(), reverse: is.reverse(), custom });
     }
     rule
 }

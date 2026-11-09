@@ -6,14 +6,17 @@ fn book() -> Book {
 }
 
 fn fx() -> HashMap<(u32, u32), Fx> {
-    let b = book();
+    fx_of(&book())
+}
+
+fn fx_of(b: &Book) -> HashMap<(u32, u32), Fx> {
     let theme = b.wb.theme();
     let css = |c: &Color| {
         let s = c.argb_with_theme(theme);
         (s.len() >= 6).then(|| format!("#{}", &s[s.len() - 6..]))
     };
     let today = chrono::NaiveDate::from_ymd_opt(2026, 4, 1).unwrap();
-    effects(&b, "条件", &b.cond["条件"], &css, today)
+    effects(b, "条件", &sheet_rules(b.sheet("条件").unwrap()), &css, today)
 }
 
 #[test]
@@ -103,4 +106,12 @@ fn html() {
     assert!(out.html.contains("class=\"xljs-bar\""));
     assert!(out.html.contains("class=\"xljs-icon\""));
     assert!(out.html.contains("background-color:#F8696B"));
+}
+
+#[test]
+fn saved_book_keeps_the_rules() {
+    // Saving writes the rules back (icon sets with their kind, the Excel 2010 rules).
+    let data = book().to_bytes().unwrap();
+    let again = super::super::xlsx::open_bytes(&data, "again.xlsx".into()).unwrap();
+    assert_eq!(fx_of(&again), fx());
 }

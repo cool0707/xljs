@@ -558,10 +558,8 @@ impl<'a> Sheet<'a> {
             merges.push(a);
         }
         let theme = b.wb.theme();
-        let cond = match b.cond.get(name) {
-            Some(rules) => super::xlsx_cond::effects(b, name, rules, &|c| css_color(c, theme), chrono::Local::now().date_naive()),
-            None => HashMap::new(),
-        };
+        let rules = super::xlsx_cond::sheet_rules(ws);
+        let cond = if rules.is_empty() { HashMap::new() } else { super::xlsx_cond::effects(b, name, &rules, &|c| css_color(c, theme), chrono::Local::now().date_naive()) };
         Ok(Sheet {
             b,
             ws,

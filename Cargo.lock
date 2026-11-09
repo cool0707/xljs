@@ -2123,7 +2123,7 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 [[package]]
 name = "umya-spreadsheet"
 version = "3.1.1"
-source = "git+https://github.com/cool0707/umya-spreadsheet?branch=xljs#fe7b28f3f7a38e3f196e0c64761cac9fb03f0dcd"
+source = "git+https://github.com/cool0707/umya-spreadsheet?branch=ccr-6eae5c89-nc7gnn#37e02dfabb7b32b20ebb7f43f3fcbb6b924aac26"
 dependencies = [
  "aes",
  "base64 0.22.1",
