@@ -242,6 +242,8 @@ footer { padding: var(--sp-xs) var(--sp-m); }
 .wz-custombar-title { flex: 1; min-width: 0; padding: 0 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .wz-caption { flex: none; width: 46px; text-align: center; font: 10px/32px "Segoe Fluent Icons", "Segoe MDL2 Assets"; }
 .wz-custombar .wz-caption { line-height: 40px; }
+.wz-close { cursor: pointer; }
+.wz-close:hover { background: #c42b1c; color: #ffffff; }
 @media (prefers-color-scheme: dark) {
   .wz-sysbar { background: #202020; color: #f3f3f3; }
   .wz-custombar { background: var(--wz-bar-bg, #202020); color: var(--wz-bar-fg, #f3f3f3); }
