@@ -20,15 +20,25 @@ pub struct Location {
 }
 
 /// "at f (file:line:col)" of a stack trace.
-static FRAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\s*at (?:.*\()?(.+?):(\d+):(\d+)\)?\s*$").unwrap());
+static FRAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^\s*at (?:.*\()?(.+?):(\d+):(\d+)\)?\s*$").unwrap());
 /// "file:line:col: message" of a syntax error.
-static SYNTAX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.+?\.[A-Za-z]+):(\d+):(\d+): ").unwrap());
+static SYNTAX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(.+?\.[A-Za-z]+):(\d+):(\d+): ").unwrap());
 
 /// The file of a location as the script's folder sees it; None outside it.
 fn relative(dir: &Path, file: &str) -> Option<String> {
     let p = Path::new(file);
-    let abs = if p.is_absolute() { p.to_path_buf() } else { dir.join(p) };
-    let rel = abs.strip_prefix(dir).ok()?.to_string_lossy().replace('\\', "/");
+    let abs = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        dir.join(p)
+    };
+    let rel = abs
+        .strip_prefix(dir)
+        .ok()?
+        .to_string_lossy()
+        .replace('\\', "/");
     if rel.split('/').any(|x| x == "node_modules" || x == "..") || !abs.is_file() {
         return None;
     }
@@ -41,8 +51,14 @@ pub fn find_location(text: &str, dir: &Path) -> Option<Location> {
     for line in text.lines() {
         let c = FRAME.captures(line).or_else(|| SYNTAX.captures(line));
         let Some(c) = c else { continue };
-        let Some(file) = relative(dir, &c[1]) else { continue };
-        return Some(Location { file, line: c[2].parse().ok()?, column: c[3].parse().ok()? });
+        let Some(file) = relative(dir, &c[1]) else {
+            continue;
+        };
+        return Some(Location {
+            file,
+            line: c[2].parse().ok()?,
+            column: c[3].parse().ok()?,
+        });
     }
     None
 }
@@ -51,9 +67,19 @@ pub fn find_location(text: &str, dir: &Path) -> Option<Location> {
 /// that is not indented (the error, or the stop notice) to the end.
 pub fn last_error(stderr: &str) -> String {
     let lines: Vec<&str> = stderr.trim_end().lines().collect();
-    let start = lines.iter().rposition(|l| !l.is_empty() && !l.starts_with(char::is_whitespace)).unwrap_or(0);
+    let start = lines
+        .iter()
+        .rposition(|l| !l.is_empty() && !l.starts_with(char::is_whitespace))
+        .unwrap_or(0);
     // A heading line ("Syntax error:", "It was running here:") belongs to it.
-    let start = if start > 0 && lines[start - 1].trim_end().ends_with(':') && !lines[start - 1].starts_with(char::is_whitespace) { start - 1 } else { start };
+    let start = if start > 0
+        && lines[start - 1].trim_end().ends_with(':')
+        && !lines[start - 1].starts_with(char::is_whitespace)
+    {
+        start - 1
+    } else {
+        start
+    };
     lines[start..].join("\n")
 }
 
@@ -86,16 +112,31 @@ pub fn fence(file: &str) -> &'static str {
 /// The request for the AI chat after a failed run, or one stopped because
 /// it did not respond (stuck).
 pub fn prompt(p: &Project, stuck: bool, message: &str, loc: Option<&Location>) -> String {
-    let file = loc.map(|l| l.file.clone()).unwrap_or_else(|| p.entry_name());
-    let mut s = if stuck { t!("dev.promptStopped", file) } else { t!("dev.promptError", file) };
+    let file = loc
+        .map(|l| l.file.clone())
+        .unwrap_or_else(|| p.entry_name());
+    let mut s = if stuck {
+        t!("dev.promptStopped", file)
+    } else {
+        t!("dev.promptError", file)
+    };
     s.push_str("\n\n");
     if !stuck && !message.is_empty() {
-        s.push_str(&format!("{}\n```\n{}\n```\n\n", t!("dev.promptMessage"), message.trim_end()));
+        s.push_str(&format!(
+            "{}\n```\n{}\n```\n\n",
+            t!("dev.promptMessage"),
+            message.trim_end()
+        ));
     }
     if let Some(l) = loc
         && let Ok(text) = read_text(&p.dir.join(&l.file))
     {
-        s.push_str(&format!("{}\n```{}\n{}```\n\n", t!("dev.promptAround", l.file, l.line), fence(&l.file), excerpt(&text, l.line, 8)));
+        s.push_str(&format!(
+            "{}\n```{}\n{}```\n\n",
+            t!("dev.promptAround", l.file, l.line),
+            fence(&l.file),
+            excerpt(&text, l.line, 8)
+        ));
     }
     s.push_str(&t!("dev.promptAsk", file));
     s
@@ -105,7 +146,11 @@ pub fn prompt(p: &Project, stuck: bool, message: &str, loc: Option<&Location>) -
 /// (docs/ai/prompt.md, with `prompt`) and the script so far (with `script`).
 /// Empty when there is nothing to copy (the script alone, and no script).
 pub fn intro(p: Option<&Project>, prompt: bool, script: bool) -> String {
-    let mut s = if prompt { crate::dev::ai_prompt().trim_end().to_string() } else { String::new() };
+    let mut s = if prompt {
+        crate::dev::ai_prompt().trim_end().to_string()
+    } else {
+        String::new()
+    };
     if script && let Some(p) = p {
         let name = p.entry_name();
         if let Ok(text) = read_text(&p.entry)
@@ -114,7 +159,12 @@ pub fn intro(p: Option<&Project>, prompt: bool, script: bool) -> String {
             if !s.is_empty() {
                 s.push_str("\n\n---\n\n");
             }
-            s.push_str(&format!("{}\n```{}\n{}\n```\n", t!("dev.introCurrent", name), fence(&name), text.trim_end()));
+            s.push_str(&format!(
+                "{}\n```{}\n{}\n```\n",
+                t!("dev.introCurrent", name),
+                fence(&name),
+                text.trim_end()
+            ));
         }
     }
     s
@@ -135,7 +185,11 @@ pub struct Picked {
 /// The file that a change to the preview goes to: the app's page, or the
 /// script of a form.
 pub fn pick_file(p: &Project) -> String {
-    if p.meta.is_app() && !p.meta.html.is_empty() { p.meta.html.clone() } else { p.entry_name() }
+    if p.meta.is_app() && !p.meta.html.is_empty() {
+        p.meta.html.clone()
+    } else {
+        p.entry_name()
+    }
 }
 
 /// The request for the AI chat about elements picked in the preview: what
@@ -143,7 +197,11 @@ pub fn pick_file(p: &Project) -> String {
 pub fn pick(p: &Project, elements: &[Picked], ask: &str, full: bool) -> String {
     let app = p.meta.is_app();
     let file = pick_file(p);
-    let mut s = if app { t!("dev.pickApp", file) } else { t!("dev.pickForm", p.entry_name()) };
+    let mut s = if app {
+        t!("dev.pickApp", file)
+    } else {
+        t!("dev.pickForm", p.entry_name())
+    };
     s.push_str("\n\n");
     let ask = ask.trim();
     if !ask.is_empty() {
@@ -164,7 +222,12 @@ pub fn pick(p: &Project, elements: &[Picked], ask: &str, full: bool) -> String {
         && let Ok(text) = read_text(&p.dir.join(&file))
         && !text.trim().is_empty()
     {
-        s.push_str(&format!("\n{}\n```{}\n{}\n```\n", t!("dev.notifyWhole", &file), fence(&file), text.trim_end()));
+        s.push_str(&format!(
+            "\n{}\n```{}\n{}\n```\n",
+            t!("dev.notifyWhole", &file),
+            fence(&file),
+            text.trim_end()
+        ));
     }
     s.push('\n');
     s.push_str(&t!("dev.pickOutput", file));

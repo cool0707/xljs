@@ -11,24 +11,34 @@ use std::os::windows::io::FromRawHandle;
 use std::time::Duration;
 
 use windows::Win32::Foundation::{
-    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, GENERIC_READ, GENERIC_WRITE, HANDLE, HANDLE_FLAG_INHERIT, HANDLE_FLAGS,
-    SetHandleInformation, WAIT_OBJECT_0,
+    CloseHandle, DUPLICATE_SAME_ACCESS, DuplicateHandle, GENERIC_READ, GENERIC_WRITE, HANDLE,
+    HANDLE_FLAG_INHERIT, HANDLE_FLAGS, SetHandleInformation, WAIT_OBJECT_0,
 };
 use windows::Win32::Security::SECURITY_ATTRIBUTES;
-use windows::Win32::Storage::FileSystem::{CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING};
-use windows::Win32::System::Console::{GetConsoleWindow, GetStdHandle, STD_ERROR_HANDLE, STD_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE};
+use windows::Win32::Storage::FileSystem::{
+    CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+};
+use windows::Win32::System::Console::{
+    GetConsoleWindow, GetStdHandle, STD_ERROR_HANDLE, STD_HANDLE, STD_INPUT_HANDLE,
+    STD_OUTPUT_HANDLE,
+};
 use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_BREAKAWAY_OK, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
+    AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+    SetInformationJobObject, TerminateJobObject,
 };
 use windows::Win32::System::Pipes::CreatePipe;
 use windows::Win32::System::Threading::{
-    CREATE_NEW_CONSOLE, CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT, CreateProcessW, DeleteProcThreadAttributeList,
-    EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess, INFINITE, InitializeProcThreadAttributeList,
-    LPPROC_THREAD_ATTRIBUTE_LIST, PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, ResumeThread,
-    STARTF_USESHOWWINDOW, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW, TerminateProcess, UpdateProcThreadAttribute, WaitForSingleObject,
+    CREATE_NEW_CONSOLE, CREATE_NO_WINDOW, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
+    CreateProcessW, DeleteProcThreadAttributeList, EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess,
+    GetExitCodeProcess, INFINITE, InitializeProcThreadAttributeList, LPPROC_THREAD_ATTRIBUTE_LIST,
+    PROC_THREAD_ATTRIBUTE_HANDLE_LIST, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, ResumeThread,
+    STARTF_USESHOWWINDOW, STARTF_USESTDHANDLES, STARTUPINFOEXW, STARTUPINFOW, TerminateProcess,
+    UpdateProcThreadAttribute, WaitForSingleObject,
 };
-use windows::Win32::UI::WindowsAndMessaging::{SW_HIDE, SW_SHOWMAXIMIZED, SW_SHOWMINNOACTIVE, SW_SHOWNORMAL};
+use windows::Win32::UI::WindowsAndMessaging::{
+    SW_HIDE, SW_SHOWMAXIMIZED, SW_SHOWMINNOACTIVE, SW_SHOWNORMAL,
+};
 use windows::core::{PCWSTR, PWSTR};
 
 use super::{Io, Spec, Started, Window};
@@ -56,7 +66,9 @@ impl Drop for Handle {
 
 impl Handle {
     pub fn wait(&self, timeout: Option<Duration>) -> Option<Option<i32>> {
-        let ms = timeout.map(|d| d.as_millis().min(u32::MAX as u128 - 1) as u32).unwrap_or(INFINITE);
+        let ms = timeout
+            .map(|d| d.as_millis().min(u32::MAX as u128 - 1) as u32)
+            .unwrap_or(INFINITE);
         if unsafe { WaitForSingleObject(self.process, ms) } != WAIT_OBJECT_0 {
             return None;
         }
@@ -126,14 +138,21 @@ pub(crate) fn shell_quote(a: &str) -> Result<String> {
     if a.contains(['"', '\r', '\n']) {
         return Err(err!("process.badShellArg", a.to_string()));
     }
-    if !a.is_empty() && !a.contains([' ', '\t', '&', '|', '<', '>', '^', '(', ')', ',', ';', '=', '!', '%']) {
+    if !a.is_empty()
+        && !a.contains([
+            ' ', '\t', '&', '|', '<', '>', '^', '(', ')', ',', ';', '=', '!', '%',
+        ])
+    {
         return Ok(a.to_string());
     }
     Ok(format!("\"{a}\""))
 }
 
 fn comspec() -> String {
-    std::env::var("ComSpec").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "cmd.exe".into())
+    std::env::var("ComSpec")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "cmd.exe".into())
 }
 
 fn is_batch(p: &str) -> bool {
@@ -146,7 +165,11 @@ pub(crate) fn command_line(spec: &Spec) -> Result<String> {
     if spec.shell || is_batch(&spec.command) {
         // cmd.exe /s /c "<line>": the outer quotes are removed and the
         // rest is run as typed.
-        let mut line = if spec.shell { spec.command.clone() } else { shell_quote(&spec.command)? };
+        let mut line = if spec.shell {
+            spec.command.clone()
+        } else {
+            shell_quote(&spec.command)?
+        };
         for a in &spec.args {
             line.push(' ');
             line.push_str(&shell_quote(a)?);
@@ -206,7 +229,11 @@ impl Drop for Owned {
 }
 
 fn inheritable() -> SECURITY_ATTRIBUTES {
-    SECURITY_ATTRIBUTES { nLength: size_of::<SECURITY_ATTRIBUTES>() as u32, lpSecurityDescriptor: std::ptr::null_mut(), bInheritHandle: true.into() }
+    SECURITY_ATTRIBUTES {
+        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: std::ptr::null_mut(),
+        bInheritHandle: true.into(),
+    }
 }
 
 fn null_handle() -> Result<HANDLE> {
@@ -227,7 +254,12 @@ fn null_handle() -> Result<HANDLE> {
 }
 
 /// The child's end of a standard stream, and the parent's end of its pipe.
-fn child_io(io: Io, which: STD_HANDLE, child_reads: bool, owned: &mut Owned) -> Result<(HANDLE, Option<File>)> {
+fn child_io(
+    io: Io,
+    which: STD_HANDLE,
+    child_reads: bool,
+    owned: &mut Owned,
+) -> Result<(HANDLE, Option<File>)> {
     match io {
         Io::Ignore => {
             let h = null_handle()?;
@@ -241,7 +273,9 @@ fn child_io(io: Io, which: STD_HANDLE, child_reads: bool, owned: &mut Owned) -> 
             }
             let mut dup = HANDLE::default();
             let me = unsafe { GetCurrentProcess() };
-            if unsafe { DuplicateHandle(me, src, me, &mut dup, 0, true, DUPLICATE_SAME_ACCESS) }.is_err() {
+            if unsafe { DuplicateHandle(me, src, me, &mut dup, 0, true, DUPLICATE_SAME_ACCESS) }
+                .is_err()
+            {
                 return child_io(Io::Ignore, which, child_reads, owned);
             }
             owned.0.push(dup);
@@ -250,7 +284,8 @@ fn child_io(io: Io, which: STD_HANDLE, child_reads: bool, owned: &mut Owned) -> 
         Io::Pipe => {
             let sa = inheritable();
             let (mut r, mut w) = (HANDLE::default(), HANDLE::default());
-            unsafe { CreatePipe(&mut r, &mut w, Some(&sa), 0) }.map_err(|e| Error::from(os_error(e)))?;
+            unsafe { CreatePipe(&mut r, &mut w, Some(&sa), 0) }
+                .map_err(|e| Error::from(os_error(e)))?;
             let (child, parent) = if child_reads { (r, w) } else { (w, r) };
             owned.0.push(child);
             let _ = unsafe { SetHandleInformation(parent, HANDLE_FLAG_INHERIT.0, HANDLE_FLAGS(0)) };
@@ -289,7 +324,8 @@ pub(crate) fn spawn(spec: &Spec) -> Result<Started> {
     let _ = unsafe { InitializeProcThreadAttributeList(None, 1, None, &mut size) };
     let mut attr_buf = vec![0u8; size];
     let attrs = LPPROC_THREAD_ATTRIBUTE_LIST(attr_buf.as_mut_ptr() as *mut c_void);
-    unsafe { InitializeProcThreadAttributeList(Some(attrs), 1, None, &mut size) }.map_err(|e| Error::from(os_error(e)))?;
+    unsafe { InitializeProcThreadAttributeList(Some(attrs), 1, None, &mut size) }
+        .map_err(|e| Error::from(os_error(e)))?;
     struct Attrs(LPPROC_THREAD_ATTRIBUTE_LIST);
     impl Drop for Attrs {
         fn drop(&mut self) {
@@ -311,7 +347,10 @@ pub(crate) fn spawn(spec: &Spec) -> Result<Started> {
     .map_err(|e| Error::from(os_error(e)))?;
 
     let mut si = STARTUPINFOEXW {
-        StartupInfo: STARTUPINFOW { cb: size_of::<STARTUPINFOEXW>() as u32, ..Default::default() },
+        StartupInfo: STARTUPINFOW {
+            cb: size_of::<STARTUPINFOEXW>() as u32,
+            ..Default::default()
+        },
         lpAttributeList: attrs,
     };
     si.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
@@ -319,7 +358,8 @@ pub(crate) fn spawn(spec: &Spec) -> Result<Started> {
     si.StartupInfo.hStdOutput = hout;
     si.StartupInfo.hStdError = herr;
     let has_console = !unsafe { GetConsoleWindow() }.0.is_null();
-    let mut flags: PROCESS_CREATION_FLAGS = EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED;
+    let mut flags: PROCESS_CREATION_FLAGS =
+        EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_SUSPENDED;
     let show = match spec.window {
         Window::Default => None,
         Window::Hidden => Some(SW_HIDE),
@@ -347,7 +387,9 @@ pub(crate) fn spawn(spec: &Spec) -> Result<Started> {
             true,
             flags,
             env.as_ref().map(|b| b.as_ptr() as *const c_void),
-            cwd.as_ref().map(|d| PCWSTR(d.as_ptr())).unwrap_or(PCWSTR::null()),
+            cwd.as_ref()
+                .map(|d| PCWSTR(d.as_ptr()))
+                .unwrap_or(PCWSTR::null()),
             &si.StartupInfo,
             &mut pi,
         )
@@ -367,5 +409,14 @@ pub(crate) fn spawn(spec: &Spec) -> Result<Started> {
         ResumeThread(pi.hThread);
         let _ = CloseHandle(pi.hThread);
     }
-    Ok(Started { pid: pi.dwProcessId, handle: Handle { process: pi.hProcess, job }, stdin, stdout, stderr })
+    Ok(Started {
+        pid: pi.dwProcessId,
+        handle: Handle {
+            process: pi.hProcess,
+            job,
+        },
+        stdin,
+        stdout,
+        stderr,
+    })
 }

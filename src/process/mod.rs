@@ -78,7 +78,8 @@ pub struct Spec {
 
 impl Spec {
     pub fn timeout(&self) -> Option<Duration> {
-        (self.timeout.is_finite() && self.timeout > 0.0).then(|| Duration::from_secs_f64(self.timeout / 1000.0))
+        (self.timeout.is_finite() && self.timeout > 0.0)
+            .then(|| Duration::from_secs_f64(self.timeout / 1000.0))
     }
     fn line_encoding(&self) -> &str {
         match self.encoding.as_str() {
@@ -146,7 +147,11 @@ impl Running {
     /// Starts the program. input (when given) is written to its standard
     /// input, which is then closed; otherwise with spec.stdin = Pipe the
     /// caller writes with write() and closes with end().
-    pub fn start(spec: &Spec, input: Option<Vec<u8>>, on_lines: Option<OnLines>) -> Result<Arc<Running>> {
+    pub fn start(
+        spec: &Spec,
+        input: Option<Vec<u8>>,
+        on_lines: Option<OnLines>,
+    ) -> Result<Arc<Running>> {
         if spec.command.trim().is_empty() {
             return Err(err!("process.noCommand"));
         }
@@ -157,7 +162,13 @@ impl Running {
         if let Some(d) = &spec.cwd {
             match std::fs::metadata(d) {
                 Ok(m) if m.is_dir() => {}
-                Ok(_) => return Err(Error::path("chdir", d.clone(), std::io::Error::from(std::io::ErrorKind::NotADirectory))),
+                Ok(_) => {
+                    return Err(Error::path(
+                        "chdir",
+                        d.clone(),
+                        std::io::Error::from(std::io::ErrorKind::NotADirectory),
+                    ));
+                }
                 Err(e) => return Err(Error::path("chdir", d.clone(), e)),
             }
         }
@@ -243,7 +254,12 @@ impl Running {
             }
             st = self.cv.wait_timeout(st, deadline - now).unwrap().0;
         }
-        let done = Done { code, timed_out, stdout: st.stdout.clone(), stderr: st.stderr.clone() };
+        let done = Done {
+            code,
+            timed_out,
+            stdout: st.stdout.clone(),
+            stderr: st.stderr.clone(),
+        };
         st.done = Some(done.clone());
         let waiters = std::mem::take(&mut st.waiters);
         self.cv.notify_all();
@@ -276,7 +292,11 @@ impl Running {
     /// Waits up to d for the end; the result when it has ended.
     pub fn wait_timeout(&self, d: Duration) -> Option<Done> {
         let st = self.st.lock().unwrap();
-        let st = self.cv.wait_timeout_while(st, d, |s| s.done.is_none()).unwrap().0;
+        let st = self
+            .cv
+            .wait_timeout_while(st, d, |s| s.done.is_none())
+            .unwrap()
+            .0;
         st.done.clone()
     }
 

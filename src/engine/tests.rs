@@ -52,7 +52,12 @@ pub(crate) fn run_script_in(debugger: bool, script: &str, answers: &str, args: &
         Ok(c) => (c, None),
         Err(e) => (1, Some(e)),
     };
-    Res { code, err, stdout: o.text(), stderr: e.text() }
+    Res {
+        code,
+        err,
+        stdout: o.text(),
+        stderr: e.text(),
+    }
 }
 
 pub(crate) fn run_script(script: &str, answers: &str, args: &[&str]) -> Res {
@@ -85,7 +90,9 @@ fn check_script_output(name: &str, r: &Res) -> Vec<String> {
     let want_in = |hay: &str, list: &[&str], what: &str| {
         for w in list {
             if !hay.contains(w) {
-                fails.borrow_mut().push(format!("{name}: {what} does not contain {w:?}"));
+                fails
+                    .borrow_mut()
+                    .push(format!("{name}: {what} does not contain {w:?}"));
             }
         }
     };
@@ -144,12 +151,23 @@ fn check_script_output(name: &str, r: &Res) -> Vec<String> {
                 ],
                 "mock log",
             );
-            for u in ["expected", "window.state.progress = 0", "window.state.after", "timeout"] {
+            for u in [
+                "expected",
+                "window.state.progress = 0",
+                "window.state.after",
+                "timeout",
+            ] {
                 if r.stderr.contains(u) {
-                    fails.borrow_mut().push(format!("{name}: mock log contains {u:?}"));
+                    fails
+                        .borrow_mut()
+                        .push(format!("{name}: mock log contains {u:?}"));
                 }
             }
-            want_in(&r.stdout, &["hello 画面\n", "state month 2026-04\n", "render -> 2\n"], "stdout");
+            want_in(
+                &r.stdout,
+                &["hello 画面\n", "state month 2026-04\n", "render -> 2\n"],
+                "stdout",
+            );
         }
         "form.test.js" => want_in(
             &r.stderr,
@@ -163,7 +181,14 @@ fn check_script_output(name: &str, r: &Res) -> Vec<String> {
             ],
             "mock log",
         ),
-        "formtable.test.js" => want_in(&r.stderr, &["form error: pick: 行を選択してください", r#"table("結果", 3 rows, ["顧客名" "合計"])"#], "mock log"),
+        "formtable.test.js" => want_in(
+            &r.stderr,
+            &[
+                "form error: pick: 行を選択してください",
+                r#"table("結果", 3 rows, ["顧客名" "合計"])"#,
+            ],
+            "mock log",
+        ),
         "table.test.js" => want_in(
             &r.stderr,
             &[
@@ -174,7 +199,17 @@ fn check_script_output(name: &str, r: &Res) -> Vec<String> {
             ],
             "mock log",
         ),
-        "ui.test.js" => want_in(&r.stderr, &["showItemInFolder([", "a.xlsx", "b.csv", "openPath(", r#""https://example.com/""#], "mock log"),
+        "ui.test.js" => want_in(
+            &r.stderr,
+            &[
+                "showItemInFolder([",
+                "a.xlsx",
+                "b.csv",
+                "openPath(",
+                r#""https://example.com/""#,
+            ],
+            "mock log",
+        ),
         _ => {}
     }
     fails.into_inner()
@@ -195,8 +230,15 @@ pub(crate) fn test_scripts(debugger: bool) {
         if !filter.is_empty() && !name.contains(&filter) {
             continue;
         }
-        let answers = s.to_string_lossy().replace(".test.js", ".test.answers.json").replace(".test.ts", ".test.answers.json");
-        let answers = if std::path::Path::new(&answers).exists() { answers } else { String::new() };
+        let answers = s
+            .to_string_lossy()
+            .replace(".test.js", ".test.answers.json")
+            .replace(".test.ts", ".test.answers.json");
+        let answers = if std::path::Path::new(&answers).exists() {
+            answers
+        } else {
+            String::new()
+        };
         // fetchproxy.test.js goes through the test server as a proxy, with
         // no saved login.
         crate::net::auth::clear();
@@ -209,11 +251,20 @@ pub(crate) fn test_scripts(debugger: bool) {
             eprintln!("{name}: {} {:?}", r.code, r.stdout.lines().last());
         }
         if r.err.is_some() || r.code != 0 {
-            fails.push(format!("{name}: exit {}: {}\nstdout:\n{}\nstderr:\n{}", r.code, r.err_text(), r.stdout, r.stderr));
+            fails.push(format!(
+                "{name}: exit {}: {}\nstdout:\n{}\nstderr:\n{}",
+                r.code,
+                r.err_text(),
+                r.stdout,
+                r.stderr
+            ));
             continue;
         }
         if !r.stdout.contains(" ok") {
-            fails.push(format!("{name}: missing completion marker in stdout:\n{}", r.stdout));
+            fails.push(format!(
+                "{name}: missing completion marker in stdout:\n{}",
+                r.stdout
+            ));
         }
         fails.extend(check_script_output(&name, &r));
     }
@@ -244,7 +295,14 @@ console.log("done");
     let p = dir.join("main.js");
     std::fs::write(&p, src).unwrap();
     let r = run_script(&p.to_string_lossy(), "", &[]);
-    assert!(r.code == 0 && r.err.is_none() && r.stdout == "done\n", "exit {} {} stdout {:?} stderr {:?}", r.code, r.err_text(), r.stdout, r.stderr);
+    assert!(
+        r.code == 0 && r.err.is_none() && r.stdout == "done\n",
+        "exit {} {} stdout {:?} stderr {:?}",
+        r.code,
+        r.err_text(),
+        r.stdout,
+        r.stderr
+    );
 }
 
 #[test]
@@ -252,57 +310,134 @@ fn progress_cancel_ends_script() {
     let _l = lock_lang("ja");
     let dir = tempdir();
     let answers = dir.join("answers.json");
-    std::fs::write(&answers, r#"{"progress": [{"cancelAfter": 1}, {"cancelAfter": 1}]}"#).unwrap();
+    std::fs::write(
+        &answers,
+        r#"{"progress": [{"cancelAfter": 1}, {"cancelAfter": 1}]}"#,
+    )
+    .unwrap();
     for (name, src) in [
-        ("sync", "for (const x of ui.withProgress([1, 2, 3])) console.log(x);\nconsole.log(\"saved\");\n"),
-        ("async", "async function* g() { yield 1; yield 2; yield 3; }\nfor await (const x of ui.withProgress(g())) console.log(x);\nconsole.log(\"saved\");\n"),
+        (
+            "sync",
+            "for (const x of ui.withProgress([1, 2, 3])) console.log(x);\nconsole.log(\"saved\");\n",
+        ),
+        (
+            "async",
+            "async function* g() { yield 1; yield 2; yield 3; }\nfor await (const x of ui.withProgress(g())) console.log(x);\nconsole.log(\"saved\");\n",
+        ),
     ] {
         let p = dir.join(format!("{name}.js"));
         std::fs::write(&p, src).unwrap();
         let r = run_script(&p.to_string_lossy(), &answers.to_string_lossy(), &[]);
-        assert!(r.code == 1 && r.err.is_none() && !r.stdout.contains("saved"), "{name}: exit {} {} stdout {:?} stderr {:?}", r.code, r.err_text(), r.stdout, r.stderr);
+        assert!(
+            r.code == 1 && r.err.is_none() && !r.stdout.contains("saved"),
+            "{name}: exit {} {} stdout {:?} stderr {:?}",
+            r.code,
+            r.err_text(),
+            r.stdout,
+            r.stderr
+        );
     }
 }
 
 #[test]
 fn error_stack_points_to_source() {
     let _l = lock_lang("ja");
-    let r = run_script(&repo_path("testdata/scripts/_errors.js").to_string_lossy(), "", &[]);
-    assert!(r.code == 1 && r.err.is_some(), "want failure, got {}", r.code);
+    let r = run_script(
+        &repo_path("testdata/scripts/_errors.js").to_string_lossy(),
+        "",
+        &[],
+    );
+    assert!(
+        r.code == 1 && r.err.is_some(),
+        "want failure, got {}",
+        r.code
+    );
     let msg = r.err_text();
-    for want in ["RangeError: boom from lib", "_errlib.js:2:", "_errors.js:3:"] {
-        assert!(msg.contains(want), "error {msg:?} does not contain {want:?}");
+    for want in [
+        "RangeError: boom from lib",
+        "_errlib.js:2:",
+        "_errors.js:3:",
+    ] {
+        assert!(
+            msg.contains(want),
+            "error {msg:?} does not contain {want:?}"
+        );
     }
-    assert!(!msg.contains("prelude") && !msg.contains(BUNDLE_NAME), "internal frames leaked: {msg}");
+    assert!(
+        !msg.contains("prelude") && !msg.contains(BUNDLE_NAME),
+        "internal frames leaked: {msg}"
+    );
 }
 
 #[test]
 fn exit_codes() {
     let _l = lock_lang("ja");
     let cases: &[(&str, &str, i32, &str)] = &[
-        ("exit", r#"try { exit(3) } catch { console.log("caught") }"#, 3, ""),
-        ("exit-in-timer", r#"setTimeout(() => xljs.exit(4), 1); await sleep(100); console.log("no")"#, 4, ""),
-        ("throw-after-await", r#"await sleep(1); throw new Error("late")"#, 1, "Error: late"),
+        (
+            "exit",
+            r#"try { exit(3) } catch { console.log("caught") }"#,
+            3,
+            "",
+        ),
+        (
+            "exit-in-timer",
+            r#"setTimeout(() => xljs.exit(4), 1); await sleep(100); console.log("no")"#,
+            4,
+            "",
+        ),
+        (
+            "throw-after-await",
+            r#"await sleep(1); throw new Error("late")"#,
+            1,
+            "Error: late",
+        ),
         ("throw-value", r#"throw "plain""#, 1, "plain"),
-        ("unhandled", r#"Promise.reject(new Error("lost")); await sleep(1)"#, 1, "処理されなかった Promise"),
-        ("pending", r#"await new Promise(() => {})"#, 1, "完了しませんでした"),
+        (
+            "unhandled",
+            r#"Promise.reject(new Error("lost")); await sleep(1)"#,
+            1,
+            "処理されなかった Promise",
+        ),
+        (
+            "pending",
+            r#"await new Promise(() => {})"#,
+            1,
+            "完了しませんでした",
+        ),
         ("syntax", r#"const = 1"#, 1, "x.js:1:"),
         ("missing-import", r#"import "./nope.js""#, 1, "nope.js"),
     ];
     for (name, src, code, part) in cases {
         let r = run_script(&write_script("x.js", src), "", &[]);
-        assert_eq!(r.code, *code, "{name}: err {} stdout {:?}", r.err_text(), r.stdout);
+        assert_eq!(
+            r.code,
+            *code,
+            "{name}: err {} stdout {:?}",
+            r.err_text(),
+            r.stdout
+        );
         if !part.is_empty() {
-            assert!(r.err_text().contains(part), "{name}: err = {}, want {part:?}", r.err_text());
+            assert!(
+                r.err_text().contains(part),
+                "{name}: err = {}, want {part:?}",
+                r.err_text()
+            );
         }
-        assert!(!r.stdout.contains("caught") && !r.stdout.contains("no"), "{name}: code after exit ran: {:?}", r.stdout);
+        assert!(
+            !r.stdout.contains("caught") && !r.stdout.contains("no"),
+            "{name}: code after exit ran: {:?}",
+            r.stdout
+        );
     }
 }
 
 #[test]
 fn args_and_console() {
     let _l = lock_lang("ja");
-    let p = write_script("a.js", r#"console.log(xljs.args.join("|")); console.error("to stderr"); console.log("%s=%d", "n", 42)"#);
+    let p = write_script(
+        "a.js",
+        r#"console.log(xljs.args.join("|")); console.error("to stderr"); console.log("%s=%d", "n", 42)"#,
+    );
     let r = run_script(&p, "", &["x", "y z"]);
     assert_eq!(r.code, 0, "{}", r.err_text());
     assert_eq!(r.stdout, "x|y z\nn=42\n");
@@ -313,16 +448,46 @@ fn args_and_console() {
 fn messages_follow_language() {
     let _l = lock_lang("ja");
     for (lang, want, want_fs, want_imp) in [
-        ("ja", "のプロパティ 'name' は読み取れません", "見つかりません", "が見つかりません"),
-        ("en", "Cannot read property 'name' of", "missing.csv", "Could not resolve"),
+        (
+            "ja",
+            "のプロパティ 'name' は読み取れません",
+            "見つかりません",
+            "が見つかりません",
+        ),
+        (
+            "en",
+            "Cannot read property 'name' of",
+            "missing.csv",
+            "Could not resolve",
+        ),
     ] {
         i18n::set_language(lang);
-        let r = run_script(&write_script("x.js", "const o = null; console.log(o.name)"), "", &[]);
-        assert!(r.err_text().contains(want), "{lang}: err = {}, want {want:?}", r.err_text());
-        let r = run_script(&write_script("y.js", r#"fs.readText("nope/missing.csv")"#), "", &[]);
-        assert!(r.err_text().contains(want_fs), "{lang}: fs err = {}", r.err_text());
+        let r = run_script(
+            &write_script("x.js", "const o = null; console.log(o.name)"),
+            "",
+            &[],
+        );
+        assert!(
+            r.err_text().contains(want),
+            "{lang}: err = {}, want {want:?}",
+            r.err_text()
+        );
+        let r = run_script(
+            &write_script("y.js", r#"fs.readText("nope/missing.csv")"#),
+            "",
+            &[],
+        );
+        assert!(
+            r.err_text().contains(want_fs),
+            "{lang}: fs err = {}",
+            r.err_text()
+        );
         let r = run_script(&write_script("z.js", r#"import "./nope.js""#), "", &[]);
-        assert!(r.err_text().contains(want_imp), "{lang}: import err = {}", r.err_text());
+        assert!(
+            r.err_text().contains(want_imp),
+            "{lang}: import err = {}",
+            r.err_text()
+        );
     }
 }
 
@@ -331,7 +496,9 @@ fn default_font_follows_language() {
     let _l = lock_lang("ja");
     for (lang, font) in [("ja", "游ゴシック"), ("en", "Calibri")] {
         i18n::set_language(lang);
-        let src = format!("const f = workbooks.create().defaultFont.name; if (f !== \"{font}\") throw new Error(f)");
+        let src = format!(
+            "const f = workbooks.create().defaultFont.name; if (f !== \"{font}\") throw new Error(f)"
+        );
         let r = run_script(&write_script("f.js", &src), "", &[]);
         assert_eq!(r.code, 0, "{lang}: {}", r.err_text());
     }
@@ -340,7 +507,10 @@ fn default_font_follows_language() {
 #[test]
 fn dayjs_locale_follows_language() {
     let _l = lock_lang("ja");
-    for (lang, want) in [("ja", "ja 2026年4月1日(水)"), ("en", "en Wed, April 1, 2026")] {
+    for (lang, want) in [
+        ("ja", "ja 2026年4月1日(水)"),
+        ("en", "en Wed, April 1, 2026"),
+    ] {
         i18n::set_language(lang);
         let src = format!(
             "const s = dayjs.locale() + \" \" + dayjs(\"2026-04-01\").format(dayjs.locale() === \"ja\" ? \"YYYY年M月D日(ddd)\" : \"ddd, MMMM D, YYYY\")\nif (s !== \"{want}\") throw new Error(s)"
@@ -359,18 +529,35 @@ fn app_mode() {
     let (o, e) = (SharedBuf::default(), SharedBuf::default());
     let r = run(Options {
         script_path: p,
-        ui: Some(Arc::new(crate::ui::Console::with_io(std::io::Cursor::new(Vec::new()), SharedBuf::default()))),
+        ui: Some(Arc::new(crate::ui::Console::with_io(
+            std::io::Cursor::new(Vec::new()),
+            SharedBuf::default(),
+        ))),
         stdout: Some(out(&o)),
         stderr: Some(out(&e)),
         ..Default::default()
     });
     let err = r.expect_err("console must fail");
-    assert!(err.to_string().contains("ネイティブ UI") && o.text().is_empty(), "{err}");
-    assert!(e.text().contains("@unknown"), "no warning for an unknown key: {:?}", e.text());
+    assert!(
+        err.to_string().contains("ネイティブ UI") && o.text().is_empty(),
+        "{err}"
+    );
+    assert!(
+        e.text().contains("@unknown"),
+        "no warning for an unknown key: {:?}",
+        e.text()
+    );
     // Bad metadata stops the script before it runs.
-    let bad = write_script("bad.js", "// ==xljs==\n// @mode window\n// ==/xljs==\nconsole.log('ran')\n");
+    let bad = write_script(
+        "bad.js",
+        "// ==xljs==\n// @mode window\n// ==/xljs==\nconsole.log('ran')\n",
+    );
     let r = run_script(&bad, "", &[]);
-    assert!(r.code == 1 && r.err_text().contains("bad.js:2"), "{}", r.err_text());
+    assert!(
+        r.code == 1 && r.err_text().contains("bad.js:2"),
+        "{}",
+        r.err_text()
+    );
 }
 
 /// A mock whose windows stay open until closed by the script or until
@@ -413,39 +600,86 @@ impl crate::ui::Window for SlowWindow {
 
 impl SlowUi {
     pub fn new(after: Option<Duration>, windows: bool) -> SlowUi {
-        SlowUi { m: Mock::from_json("", None).unwrap(), after, events: Default::default(), windows, icons: Default::default() }
+        SlowUi {
+            m: Mock::from_json("", None).unwrap(),
+            after,
+            events: Default::default(),
+            windows,
+            icons: Default::default(),
+        }
     }
 }
 
 macro_rules! forward_ui {
     ($t:ty) => {
         impl crate::ui::Ui for $t {
-            fn name(&self) -> String { self.m.name() }
-            fn alert(&self, a: &str, b: &str) { self.m.alert(a, b) }
-            fn confirm(&self, a: &str, b: &str) -> bool { self.m.confirm(a, b) }
-            fn prompt(&self, a: &str, b: &str, c: &str) -> Option<String> { self.m.prompt(a, b, c) }
-            fn open_files(&self, o: &crate::ui::PickerOptions) -> Vec<String> { self.m.open_files(o) }
-            fn save_file(&self, o: &crate::ui::PickerOptions) -> Option<String> { self.m.save_file(o) }
-            fn pick_directory(&self, o: &crate::ui::PickerOptions) -> Option<String> { self.m.pick_directory(o) }
-            fn progress(&self, o: &crate::ui::ProgressOptions) -> Arc<dyn crate::ui::Progress> { self.m.progress(o) }
-            fn show_error(&self, a: &str, b: &str) { self.m.show_error(a, b) }
-            fn show_in_folder(&self, p: &[String]) -> crate::Result<()> { self.m.show_in_folder(p) }
-            fn open_path(&self, t: &str) -> crate::Result<()> { self.m.open_path(t) }
-            fn open_window(&self, o: WindowOptions) -> crate::Result<Arc<dyn crate::ui::Window>> { self.open(o) }
-            fn supports_windows(&self) -> bool { self.windows }
-            fn form(&self, o: &crate::ui::FormOptions) -> Option<serde_json::Map<String, serde_json::Value>> { self.m.form(o) }
-            fn table(&self, o: &crate::ui::TableOptions) -> Option<Vec<i64>> { self.m.table(o) }
-            fn notify(&self, a: &str, b: &str) { self.m.notify(a, b) }
+            fn name(&self) -> String {
+                self.m.name()
+            }
+            fn alert(&self, a: &str, b: &str) {
+                self.m.alert(a, b)
+            }
+            fn confirm(&self, a: &str, b: &str) -> bool {
+                self.m.confirm(a, b)
+            }
+            fn prompt(&self, a: &str, b: &str, c: &str) -> Option<String> {
+                self.m.prompt(a, b, c)
+            }
+            fn open_files(&self, o: &crate::ui::PickerOptions) -> Vec<String> {
+                self.m.open_files(o)
+            }
+            fn save_file(&self, o: &crate::ui::PickerOptions) -> Option<String> {
+                self.m.save_file(o)
+            }
+            fn pick_directory(&self, o: &crate::ui::PickerOptions) -> Option<String> {
+                self.m.pick_directory(o)
+            }
+            fn progress(&self, o: &crate::ui::ProgressOptions) -> Arc<dyn crate::ui::Progress> {
+                self.m.progress(o)
+            }
+            fn show_error(&self, a: &str, b: &str) {
+                self.m.show_error(a, b)
+            }
+            fn show_in_folder(&self, p: &[String]) -> crate::Result<()> {
+                self.m.show_in_folder(p)
+            }
+            fn open_path(&self, t: &str) -> crate::Result<()> {
+                self.m.open_path(t)
+            }
+            fn open_window(&self, o: WindowOptions) -> crate::Result<Arc<dyn crate::ui::Window>> {
+                self.open(o)
+            }
+            fn supports_windows(&self) -> bool {
+                self.windows
+            }
+            fn form(
+                &self,
+                o: &crate::ui::FormOptions,
+            ) -> Option<serde_json::Map<String, serde_json::Value>> {
+                self.m.form(o)
+            }
+            fn table(&self, o: &crate::ui::TableOptions) -> Option<Vec<i64>> {
+                self.m.table(o)
+            }
+            fn notify(&self, a: &str, b: &str) {
+                self.m.notify(a, b)
+            }
         }
     };
 }
 
-
 impl SlowUi {
     fn open(&self, o: WindowOptions) -> crate::Result<Arc<dyn crate::ui::Window>> {
         self.icons.lock().unwrap().push(o.icon.len());
-        self.events.lock().unwrap().push(format!("open {}", o.title));
-        let w = Arc::new(SlowWindow { o, events: self.events.clone(), done: Mutex::new(false) });
+        self.events
+            .lock()
+            .unwrap()
+            .push(format!("open {}", o.title));
+        let w = Arc::new(SlowWindow {
+            o,
+            events: self.events.clone(),
+            done: Mutex::new(false),
+        });
         if let Some(after) = self.after {
             let w2 = w.clone();
             std::thread::spawn(move || {
@@ -471,17 +705,47 @@ fn app_window_keeps_running() {
     let u = Arc::new(SlowUi::new(Some(Duration::from_millis(150)), false));
     let o = SharedBuf::default();
     let start = Instant::now();
-    let p = write_script("a.js", &format!("{app}app.main.closed.then(() => console.log('closed')); console.log('end of script')"));
-    let code = run(Options { script_path: p, ui: Some(u.clone()), stdout: Some(out(&o)), stderr: Some(quiet()), ..Default::default() }).unwrap();
+    let p = write_script(
+        "a.js",
+        &format!(
+            "{app}app.main.closed.then(() => console.log('closed')); console.log('end of script')"
+        ),
+    );
+    let code = run(Options {
+        script_path: p,
+        ui: Some(u.clone()),
+        stdout: Some(out(&o)),
+        stderr: Some(quiet()),
+        ..Default::default()
+    })
+    .unwrap();
     assert_eq!(code, 0);
-    assert!(start.elapsed() >= Duration::from_millis(150) && o.text() == "end of script\nclosed\n", "{:?} {:?}", start.elapsed(), o.text());
+    assert!(
+        start.elapsed() >= Duration::from_millis(150) && o.text() == "end of script\nclosed\n",
+        "{:?} {:?}",
+        start.elapsed(),
+        o.text()
+    );
 
     // exit() closes windows that are still open.
     let u = Arc::new(SlowUi::new(None, false));
-    let p = write_script("b.js", &format!("{app}app.open({{ title: 'sub' }}); setTimeout(() => exit(5), 10)"));
-    let code = run(Options { script_path: p, ui: Some(u.clone()), stdout: Some(quiet()), stderr: Some(quiet()), ..Default::default() }).unwrap();
+    let p = write_script(
+        "b.js",
+        &format!("{app}app.open({{ title: 'sub' }}); setTimeout(() => exit(5), 10)"),
+    );
+    let code = run(Options {
+        script_path: p,
+        ui: Some(u.clone()),
+        stdout: Some(quiet()),
+        stderr: Some(quiet()),
+        ..Default::default()
+    })
+    .unwrap();
     assert_eq!(code, 5);
-    assert_eq!(u.events.lock().unwrap().join(","), "open b,open sub,closed by script,closed by script");
+    assert_eq!(
+        u.events.lock().unwrap().join(","),
+        "open b,open sub,closed by script,closed by script"
+    );
 
     // exit() after awaiting a window that the user closed.
     for src in [
@@ -491,15 +755,35 @@ fn app_window_keeps_running() {
     ] {
         let u = Arc::new(SlowUi::new(Some(Duration::from_millis(20)), true));
         let o = SharedBuf::default();
-        let r = run(Options { script_path: write_script("d.js", src), ui: Some(u), stdout: Some(out(&o)), stderr: Some(quiet()), ..Default::default() });
-        assert!(matches!(r, Ok(7)) && o.text().is_empty(), "{src}: {:?} stdout {:?}", r.map_err(|e| e.to_string()), o.text());
+        let r = run(Options {
+            script_path: write_script("d.js", src),
+            ui: Some(u),
+            stdout: Some(out(&o)),
+            stderr: Some(quiet()),
+            ..Default::default()
+        });
+        assert!(
+            matches!(r, Ok(7)) && o.text().is_empty(),
+            "{src}: {:?} stdout {:?}",
+            r.map_err(|e| e.to_string()),
+            o.text()
+        );
     }
 
     // Through ui::run the script runs on its own thread and the UI calls
     // (including the window callbacks) are served by the caller.
     let u = Arc::new(SlowUi::new(Some(Duration::from_millis(20)), false));
     let p = write_script("c.js", &format!("{app}await app.main.closed"));
-    let r = crate::ui::run(u, move |su| run(Options { script_path: p, ui: Some(su), stdout: Some(quiet()), stderr: Some(quiet()), ..Default::default() }).map_err(|e| e.to_string()));
+    let r = crate::ui::run(u, move |su| {
+        run(Options {
+            script_path: p,
+            ui: Some(su),
+            stdout: Some(quiet()),
+            stderr: Some(quiet()),
+            ..Default::default()
+        })
+        .map_err(|e| e.to_string())
+    });
     assert_eq!(r, Ok(0));
 }
 
@@ -517,11 +801,30 @@ fn app_icon() {
     };
     // The main window and the windows the script opens get the icon.
     let r = run_script(&write("ok.js", "app.ico"), "", &[]);
-    assert!(r.code == 0 && r.err.is_none(), "{} {}", r.err_text(), r.stderr);
-    assert_eq!(r.stderr.matches(&format!("window.icon({} bytes)", ico.len())).count(), 2, "{}", r.stderr);
-    for (icon, want) in [("missing.ico", "見つかりません"), ("bad.ico", "アイコンとして読み込めません")] {
+    assert!(
+        r.code == 0 && r.err.is_none(),
+        "{} {}",
+        r.err_text(),
+        r.stderr
+    );
+    assert_eq!(
+        r.stderr
+            .matches(&format!("window.icon({} bytes)", ico.len()))
+            .count(),
+        2,
+        "{}",
+        r.stderr
+    );
+    for (icon, want) in [
+        ("missing.ico", "見つかりません"),
+        ("bad.ico", "アイコンとして読み込めません"),
+    ] {
         let r = run_script(&write("e.js", icon), "", &[]);
-        assert!(r.code == 1 && r.err_text().contains(want), "{icon}: {}", r.err_text());
+        assert!(
+            r.code == 1 && r.err_text().contains(want),
+            "{icon}: {}",
+            r.err_text()
+        );
     }
 }
 
@@ -537,15 +840,31 @@ fn form_icon() {
     let u = Arc::new(SlowUi::new(Some(Duration::from_millis(20)), true));
     let cfg = tempdir();
     unsafe { std::env::set_var("XLJS_CONFIG_DIR", &cfg) };
-    let code = run(Options { script_path: p.to_string_lossy().into_owned(), ui: Some(u.clone()), stdout: Some(quiet()), stderr: Some(quiet()), ..Default::default() });
-    assert!(matches!(code, Ok(0)), "{:?}", code.map_err(|e| e.to_string()));
+    let code = run(Options {
+        script_path: p.to_string_lossy().into_owned(),
+        ui: Some(u.clone()),
+        stdout: Some(quiet()),
+        stderr: Some(quiet()),
+        ..Default::default()
+    });
+    assert!(
+        matches!(code, Ok(0)),
+        "{:?}",
+        code.map_err(|e| e.to_string())
+    );
     assert_eq!(*u.icons.lock().unwrap(), vec![ico.len(), ico.len()]);
 }
 
 /// The skills for Copilot agents (docs/ai/copilot/skills/xljs-*): the
 /// reference split by feature, each skill a handwritten header and some
 /// `## ` sections of reference.md.
-const REFERENCE_SKILLS: [&str; 5] = ["xljs-reference", "xljs-pdf", "xljs-sqlite", "xljs-network", "xljs-chart"];
+const REFERENCE_SKILLS: [&str; 5] = [
+    "xljs-reference",
+    "xljs-pdf",
+    "xljs-sqlite",
+    "xljs-network",
+    "xljs-chart",
+];
 
 /// Splits markdown into the text before the first `## ` heading and the
 /// `## ` sections (heading, text), skipping code blocks.
@@ -574,12 +893,25 @@ fn md_sections(src: &str) -> (String, Vec<(String, String)>) {
 #[test]
 fn ai_docs() {
     let re = regex::Regex::new("(?s)```js\n(.*?)```").unwrap();
-    let skills: Vec<_> = REFERENCE_SKILLS.iter().map(|n| (format!("copilot/skills/{n}/SKILL.md"), 30000)).collect();
-    let docs = [("prompt.md".to_string(), 15000), ("reference.md".into(), 0), ("copilot/instructions.md".into(), 8000), ("copilot/skills/vba-port/SKILL.md".into(), 30000)];
+    let skills: Vec<_> = REFERENCE_SKILLS
+        .iter()
+        .map(|n| (format!("copilot/skills/{n}/SKILL.md"), 30000))
+        .collect();
+    let docs = [
+        ("prompt.md".to_string(), 15000),
+        ("reference.md".into(), 0),
+        ("copilot/instructions.md".into(), 8000),
+        ("copilot/skills/vba-port/SKILL.md".into(), 30000),
+    ];
     for (name, limit) in docs.into_iter().chain(skills) {
-        let src = std::fs::read_to_string(repo_path(&format!("docs/ai/{name}"))).unwrap().replace("\r\n", "\n");
+        let src = std::fs::read_to_string(repo_path(&format!("docs/ai/{name}")))
+            .unwrap()
+            .replace("\r\n", "\n");
         let n = src.chars().count();
-        assert!(limit == 0 || n <= limit, "{name} is {n} characters; keep it within {limit}");
+        assert!(
+            limit == 0 || n <= limit,
+            "{name} is {n} characters; keep it within {limit}"
+        );
         let blocks: Vec<_> = re.captures_iter(&src).collect();
         assert!(!blocks.is_empty(), "{name}: no js code blocks");
         for (i, b) in blocks.iter().enumerate() {
@@ -596,11 +928,22 @@ fn ai_docs() {
 /// into the skills (a new section goes to xljs-reference).
 #[test]
 fn ai_reference_skills() {
-    let read = |p: &str| std::fs::read_to_string(repo_path(p)).unwrap().replace("\r\n", "\n");
+    let read = |p: &str| {
+        std::fs::read_to_string(repo_path(p))
+            .unwrap()
+            .replace("\r\n", "\n")
+    };
     let (_, refs) = md_sections(&read("docs/ai/reference.md"));
-    let paths: Vec<_> = REFERENCE_SKILLS.iter().map(|n| format!("docs/ai/copilot/skills/{n}/SKILL.md")).collect();
+    let paths: Vec<_> = REFERENCE_SKILLS
+        .iter()
+        .map(|n| format!("docs/ai/copilot/skills/{n}/SKILL.md"))
+        .collect();
     let skills: Vec<_> = paths.iter().map(|p| md_sections(&read(p))).collect();
-    let owner = |h: &str| skills.iter().position(|(_, s)| s.iter().any(|(t, _)| t == h));
+    let owner = |h: &str| {
+        skills
+            .iter()
+            .position(|(_, s)| s.iter().any(|(t, _)| t == h))
+    };
     if std::env::var_os("XLJS_UPDATE_SKILLS").is_some() {
         let mut out: Vec<String> = skills.iter().map(|(head, _)| head.clone()).collect();
         for (h, t) in &refs {
@@ -613,19 +956,35 @@ fn ai_reference_skills() {
     }
     let mut seen = Vec::new();
     for ((head, secs), p) in skills.iter().zip(&paths) {
-        assert!(head.starts_with("---\nname: ") && head.contains("\ndescription: "), "{p}: no front matter");
+        assert!(
+            head.starts_with("---\nname: ") && head.contains("\ndescription: "),
+            "{p}: no front matter"
+        );
         let mut last = None;
         for (h, t) in secs {
-            let i = refs.iter().position(|(rh, _)| rh == h).unwrap_or_else(|| panic!("{p}: {h} is not in reference.md"));
+            let i = refs
+                .iter()
+                .position(|(rh, _)| rh == h)
+                .unwrap_or_else(|| panic!("{p}: {h} is not in reference.md"));
             let want = refs[i].1.trim_end();
-            assert_eq!(t.trim_end(), want, "{p}: {h} differs from reference.md (XLJS_UPDATE_SKILLS=1 cargo test --lib ai_reference_skills copies it)");
-            assert!(last < Some(i), "{p}: {h} is out of the order of reference.md");
+            assert_eq!(
+                t.trim_end(),
+                want,
+                "{p}: {h} differs from reference.md (XLJS_UPDATE_SKILLS=1 cargo test --lib ai_reference_skills copies it)"
+            );
+            assert!(
+                last < Some(i),
+                "{p}: {h} is out of the order of reference.md"
+            );
             assert!(!seen.contains(&i), "{p}: {h} is in two skills");
             (last, seen) = (Some(i), [seen, vec![i]].concat());
         }
     }
     for (i, (h, _)) in refs.iter().enumerate() {
-        assert!(seen.contains(&i), "{h} of reference.md is in no skill (XLJS_UPDATE_SKILLS=1 cargo test --lib ai_reference_skills adds it to xljs-reference)");
+        assert!(
+            seen.contains(&i),
+            "{h} of reference.md is in no skill (XLJS_UPDATE_SKILLS=1 cargo test --lib ai_reference_skills adds it to xljs-reference)"
+        );
     }
 }
 
@@ -651,7 +1010,12 @@ fn run_watched(src: &str, confirm: &str, limit: Duration) -> Res {
         Ok(c) => (c, None),
         Err(e) => (1, Some(e)),
     };
-    Res { code, err, stdout: o.text(), stderr: e.text() }
+    Res {
+        code,
+        err,
+        stdout: o.text(),
+        stderr: e.text(),
+    }
 }
 
 #[test]
@@ -660,21 +1024,54 @@ fn watchdog_stops_endless_loops() {
     let limit = Duration::from_millis(200);
     let cases: &[(&str, &str)] = &[
         ("sync", "while (true) {}"),
-        ("catch", r#"try { for (;;) {} } catch { console.log("caught") } finally { console.log("finally") }"#),
+        (
+            "catch",
+            r#"try { for (;;) {} } catch { console.log("caught") } finally { console.log("finally") }"#,
+        ),
         ("calls", "function f() { return 1 } for (;;) f()"),
         ("after-await", "await sleep(1); while (true) {}"),
-        ("timer", "setTimeout(() => { while (true) {} }, 1); await sleep(100000)"),
-        ("promise-job", "Promise.resolve().then(() => { while (true) {} }); await sleep(100000)"),
+        (
+            "timer",
+            "setTimeout(() => { while (true) {} }, 1); await sleep(100000)",
+        ),
+        (
+            "promise-job",
+            "Promise.resolve().then(() => { while (true) {} }); await sleep(100000)",
+        ),
     ];
     for (name, src) in cases {
         let start = Instant::now();
         let r = run_watched(src, "[false, true]", limit);
-        assert_eq!(r.code, watchdog::STUCK_CODE, "{name}: err {} stderr {:?}", r.err_text(), r.stderr);
-        assert!(r.err.is_none() && r.stdout.is_empty(), "{name}: err {} stdout {:?}", r.err_text(), r.stdout);
+        assert_eq!(
+            r.code,
+            watchdog::STUCK_CODE,
+            "{name}: err {} stderr {:?}",
+            r.err_text(),
+            r.stderr
+        );
+        assert!(
+            r.err.is_none() && r.stdout.is_empty(),
+            "{name}: err {} stdout {:?}",
+            r.err_text(),
+            r.stdout
+        );
         // "keep running" the first time, then "stop".
-        assert_eq!(r.stderr.matches("confirm(").count(), 2, "{name}: {:?}", r.stderr);
-        assert!(r.stderr.contains("無限ループ") && r.stderr.contains("スクリプトを中止しました"), "{name}: {:?}", r.stderr);
-        assert!(start.elapsed() < Duration::from_secs(10), "{name}: took {:?}", start.elapsed());
+        assert_eq!(
+            r.stderr.matches("confirm(").count(),
+            2,
+            "{name}: {:?}",
+            r.stderr
+        );
+        assert!(
+            r.stderr.contains("無限ループ") && r.stderr.contains("スクリプトを中止しました"),
+            "{name}: {:?}",
+            r.stderr
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "{name}: took {:?}",
+            start.elapsed()
+        );
     }
 }
 
@@ -684,7 +1081,11 @@ fn watchdog_tells_where_it_stopped() {
     let src = "let n = 0;\nfunction spin() {\n  while (true) { n++; }\n}\nspin();\n";
     let r = run_watched(src, "[true]", Duration::from_millis(200));
     assert_eq!(r.code, watchdog::STUCK_CODE, "{:?}", r.stderr);
-    assert!(r.stderr.contains("中止した場所:\n    at spin (loop.js:3:"), "{:?}", r.stderr);
+    assert!(
+        r.stderr.contains("中止した場所:\n    at spin (loop.js:3:"),
+        "{:?}",
+        r.stderr
+    );
 }
 
 /// Runs src (on a script thread of ui::run) with the memory floor; the
@@ -709,13 +1110,21 @@ fn low_memory_stops_the_script() {
     let _l = lock_lang("ja");
     // An array that grows without end: stopped once it has taken 500 MB.
     let src = "const rows = [];\nfunction grow() {\n  while (rows.length < rows.length + 1) rows.push({ a: 1 });\n}\ntry { grow(); } catch (e) { console.log(\"caught\"); }\n";
-    let floor = crate::engine::memory::available().unwrap().saturating_sub(500 << 20);
+    let floor = crate::engine::memory::available()
+        .unwrap()
+        .saturating_sub(500 << 20);
     let (msg, stdout) = run_floor(src, floor);
-    assert!(msg.contains("空きメモリ") && msg.contains("    at grow (grow.js:3:"), "{msg}");
+    assert!(
+        msg.contains("空きメモリ") && msg.contains("    at grow (grow.js:3:"),
+        "{msg}"
+    );
     assert!(stdout.is_empty(), "the stop cannot be caught: {stdout:?}");
     // Low on memory from the start: stopped while xljs sets up the script.
     let (msg, _) = run_floor("console.log(1)", u64::MAX);
-    assert!(msg.contains("空きメモリ") && !msg.contains("内部エラー"), "{msg}");
+    assert!(
+        msg.contains("空きメモリ") && !msg.contains("内部エラー"),
+        "{msg}"
+    );
 }
 
 /// Runs src like the development mode's runs (dev_guard, preview) with the
@@ -736,7 +1145,12 @@ fn run_dev(src: &str, answers: &str, preview: &str) -> Res {
         Ok(c) => (c, None),
         Err(e) => (1, Some(e)),
     };
-    Res { code, err, stdout: o.text(), stderr: e.text() }
+    Res {
+        code,
+        err,
+        stdout: o.text(),
+        stderr: e.text(),
+    }
 }
 
 #[test]
@@ -763,9 +1177,20 @@ fn dev_guard_asks_before_deleting_much() {
     );
     let r = run_dev(&src, r#"{"confirm": [true, false]}"#, "");
     assert_eq!(r.stderr.matches("confirm(").count(), 2, "{:?}", r.stderr);
-    assert!(r.stderr.contains("複数のファイルを削除") && r.stderr.contains("中のファイル・フォルダ 1 個ごと"), "{:?}", r.stderr);
-    assert!(r.err_text().contains("削除を取りやめました"), "{}", r.err_text());
-    assert!(!d.join("c.txt").exists() && d.join("sub/x.txt").exists() && !r.stdout.contains("done"));
+    assert!(
+        r.stderr.contains("複数のファイルを削除")
+            && r.stderr.contains("中のファイル・フォルダ 1 個ごと"),
+        "{:?}",
+        r.stderr
+    );
+    assert!(
+        r.err_text().contains("削除を取りやめました"),
+        "{}",
+        r.err_text()
+    );
+    assert!(
+        !d.join("c.txt").exists() && d.join("sub/x.txt").exists() && !r.stdout.contains("done")
+    );
 }
 
 #[test]
@@ -778,7 +1203,11 @@ fn dev_form_preview() {
         console.log("after");"#;
     let r = run_dev(src, "{}", &f.to_string_lossy());
     assert_eq!(r.code, 0, "{} {:?}", r.err_text(), r.stderr);
-    assert!(r.stdout.contains("before") && !r.stdout.contains("ran") && !r.stdout.contains("after"), "{:?}", r.stdout);
+    assert!(
+        r.stdout.contains("before") && !r.stdout.contains("ran") && !r.stdout.contains("after"),
+        "{:?}",
+        r.stdout
+    );
     let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
     assert_eq!(v["type"], "init");
     assert_eq!(v["fields"][0]["label"], "ファイル");
@@ -797,8 +1226,18 @@ fn watchdog_ignores_waiting_scripts() {
         for (let i = 0; i < 8; i++) { busy(100); ui.confirm("q") }
         console.log("done");
     "#;
-    let r = run_watched(src, "[false, false, false, false, false, false, false, false]", Duration::from_millis(400));
-    assert!(r.code == 0 && r.err.is_none() && r.stdout.contains("done"), "exit {} {} {:?}", r.code, r.err_text(), r.stderr);
+    let r = run_watched(
+        src,
+        "[false, false, false, false, false, false, false, false]",
+        Duration::from_millis(400),
+    );
+    assert!(
+        r.code == 0 && r.err.is_none() && r.stdout.contains("done"),
+        "exit {} {} {:?}",
+        r.code,
+        r.err_text(),
+        r.stderr
+    );
     assert!(!r.stderr.contains("無限ループ"), "asked: {:?}", r.stderr);
 }
 
@@ -808,7 +1247,9 @@ fn run_with_key(src: &str, confirm: &str, down: Arc<std::sync::atomic::AtomicBoo
     let (o, e) = (SharedBuf::default(), SharedBuf::default());
     let m = Mock::from_json(&format!(r#"{{"confirm": {confirm}}}"#), Some(e.sink())).unwrap();
     let mut key = watchdog::StopKey::parse("esc").unwrap();
-    key.probe = Some(Arc::new(move |vk| vk == 0x1B && down.load(std::sync::atomic::Ordering::SeqCst)));
+    key.probe = Some(Arc::new(move |vk| {
+        vk == 0x1B && down.load(std::sync::atomic::Ordering::SeqCst)
+    }));
     let mut opts = Options {
         script_path: write_script("key.js", src),
         stdout: Some(out(&o)),
@@ -824,7 +1265,12 @@ fn run_with_key(src: &str, confirm: &str, down: Arc<std::sync::atomic::AtomicBoo
         Ok(c) => (c, None),
         Err(e) => (1, Some(e)),
     };
-    Res { code, err, stdout: o.text(), stderr: e.text() }
+    Res {
+        code,
+        err,
+        stdout: o.text(),
+        stderr: e.text(),
+    }
 }
 
 /// Holds the key down from after until after + 100 ms (another thread).
@@ -843,19 +1289,43 @@ fn stop_key_stops_running_script() {
     let _l = lock_lang("ja");
     for (name, src) in [
         ("sync", "while (true) {}"),
-        ("timer", "setTimeout(() => { for (;;) {} }, 1); await sleep(100000)"),
+        (
+            "timer",
+            "setTimeout(() => { for (;;) {} }, 1); await sleep(100000)",
+        ),
     ] {
         let down = Arc::new(std::sync::atomic::AtomicBool::new(false));
         press_later(&down, Duration::from_millis(500));
         let r = run_with_key(src, "[true]", down);
-        assert_eq!(r.code, watchdog::STOPPED_CODE, "{name}: err {} stderr {:?}", r.err_text(), r.stderr);
-        assert!(r.stderr.contains("Esc キーが押されました") && r.stderr.contains("スクリプトを中止しました"), "{name}: {:?}", r.stderr);
+        assert_eq!(
+            r.code,
+            watchdog::STOPPED_CODE,
+            "{name}: err {} stderr {:?}",
+            r.err_text(),
+            r.stderr
+        );
+        assert!(
+            r.stderr.contains("Esc キーが押されました")
+                && r.stderr.contains("スクリプトを中止しました"),
+            "{name}: {:?}",
+            r.stderr
+        );
     }
     // "keep running": the script goes on and ends normally.
     let down = Arc::new(std::sync::atomic::AtomicBool::new(false));
     press_later(&down, Duration::from_millis(400));
-    let r = run_with_key("const end = Date.now() + 1200; while (Date.now() < end) {} console.log(\"done\")", "[false]", down);
-    assert!(r.code == 0 && r.stdout.contains("done") && r.stderr.contains("Esc キー"), "exit {} {} {:?}", r.code, r.err_text(), r.stderr);
+    let r = run_with_key(
+        "const end = Date.now() + 1200; while (Date.now() < end) {} console.log(\"done\")",
+        "[false]",
+        down,
+    );
+    assert!(
+        r.code == 0 && r.stdout.contains("done") && r.stderr.contains("Esc キー"),
+        "exit {} {} {:?}",
+        r.code,
+        r.err_text(),
+        r.stderr
+    );
 }
 
 #[test]
@@ -867,7 +1337,13 @@ fn stop_key_ignored_while_waiting() {
     press_later(&down, Duration::from_millis(200));
     let src = "await sleep(600); const end = Date.now() + 500; while (Date.now() < end) {} console.log(\"done\")";
     let r = run_with_key(src, "[]", down);
-    assert!(r.code == 0 && r.stdout.contains("done"), "exit {} {} {:?}", r.code, r.err_text(), r.stderr);
+    assert!(
+        r.code == 0 && r.stdout.contains("done"),
+        "exit {} {} {:?}",
+        r.code,
+        r.err_text(),
+        r.stderr
+    );
     assert!(!r.stderr.contains("confirm("), "asked: {:?}", r.stderr);
 }
 
@@ -877,13 +1353,27 @@ fn stop_key_ignored_while_waiting() {
 fn debug_bundle_breaks_on_first_line() {
     let src = "import { x } from \"./dep\";\ntype T = number;\ninterface I { a: T }\nexport function f() { return 1; }\n\nconst y: T = x + f();\nconsole.log(y);\n";
     let p = write_script("brk.ts", src);
-    std::fs::write(std::path::Path::new(&p).parent().unwrap().join("dep.ts"), "export const x = 1;\nconsole.log(x);\n").unwrap();
+    std::fs::write(
+        std::path::Path::new(&p).parent().unwrap().join("dep.ts"),
+        "export const x = 1;\nconsole.log(x);\n",
+    )
+    .unwrap();
     let code = String::from_utf8(bundle_with(&p, true).unwrap()).unwrap();
     let pat = "while (__vite_ssr_import_meta__.__xljsBreak) debugger;";
     assert_eq!(code.matches(pat).count(), 1, "{code}");
     let line = code[..code.find(pat).unwrap()].matches('\n').count() as u32 + 1;
     let m = crate::engine::sourcemap::Mapper::from_bundle(&code).unwrap();
-    let (file, l, _) = m.lookup(line, 1 + code.lines().nth(line as usize - 1).unwrap().find("while").unwrap() as u32).unwrap();
+    let (file, l, _) = m
+        .lookup(
+            line,
+            1 + code
+                .lines()
+                .nth(line as usize - 1)
+                .unwrap()
+                .find("while")
+                .unwrap() as u32,
+        )
+        .unwrap();
     assert!(file.ends_with("brk.ts"), "{file}");
     assert_eq!(l, 6);
     let plain = String::from_utf8(bundle(&p).unwrap()).unwrap();

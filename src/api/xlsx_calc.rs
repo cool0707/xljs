@@ -29,7 +29,11 @@ impl V {
             V::Empty => Ok(0.0),
             V::Str(s) => s.trim().parse::<f64>().map_err(|_| "#VALUE!".to_string()),
             V::Err(e) => Err(e.clone()),
-            V::Range(r) => r.first().and_then(|row| row.first()).map(|v| v.num()).unwrap_or(Ok(0.0)),
+            V::Range(r) => r
+                .first()
+                .and_then(|row| row.first())
+                .map(|v| v.num())
+                .unwrap_or(Ok(0.0)),
             V::Image(_) => Err("#VALUE!".into()),
         }
     }
@@ -40,7 +44,11 @@ impl V {
             V::Bool(b) => Ok(if *b { "TRUE".into() } else { "FALSE".into() }),
             V::Empty => Ok(String::new()),
             V::Err(e) => Err(e.clone()),
-            V::Range(r) => r.first().and_then(|row| row.first()).map(|v| v.text()).unwrap_or(Ok(String::new())),
+            V::Range(r) => r
+                .first()
+                .and_then(|row| row.first())
+                .map(|v| v.text())
+                .unwrap_or(Ok(String::new())),
             V::Image(_) => Err("#VALUE!".into()),
         }
     }
@@ -82,7 +90,8 @@ fn tokenize(s: &str) -> Result<Vec<Tok>> {
         let ch = c[i];
         if ch.is_whitespace() {
             i += 1;
-        } else if ch.is_ascii_digit() || (ch == '.' && i + 1 < c.len() && c[i + 1].is_ascii_digit()) {
+        } else if ch.is_ascii_digit() || (ch == '.' && i + 1 < c.len() && c[i + 1].is_ascii_digit())
+        {
             let st = i;
             while i < c.len() && (c[i].is_ascii_digit() || c[i] == '.') {
                 i += 1;
@@ -97,7 +106,10 @@ fn tokenize(s: &str) -> Result<Vec<Tok>> {
                 }
             }
             let t: String = c[st..i].iter().collect();
-            out.push(Tok::Num(t.parse().map_err(|_| Error::msg(format!("invalid number {t}")))?));
+            out.push(Tok::Num(
+                t.parse()
+                    .map_err(|_| Error::msg(format!("invalid number {t}")))?,
+            ));
         } else if ch == '"' {
             let mut t = String::new();
             i += 1;
@@ -135,11 +147,21 @@ fn tokenize(s: &str) -> Result<Vec<Tok>> {
             }
         } else if ch.is_alphabetic() || ch == '_' || ch == '$' {
             let st = i;
-            while i < c.len() && (c[i].is_alphanumeric() || c[i] == '_' || c[i] == '.' || c[i] == '$' || c[i] == ':' || c[i] == '!') {
+            while i < c.len()
+                && (c[i].is_alphanumeric()
+                    || c[i] == '_'
+                    || c[i] == '.'
+                    || c[i] == '$'
+                    || c[i] == ':'
+                    || c[i] == '!')
+            {
                 i += 1;
             }
             let t: String = c[st..i].iter().collect();
-            if (i < c.len() && c[i] == '(') || t.eq_ignore_ascii_case("TRUE") || t.eq_ignore_ascii_case("FALSE") {
+            if (i < c.len() && c[i] == '(')
+                || t.eq_ignore_ascii_case("TRUE")
+                || t.eq_ignore_ascii_case("FALSE")
+            {
                 out.push(Tok::Name(t.to_uppercase()));
             } else {
                 out.push(Tok::Ref(t));
@@ -255,7 +277,11 @@ impl<'a> Ev<'a> {
         if let Some(op) = self.op_is(&["-", "+"]) {
             self.pos += 1;
             let v = self.unary()?;
-            return Ok(if op == "-" { arith(&V::Num(0.0), &v, |a, b| Ok(a - b)) } else { v });
+            return Ok(if op == "-" {
+                arith(&V::Num(0.0), &v, |a, b| Ok(a - b))
+            } else {
+                v
+            });
         }
         let v = self.primary()?;
         if self.op_is(&["%"]).is_some() {
@@ -346,7 +372,9 @@ impl<'a> Ev<'a> {
 
     fn cell(&mut self, sheet: &str, col: u32, row: u32) -> Result<V> {
         let ws = self.b.sheet(sheet)?;
-        let Some(c) = ws.cell((col, row)) else { return Ok(V::Empty) };
+        let Some(c) = ws.cell((col, row)) else {
+            return Ok(V::Empty);
+        };
         // A picture placed in the cell (or a formula Excel saved with one)
         // reads as #VALUE!; a value written over it since is no picture.
         if matches!(c.raw_value(), CellRawValue::Error(_))
@@ -358,7 +386,13 @@ impl<'a> Ev<'a> {
             if self.depth >= MAX_DEPTH {
                 return Ok(V::Err("#REF!".into()));
             }
-            let mut ev = Ev { b: self.b, sheet: sheet.to_string(), toks: tokenize(c.formula())?, pos: 0, depth: self.depth + 1 };
+            let mut ev = Ev {
+                b: self.b,
+                sheet: sheet.to_string(),
+                toks: tokenize(c.formula())?,
+                pos: 0,
+                depth: self.depth + 1,
+            };
             return ev.expr();
         }
         Ok(match c.raw_value() {
@@ -383,7 +417,12 @@ fn lookup(look: &V, list: &[V], kind: f64) -> std::result::Result<usize, String>
     if let V::Err(e) = look {
         return Err(e.clone());
     }
-    let same = |v: &V| matches!((v, look), (V::Num(_), V::Num(_)) | (V::Str(_), V::Str(_)) | (V::Bool(_), V::Bool(_)));
+    let same = |v: &V| {
+        matches!(
+            (v, look),
+            (V::Num(_), V::Num(_)) | (V::Str(_), V::Str(_)) | (V::Bool(_), V::Bool(_))
+        )
+    };
     let is = |v: &V, op: &str| matches!(compare(v, look, op), V::Bool(true));
     let mut found = None;
     for (i, v) in list.iter().enumerate() {
@@ -420,7 +459,11 @@ fn compare(a: &V, b: &V, op: &str) -> V {
         (V::Str(x), V::Str(y)) => x.to_lowercase().cmp(&y.to_lowercase()),
         (V::Str(_), _) => Ordering::Greater,
         (_, V::Str(_)) => Ordering::Less,
-        _ => a.num().unwrap_or(0.0).partial_cmp(&b.num().unwrap_or(0.0)).unwrap_or(Ordering::Equal),
+        _ => a
+            .num()
+            .unwrap_or(0.0)
+            .partial_cmp(&b.num().unwrap_or(0.0))
+            .unwrap_or(Ordering::Equal),
     };
     V::Bool(match op {
         "=" => ord == Ordering::Equal,
@@ -479,7 +522,10 @@ fn matches(v: &V, crit: &V) -> bool {
     }
     match crit {
         V::Num(n) => v.num().map(|x| x == *n).unwrap_or(false),
-        _ => v.text().map(|t| t.eq_ignore_ascii_case(&c)).unwrap_or(false),
+        _ => v
+            .text()
+            .map(|t| t.eq_ignore_ascii_case(&c))
+            .unwrap_or(false),
     }
 }
 
@@ -499,8 +545,18 @@ fn call(name: &str, args: Vec<V>) -> V {
             }
             "MIN" => V::Num(nums(&args)?.into_iter().reduce(f64::min).unwrap_or(0.0)),
             "MAX" => V::Num(nums(&args)?.into_iter().reduce(f64::max).unwrap_or(0.0)),
-            "COUNT" => V::Num(args.iter().flat_map(|a| a.flat()).filter(|v| matches!(v, V::Num(_))).count() as f64),
-            "COUNTA" => V::Num(args.iter().flat_map(|a| a.flat()).filter(|v| !matches!(v, V::Empty)).count() as f64),
+            "COUNT" => V::Num(
+                args.iter()
+                    .flat_map(|a| a.flat())
+                    .filter(|v| matches!(v, V::Num(_)))
+                    .count() as f64,
+            ),
+            "COUNTA" => V::Num(
+                args.iter()
+                    .flat_map(|a| a.flat())
+                    .filter(|v| !matches!(v, V::Empty))
+                    .count() as f64,
+            ),
             "PRODUCT" => V::Num(nums(&args)?.iter().product()),
             "ROUND" => V::Num(round_to(arg(0).num()?, arg(1).num()?, 0)),
             "ROUNDUP" => V::Num(round_to(arg(0).num()?, arg(1).num()?, 1)),
@@ -518,7 +574,11 @@ fn call(name: &str, args: Vec<V>) -> V {
             "POWER" => V::Num(arg(0).num()?.powf(arg(1).num()?)),
             "IF" => {
                 if arg(0).truthy()? {
-                    if args.len() > 1 { arg(1) } else { V::Bool(true) }
+                    if args.len() > 1 {
+                        arg(1)
+                    } else {
+                        V::Bool(true)
+                    }
                 } else if args.len() > 2 {
                     arg(2)
                 } else {
@@ -542,7 +602,14 @@ fn call(name: &str, args: Vec<V>) -> V {
                     V::Range(r) => r,
                     v => vec![vec![v]],
                 };
-                let (mut r, mut c) = (arg(1).num()? as usize, if args.len() > 2 { arg(2).num()? as usize } else { 0 });
+                let (mut r, mut c) = (
+                    arg(1).num()? as usize,
+                    if args.len() > 2 {
+                        arg(2).num()? as usize
+                    } else {
+                        0
+                    },
+                );
                 // INDEX(A1:E1, 3): the third of a single row.
                 if args.len() <= 2 && rows.len() == 1 {
                     (r, c) = (1, r);
@@ -559,11 +626,25 @@ fn call(name: &str, args: Vec<V>) -> V {
                     v => vec![vec![v]],
                 };
                 let n = arg(2).num()? as usize;
-                let approx = if args.len() > 3 { arg(3).truthy()? } else { true };
+                let approx = if args.len() > 3 {
+                    arg(3).truthy()?
+                } else {
+                    true
+                };
                 let v = name == "VLOOKUP";
-                let keys: Vec<V> = if v { rows.iter().map(|r| r.first().cloned().unwrap_or(V::Empty)).collect() } else { rows.first().cloned().unwrap_or_default() };
+                let keys: Vec<V> = if v {
+                    rows.iter()
+                        .map(|r| r.first().cloned().unwrap_or(V::Empty))
+                        .collect()
+                } else {
+                    rows.first().cloned().unwrap_or_default()
+                };
                 let i = lookup(&arg(0), &keys, if approx { 1.0 } else { 0.0 })?;
-                let got = if v { rows.get(i).and_then(|r| r.get(n.wrapping_sub(1))) } else { rows.get(n.wrapping_sub(1)).and_then(|r| r.get(i)) };
+                let got = if v {
+                    rows.get(i).and_then(|r| r.get(n.wrapping_sub(1)))
+                } else {
+                    rows.get(n.wrapping_sub(1)).and_then(|r| r.get(i))
+                };
                 match got {
                     Some(x) if n >= 1 => x.clone(),
                     _ => return Err("#REF!".into()),
@@ -572,7 +653,9 @@ fn call(name: &str, args: Vec<V>) -> V {
             "XLOOKUP" => {
                 // Exact matches only (match_mode and search_mode are not used).
                 match lookup(&arg(0), &arg(1).flat(), 0.0) {
-                    Err(e) if e == "#N/A" && args.len() > 3 && !matches!(arg(3), V::Empty) => arg(3),
+                    Err(e) if e == "#N/A" && args.len() > 3 && !matches!(arg(3), V::Empty) => {
+                        arg(3)
+                    }
                     Err(e) => return Err(e),
                     Ok(i) => {
                         let ret = match arg(2) {
@@ -585,7 +668,13 @@ fn call(name: &str, args: Vec<V>) -> V {
                             _ => true,
                         };
                         let got = if column {
-                            ret.get(i).map(|r| if r.len() == 1 { r[0].clone() } else { V::Range(vec![r.clone()]) })
+                            ret.get(i).map(|r| {
+                                if r.len() == 1 {
+                                    r[0].clone()
+                                } else {
+                                    V::Range(vec![r.clone()])
+                                }
+                            })
                         } else {
                             ret.first().and_then(|r| r.get(i)).cloned()
                         };
@@ -593,19 +682,49 @@ fn call(name: &str, args: Vec<V>) -> V {
                     }
                 }
             }
-            "AND" => V::Bool(args.iter().flat_map(|a| a.flat()).filter(|v| !matches!(v, V::Empty)).map(|v| v.truthy()).collect::<std::result::Result<Vec<_>, _>>()?.iter().all(|b| *b)),
-            "OR" => V::Bool(args.iter().flat_map(|a| a.flat()).filter(|v| !matches!(v, V::Empty)).map(|v| v.truthy()).collect::<std::result::Result<Vec<_>, _>>()?.iter().any(|b| *b)),
+            "AND" => V::Bool(
+                args.iter()
+                    .flat_map(|a| a.flat())
+                    .filter(|v| !matches!(v, V::Empty))
+                    .map(|v| v.truthy())
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+                    .iter()
+                    .all(|b| *b),
+            ),
+            "OR" => V::Bool(
+                args.iter()
+                    .flat_map(|a| a.flat())
+                    .filter(|v| !matches!(v, V::Empty))
+                    .map(|v| v.truthy())
+                    .collect::<std::result::Result<Vec<_>, _>>()?
+                    .iter()
+                    .any(|b| *b),
+            ),
             "NOT" => V::Bool(!arg(0).truthy()?),
             "LEN" => V::Num(arg(0).text()?.chars().count() as f64),
             "UPPER" => V::Str(arg(0).text()?.to_uppercase()),
             "LOWER" => V::Str(arg(0).text()?.to_lowercase()),
-            "TRIM" => V::Str(arg(0).text()?.split_whitespace().collect::<Vec<_>>().join(" ")),
+            "TRIM" => V::Str(
+                arg(0)
+                    .text()?
+                    .split_whitespace()
+                    .collect::<Vec<_>>()
+                    .join(" "),
+            ),
             "LEFT" => {
-                let n = if args.len() > 1 { arg(1).num()? as usize } else { 1 };
+                let n = if args.len() > 1 {
+                    arg(1).num()? as usize
+                } else {
+                    1
+                };
                 V::Str(arg(0).text()?.chars().take(n).collect())
             }
             "RIGHT" => {
-                let n = if args.len() > 1 { arg(1).num()? as usize } else { 1 };
+                let n = if args.len() > 1 {
+                    arg(1).num()? as usize
+                } else {
+                    1
+                };
                 let s: Vec<char> = arg(0).text()?.chars().collect();
                 V::Str(s[s.len().saturating_sub(n)..].iter().collect())
             }
@@ -627,7 +746,11 @@ fn call(name: &str, args: Vec<V>) -> V {
             "SUMIF" | "COUNTIF" | "AVERAGEIF" => {
                 let range = arg(0).flat();
                 let crit = arg(1);
-                let sum_range = if args.len() > 2 { arg(2).flat() } else { range.clone() };
+                let sum_range = if args.len() > 2 {
+                    arg(2).flat()
+                } else {
+                    range.clone()
+                };
                 let mut total = 0.0;
                 let mut count = 0.0;
                 for (i, v) in range.iter().enumerate() {
@@ -669,7 +792,12 @@ impl From<V> for CalcVal {
             V::Bool(b) => CalcVal::Bool(b),
             V::Empty => CalcVal::Empty,
             V::Err(_) | V::Image(_) => CalcVal::Err,
-            V::Range(r) => r.into_iter().next().and_then(|row| row.into_iter().next()).map(CalcVal::from).unwrap_or(CalcVal::Empty),
+            V::Range(r) => r
+                .into_iter()
+                .next()
+                .and_then(|row| row.into_iter().next())
+                .map(CalcVal::from)
+                .unwrap_or(CalcVal::Empty),
         }
     }
 }
@@ -678,7 +806,9 @@ impl From<V> for CalcVal {
 pub struct Prepared(Vec<Tok>);
 
 pub fn prepare(formula: &str) -> Option<Prepared> {
-    tokenize(formula.trim().trim_start_matches('=')).ok().map(Prepared)
+    tokenize(formula.trim().trim_start_matches('='))
+        .ok()
+        .map(Prepared)
 }
 
 /// Moves the relative parts of a reference ("A1", "$A1", "Sheet1!B2:C3",
@@ -742,7 +872,13 @@ pub fn eval_at(b: &Book, sheet: &str, f: &Prepared, dc: i64, dr: i64) -> CalcVal
         Tok::Ref(r) if dc != 0 || dr != 0 => Tok::Ref(shift_ref(r, dc, dr)),
         t => t.clone(),
     });
-    let mut ev = Ev { b, sheet: sheet.to_string(), toks: toks.collect(), pos: 0, depth: 0 };
+    let mut ev = Ev {
+        b,
+        sheet: sheet.to_string(),
+        toks: toks.collect(),
+        pos: 0,
+        depth: 0,
+    };
     match ev.expr() {
         Ok(v) if ev.pos >= ev.toks.len() => v.into(),
         _ => CalcVal::Err,
@@ -751,24 +887,49 @@ pub fn eval_at(b: &Book, sheet: &str, f: &Prepared, dc: i64, dr: i64) -> CalcVal
 
 /// The value of a cell (a formula without a saved result is worked out).
 pub fn value_at(b: &Book, sheet: &str, col: u32, row: u32) -> CalcVal {
-    let mut ev = Ev { b, sheet: sheet.to_string(), toks: Vec::new(), pos: 0, depth: 0 };
-    ev.cell(sheet, col, row).map(CalcVal::from).unwrap_or(CalcVal::Err)
+    let mut ev = Ev {
+        b,
+        sheet: sheet.to_string(),
+        toks: Vec::new(),
+        pos: 0,
+        depth: 0,
+    };
+    ev.cell(sheet, col, row)
+        .map(CalcVal::from)
+        .unwrap_or(CalcVal::Err)
 }
 
 /// The value of the formula in the cell, as text.
 pub fn calc_cell(b: &Book, sheet: &str, r: &str) -> Result<String> {
     let (col, row) = parse_ref(r)?;
     let ws = b.sheet(sheet)?;
-    let Some(c) = ws.cell((col, row)) else { return Ok(String::new()) };
+    let Some(c) = ws.cell((col, row)) else {
+        return Ok(String::new());
+    };
     let v = if c.is_formula() {
-        let mut ev = Ev { b, sheet: sheet.to_string(), toks: tokenize(c.formula())?, pos: 0, depth: 0 };
+        let mut ev = Ev {
+            b,
+            sheet: sheet.to_string(),
+            toks: tokenize(c.formula())?,
+            pos: 0,
+            depth: 0,
+        };
         let v = ev.expr()?;
         if ev.pos < ev.toks.len() {
-            return Err(Error::msg(format!("formula: unexpected {:?}", ev.toks[ev.pos])));
+            return Err(Error::msg(format!(
+                "formula: unexpected {:?}",
+                ev.toks[ev.pos]
+            )));
         }
         v
     } else {
-        let mut ev = Ev { b, sheet: sheet.to_string(), toks: Vec::new(), pos: 0, depth: 0 };
+        let mut ev = Ev {
+            b,
+            sheet: sheet.to_string(),
+            toks: Vec::new(),
+            pos: 0,
+            depth: 0,
+        };
         ev.cell(sheet, col, row)?
     };
     Ok(match v {
@@ -799,7 +960,13 @@ pub fn cell_image(b: &Book, sheet: &str, col: u32, row: u32) -> Option<usize> {
     if !c.is_formula() {
         return None;
     }
-    let mut ev = Ev { b, sheet: sheet.to_string(), toks: tokenize(c.formula()).ok()?, pos: 0, depth: 0 };
+    let mut ev = Ev {
+        b,
+        sheet: sheet.to_string(),
+        toks: tokenize(c.formula()).ok()?,
+        pos: 0,
+        depth: 0,
+    };
     match ev.expr() {
         Ok(V::Image(i)) if ev.pos >= ev.toks.len() => Some(i),
         _ => None,
@@ -812,7 +979,12 @@ pub fn cell_image(b: &Book, sheet: &str, col: u32, row: u32) -> Option<usize> {
 pub fn eval_area(b: &Book, sheet: &str, formula: &str) -> Option<(u32, u32, u32, u32)> {
     let toks = tokenize(formula.trim().trim_start_matches('=')).ok()?;
     let range = |r: &str| -> Option<(u32, u32, u32, u32)> {
-        let r = r.rsplit_once('!').map(|x| x.1).unwrap_or(r).replace('$', "").to_uppercase();
+        let r = r
+            .rsplit_once('!')
+            .map(|x| x.1)
+            .unwrap_or(r)
+            .replace('$', "")
+            .to_uppercase();
         let (a, z) = r.split_once(':').unwrap_or((&r, &r));
         let (c1, r1) = parse_ref(a).ok()?;
         let (c2, r2) = parse_ref(z).ok()?;
@@ -822,7 +994,13 @@ pub fn eval_area(b: &Book, sheet: &str, formula: &str) -> Option<(u32, u32, u32,
         [Tok::Ref(r)] => range(r),
         [Tok::Name(n), Tok::LParen, Tok::Ref(r), Tok::Comma, ..] if n == "OFFSET" => {
             let base = range(r)?;
-            let mut ev = Ev { b, sheet: sheet.to_string(), toks: toks.clone(), pos: 4, depth: 0 };
+            let mut ev = Ev {
+                b,
+                sheet: sheet.to_string(),
+                toks: toks.clone(),
+                pos: 4,
+                depth: 0,
+            };
             let mut nums: Vec<Option<f64>> = Vec::new();
             loop {
                 if matches!(ev.peek(), Some(Tok::Comma) | Some(Tok::RParen)) {
@@ -844,10 +1022,21 @@ pub fn eval_area(b: &Book, sheet: &str, formula: &str) -> Option<(u32, u32, u32,
             let r1 = base.1 as f64 + at(0).unwrap_or(0.0);
             let h = at(2).unwrap_or((base.3 - base.1 + 1) as f64);
             let w = at(3).unwrap_or((base.2 - base.0 + 1) as f64);
-            if c1 < 1.0 || r1 < 1.0 || h < 1.0 || w < 1.0 || c1 + w - 1.0 > 16384.0 || r1 + h - 1.0 > 1048576.0 {
+            if c1 < 1.0
+                || r1 < 1.0
+                || h < 1.0
+                || w < 1.0
+                || c1 + w - 1.0 > 16384.0
+                || r1 + h - 1.0 > 1048576.0
+            {
                 return None;
             }
-            Some((c1 as u32, r1 as u32, (c1 + w - 1.0) as u32, (r1 + h - 1.0) as u32))
+            Some((
+                c1 as u32,
+                r1 as u32,
+                (c1 + w - 1.0) as u32,
+                (r1 + h - 1.0) as u32,
+            ))
         }
         _ => None,
     }

@@ -32,11 +32,23 @@ impl Drop for Com {
 fn com_err(write: bool, path: &str, e: windows::core::Error) -> Error {
     let code = e.code().0 as u32;
     if code & 0xFFFF_0000 == 0x8007_0000 {
-        return Error::path("open", path, std::io::Error::from_raw_os_error((code & 0xFFFF) as i32));
+        return Error::path(
+            "open",
+            path,
+            std::io::Error::from_raw_os_error((code & 0xFFFF) as i32),
+        );
     }
     let msg = e.message();
-    let msg = if msg.trim().is_empty() { format!("HRESULT 0x{code:08X}") } else { msg.trim().to_string() };
-    if write { err!("shell.shortcutWrite", path, msg) } else { err!("shell.shortcutRead", path, msg) }
+    let msg = if msg.trim().is_empty() {
+        format!("HRESULT 0x{code:08X}")
+    } else {
+        msg.trim().to_string()
+    };
+    if write {
+        err!("shell.shortcutWrite", path, msg)
+    } else {
+        err!("shell.shortcutRead", path, msg)
+    }
 }
 
 fn wide_str(b: &[u16]) -> String {
@@ -54,7 +66,8 @@ pub fn load(path: &str) -> Result<Link> {
     unsafe {
         let sl = create().map_err(read_err)?;
         let pf: IPersistFile = sl.cast().map_err(read_err)?;
-        pf.Load(&HSTRING::from(path), STGM_READ).map_err(|_| err!("shell.notShortcut", path))?;
+        pf.Load(&HSTRING::from(path), STGM_READ)
+            .map_err(|_| err!("shell.notShortcut", path))?;
         let mut buf = vec![0u16; 32768];
         let mut l = Link::default();
         // Without SLGP_RAWPATH, environment variables come expanded.
@@ -93,10 +106,15 @@ pub fn load(path: &str) -> Result<Link> {
             l.icon = super::expand_env(&wide_str(&buf));
             l.icon_index = index;
         }
-        l.show = sl.GetShowCmd().map(|s| s.0 as u32).unwrap_or(super::SW_SHOWNORMAL);
+        l.show = sl
+            .GetShowCmd()
+            .map(|s| s.0 as u32)
+            .unwrap_or(super::SW_SHOWNORMAL);
         l.hotkey = sl.GetHotkey().unwrap_or(0);
         if let Ok(dl) = sl.cast::<IShellLinkDataList>() {
-            l.run_as_admin = dl.GetFlags().is_ok_and(|f| f & SLDF_RUNAS_USER.0 as u32 != 0);
+            l.run_as_admin = dl
+                .GetFlags()
+                .is_ok_and(|f| f & SLDF_RUNAS_USER.0 as u32 != 0);
         }
         Ok(l)
     }
@@ -112,30 +130,40 @@ pub fn save(path: &str, l: &Link, prev: Option<&Link>) -> Result<()> {
         let sl = create().map_err(write_err)?;
         let pf: IPersistFile = sl.cast().map_err(write_err)?;
         if prev.is_some() {
-            pf.Load(&HSTRING::from(path), STGM_READWRITE).map_err(write_err)?;
+            pf.Load(&HSTRING::from(path), STGM_READWRITE)
+                .map_err(write_err)?;
         }
         let changed = |f: fn(&Link) -> &str| prev.is_none_or(|p| f(p) != f(l));
         if changed(|l| &l.target) {
             sl.SetPath(&HSTRING::from(&l.target)).map_err(write_err)?;
         }
         if changed(|l| &l.args) {
-            sl.SetArguments(&HSTRING::from(&l.args)).map_err(write_err)?;
+            sl.SetArguments(&HSTRING::from(&l.args))
+                .map_err(write_err)?;
         }
         if changed(|l| &l.cwd) {
-            sl.SetWorkingDirectory(&HSTRING::from(&l.cwd)).map_err(write_err)?;
+            sl.SetWorkingDirectory(&HSTRING::from(&l.cwd))
+                .map_err(write_err)?;
         }
         if changed(|l| &l.description) {
-            sl.SetDescription(&HSTRING::from(&l.description)).map_err(write_err)?;
+            sl.SetDescription(&HSTRING::from(&l.description))
+                .map_err(write_err)?;
         }
         if changed(|l| &l.icon) || prev.is_some_and(|p| p.icon_index != l.icon_index) {
-            sl.SetIconLocation(&HSTRING::from(&l.icon), l.icon_index).map_err(write_err)?;
+            sl.SetIconLocation(&HSTRING::from(&l.icon), l.icon_index)
+                .map_err(write_err)?;
         }
-        sl.SetShowCmd(SHOW_WINDOW_CMD(l.show as i32)).map_err(write_err)?;
+        sl.SetShowCmd(SHOW_WINDOW_CMD(l.show as i32))
+            .map_err(write_err)?;
         sl.SetHotkey(l.hotkey).map_err(write_err)?;
         let dl: IShellLinkDataList = sl.cast().map_err(write_err)?;
         let flags = dl.GetFlags().map_err(write_err)?;
         let bit = SLDF_RUNAS_USER.0 as u32;
-        let want = if l.run_as_admin { flags | bit } else { flags & !bit };
+        let want = if l.run_as_admin {
+            flags | bit
+        } else {
+            flags & !bit
+        };
         if want != flags {
             dl.SetFlags(want).map_err(write_err)?;
         }

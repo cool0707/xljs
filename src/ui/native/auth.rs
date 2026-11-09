@@ -38,16 +38,20 @@ fn take(p: PWSTR) -> String {
 
 /// Answers the Basic challenges of core (WebView2 1.0.1245+).
 pub(super) fn attach(core: &ICoreWebView2) {
-    let Ok(c10) = core.cast::<ICoreWebView2_10>() else { return };
+    let Ok(c10) = core.cast::<ICoreWebView2_10>() else {
+        return;
+    };
     let mut token = 0i64;
     let _ = unsafe {
         c10.add_BasicAuthenticationRequested(
-            &BasicAuthenticationRequestedEventHandler::create(Box::new(|_, args: Option<ICoreWebView2BasicAuthenticationRequestedEventArgs>| {
-                if let Some(a) = args {
-                    requested(a);
-                }
-                Ok(())
-            })),
+            &BasicAuthenticationRequestedEventHandler::create(Box::new(
+                |_, args: Option<ICoreWebView2BasicAuthenticationRequestedEventArgs>| {
+                    if let Some(a) = args {
+                        requested(a);
+                    }
+                    Ok(())
+                },
+            )),
             &mut token,
         )
     };
@@ -58,14 +62,36 @@ fn requested(args: ICoreWebView2BasicAuthenticationRequestedEventArgs) {
         return;
     }
     let mut p = PWSTR::null();
-    let challenge = if unsafe { args.Challenge(&mut p) }.is_ok() { take(p) } else { return };
+    let challenge = if unsafe { args.Challenge(&mut p) }.is_ok() {
+        take(p)
+    } else {
+        return;
+    };
     // Other schemes: WebView2's own handling.
-    let Some(realm) = auth::basic_realm(&challenge) else { return };
+    let Some(realm) = auth::basic_realm(&challenge) else {
+        return;
+    };
     let mut p = PWSTR::null();
-    let uri = if unsafe { args.Uri(&mut p) }.is_ok() { take(p) } else { String::new() };
-    let host = uri.split("://").nth(1).and_then(|r| r.split(['/', '?', '#']).next()).unwrap_or("").to_string();
-    let failed = GIVEN.with(|g| g.borrow().get(&realm).filter(|(_, at)| at.elapsed() < REFUSED_WITHIN).map(|(l, _)| l.clone()));
-    let Ok(deferral) = (unsafe { args.GetDeferral() }) else { return };
+    let uri = if unsafe { args.Uri(&mut p) }.is_ok() {
+        take(p)
+    } else {
+        String::new()
+    };
+    let host = uri
+        .split("://")
+        .nth(1)
+        .and_then(|r| r.split(['/', '?', '#']).next())
+        .unwrap_or("")
+        .to_string();
+    let failed = GIVEN.with(|g| {
+        g.borrow()
+            .get(&realm)
+            .filter(|(_, at)| at.elapsed() < REFUSED_WITHIN)
+            .map(|(l, _)| l.clone())
+    });
+    let Ok(deferral) = (unsafe { args.GetDeferral() }) else {
+        return;
+    };
     let id = NEXT.fetch_add(1, Ordering::SeqCst);
     PENDING.with(|m| m.borrow_mut().insert(id, (args, deferral)));
     // Not on the UI thread: auth::login waits for other prompts, which
@@ -78,7 +104,11 @@ fn requested(args: ICoreWebView2BasicAuthenticationRequestedEventArgs) {
                 super::dialogs::credentials(&title, &message, &p.user, p.failed)
             })
         });
-        let prompt = LoginPrompt { proxy: false, host, ..Default::default() };
+        let prompt = LoginPrompt {
+            proxy: false,
+            host,
+            ..Default::default()
+        };
         let l = auth::login(&realm, prompt, failed.as_ref(), &ask);
         if let Some(l) = &l {
             auth::confirm(&realm, l);
@@ -88,14 +118,19 @@ fn requested(args: ICoreWebView2BasicAuthenticationRequestedEventArgs) {
 }
 
 fn complete(id: u64, realm: &str, l: Option<Login>) {
-    let Some((args, deferral)) = PENDING.with(|m| m.borrow_mut().remove(&id)) else { return };
+    let Some((args, deferral)) = PENDING.with(|m| m.borrow_mut().remove(&id)) else {
+        return;
+    };
     match l {
         Some(l) => {
             if let Ok(r) = unsafe { args.Response() } {
                 let _ = unsafe { r.SetUserName(&hstr(&l.user)) };
                 let _ = unsafe { r.SetPassword(&hstr(&l.password)) };
             }
-            GIVEN.with(|g| g.borrow_mut().insert(realm.to_string(), (l, Instant::now())));
+            GIVEN.with(|g| {
+                g.borrow_mut()
+                    .insert(realm.to_string(), (l, Instant::now()))
+            });
         }
         None => {
             let _ = unsafe { args.SetCancel(true) };

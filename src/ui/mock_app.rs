@@ -87,8 +87,18 @@ fn gi(v: &Value, k: &str) -> i64 {
 }
 
 impl AppWindow {
-    pub(crate) fn start(log: Option<LogSink>, o: WindowOptions, steps: Vec<AppStep>) -> Arc<dyn Window> {
-        let w = Arc::new(AppWindow { log, o, st: Mutex::new(State::default()), inited: AtomicBool::new(false), done: AtomicBool::new(false) });
+    pub(crate) fn start(
+        log: Option<LogSink>,
+        o: WindowOptions,
+        steps: Vec<AppStep>,
+    ) -> Arc<dyn Window> {
+        let w = Arc::new(AppWindow {
+            log,
+            o,
+            st: Mutex::new(State::default()),
+            inited: AtomicBool::new(false),
+            done: AtomicBool::new(false),
+        });
         let w2 = w.clone();
         std::thread::spawn(move || w2.play(steps));
         w
@@ -142,7 +152,11 @@ impl AppWindow {
             if !s.invoke.is_empty() {
                 self.invoke(&s);
             } else if !s.emit.is_empty() {
-                self.logf(&format!("app: emit({}, {})", quote(&s.emit), raw_list(&s.args)));
+                self.logf(&format!(
+                    "app: emit({}, {})",
+                    quote(&s.emit),
+                    raw_list(&s.args)
+                ));
                 self.send(json!({"xljs": "event", "name": s.emit, "args": s.args}));
             } else if let Some(state) = &s.state {
                 let mut keys: Vec<&String> = state.keys().collect();
@@ -155,7 +169,11 @@ impl AppWindow {
             } else if !s.event.is_empty() {
                 self.fire(&s);
             } else if !s.handle.is_empty() {
-                self.st.lock().unwrap().replies.insert(s.handle.clone(), s.result.clone().unwrap_or(Value::Null));
+                self.st
+                    .lock()
+                    .unwrap()
+                    .replies
+                    .insert(s.handle.clone(), s.result.clone().unwrap_or(Value::Null));
             } else if s.wait > 0 {
                 std::thread::sleep(Duration::from_millis(s.wait));
             } else if s.close {
@@ -183,10 +201,17 @@ impl AppWindow {
                 Ok(r) => {
                     if gs(&r, "xljs") == "error" {
                         let e = r.get("error").cloned().unwrap_or(Value::Null);
-                        self.logf(&format!("{call} -> error: {}: {}", gs(&e, "name"), gs(&e, "message")));
+                        self.logf(&format!(
+                            "{call} -> error: {}: {}",
+                            gs(&e, "name"),
+                            gs(&e, "message")
+                        ));
                         return;
                     }
-                    let v = r.get("value").map(raw).unwrap_or_else(|| "undefined".into());
+                    let v = r
+                        .get("value")
+                        .map(raw)
+                        .unwrap_or_else(|| "undefined".into());
                     self.logf(&format!("{call} -> {v}"));
                     if let Some(want) = &s.expect
                         && r.get("value") != Some(want)
@@ -195,7 +220,8 @@ impl AppWindow {
                     }
                     return;
                 }
-                Err(mpsc::RecvTimeoutError::Timeout) if !self.closed() && Instant::now() < deadline => {}
+                Err(mpsc::RecvTimeoutError::Timeout)
+                    if !self.closed() && Instant::now() < deadline => {}
                 Err(_) => {
                     if !self.closed() {
                         self.logf(&format!("{call} -> timeout"));
@@ -213,7 +239,11 @@ impl AppWindow {
         loop {
             let mut hids: Vec<i64> = {
                 let st = self.st.lock().unwrap();
-                st.dom.values().filter(|h| h.sel == s.selector && h.kind == s.event).map(|h| h.hid).collect()
+                st.dom
+                    .values()
+                    .filter(|h| h.sel == s.selector && h.kind == s.event)
+                    .map(|h| h.hid)
+                    .collect()
             };
             if !hids.is_empty() {
                 hids.sort();
@@ -265,7 +295,14 @@ impl Window for AppWindow {
                 "init" => {
                     if let Some(hs) = m.get("handlers").and_then(Value::as_array) {
                         for h in hs {
-                            st.dom.insert(gi(h, "hid"), DomHandler { hid: gi(h, "hid"), sel: gs(h, "sel"), kind: gs(h, "type") });
+                            st.dom.insert(
+                                gi(h, "hid"),
+                                DomHandler {
+                                    hid: gi(h, "hid"),
+                                    sel: gs(h, "sel"),
+                                    kind: gs(h, "type"),
+                                },
+                            );
                         }
                     }
                     self.inited.store(true, Ordering::SeqCst);
@@ -277,7 +314,14 @@ impl Window for AppWindow {
                 }
                 "dom" => match gs(&m, "op").as_str() {
                     "on" => {
-                        st.dom.insert(gi(&m, "hid"), DomHandler { hid: gi(&m, "hid"), sel: gs(&m, "sel"), kind: gs(&m, "type") });
+                        st.dom.insert(
+                            gi(&m, "hid"),
+                            DomHandler {
+                                hid: gi(&m, "hid"),
+                                sel: gs(&m, "sel"),
+                                kind: gs(&m, "type"),
+                            },
+                        );
                     }
                     "off" => {
                         st.dom.remove(&gi(&m, "hid"));
@@ -288,37 +332,73 @@ impl Window for AppWindow {
             }
             st.replies.get(&gs(&m, "name")).cloned()
         };
-        let args: Vec<Value> = m.get("args").and_then(Value::as_array).cloned().unwrap_or_default();
+        let args: Vec<Value> = m
+            .get("args")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
         let id = gi(&m, "id");
         match kind.as_str() {
-            "init" => self.logf(&format!("window.init({})", m.get("state").map(raw).unwrap_or_else(|| "undefined".into()))),
+            "init" => self.logf(&format!(
+                "window.init({})",
+                m.get("state")
+                    .map(raw)
+                    .unwrap_or_else(|| "undefined".into())
+            )),
             "state" => {
                 if m.get("deleted").and_then(Value::as_bool).unwrap_or(false) {
                     self.logf(&format!("window.state.{} deleted", gs(&m, "key")));
                 } else {
-                    let v = m.get("value").map(raw).unwrap_or_else(|| "undefined".into());
+                    let v = m
+                        .get("value")
+                        .map(raw)
+                        .unwrap_or_else(|| "undefined".into());
                     self.logf(&format!("window.state.{} = {v}", gs(&m, "key")));
                 }
             }
-            "event" => self.logf(&format!("window.emit({}, {})", quote(&gs(&m, "name")), raw_list(&args))),
+            "event" => self.logf(&format!(
+                "window.emit({}, {})",
+                quote(&gs(&m, "name")),
+                raw_list(&args)
+            )),
             "dom" => {
                 let (sel, op) = (gs(&m, "sel"), gs(&m, "op"));
                 if op == "on" || op == "off" {
-                    self.logf(&format!("window.$({}).{op}({})", quote(&sel), quote(&gs(&m, "type"))));
+                    self.logf(&format!(
+                        "window.$({}).{op}({})",
+                        quote(&sel),
+                        quote(&gs(&m, "type"))
+                    ));
                 } else if id != 0 {
-                    self.logf(&format!("window.$({}).{op}({}) -> null", quote(&sel), raw_list(&args)));
+                    self.logf(&format!(
+                        "window.$({}).{op}({}) -> null",
+                        quote(&sel),
+                        raw_list(&args)
+                    ));
                     self.send(json!({"xljs": "result", "id": id, "value": null}));
                 } else {
-                    self.logf(&format!("window.$({}).{op}({})", quote(&sel), raw_list(&args)));
+                    self.logf(&format!(
+                        "window.$({}).{op}({})",
+                        quote(&sel),
+                        raw_list(&args)
+                    ));
                 }
             }
             "invoke" => {
                 let reply = reply.unwrap_or(Value::Null);
-                self.logf(&format!("window.invoke({}, {}) -> {}", quote(&gs(&m, "name")), raw_list(&args), raw(&reply)));
+                self.logf(&format!(
+                    "window.invoke({}, {}) -> {}",
+                    quote(&gs(&m, "name")),
+                    raw_list(&args),
+                    raw(&reply)
+                ));
                 self.send(json!({"xljs": "result", "id": id, "value": reply}));
             }
             "eval" => {
-                self.logf(&format!("window.evaluate({}) -> null", quote(&first_line(&gs(&m, "code")))));
+                self.logf(&format!(
+                    "window.evaluate({}) -> null",
+                    quote(&first_line(&gs(&m, "code")))
+                ));
                 self.send(json!({"xljs": "result", "id": id, "value": null}));
             }
             _ => {}

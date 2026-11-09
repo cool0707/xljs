@@ -63,12 +63,17 @@ pub type Ask = Arc<dyn Fn(&LoginPrompt) -> Option<Login> + Send + Sync>;
 /// The realm of a challenge ("Basic realm=\"x\"") when it is Basic.
 pub fn basic_realm(challenge: &str) -> Option<String> {
     let c = challenge.trim();
-    let rest = c.get(..5).filter(|s| s.eq_ignore_ascii_case("basic")).map(|_| &c[5..])?;
+    let rest = c
+        .get(..5)
+        .filter(|s| s.eq_ignore_ascii_case("basic"))
+        .map(|_| &c[5..])?;
     if !rest.is_empty() && !rest.starts_with([' ', '\t', ',']) {
         return None;
     }
     let lower = rest.to_ascii_lowercase();
-    let Some(i) = lower.find("realm=") else { return Some(String::new()) };
+    let Some(i) = lower.find("realm=") else {
+        return Some(String::new());
+    };
     let v = &rest[i + 6..];
     Some(match v.strip_prefix('"') {
         Some(q) => q.split('"').next().unwrap_or("").to_string(),
@@ -125,10 +130,16 @@ mod store {
     static MEM: Mutex<Option<HashMap<String, Login>>> = Mutex::new(None);
 
     pub fn get(realm: &str) -> Option<Login> {
-        MEM.lock().unwrap().as_ref().and_then(|m| m.get(realm).cloned())
+        MEM.lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|m| m.get(realm).cloned())
     }
     pub fn put(realm: &str, l: &Login) {
-        MEM.lock().unwrap().get_or_insert_with(HashMap::new).insert(realm.to_string(), l.clone());
+        MEM.lock()
+            .unwrap()
+            .get_or_insert_with(HashMap::new)
+            .insert(realm.to_string(), l.clone());
     }
     pub fn delete(realm: &str) {
         if let Some(m) = MEM.lock().unwrap().as_mut() {
@@ -149,14 +160,32 @@ mod store {
 
     pub fn get(realm: &str) -> Option<Login> {
         let mut p: *mut CREDENTIALW = std::ptr::null_mut();
-        unsafe { CredReadW(&HSTRING::from(target(realm)), CRED_TYPE_GENERIC, None, &mut p) }.ok()?;
+        unsafe {
+            CredReadW(
+                &HSTRING::from(target(realm)),
+                CRED_TYPE_GENERIC,
+                None,
+                &mut p,
+            )
+        }
+        .ok()?;
         let l = unsafe {
             let c = &*p;
-            let user = if c.UserName.is_null() { String::new() } else { c.UserName.to_string().unwrap_or_default() };
+            let user = if c.UserName.is_null() {
+                String::new()
+            } else {
+                c.UserName.to_string().unwrap_or_default()
+            };
             let blob = std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize);
-            let w: Vec<u16> = blob.chunks_exact(2).map(|b| u16::from_le_bytes([b[0], b[1]])).collect();
+            let w: Vec<u16> = blob
+                .chunks_exact(2)
+                .map(|b| u16::from_le_bytes([b[0], b[1]]))
+                .collect();
             CredFree(p as *const _);
-            Login { user, password: String::from_utf16_lossy(&w) }
+            Login {
+                user,
+                password: String::from_utf16_lossy(&w),
+            }
         };
         Some(l)
     }
@@ -165,7 +194,11 @@ mod store {
         let mut name: Vec<u16> = target(realm).encode_utf16().chain([0]).collect();
         let mut user: Vec<u16> = l.user.encode_utf16().chain([0]).collect();
         let mut comment: Vec<u16> = "xljs".encode_utf16().chain([0]).collect();
-        let mut blob: Vec<u8> = l.password.encode_utf16().flat_map(|c| c.to_le_bytes()).collect();
+        let mut blob: Vec<u8> = l
+            .password
+            .encode_utf16()
+            .flat_map(|c| c.to_le_bytes())
+            .collect();
         let c = CREDENTIALW {
             Type: CRED_TYPE_GENERIC,
             TargetName: PWSTR(name.as_mut_ptr()),
@@ -197,7 +230,10 @@ mod tests {
 
     #[test]
     fn realms() {
-        assert_eq!(basic_realm(r#"Basic realm="社内 Proxy", charset="UTF-8""#).as_deref(), Some("社内 Proxy"));
+        assert_eq!(
+            basic_realm(r#"Basic realm="社内 Proxy", charset="UTF-8""#).as_deref(),
+            Some("社内 Proxy")
+        );
         assert_eq!(basic_realm("basic realm=proxy").as_deref(), Some("proxy"));
         assert_eq!(basic_realm("Basic").as_deref(), Some(""));
         assert_eq!(basic_realm("Negotiate"), None);

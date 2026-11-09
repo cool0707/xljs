@@ -27,7 +27,11 @@ pub struct Ldap {
 
 fn message(code: u32) -> String {
     let p = unsafe { ldap_err2stringW(code) };
-    if p.is_null() { String::new() } else { unsafe { p.to_string().unwrap_or_default() } }
+    if p.is_null() {
+        String::new()
+    } else {
+        unsafe { p.to_string().unwrap_or_default() }
+    }
 }
 
 /// The error for an LDAP result code; what names the object.
@@ -41,7 +45,10 @@ fn ldap_error(code: u32, server: &str, what: &str) -> Error {
         err!("ad.badFilter", what)
     } else if c == LDAP_TIMEOUT || c == LDAP_TIMELIMIT_EXCEEDED {
         err!("ad.timeout")
-    } else if c == LDAP_INVALID_CREDENTIALS || c == LDAP_STRONG_AUTH_REQUIRED || c == LDAP_INSUFFICIENT_RIGHTS {
+    } else if c == LDAP_INVALID_CREDENTIALS
+        || c == LDAP_STRONG_AUTH_REQUIRED
+        || c == LDAP_INSUFFICIENT_RIGHTS
+    {
         err!("ad.denied", message(code))
     } else {
         err!("ad.ldapError", code, message(code))
@@ -61,21 +68,44 @@ impl Ldap {
     /// domain) and binds as the signed-in user.
     pub fn connect(server: &str) -> Result<Ldap> {
         let host = HSTRING::from(server);
-        let ld = unsafe { ldap_initW(if server.is_empty() { PCWSTR::null() } else { PCWSTR(host.as_ptr()) }, LDAP_PORT) };
+        let ld = unsafe {
+            ldap_initW(
+                if server.is_empty() {
+                    PCWSTR::null()
+                } else {
+                    PCWSTR(host.as_ptr())
+                },
+                LDAP_PORT,
+            )
+        };
         if ld.is_null() {
             return Err(last_error(server, server));
         }
-        let l = Ldap { ld, server: server.to_string() };
+        let l = Ldap {
+            ld,
+            server: server.to_string(),
+        };
         unsafe {
             let version: u32 = LDAP_VERSION3;
-            ldap_set_optionW(ld, LDAP_OPT_PROTOCOL_VERSION as i32, &version as *const u32 as *const c_void);
+            ldap_set_optionW(
+                ld,
+                LDAP_OPT_PROTOCOL_VERSION as i32,
+                &version as *const u32 as *const c_void,
+            );
             // Referrals to other domains would be followed with long waits.
             ldap_set_optionW(ld, LDAP_OPT_REFERRALS as i32, LDAP_OPT_OFF);
             // Domain controllers that require LDAP signing reject unsigned binds.
             ldap_set_optionW(ld, LDAP_OPT_SIGN as i32, LDAP_OPT_ON);
             let limit: u32 = SEARCH_TIMEOUT as u32;
-            ldap_set_optionW(ld, LDAP_OPT_TIMELIMIT as i32, &limit as *const u32 as *const c_void);
-            let mut tv = LDAP_TIMEVAL { tv_sec: CONNECT_TIMEOUT, tv_usec: 0 };
+            ldap_set_optionW(
+                ld,
+                LDAP_OPT_TIMELIMIT as i32,
+                &limit as *const u32 as *const c_void,
+            );
+            let mut tv = LDAP_TIMEVAL {
+                tv_sec: CONNECT_TIMEOUT,
+                tv_usec: 0,
+            };
             let rc = ldap_connect(ld, &mut tv);
             if rc != 0 {
                 return Err(ldap_error(rc, server, server));
@@ -105,7 +135,11 @@ impl Ldap {
     unsafe fn entry(&self, e: *mut LDAPMessage) -> Entry {
         unsafe {
             let p = ldap_get_dnW(self.ld, e);
-            let dn = if p.is_null() { String::new() } else { p.to_string().unwrap_or_default() };
+            let dn = if p.is_null() {
+                String::new()
+            } else {
+                p.to_string().unwrap_or_default()
+            };
             if !p.is_null() {
                 ldap_memfreeW(PCWSTR(p.0));
             }
@@ -169,8 +203,23 @@ impl Directory for Ldap {
             if q.scope == Scope::Base {
                 // The root DSE and single objects: no paging.
                 let mut res: *mut LDAPMessage = null_mut();
-                let mut tv = LDAP_TIMEVAL { tv_sec: SEARCH_TIMEOUT, tv_usec: 0 };
-                let rc = ldap_search_ext_sW(self.ld, &base, scope, &filter, attrs.as_ptr(), 0, None, None, &mut tv, limit, &mut res);
+                let mut tv = LDAP_TIMEVAL {
+                    tv_sec: SEARCH_TIMEOUT,
+                    tv_usec: 0,
+                };
+                let rc = ldap_search_ext_sW(
+                    self.ld,
+                    &base,
+                    scope,
+                    &filter,
+                    attrs.as_ptr(),
+                    0,
+                    None,
+                    None,
+                    &mut tv,
+                    limit,
+                    &mut res,
+                );
                 if rc != 0 && rc != LDAP_SIZELIMIT_EXCEEDED.0 as u32 {
                     if !res.is_null() {
                         ldap_msgfree(res);
@@ -183,7 +232,19 @@ impl Directory for Ldap {
                 }
                 return Ok(());
             }
-            let s = ldap_search_init_pageW(self.ld, &base, scope, &filter, attrs.as_ptr(), 0, null_mut(), null_mut(), SEARCH_TIMEOUT as u32, limit, null_mut());
+            let s = ldap_search_init_pageW(
+                self.ld,
+                &base,
+                scope,
+                &filter,
+                attrs.as_ptr(),
+                0,
+                null_mut(),
+                null_mut(),
+                SEARCH_TIMEOUT as u32,
+                limit,
+                null_mut(),
+            );
             if s.0 == 0 {
                 return Err(last_error(server, what));
             }
@@ -191,7 +252,10 @@ impl Directory for Ldap {
             loop {
                 let mut res: *mut LDAPMessage = null_mut();
                 let mut total = 0u32;
-                let mut tv = LDAP_TIMEVAL { tv_sec: SEARCH_TIMEOUT, tv_usec: 0 };
+                let mut tv = LDAP_TIMEVAL {
+                    tv_sec: SEARCH_TIMEOUT,
+                    tv_usec: 0,
+                };
                 let rc = ldap_get_next_page_s(self.ld, s, &mut tv, PAGE_SIZE, &mut total, &mut res);
                 if rc == LDAP_NO_RESULTS_RETURNED.0 as u32 {
                     if !res.is_null() {
@@ -238,9 +302,19 @@ pub fn joined() -> bool {
 pub fn self_dn(computer: bool) -> Result<String> {
     use windows::Win32::Security::Authentication::Identity::*;
     let call = |buf: Option<PWSTR>, n: &mut u32| unsafe {
-        if computer { GetComputerObjectNameW(NameFullyQualifiedDN, buf, n) } else { GetUserNameExW(NameFullyQualifiedDN, buf, n) }
+        if computer {
+            GetComputerObjectNameW(NameFullyQualifiedDN, buf, n)
+        } else {
+            GetUserNameExW(NameFullyQualifiedDN, buf, n)
+        }
     };
-    let fail = || if computer || !joined() { err!("ad.notJoined") } else { err!("ad.notDomainUser") };
+    let fail = || {
+        if computer || !joined() {
+            err!("ad.notJoined")
+        } else {
+            err!("ad.notDomainUser")
+        }
+    };
     let mut n = 0u32;
     call(None, &mut n);
     if n == 0 {

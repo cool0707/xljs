@@ -12,28 +12,38 @@ pub(crate) type Theme = Vec<String>;
 pub(crate) fn theme(n: &Node) -> Theme {
     let mut found = Vec::new();
     n.find("clrScheme", &mut found);
-    let Some(s) = found.first() else { return Vec::new() };
+    let Some(s) = found.first() else {
+        return Vec::new();
+    };
     let rgb = |name: &str| -> String {
-        let Some(e) = s.child(name).and_then(|e| e.children.first()) else { return String::new() };
+        let Some(e) = s.child(name).and_then(|e| e.children.first()) else {
+            return String::new();
+        };
         match e.name.as_str() {
             "srgbClr" => e.attr("val").unwrap_or("").to_string(),
             "sysClr" => e.attr("lastClr").unwrap_or("").to_string(),
             _ => String::new(),
         }
     };
-    ["lt1", "dk1", "lt2", "dk2", "accent1", "accent2", "accent3", "accent4", "accent5", "accent6", "hlink", "folHlink"]
-        .iter()
-        .map(|n| rgb(n))
-        .collect()
+    [
+        "lt1", "dk1", "lt2", "dk2", "accent1", "accent2", "accent3", "accent4", "accent5",
+        "accent6", "hlink", "folHlink",
+    ]
+    .iter()
+    .map(|n| rgb(n))
+    .collect()
 }
 
 /// The legacy palette (indexed colors 0-63).
 const PALETTE: [&str; 64] = [
-    "000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF", "000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00",
-    "FF00FF", "00FFFF", "800000", "008000", "000080", "808000", "800080", "008080", "C0C0C0", "808080", "9999FF", "993366", "FFFFCC", "CCFFFF",
-    "660066", "FF8080", "0066CC", "CCCCFF", "000080", "FF00FF", "FFFF00", "00FFFF", "800080", "800000", "008080", "0000FF", "00CCFF", "CCFFFF",
-    "CCFFCC", "FFFF99", "99CCFF", "FF99CC", "CC99FF", "FFCC99", "3366FF", "33CCCC", "99CC00", "FFCC00", "FF9900", "FF6600", "666699", "969696",
-    "003366", "339966", "003300", "333300", "993300", "993366", "333399", "333333",
+    "000000", "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF", "000000",
+    "FFFFFF", "FF0000", "00FF00", "0000FF", "FFFF00", "FF00FF", "00FFFF", "800000", "008000",
+    "000080", "808000", "800080", "008080", "C0C0C0", "808080", "9999FF", "993366", "FFFFCC",
+    "CCFFFF", "660066", "FF8080", "0066CC", "CCCCFF", "000080", "FF00FF", "FFFF00", "00FFFF",
+    "800080", "800000", "008080", "0000FF", "00CCFF", "CCFFFF", "CCFFCC", "FFFF99", "99CCFF",
+    "FF99CC", "CC99FF", "FFCC99", "3366FF", "33CCCC", "99CC00", "FFCC00", "FF9900", "FF6600",
+    "666699", "969696", "003366", "339966", "003300", "333300", "993300", "993366", "333399",
+    "333333",
 ];
 
 /// A color element (rgb, theme with tint, indexed, auto) as #RRGGBB, or
@@ -45,7 +55,11 @@ pub(crate) fn color(n: &Node, theme: &Theme) -> String {
     let tint: f64 = n.attr("tint").and_then(|v| v.parse().ok()).unwrap_or(0.0);
     let base = if let Some(rgb) = n.attr("rgb") {
         let rgb = rgb.trim();
-        Some(if rgb.len() == 8 { rgb[2..].to_string() } else { rgb.to_string() })
+        Some(if rgb.len() == 8 {
+            rgb[2..].to_string()
+        } else {
+            rgb.to_string()
+        })
     } else if let Some(i) = n.attr("theme").and_then(|v| v.parse::<usize>().ok()) {
         match theme.get(i).filter(|s| s.len() == 6) {
             Some(s) => Some(s.clone()),
@@ -79,7 +93,11 @@ fn tinted(rgb: &str, tint: f64) -> String {
     let (h, s) = if d == 0.0 {
         (0.0, 0.0)
     } else {
-        let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+        let s = if l > 0.5 {
+            d / (2.0 - max - min)
+        } else {
+            d / (max + min)
+        };
         let h = if max == r {
             ((g - b) / d).rem_euclid(6.0)
         } else if max == g {
@@ -89,8 +107,16 @@ fn tinted(rgb: &str, tint: f64) -> String {
         };
         (h / 6.0, s)
     };
-    l = if tint < 0.0 { l * (1.0 + tint) } else { l * (1.0 - tint) + tint };
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    l = if tint < 0.0 {
+        l * (1.0 + tint)
+    } else {
+        l * (1.0 - tint) + tint
+    };
+    let q = if l < 0.5 {
+        l * (1.0 + s)
+    } else {
+        l + s - l * s
+    };
     let p = 2.0 * l - q;
     let hue = |mut t: f64| {
         t = t.rem_euclid(1.0);
@@ -104,7 +130,11 @@ fn tinted(rgb: &str, tint: f64) -> String {
             p
         }
     };
-    let (r, g, b) = if s == 0.0 { (l, l, l) } else { (hue(h + 1.0 / 3.0), hue(h), hue(h - 1.0 / 3.0)) };
+    let (r, g, b) = if s == 0.0 {
+        (l, l, l)
+    } else {
+        (hue(h + 1.0 / 3.0), hue(h), hue(h - 1.0 / 3.0))
+    };
     let to = |v: f64| format!("{:02X}", (v.clamp(0.0, 1.0) * 255.0).round() as u8);
     format!("{}{}{}", to(r), to(g), to(b))
 }
@@ -128,7 +158,11 @@ pub(crate) fn dxf(n: &Node, theme: &Theme) -> String {
         if on(f.child("strike")) {
             parts.push(t!("book.fmt.strike"));
         }
-        if let Some(c) = f.child("color").map(|c| color(c, theme)).filter(|c| !c.is_empty()) {
+        if let Some(c) = f
+            .child("color")
+            .map(|c| color(c, theme))
+            .filter(|c| !c.is_empty())
+        {
             parts.push(t!("book.fmt.color", c));
         }
     }
@@ -136,7 +170,11 @@ pub(crate) fn dxf(n: &Node, theme: &Theme) -> String {
         if let Some(p) = fill.child("patternFill") {
             if p.attr("patternType") != Some("none") {
                 // A dxf's solid fill is its background color.
-                let c = p.child("bgColor").or_else(|| p.child("fgColor")).map(|c| color(c, theme)).unwrap_or_default();
+                let c = p
+                    .child("bgColor")
+                    .or_else(|| p.child("fgColor"))
+                    .map(|c| color(c, theme))
+                    .unwrap_or_default();
                 if !c.is_empty() {
                     parts.push(t!("book.fmt.fill", c));
                 }
@@ -148,7 +186,10 @@ pub(crate) fn dxf(n: &Node, theme: &Theme) -> String {
     if let Some(b) = n.child("border") {
         let sides: Vec<&str> = ["left", "right", "top", "bottom"]
             .into_iter()
-            .filter(|s| b.child(s).is_some_and(|e| e.attr("style").is_some_and(|v| v != "none")))
+            .filter(|s| {
+                b.child(s)
+                    .is_some_and(|e| e.attr("style").is_some_and(|v| v != "none"))
+            })
             .collect();
         if !sides.is_empty() {
             parts.push(t!("book.fmt.border"));
@@ -208,7 +249,11 @@ fn date_text(serial: f64, date1904: bool) -> Option<String> {
 fn time_text(v: f64) -> String {
     let secs = ((v - v.floor()) * 86400.0).round() as i64;
     let (h, m, s) = (secs / 3600, secs / 60 % 60, secs % 60);
-    if s == 0 { format!("{h}:{m:02}") } else { format!("{h}:{m:02}:{s:02}") }
+    if s == 0 {
+        format!("{h}:{m:02}")
+    } else {
+        format!("{h}:{m:02}:{s:02}")
+    }
 }
 
 /// Describes an input rule (dataValidation, with its formulas through
@@ -216,7 +261,11 @@ fn time_text(v: f64) -> String {
 pub(crate) fn validation(n: &Node, fmt: Fmt, date1904: bool) -> String {
     let sep = t!("vba.separator");
     let kind = n.attr("type").unwrap_or("none");
-    let formula = |name: &str| n.child(name).map(|f| f.all_text()).filter(|s| !s.is_empty());
+    let formula = |name: &str| {
+        n.child(name)
+            .map(|f| f.all_text())
+            .filter(|s| !s.is_empty())
+    };
     let (f1, f2) = (formula("formula1"), formula("formula2"));
     // A value of a condition: dates and times of plain numbers shown as such.
     let value = |f: &Option<String>| -> String {
@@ -262,7 +311,10 @@ pub(crate) fn validation(n: &Node, fmt: Fmt, date1904: bool) -> String {
     }
     let msg = |title: Option<&str>, text: Option<&str>| -> String {
         let one = |s: &str| s.replace("\r\n", " ").replace(['\r', '\n'], " ");
-        match (title.filter(|s| !s.is_empty()), text.filter(|s| !s.is_empty())) {
+        match (
+            title.filter(|s| !s.is_empty()),
+            text.filter(|s| !s.is_empty()),
+        ) {
             (Some(a), Some(b)) => format!("「{}: {}」", one(a), one(b)),
             (Some(a), None) => format!("「{}」", one(a)),
             (None, Some(b)) => format!("「{}」", one(b)),
@@ -282,7 +334,11 @@ pub(crate) fn validation(n: &Node, fmt: Fmt, date1904: bool) -> String {
                 "information" => t!("book.dv.information"),
                 _ => t!("book.dv.stop"),
             };
-            notes.push(t!("book.dv.error", style, msg(n.attr("errorTitle"), n.attr("error"))));
+            notes.push(t!(
+                "book.dv.error",
+                style,
+                msg(n.attr("errorTitle"), n.attr("error"))
+            ));
         } else {
             notes.push(t!("book.dv.noError"));
         }
@@ -298,8 +354,18 @@ pub(crate) fn validation(n: &Node, fmt: Fmt, date1904: bool) -> String {
 
 /// A threshold of a color scale, a data bar or an icon set.
 fn cfvo(n: &Node, fmt: Fmt) -> String {
-    let val = n.attr("val").map(str::to_string).or_else(|| n.child("f").map(|f| f.all_text())).unwrap_or_default();
-    let num = |v: &str| if v.parse::<f64>().is_ok() { v.to_string() } else { fmt(v) };
+    let val = n
+        .attr("val")
+        .map(str::to_string)
+        .or_else(|| n.child("f").map(|f| f.all_text()))
+        .unwrap_or_default();
+    let num = |v: &str| {
+        if v.parse::<f64>().is_ok() {
+            v.to_string()
+        } else {
+            fmt(v)
+        }
+    };
     let s = match n.attr("type").unwrap_or("") {
         "min" | "autoMin" => t!("book.cfvo.min"),
         "max" | "autoMax" => t!("book.cfvo.max"),
@@ -309,14 +375,23 @@ fn cfvo(n: &Node, fmt: Fmt) -> String {
         "formula" => fmt(&val),
         other => other.to_string(),
     };
-    if n.attr("gte") == Some("0") { t!("book.cfvo.greater", s) } else { s }
+    if n.attr("gte") == Some("0") {
+        t!("book.cfvo.greater", s)
+    } else {
+        s
+    }
 }
 
 /// Describes a conditional format (cfRule, with its formulas through fmt
 /// and dxfs: the formats of styles.xml).
 pub(crate) fn conditional(n: &Node, fmt: Fmt, dxfs: &[Node], theme: &Theme) -> String {
     let sep = t!("vba.separator");
-    let formulas: Vec<String> = n.children.iter().filter(|c| c.name == "formula" || c.name == "f").map(|c| c.all_text()).collect();
+    let formulas: Vec<String> = n
+        .children
+        .iter()
+        .filter(|c| c.name == "formula" || c.name == "f")
+        .map(|c| c.all_text())
+        .collect();
     let f = |i: usize| match formulas.get(i) {
         Some(s) if s.trim().parse::<f64>().is_ok() => s.trim().to_string(),
         Some(s) => fmt(s),
@@ -325,7 +400,10 @@ pub(crate) fn conditional(n: &Node, fmt: Fmt, dxfs: &[Node], theme: &Theme) -> S
     let text = n.attr("text").unwrap_or("").to_string();
     let rank = n.attr("rank").unwrap_or("10");
     let mut s = match n.attr("type").unwrap_or("") {
-        "cellIs" => t!("book.cf.cellIs", op_text(n.attr("operator").unwrap_or("between"), &f(0), &f(1))),
+        "cellIs" => t!(
+            "book.cf.cellIs",
+            op_text(n.attr("operator").unwrap_or("between"), &f(0), &f(1))
+        ),
         "expression" => t!("book.cf.expression", f(0)),
         "containsText" => t!("book.cf.containsText", text),
         "notContainsText" => t!("book.cf.notContainsText", text),
@@ -360,17 +438,42 @@ pub(crate) fn conditional(n: &Node, fmt: Fmt, dxfs: &[Node], theme: &Theme) -> S
             }
             s
         }
-        "timePeriod" => t!("book.cf.timePeriod", t!(&format!("book.period.{}", n.attr("timePeriod").unwrap_or("today")))),
+        "timePeriod" => t!(
+            "book.cf.timePeriod",
+            t!(&format!(
+                "book.period.{}",
+                n.attr("timePeriod").unwrap_or("today")
+            ))
+        ),
         "colorScale" => {
-            let Some(cs) = n.child("colorScale") else { return t!("book.cf.colorScale", "") };
+            let Some(cs) = n.child("colorScale") else {
+                return t!("book.cf.colorScale", "");
+            };
             let colors: Vec<String> = cs.children("color").map(|c| color(c, theme)).collect();
-            let steps: Vec<String> =
-                cs.children("cfvo").enumerate().map(|(i, v)| format!("{} {}", cfvo(v, fmt), colors.get(i).cloned().unwrap_or_default()).trim().to_string()).collect();
+            let steps: Vec<String> = cs
+                .children("cfvo")
+                .enumerate()
+                .map(|(i, v)| {
+                    format!(
+                        "{} {}",
+                        cfvo(v, fmt),
+                        colors.get(i).cloned().unwrap_or_default()
+                    )
+                    .trim()
+                    .to_string()
+                })
+                .collect();
             t!("book.cf.colorScale", steps.join(" → "))
         }
         "dataBar" => {
-            let Some(db) = n.child("dataBar") else { return t!("book.cf.dataBar", "") };
-            let c = db.child("color").or_else(|| db.child("fillColor")).map(|c| color(c, theme)).unwrap_or_default();
+            let Some(db) = n.child("dataBar") else {
+                return t!("book.cf.dataBar", "");
+            };
+            let c = db
+                .child("color")
+                .or_else(|| db.child("fillColor"))
+                .map(|c| color(c, theme))
+                .unwrap_or_default();
             let vs: Vec<String> = db.children("cfvo").map(|v| cfvo(v, fmt)).collect();
             let mut d = c;
             if vs.len() == 2 {
@@ -379,7 +482,9 @@ pub(crate) fn conditional(n: &Node, fmt: Fmt, dxfs: &[Node], theme: &Theme) -> S
             t!("book.cf.dataBar", d.trim())
         }
         "iconSet" => {
-            let Some(is) = n.child("iconSet") else { return t!("book.cf.iconSet", "") };
+            let Some(is) = n.child("iconSet") else {
+                return t!("book.cf.iconSet", "");
+            };
             let mut d = is.attr("iconSet").unwrap_or("3TrafficLights1").to_string();
             let vs: Vec<String> = is.children("cfvo").skip(1).map(|v| cfvo(v, fmt)).collect();
             if !vs.is_empty() {

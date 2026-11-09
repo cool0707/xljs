@@ -74,7 +74,11 @@ fn edits(a: &[&str], b: &[&str]) -> Option<Vec<(i8, usize)>> {
         let mut k = -d;
         while k <= d {
             let i = (k + off) as usize;
-            let mut x = if k == -d || (k != d && v[i - 1] < v[i + 1]) { v[i + 1] } else { v[i - 1] + 1 };
+            let mut x = if k == -d || (k != d && v[i - 1] < v[i + 1]) {
+                v[i + 1]
+            } else {
+                v[i - 1] + 1
+            };
             let mut y = x - k;
             while x < n && y < m && a[x as usize] == b[y as usize] {
                 x += 1;
@@ -93,7 +97,11 @@ fn edits(a: &[&str], b: &[&str]) -> Option<Vec<(i8, usize)>> {
         let d = d as isize;
         let at = |k: isize| v[(k + d + 1) as usize];
         let k = x - y;
-        let pk = if k == -d || (k != d && at(k - 1) < at(k + 1)) { k + 1 } else { k - 1 };
+        let pk = if k == -d || (k != d && at(k - 1) < at(k + 1)) {
+            k + 1
+        } else {
+            k - 1
+        };
         let px = at(pk);
         let py = px - pk;
         while x > px && y > py {
@@ -136,7 +144,12 @@ pub fn unified(file: &str, old: &str, new: &str) -> Option<String> {
     }
     pos.push((i, j));
     const CTX: usize = 3;
-    let changed: Vec<usize> = ed.iter().enumerate().filter(|(_, e)| e.0 != 0).map(|(k, _)| k).collect();
+    let changed: Vec<usize> = ed
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| e.0 != 0)
+        .map(|(k, _)| k)
+        .collect();
     if changed.is_empty() {
         return Some(String::new());
     }
@@ -152,7 +165,13 @@ pub fn unified(file: &str, old: &str, new: &str) -> Option<String> {
         let end = (end + CTX + 1).min(ed.len());
         let (ai, bj) = pos[start];
         let (ae, be) = pos[end];
-        let range = |s: usize, e: usize| if e - s == 1 { format!("{}", s + 1) } else { format!("{},{}", if e == s { s } else { s + 1 }, e - s) };
+        let range = |s: usize, e: usize| {
+            if e - s == 1 {
+                format!("{}", s + 1)
+            } else {
+                format!("{},{}", if e == s { s } else { s + 1 }, e - s)
+            }
+        };
         out.push_str(&format!("@@ -{} +{} @@\n", range(ai, ae), range(bj, be)));
         for &(op, l) in &ed[start..end] {
             let (mark, text) = match op {
@@ -177,14 +196,20 @@ pub fn unified(file: &str, old: &str, new: &str) -> Option<String> {
 pub fn changes(p: &Project, current: &str) -> Vec<Change> {
     let mut out = Vec::new();
     for file in p.files() {
-        let Ok(text) = p.path(&file).and_then(|f| read_text(&f)) else { continue };
+        let Ok(text) = p.path(&file).and_then(|f| read_text(&f)) else {
+            continue;
+        };
         match seen(&p.dir, &file) {
             Some(old) if old != text => {
                 let diff = unified(&file, &old, &text).filter(|d| d.len() < text.len());
                 out.push(Change { file, diff, text });
             }
             Some(_) => {}
-            None if file == current && !text.trim().is_empty() => out.push(Change { file, diff: None, text }),
+            None if file == current && !text.trim().is_empty() => out.push(Change {
+                file,
+                diff: None,
+                text,
+            }),
             None => {}
         }
     }
@@ -197,8 +222,17 @@ pub fn prompt(changes: &[Change]) -> String {
     s.push_str("\n\n");
     for c in changes {
         match &c.diff {
-            Some(d) => s.push_str(&format!("{}\n```diff\n{}```\n\n", t!("dev.notifyDiff", c.file), d)),
-            None => s.push_str(&format!("{}\n```{}\n{}\n```\n\n", t!("dev.notifyWhole", c.file), super::report::fence(&c.file), c.text.trim_end())),
+            Some(d) => s.push_str(&format!(
+                "{}\n```diff\n{}```\n\n",
+                t!("dev.notifyDiff", c.file),
+                d
+            )),
+            None => s.push_str(&format!(
+                "{}\n```{}\n{}\n```\n\n",
+                t!("dev.notifyWhole", c.file),
+                super::report::fence(&c.file),
+                c.text.trim_end()
+            )),
         }
     }
     s.push_str(&t!("dev.notifyAsk"));

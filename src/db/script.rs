@@ -94,10 +94,14 @@ pub(crate) fn register(conn: &Connection, f: &ScriptFn) -> rusqlite::Result<()> 
         if LOGGED.with(|l| l.get()) {
             return Err(fail(t!("sqlite.functionInLoggedWrite", name)));
         }
-        let args = (0..ctx.len()).map(|i| ctx.get::<Value>(i)).collect::<rusqlite::Result<Vec<_>>>()?;
+        let args = (0..ctx.len())
+            .map(|i| ctx.get::<Value>(i))
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         // Taken while it runs: a statement the function itself runs finds
         // no caller (the natives refuse such calls before that).
-        let Some(call) = CALL.with(|c| c.take()) else { return Err(fail(t!("sqlite.functionUnavailable", name))) };
+        let Some(call) = CALL.with(|c| c.take()) else {
+            return Err(fail(t!("sqlite.functionUnavailable", name)));
+        };
         let r = unsafe { (*call)(id, args) };
         CALL.with(|c| c.set(Some(call)));
         r.map_err(fail)
@@ -108,7 +112,8 @@ pub(crate) fn register(conn: &Connection, f: &ScriptFn) -> rusqlite::Result<()> 
 /// starting with a digit.
 pub(crate) fn valid_name(name: &str) -> bool {
     let mut cs = name.chars();
-    cs.next().is_some_and(|c| c.is_alphabetic() || c == '_') && cs.all(|c| c.is_alphanumeric() || c == '_')
+    cs.next().is_some_and(|c| c.is_alphabetic() || c == '_')
+        && cs.all(|c| c.is_alphanumeric() || c == '_')
 }
 
 #[derive(Debug, PartialEq)]
@@ -151,7 +156,10 @@ fn tokens(sql: &str) -> Vec<(Tok, usize)> {
                 i += 1;
             }
         } else if c == b'/' && b.get(i + 1) == Some(&b'*') {
-            i = sql[i + 2..].find("*/").map(|j| i + 2 + j + 2).unwrap_or(b.len());
+            i = sql[i + 2..]
+                .find("*/")
+                .map(|j| i + 2 + j + 2)
+                .unwrap_or(b.len());
         } else if c == b'\'' {
             let (_, j) = quoted(i, b'\'');
             out.push((Tok::Other, j));
@@ -162,7 +170,9 @@ fn tokens(sql: &str) -> Vec<(Tok, usize)> {
             i = j;
         } else if c.is_ascii_alphabetic() || c == b'_' || c >= 0x80 {
             let mut j = i;
-            while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_' || b[j] == b'$' || b[j] >= 0x80) {
+            while j < b.len()
+                && (b[j].is_ascii_alphanumeric() || b[j] == b'_' || b[j] == b'$' || b[j] >= 0x80)
+            {
                 j += 1;
             }
             out.push((Tok::Name(sql[i..j].to_lowercase()), j));
@@ -228,7 +238,11 @@ mod tests {
     use super::*;
 
     fn f(name: &str) -> ScriptFn {
-        ScriptFn { name: name.into(), id: 1, deterministic: false }
+        ScriptFn {
+            name: name.into(),
+            id: 1,
+            deterministic: false,
+        }
     }
 
     #[test]

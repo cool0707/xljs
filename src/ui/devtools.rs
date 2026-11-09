@@ -9,7 +9,10 @@ use serde_json::{Map, Value};
 
 /// The Preferences file of a WebView2 user data folder.
 pub(crate) fn preferences_path(user_data: &str) -> std::path::PathBuf {
-    std::path::Path::new(user_data).join("EBWebView").join("Default").join("Preferences")
+    std::path::Path::new(user_data)
+        .join("EBWebView")
+        .join("Default")
+        .join("Preferences")
 }
 
 /// Writes the settings into the Preferences file of user_data; errors are
@@ -19,7 +22,9 @@ pub(crate) fn prepare(user_data: &str) {
     let path = preferences_path(user_data);
     let old = std::fs::read_to_string(&path).unwrap_or_default();
     let lang = crate::i18n::system_language();
-    let Some(new) = merge(&old, &locale(&lang), &accept_languages(&lang)) else { return };
+    let Some(new) = merge(&old, &locale(&lang), &accept_languages(&lang)) else {
+        return;
+    };
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -28,16 +33,22 @@ pub(crate) fn prepare(user_data: &str) {
 
 /// The locales of the developer tools (Chromium's DevTools front end).
 const LOCALES: &[&str] = &[
-    "af", "am", "ar", "as", "az", "be", "bg", "bn", "bs", "ca", "cs", "cy", "da", "de", "el", "en-GB", "en-US", "es", "es-419", "et", "eu", "fa", "fi", "fil", "fr",
-    "fr-CA", "gl", "gu", "he", "hi", "hr", "hu", "hy", "id", "is", "it", "ja", "ka", "kk", "km", "kn", "ko", "ky", "lo", "lt", "lv", "mk", "ml", "mn", "mr", "ms",
-    "my", "ne", "nl", "no", "or", "pa", "pl", "pt", "pt-PT", "ro", "ru", "si", "sk", "sl", "sq", "sr", "sr-Latn", "sv", "sw", "ta", "te", "th", "tr", "uk", "ur",
-    "uz", "vi", "zh", "zh-HK", "zh-TW", "zu",
+    "af", "am", "ar", "as", "az", "be", "bg", "bn", "bs", "ca", "cs", "cy", "da", "de", "el",
+    "en-GB", "en-US", "es", "es-419", "et", "eu", "fa", "fi", "fil", "fr", "fr-CA", "gl", "gu",
+    "he", "hi", "hr", "hu", "hy", "id", "is", "it", "ja", "ka", "kk", "km", "kn", "ko", "ky", "lo",
+    "lt", "lv", "mk", "ml", "mn", "mr", "ms", "my", "ne", "nl", "no", "or", "pa", "pl", "pt",
+    "pt-PT", "ro", "ru", "si", "sk", "sl", "sq", "sr", "sr-Latn", "sv", "sw", "ta", "te", "th",
+    "tr", "uk", "ur", "uz", "vi", "zh", "zh-HK", "zh-TW", "zu",
 ];
 
 /// The developer tools' locale for a system language such as "ja-JP"
 /// ("ja"); empty when they have none.
 pub(crate) fn locale(lang: &str) -> String {
-    let lang = lang.split(['.', '@']).next().unwrap_or("").replace('_', "-");
+    let lang = lang
+        .split(['.', '@'])
+        .next()
+        .unwrap_or("")
+        .replace('_', "-");
     let lower = lang.to_ascii_lowercase();
     let special = match lower.as_str() {
         "zh-cn" | "zh-sg" | "zh-hans" | "zh-hans-cn" => Some("zh"),
@@ -56,14 +67,22 @@ pub(crate) fn locale(lang: &str) -> String {
     let base = lower.split('-').next().unwrap_or("");
     match base {
         "en" => "en-US".into(),
-        _ => LOCALES.iter().find(|l| **l == base).map(|l| l.to_string()).unwrap_or_default(),
+        _ => LOCALES
+            .iter()
+            .find(|l| **l == base)
+            .map(|l| l.to_string())
+            .unwrap_or_default(),
     }
 }
 
 /// The browser's languages for a system language: "ja-JP" gives
 /// "ja-JP,ja" (the language and its base); empty for none.
 pub(crate) fn accept_languages(lang: &str) -> String {
-    let lang = lang.split(['.', '@']).next().unwrap_or("").replace('_', "-");
+    let lang = lang
+        .split(['.', '@'])
+        .next()
+        .unwrap_or("")
+        .replace('_', "-");
     if lang.is_empty() || lang.eq_ignore_ascii_case("C") || lang.eq_ignore_ascii_case("POSIX") {
         return String::new();
     }
@@ -81,7 +100,11 @@ pub(crate) fn accept_languages(lang: &str) -> String {
 /// creation and the tools' "Browser UI language" follows) become accept
 /// unless it is empty. None when old is not a JSON object (it is left alone).
 pub(crate) fn merge(old: &str, locale: &str, accept: &str) -> Option<String> {
-    let mut v: Value = if old.trim().is_empty() { Value::Object(Map::new()) } else { serde_json::from_str(old).ok()? };
+    let mut v: Value = if old.trim().is_empty() {
+        Value::Object(Map::new())
+    } else {
+        serde_json::from_str(old).ok()?
+    };
     if !accept.is_empty() {
         let intl = object(v.as_object_mut()?, "intl")?;
         for k in ["accept_languages", "selected_languages"] {
@@ -98,7 +121,10 @@ pub(crate) fn merge(old: &str, locale: &str, accept: &str) -> Option<String> {
     if !locale.is_empty() {
         set_language(prefs, locale);
         // Synced settings live here while sync is off.
-        set_language(object(devtools, "synced_preferences_sync_disabled")?, locale);
+        set_language(
+            object(devtools, "synced_preferences_sync_disabled")?,
+            locale,
+        );
     }
     serde_json::to_string(&v).ok()
 }
@@ -116,7 +142,9 @@ fn set_language(prefs: &mut Map<String, Value>, locale: &str) {
 }
 
 fn object<'a>(m: &'a mut Map<String, Value>, key: &str) -> Option<&'a mut Map<String, Value>> {
-    m.entry(key).or_insert_with(|| Value::Object(Map::new())).as_object_mut()
+    m.entry(key)
+        .or_insert_with(|| Value::Object(Map::new()))
+        .as_object_mut()
 }
 
 #[cfg(test)]
@@ -126,9 +154,15 @@ mod tests {
     #[test]
     fn merge_new_and_existing() {
         let v: Value = serde_json::from_str(&merge("", "ja", "ja-JP,ja").unwrap()).unwrap();
-        assert_eq!(v["devtools"]["preferences"]["panel-selected-tab"], "\"sources\"");
+        assert_eq!(
+            v["devtools"]["preferences"]["panel-selected-tab"],
+            "\"sources\""
+        );
         assert_eq!(v["devtools"]["preferences"]["language"], "\"ja\"");
-        assert_eq!(v["devtools"]["synced_preferences_sync_disabled"]["language"], "\"ja\"");
+        assert_eq!(
+            v["devtools"]["synced_preferences_sync_disabled"]["language"],
+            "\"ja\""
+        );
         assert_eq!(v["intl"]["accept_languages"], "ja-JP,ja");
         assert_eq!(v["intl"]["selected_languages"], "ja-JP,ja");
 
@@ -144,7 +178,10 @@ mod tests {
         let old = r#"{"a":1,"devtools":{"preferences":{"panel-selected-tab":"\"console\"","language":"\"en-US\"","x":"1"}}}"#;
         let v: Value = serde_json::from_str(&merge(old, "ja", "").unwrap()).unwrap();
         assert_eq!(v["a"], 1);
-        assert_eq!(v["devtools"]["preferences"]["panel-selected-tab"], "\"sources\"");
+        assert_eq!(
+            v["devtools"]["preferences"]["panel-selected-tab"],
+            "\"sources\""
+        );
         // A language chosen in the tools stays.
         assert_eq!(v["devtools"]["preferences"]["language"], "\"en-US\"");
         assert_eq!(v["devtools"]["preferences"]["x"], "1");

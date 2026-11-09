@@ -57,7 +57,10 @@ impl ConsoleState {
 
 #[cfg(not(windows))]
 pub fn setup() -> ConsoleState {
-    ConsoleState { has: true, own: false }
+    ConsoleState {
+        has: true,
+        own: false,
+    }
 }
 
 /// Works out whether output can be seen. A GUI-subsystem build (xljs.exe)
@@ -69,26 +72,48 @@ pub fn setup() -> ConsoleState {
         if !GetConsoleWindow().is_invalid() {
             let mut pids = [0u32; 4];
             let n = GetConsoleProcessList(&mut pids);
-            return ConsoleState { has: true, own: n == 1 };
+            return ConsoleState {
+                has: true,
+                own: n == 1,
+            };
         }
-        let valid = |h: windows::core::Result<windows::Win32::Foundation::HANDLE>| h.map(|h| !h.is_invalid() && !h.0.is_null()).unwrap_or(false);
+        let valid = |h: windows::core::Result<windows::Win32::Foundation::HANDLE>| {
+            h.map(|h| !h.is_invalid() && !h.0.is_null())
+                .unwrap_or(false)
+        };
         let out_ok = valid(GetStdHandle(STD_OUTPUT_HANDLE));
         let err_ok = valid(GetStdHandle(STD_ERROR_HANDLE));
         if AttachConsole(ATTACH_PARENT_PROCESS).is_ok() {
             // Rust's std reopens the standard handles on each write, so
             // setting them is enough.
             let open = || {
-                std::fs::OpenOptions::new().read(true).write(true).open("CONOUT$").ok()
+                std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open("CONOUT$")
+                    .ok()
             };
             use std::os::windows::io::IntoRawHandle;
             if !out_ok && let Some(f) = open() {
-                let _ = SetStdHandle(STD_OUTPUT_HANDLE, windows::Win32::Foundation::HANDLE(f.into_raw_handle()));
+                let _ = SetStdHandle(
+                    STD_OUTPUT_HANDLE,
+                    windows::Win32::Foundation::HANDLE(f.into_raw_handle()),
+                );
             }
             if !err_ok && let Some(f) = open() {
-                let _ = SetStdHandle(STD_ERROR_HANDLE, windows::Win32::Foundation::HANDLE(f.into_raw_handle()));
+                let _ = SetStdHandle(
+                    STD_ERROR_HANDLE,
+                    windows::Win32::Foundation::HANDLE(f.into_raw_handle()),
+                );
             }
-            return ConsoleState { has: true, own: false };
+            return ConsoleState {
+                has: true,
+                own: false,
+            };
         }
-        ConsoleState { has: out_ok || err_ok, own: false }
+        ConsoleState {
+            has: out_ok || err_ok,
+            own: false,
+        }
     }
 }

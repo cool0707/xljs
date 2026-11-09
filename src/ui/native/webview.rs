@@ -24,7 +24,8 @@ use windows::core::{BOOL, Interface, PCWSTR, PWSTR, w};
 
 use super::{WINDOWS, hstr, loader};
 use crate::ui::{
-    ASSET_ORIGIN, BUILTIN_PREFIX, BuiltinAssets, PdfDone, PdfJob, TITLE_BAR_HEIGHT, Window, WindowOptions, icon_image, title_bar_script,
+    ASSET_ORIGIN, BUILTIN_PREFIX, BuiltinAssets, PdfDone, PdfJob, TITLE_BAR_HEIGHT, Window,
+    WindowOptions, icon_image, title_bar_script,
 };
 use crate::{Error, Result, err, i18n};
 
@@ -120,7 +121,13 @@ pub(super) fn exe_icons() -> (HICON, HICON) {
         let mut big = HICON::default();
         let mut small = HICON::default();
         if let Ok(exe) = std::env::current_exe() {
-            ExtractIconExW(&hstr(&exe.to_string_lossy()), 0, Some(&mut big), Some(&mut small), 1);
+            ExtractIconExW(
+                &hstr(&exe.to_string_lossy()),
+                0,
+                Some(&mut big),
+                Some(&mut small),
+                1,
+            );
         }
         (big.0 as isize, small.0 as isize)
     });
@@ -130,7 +137,17 @@ pub(super) fn exe_icons() -> (HICON, HICON) {
 /// An icon of size pixels from an .ico file or a PNG image.
 pub(super) fn icon_from_bytes(data: &[u8], size: u32) -> Option<HICON> {
     let img = icon_image(data, size as usize)?;
-    unsafe { CreateIconFromResourceEx(img, true, 0x00030000, size as i32, size as i32, LR_DEFAULTCOLOR).ok() }
+    unsafe {
+        CreateIconFromResourceEx(
+            img,
+            true,
+            0x00030000,
+            size as i32,
+            size as i32,
+            LR_DEFAULTCOLOR,
+        )
+        .ok()
+    }
 }
 
 pub(super) fn icon_for_metric(data: &[u8], metric: SYSTEM_METRICS_INDEX) -> HICON {
@@ -157,7 +174,9 @@ fn register_class() {
 
 pub(super) fn open(o: WindowOptions) -> Result<Arc<dyn Window>> {
     let hwnd = open_hwnd(o)?;
-    Ok(Arc::new(WebWindow { hwnd: hwnd.0 as isize }))
+    Ok(Arc::new(WebWindow {
+        hwnd: hwnd.0 as isize,
+    }))
 }
 
 fn open_hwnd(o: WindowOptions) -> Result<HWND> {
@@ -166,7 +185,11 @@ fn open_hwnd(o: WindowOptions) -> Result<HWND> {
     }
     register_class();
     let width = if o.width > 0 { o.width } else { DEFAULT_WIDTH };
-    let mut height = if o.height > 0 { o.height } else { DEFAULT_HEIGHT };
+    let mut height = if o.height > 0 {
+        o.height
+    } else {
+        DEFAULT_HEIGHT
+    };
     if o.custom_title_bar {
         // The page's size is below the bar.
         height += TITLE_BAR_HEIGHT;
@@ -184,13 +207,22 @@ fn open_hwnd(o: WindowOptions) -> Result<HWND> {
     }
     // A hidden window is shown but nearly transparent, so that the page
     // renders (requestAnimationFrame) as in a visible window.
-    let ex_style = if o.hidden { WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TRANSPARENT } else { Default::default() };
+    let ex_style = if o.hidden {
+        WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TRANSPARENT
+    } else {
+        Default::default()
+    };
     unsafe {
         let mut dpi = GetDpiForSystem();
         if dpi == 0 {
             dpi = 96;
         }
-        let mut r = RECT { left: 0, top: 0, right: (width * dpi as i64 / 96) as i32, bottom: (height * dpi as i64 / 96) as i32 };
+        let mut r = RECT {
+            left: 0,
+            top: 0,
+            right: (width * dpi as i64 / 96) as i32,
+            bottom: (height * dpi as i64 / 96) as i32,
+        };
         let _ = AdjustWindowRectEx(&mut r, style, false, Default::default());
         if o.custom_title_bar {
             // No caption or top border (see WM_NCCALCSIZE).
@@ -198,7 +230,12 @@ fn open_hwnd(o: WindowOptions) -> Result<HWND> {
         }
         let (ww, wh) = (r.right - r.left, r.bottom - r.top);
         let mut work = RECT::default();
-        let _ = SystemParametersInfoW(SPI_GETWORKAREA, 0, Some(&mut work as *mut _ as *mut _), Default::default());
+        let _ = SystemParametersInfoW(
+            SPI_GETWORKAREA,
+            0,
+            Some(&mut work as *mut _ as *mut _),
+            Default::default(),
+        );
         let x = work.left + 0.max((work.right - work.left - ww) / 2);
         let y = work.top + 0.max((work.bottom - work.top - wh) / 2);
         let hwnd = CreateWindowExW(
@@ -219,13 +256,27 @@ fn open_hwnd(o: WindowOptions) -> Result<HWND> {
         let icons = if o.icon.is_empty() {
             [HICON::default(), HICON::default()]
         } else {
-            [icon_for_metric(&o.icon, SM_CXICON), icon_for_metric(&o.icon, SM_CXSMICON)]
+            [
+                icon_for_metric(&o.icon, SM_CXICON),
+                icon_for_metric(&o.icon, SM_CXSMICON),
+            ]
         };
         let (eb, es) = exe_icons();
         for (i, which) in [ICON_BIG, ICON_SMALL].into_iter().enumerate() {
-            let icon = if !icons[i].is_invalid() { icons[i] } else if i == 0 { eb } else { es };
+            let icon = if !icons[i].is_invalid() {
+                icons[i]
+            } else if i == 0 {
+                eb
+            } else {
+                es
+            };
             if !icon.is_invalid() {
-                SendMessageW(hwnd, WM_SETICON, Some(WPARAM(which as usize)), Some(LPARAM(icon.0 as isize)));
+                SendMessageW(
+                    hwnd,
+                    WM_SETICON,
+                    Some(WPARAM(which as usize)),
+                    Some(LPARAM(icon.0 as isize)),
+                );
             }
         }
         let st = Rc::new(WinState {
@@ -242,7 +293,15 @@ fn open_hwnd(o: WindowOptions) -> Result<HWND> {
         STATES.with(|s| s.borrow_mut().insert(hwnd.0 as isize, st.clone()));
         if st.o.custom_title_bar {
             // WM_NCCALCSIZE again, now that the state is known.
-            let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                0,
+                0,
+                0,
+                0,
+                SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+            );
         }
         if st.o.hidden {
             let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 1, LWA_ALPHA);
@@ -274,7 +333,10 @@ impl crate::meta::AssetFs for PrintAssets {
     fn read(&self, name: &str) -> std::io::Result<Vec<u8>> {
         match name.strip_prefix(BUILTIN_PREFIX) {
             Some(rest) => crate::meta::AssetFs::read(&BuiltinAssets, rest),
-            None => Err(std::io::Error::new(std::io::ErrorKind::NotFound, name.to_string())),
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                name.to_string(),
+            )),
         }
     }
     fn files(&self, _root: &str) -> std::io::Result<Vec<String>> {
@@ -283,11 +345,17 @@ impl crate::meta::AssetFs for PrintAssets {
 }
 
 /// Calls a DevTools protocol method of the page; f gets the result JSON.
-pub(super) fn devtools(core: &ICoreWebView2, method: &str, params: &str, f: impl FnOnce(windows::core::Result<()>, String) + 'static) {
-    let handler = CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |hr, json: String| {
-        f(hr, json);
-        Ok(())
-    }));
+pub(super) fn devtools(
+    core: &ICoreWebView2,
+    method: &str,
+    params: &str,
+    f: impl FnOnce(windows::core::Result<()>, String) + 'static,
+) {
+    let handler =
+        CallDevToolsProtocolMethodCompletedHandler::create(Box::new(move |hr, json: String| {
+            f(hr, json);
+            Ok(())
+        }));
     unsafe {
         if let Err(e) = core.CallDevToolsProtocolMethod(&hstr(method), &hstr(params), &handler) {
             // The handler is not called.
@@ -317,17 +385,28 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
     let job = Arc::new(job);
     let on_message: crate::ui::OnMessage = Arc::new(move |msg: String, _| {
         let hwnd = HWND(h1.load(Ordering::SeqCst) as *mut _);
-        let Some(core) = state(hwnd).and_then(|st| st.core.borrow().clone()) else { return };
-        let Ok(m) = serde_json::from_str::<serde_json::Value>(&msg) else { return };
+        let Some(core) = state(hwnd).and_then(|st| st.core.borrow().clone()) else {
+            return;
+        };
+        let Ok(m) = serde_json::from_str::<serde_json::Value>(&msg) else {
+            return;
+        };
         let close = move || unsafe {
             let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
         };
         match m.get("type").and_then(|t| t.as_str()) {
             Some("ready") => {
                 // Charts in their light colors whatever the system's theme.
-                devtools(&core, "Emulation.setEmulatedMedia", r#"{"features":[{"name":"prefers-color-scheme","value":"light"}]}"#, |_, _| {});
-                let charts: serde_json::Value = serde_json::from_str(&job.charts).unwrap_or(serde_json::json!([]));
-                let texts: serde_json::Value = serde_json::from_str(&job.texts).unwrap_or(serde_json::json!({}));
+                devtools(
+                    &core,
+                    "Emulation.setEmulatedMedia",
+                    r#"{"features":[{"name":"prefers-color-scheme","value":"light"}]}"#,
+                    |_, _| {},
+                );
+                let charts: serde_json::Value =
+                    serde_json::from_str(&job.charts).unwrap_or(serde_json::json!([]));
+                let texts: serde_json::Value =
+                    serde_json::from_str(&job.texts).unwrap_or(serde_json::json!({}));
                 let init = serde_json::json!({ "type": "init", "html": job.html, "charts": charts, "texts": texts, "lang": i18n::lang() });
                 unsafe {
                     let _ = core.PostWebMessageAsString(&hstr(&format!("{HOST_PREFIX}{init}")));
@@ -340,9 +419,18 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
                     let r = (|| -> Result<()> {
                         hr.map_err(webview_err)?;
                         let v: serde_json::Value = serde_json::from_str(&json)?;
-                        let data = v.get("data").and_then(|d| d.as_str()).ok_or_else(|| webview_err(&json))?;
-                        let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(webview_err)?;
-                        std::fs::write(&path, bytes).map_err(|e| Error::Path { op: "open".into(), path: path.clone(), source: e })?;
+                        let data = v
+                            .get("data")
+                            .and_then(|d| d.as_str())
+                            .ok_or_else(|| webview_err(&json))?;
+                        let bytes = base64::engine::general_purpose::STANDARD
+                            .decode(data)
+                            .map_err(webview_err)?;
+                        std::fs::write(&path, bytes).map_err(|e| Error::Path {
+                            op: "open".into(),
+                            path: path.clone(),
+                            source: e,
+                        })?;
                         Ok(())
                     })();
                     f(r);
@@ -350,7 +438,11 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
                 });
             }
             Some("error") => {
-                let message = m.get("message").and_then(|t| t.as_str()).unwrap_or("").to_string();
+                let message = m
+                    .get("message")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 f1(Err(err!("pdf.failed", message)));
                 close();
             }
@@ -382,7 +474,8 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
                 // Only while the job is open: the handle may name another window later.
                 if finish(Err(err!("pdf.failed", "timeout"))) {
                     unsafe {
-                        let _ = PostMessageW(Some(HWND(id as *mut _)), WM_CLOSE, WPARAM(0), LPARAM(0));
+                        let _ =
+                            PostMessageW(Some(HWND(id as *mut _)), WM_CLOSE, WPARAM(0), LPARAM(0));
                     }
                 }
             });
@@ -414,13 +507,28 @@ fn data_folder() -> (String, bool) {
     }
     let base = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let debugger = DEBUGGER.load(Ordering::SeqCst);
-    let name = if debugger { "WebView2-debug" } else { "WebView2" };
-    (std::path::Path::new(&base).join("xljs").join(name).to_string_lossy().into_owned(), debugger)
+    let name = if debugger {
+        "WebView2-debug"
+    } else {
+        "WebView2"
+    };
+    (
+        std::path::Path::new(&base)
+            .join("xljs")
+            .join(name)
+            .to_string_lossy()
+            .into_owned(),
+        debugger,
+    )
 }
 
 /// The environment options; the same for every window that uses the folder
 /// (a browser with other options cannot share it).
-fn environment_options(folder: &str, debugger_profile: bool, debugger_window: bool) -> ICoreWebView2EnvironmentOptions {
+fn environment_options(
+    folder: &str,
+    debugger_profile: bool,
+    debugger_window: bool,
+) -> ICoreWebView2EnvironmentOptions {
     let options = CoreWebView2EnvironmentOptions::default();
     // Sign in to Microsoft sites (the Copilot chat of the development mode)
     // with the account the user signed in to Windows with, as Edge does.
@@ -437,7 +545,9 @@ fn environment_options(folder: &str, debugger_profile: bool, debugger_window: bo
         if !lang.is_empty() {
             let accept = crate::ui::devtools::accept_languages(&lang);
             unsafe {
-                options.set_additional_browser_arguments(format!("--lang={lang} --accept-lang={accept}"));
+                options.set_additional_browser_arguments(format!(
+                    "--lang={lang} --accept-lang={accept}"
+                ));
                 options.set_language(lang);
             }
         }
@@ -460,10 +570,12 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
     unsafe {
         // The environment.
         let (tx, rx) = mpsc::channel();
-        let handler = CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(move |hr: windows::core::Result<()>, env| {
-            let _ = tx.send(hr.map(|_| env));
-            Ok(())
-        }));
+        let handler = CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
+            move |hr: windows::core::Result<()>, env| {
+                let _ = tx.send(hr.map(|_| env));
+                Ok(())
+            },
+        ));
         let debugger_window = st.o.debug && st.o.isolated;
         if debugger_window {
             DEBUGGER.store(true, Ordering::SeqCst);
@@ -471,16 +583,25 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
         let (folder, debugger_profile) = data_folder();
         let options = environment_options(&folder, debugger_profile, debugger_window);
         loader::create_environment(&folder, &options, &handler).map_err(webview_err)?;
-        let env = wait_with_pump(rx).map_err(webview_err)?.map_err(webview_err)?.ok_or_else(|| webview_err("no environment"))?;
+        let env = wait_with_pump(rx)
+            .map_err(webview_err)?
+            .map_err(webview_err)?
+            .ok_or_else(|| webview_err("no environment"))?;
 
         // The controller.
         let (tx, rx) = mpsc::channel();
-        let handler = CreateCoreWebView2ControllerCompletedHandler::create(Box::new(move |hr: windows::core::Result<()>, c| {
-            let _ = tx.send(hr.map(|_| c));
-            Ok(())
-        }));
-        env.CreateCoreWebView2Controller(hwnd, &handler).map_err(webview_err)?;
-        let controller = wait_with_pump(rx).map_err(webview_err)?.map_err(webview_err)?.ok_or_else(|| webview_err("no controller"))?;
+        let handler = CreateCoreWebView2ControllerCompletedHandler::create(Box::new(
+            move |hr: windows::core::Result<()>, c| {
+                let _ = tx.send(hr.map(|_| c));
+                Ok(())
+            },
+        ));
+        env.CreateCoreWebView2Controller(hwnd, &handler)
+            .map_err(webview_err)?;
+        let controller = wait_with_pump(rx)
+            .map_err(webview_err)?
+            .map_err(webview_err)?
+            .ok_or_else(|| webview_err("no controller"))?;
         let core = controller.CoreWebView2().map_err(webview_err)?;
         *st.env.borrow_mut() = Some(env.clone());
         *st.controller.borrow_mut() = Some(controller.clone());
@@ -494,7 +615,11 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
         // CSS app-region: drag for the custom title bar (WebView2 1.0.2420+;
         // older runtimes move the window on the page's request).
         let non_client = st.o.custom_title_bar
-            && core.Settings().ok().and_then(|s| s.cast::<ICoreWebView2Settings9>().ok()).is_some_and(|s| s.SetIsNonClientRegionSupportEnabled(true).is_ok());
+            && core
+                .Settings()
+                .ok()
+                .and_then(|s| s.cast::<ICoreWebView2Settings9>().ok())
+                .is_some_and(|s| s.SetIsNonClientRegionSupportEnabled(true).is_ok());
 
         // Basic authentication (proxies) with the logins of fetch.
         super::auth::attach(&core);
@@ -504,37 +629,45 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
         let hwnd_id = hwnd.0 as isize;
         let mut token = 0i64;
         core.add_WebMessageReceived(
-            &WebMessageReceivedEventHandler::create(Box::new(move |_, args: Option<ICoreWebView2WebMessageReceivedEventArgs>| {
-                let Some(args) = args else { return Ok(()) };
-                let mut p = PWSTR::null();
-                if args.TryGetWebMessageAsString(&mut p).is_err() {
-                    return Ok(());
-                }
-                let msg = take_pwstr(p);
-                if let Some(cmd) = msg.strip_prefix(WINDOW_COMMAND_PREFIX) {
-                    window_command(HWND(hwnd_id as *mut _), cmd);
-                    return Ok(());
-                }
-                let files = attached_files(&args);
-                if let Some(f) = &on_message {
-                    f(msg, files);
-                }
-                Ok(())
-            })),
+            &WebMessageReceivedEventHandler::create(Box::new(
+                move |_, args: Option<ICoreWebView2WebMessageReceivedEventArgs>| {
+                    let Some(args) = args else { return Ok(()) };
+                    let mut p = PWSTR::null();
+                    if args.TryGetWebMessageAsString(&mut p).is_err() {
+                        return Ok(());
+                    }
+                    let msg = take_pwstr(p);
+                    if let Some(cmd) = msg.strip_prefix(WINDOW_COMMAND_PREFIX) {
+                        window_command(HWND(hwnd_id as *mut _), cmd);
+                        return Ok(());
+                    }
+                    let files = attached_files(&args);
+                    if let Some(f) = &on_message {
+                        f(msg, files);
+                    }
+                    Ok(())
+                },
+            )),
             &mut token,
         )
         .map_err(webview_err)?;
 
         // The app's files.
-        core.AddWebResourceRequestedFilter(&hstr(&format!("{ASSET_ORIGIN}*")), COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL).map_err(webview_err)?;
+        core.AddWebResourceRequestedFilter(
+            &hstr(&format!("{ASSET_ORIGIN}*")),
+            COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL,
+        )
+        .map_err(webview_err)?;
         let (assets, isolated, envc) = (st.o.assets.clone(), st.o.isolated, env.clone());
         core.add_WebResourceRequested(
-            &WebResourceRequestedEventHandler::create(Box::new(move |_, args: Option<ICoreWebView2WebResourceRequestedEventArgs>| {
-                if let Some(args) = args {
-                    serve(&envc, &args, assets.as_deref(), isolated);
-                }
-                Ok(())
-            })),
+            &WebResourceRequestedEventHandler::create(Box::new(
+                move |_, args: Option<ICoreWebView2WebResourceRequestedEventArgs>| {
+                    if let Some(args) = args {
+                        serve(&envc, &args, assets.as_deref(), isolated);
+                    }
+                    Ok(())
+                },
+            )),
             &mut token,
         )
         .map_err(webview_err)?;
@@ -542,38 +675,42 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
         // Navigation stays inside the app; links to the web open the
         // default browser, popups never open.
         core.add_NavigationStarting(
-            &NavigationStartingEventHandler::create(Box::new(|_, args: Option<ICoreWebView2NavigationStartingEventArgs>| {
-                let Some(args) = args else { return Ok(()) };
-                let mut p = PWSTR::null();
-                if args.Uri(&mut p).is_err() {
-                    return Ok(());
-                }
-                let uri = take_pwstr(p);
-                if inside(&uri) {
-                    return Ok(());
-                }
-                let _ = args.SetCancel(true);
-                if external(&uri) {
-                    let _ = super::shell_execute(&uri);
-                }
-                Ok(())
-            })),
+            &NavigationStartingEventHandler::create(Box::new(
+                |_, args: Option<ICoreWebView2NavigationStartingEventArgs>| {
+                    let Some(args) = args else { return Ok(()) };
+                    let mut p = PWSTR::null();
+                    if args.Uri(&mut p).is_err() {
+                        return Ok(());
+                    }
+                    let uri = take_pwstr(p);
+                    if inside(&uri) {
+                        return Ok(());
+                    }
+                    let _ = args.SetCancel(true);
+                    if external(&uri) {
+                        let _ = super::shell_execute(&uri);
+                    }
+                    Ok(())
+                },
+            )),
             &mut token,
         )
         .map_err(webview_err)?;
         core.add_NewWindowRequested(
-            &NewWindowRequestedEventHandler::create(Box::new(|_, args: Option<ICoreWebView2NewWindowRequestedEventArgs>| {
-                let Some(args) = args else { return Ok(()) };
-                let _ = args.SetHandled(true);
-                let mut p = PWSTR::null();
-                if args.Uri(&mut p).is_ok() {
-                    let uri = take_pwstr(p);
-                    if external(&uri) {
-                        let _ = super::shell_execute(&uri);
+            &NewWindowRequestedEventHandler::create(Box::new(
+                |_, args: Option<ICoreWebView2NewWindowRequestedEventArgs>| {
+                    let Some(args) = args else { return Ok(()) };
+                    let _ = args.SetHandled(true);
+                    let mut p = PWSTR::null();
+                    if args.Uri(&mut p).is_ok() {
+                        let uri = take_pwstr(p);
+                        if external(&uri) {
+                            let _ = super::shell_execute(&uri);
+                        }
                     }
-                }
-                Ok(())
-            })),
+                    Ok(())
+                },
+            )),
             &mut token,
         )
         .map_err(webview_err)?;
@@ -587,14 +724,16 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
                 &mut token,
             );
             let _ = core.add_ProcessFailed(
-                &ProcessFailedEventHandler::create(Box::new(move |_, args: Option<ICoreWebView2ProcessFailedEventArgs>| {
-                    let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
-                    if let Some(a) = args {
-                        let _ = a.ProcessFailedKind(&mut kind);
-                    }
-                    t2(format!("process failed (kind {})", kind.0));
-                    Ok(())
-                })),
+                &ProcessFailedEventHandler::create(Box::new(
+                    move |_, args: Option<ICoreWebView2ProcessFailedEventArgs>| {
+                        let mut kind = COREWEBVIEW2_PROCESS_FAILED_KIND::default();
+                        if let Some(a) = args {
+                            let _ = a.ProcessFailedKind(&mut kind);
+                        }
+                        t2(format!("process failed (kind {})", kind.0));
+                        Ok(())
+                    },
+                )),
                 &mut token,
             );
         }
@@ -602,7 +741,10 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
         // The page runtime, in every page.
         let _ = core.AddScriptToExecuteOnDocumentCreated(&hstr(crate::ui::page_script()), None);
         if st.o.custom_title_bar {
-            let _ = core.AddScriptToExecuteOnDocumentCreated(&hstr(&title_bar_script(&st.o, non_client)), None);
+            let _ = core.AddScriptToExecuteOnDocumentCreated(
+                &hstr(&title_bar_script(&st.o, non_client)),
+                None,
+            );
         }
 
         resize(hwnd, &controller);
@@ -655,7 +797,9 @@ fn dev_tools_open(st: &WinState) -> bool {
         }
         TRUE
     }
-    let Some(core) = st.core.borrow().clone() else { return false };
+    let Some(core) = st.core.borrow().clone() else {
+        return false;
+    };
     let mut pid = 0u32;
     if unsafe { core.BrowserProcessId(&mut pid) }.is_err() || pid == 0 {
         return false;
@@ -668,7 +812,11 @@ fn dev_tools_open(st: &WinState) -> bool {
     if url.is_empty() {
         return false;
     }
-    let mut f = Find { pid, url, found: false };
+    let mut f = Find {
+        pid,
+        url,
+        found: false,
+    };
     unsafe {
         let _ = EnumWindows(Some(each), LPARAM(&mut f as *mut Find as isize));
     }
@@ -692,17 +840,25 @@ fn watch_dev_tools(hwnd: HWND, st: &WinState) {
 /// (chrome.webview.postMessageWithAdditionalObjects); "" where a path is not
 /// available, so that the indices match.
 fn attached_files(args: &ICoreWebView2WebMessageReceivedEventArgs) -> Vec<String> {
-    let Ok(args2) = args.cast::<ICoreWebView2WebMessageReceivedEventArgs2>() else { return Vec::new() };
+    let Ok(args2) = args.cast::<ICoreWebView2WebMessageReceivedEventArgs2>() else {
+        return Vec::new();
+    };
     unsafe {
-        let Ok(objs) = args2.AdditionalObjects() else { return Vec::new() };
+        let Ok(objs) = args2.AdditionalObjects() else {
+            return Vec::new();
+        };
         let mut count = 0u32;
         if objs.Count(&mut count).is_err() {
             return Vec::new();
         }
         (0..count)
             .map(|i| {
-                let Ok(v) = objs.GetValueAtIndex(i) else { return String::new() };
-                let Ok(f) = v.cast::<ICoreWebView2File>() else { return String::new() };
+                let Ok(v) = objs.GetValueAtIndex(i) else {
+                    return String::new();
+                };
+                let Ok(f) = v.cast::<ICoreWebView2File>() else {
+                    return String::new();
+                };
                 let mut p = PWSTR::null();
                 if f.Path(&mut p).is_err() {
                     return String::new();
@@ -714,7 +870,10 @@ fn attached_files(args: &ICoreWebView2WebMessageReceivedEventArgs) -> Vec<String
 }
 
 fn content_type(name: &str) -> &'static str {
-    let ext = name.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default();
+    let ext = name
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_lowercase())
+        .unwrap_or_default();
     match ext.as_str() {
         "html" | "htm" => "text/html; charset=utf-8",
         "js" | "mjs" => "text/javascript; charset=utf-8",
@@ -743,7 +902,8 @@ fn percent_decode(s: &str) -> String {
     while i < b.len() {
         if b[i] == b'%'
             && i + 2 < b.len() + 0
-            && let Ok(v) = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""), 16)
+            && let Ok(v) =
+                u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""), 16)
         {
             out.push(v);
             i += 3;
@@ -756,7 +916,12 @@ fn percent_decode(s: &str) -> String {
 }
 
 /// Answers a request for a file under ASSET_ORIGIN.
-fn serve(env: &ICoreWebView2Environment, args: &ICoreWebView2WebResourceRequestedEventArgs, assets: Option<&dyn crate::meta::AssetFs>, isolated: bool) {
+fn serve(
+    env: &ICoreWebView2Environment,
+    args: &ICoreWebView2WebResourceRequestedEventArgs,
+    assets: Option<&dyn crate::meta::AssetFs>,
+    isolated: bool,
+) {
     unsafe {
         let Ok(req) = args.Request() else { return };
         let mut p = PWSTR::null();
@@ -764,7 +929,9 @@ fn serve(env: &ICoreWebView2Environment, args: &ICoreWebView2WebResourceRequeste
             return;
         }
         let uri = take_pwstr(p);
-        let Some(rest) = uri.strip_prefix(ASSET_ORIGIN) else { return };
+        let Some(rest) = uri.strip_prefix(ASSET_ORIGIN) else {
+            return;
+        };
         let mut name = rest.split(['?', '#']).next().unwrap_or("").to_string();
         name = percent_decode(&name);
         if name.is_empty() || name.ends_with('/') {
@@ -776,14 +943,21 @@ fn serve(env: &ICoreWebView2Environment, args: &ICoreWebView2WebResourceRequeste
         };
         let (status, reason, ctype, body) = match body {
             Some(b) => (200, "OK", content_type(&name), b),
-            None => (404, "Not Found", "text/plain; charset=utf-8", format!("404 Not Found: {name}").into_bytes()),
+            None => (
+                404,
+                "Not Found",
+                "text/plain; charset=utf-8",
+                format!("404 Not Found: {name}").into_bytes(),
+            ),
         };
         let mut headers = format!("Content-Type: {ctype}\r\nCache-Control: no-cache");
         if isolated {
             headers.push_str("\r\nCross-Origin-Opener-Policy: same-origin\r\nCross-Origin-Embedder-Policy: require-corp");
         }
         let stream = SHCreateMemStream(Some(&body));
-        if let Ok(resp) = env.CreateWebResourceResponse(stream.as_ref(), status, &hstr(reason), &hstr(&headers)) {
+        if let Ok(resp) =
+            env.CreateWebResourceResponse(stream.as_ref(), status, &hstr(reason), &hstr(&headers))
+        {
             let _ = args.SetResponse(&resp);
         }
     }
@@ -807,7 +981,14 @@ fn window_command(hwnd: HWND, cmd: &str) {
                 let _ = ShowWindow(hwnd, SW_MINIMIZE);
             }
             "maximize" if !st.o.fixed_size => {
-                let _ = ShowWindow(hwnd, if IsZoomed(hwnd).as_bool() { SW_RESTORE } else { SW_MAXIMIZE });
+                let _ = ShowWindow(
+                    hwnd,
+                    if IsZoomed(hwnd).as_bool() {
+                        SW_RESTORE
+                    } else {
+                        SW_MAXIMIZE
+                    },
+                );
             }
             "close" => {
                 let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
@@ -817,7 +998,12 @@ fn window_command(hwnd: HWND, cmd: &str) {
                 let _ = GetCursorPos(&mut pt);
                 let _ = ReleaseCapture();
                 let pos = ((pt.y as u16 as u32) << 16) | pt.x as u16 as u32;
-                let _ = PostMessageW(Some(hwnd), WM_NCLBUTTONDOWN, WPARAM(HTCAPTION as usize), LPARAM(pos as i32 as isize));
+                let _ = PostMessageW(
+                    Some(hwnd),
+                    WM_NCLBUTTONDOWN,
+                    WPARAM(HTCAPTION as usize),
+                    LPARAM(pos as i32 as isize),
+                );
             }
             "state" => sync_title_bar(hwnd, &st),
             // The window's text (taskbar, Alt+Tab) for a page that draws its
@@ -835,9 +1021,14 @@ fn sync_title_bar(hwnd: HWND, st: &WinState) {
     if !st.o.custom_title_bar {
         return;
     }
-    let Some(core) = st.core.borrow().clone() else { return };
+    let Some(core) = st.core.borrow().clone() else {
+        return;
+    };
     let maximized = unsafe { IsZoomed(hwnd).as_bool() };
-    let js = format!("window.__xljsTitleBarState && window.__xljsTitleBarState({maximized}, {})", st.active.get());
+    let js = format!(
+        "window.__xljsTitleBarState && window.__xljsTitleBarState({maximized}, {})",
+        st.active.get()
+    );
     unsafe {
         let _ = core.ExecuteScript(&hstr(&js), None);
     }
@@ -855,7 +1046,12 @@ unsafe fn nc_calc_size(hwnd: HWND, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
             return r;
         }
         let border = before.bottom - (*p).rgrc[0].bottom;
-        (*p).rgrc[0].top = before.top + if IsZoomed(hwnd).as_bool() { border.max(0) } else { 0 };
+        (*p).rgrc[0].top = before.top
+            + if IsZoomed(hwnd).as_bool() {
+                border.max(0)
+            } else {
+                0
+            };
         LRESULT(0)
     }
 }
@@ -876,11 +1072,18 @@ fn focus(hwnd: HWND, c: &ICoreWebView2Controller) {
     }
 }
 
-unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe extern "system" fn wnd_proc(
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     if let Some(st) = state(hwnd) {
         let controller = st.controller.borrow().clone();
         match msg {
-            WM_NCCALCSIZE if st.o.custom_title_bar && wparam.0 != 0 => return unsafe { nc_calc_size(hwnd, wparam, lparam) },
+            WM_NCCALCSIZE if st.o.custom_title_bar && wparam.0 != 0 => {
+                return unsafe { nc_calc_size(hwnd, wparam, lparam) };
+            }
             WM_SIZE => {
                 if let Some(c) = &controller
                     && wparam.0 as u32 != SIZE_MINIMIZED

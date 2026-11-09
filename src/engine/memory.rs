@@ -16,7 +16,10 @@ pub(crate) const CHECK_EVERY: Duration = Duration::from_millis(50);
 #[cfg(windows)]
 pub fn available() -> Option<u64> {
     use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
-    let mut s = MEMORYSTATUSEX { dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32, ..Default::default() };
+    let mut s = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+        ..Default::default()
+    };
     unsafe { GlobalMemoryStatusEx(&mut s) }.ok()?;
     Some(s.ullAvailPhys)
 }
@@ -32,7 +35,12 @@ pub fn available() -> Option<u64> {
 #[cfg(not(windows))]
 fn parse_meminfo(text: &str) -> Option<u64> {
     let line = text.lines().find(|l| l.starts_with("MemAvailable:"))?;
-    let kb: u64 = line["MemAvailable:".len()..].trim().trim_end_matches("kB").trim().parse().ok()?;
+    let kb: u64 = line["MemAvailable:".len()..]
+        .trim()
+        .trim_end_matches("kB")
+        .trim()
+        .parse()
+        .ok()?;
     Some(kb * 1024)
 }
 

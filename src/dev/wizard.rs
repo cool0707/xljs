@@ -60,14 +60,20 @@ pub struct BookInfo {
 }
 
 fn base(p: &str) -> String {
-    Path::new(p).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
+    Path::new(p)
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 /// The script file name for the answers: the name given (with .js), else
 /// a temporary name.
 pub fn file_name(a: &Answers) -> String {
     let name = a.name.trim();
-    let name: String = name.chars().map(|c| if r#"\/:*?"<>|"#.contains(c) { '_' } else { c }).collect();
+    let name: String = name
+        .chars()
+        .map(|c| if r#"\/:*?"<>|"#.contains(c) { '_' } else { c })
+        .collect();
     if a.name_mode == "name" && !name.is_empty() {
         let lower = name.to_lowercase();
         if [".js", ".ts", ".mjs"].iter().any(|e| lower.ends_with(e)) {
@@ -81,8 +87,14 @@ pub fn file_name(a: &Answers) -> String {
 /// A path for name in dir that is not taken yet.
 pub fn free_path(dir: &Path, name: &str) -> PathBuf {
     let p = Path::new(name);
-    let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let ext = p
+        .extension()
+        .map(|e| format!(".{}", e.to_string_lossy()))
+        .unwrap_or_default();
     let mut path = dir.join(name);
     let mut i = 2;
     while path.exists() {
@@ -102,7 +114,12 @@ pub fn books(paths: &[String]) -> Vec<BookInfo> {
                 Ok(None) => (0, String::new()),
                 Err(e) => (0, crate::i18n::error(&e)),
             };
-            BookInfo { path: p.clone(), name: base(p), modules, error }
+            BookInfo {
+                path: p.clone(),
+                name: base(p),
+                modules,
+                error,
+            }
         })
         .collect()
 }
@@ -149,8 +166,22 @@ pub fn prompt(a: &Answers) -> String {
         s.push_str(super::ai_prompt().trim_end());
         s.push_str("\n\n---\n\n");
     }
-    s.push_str(&format!("# {}\n\n", t!(if port { "wizard.titlePort" } else { "wizard.titleNew" })));
-    s.push_str(&format!("{}\n\n", t!(if port { "wizard.leadPort" } else { "wizard.leadNew" })));
+    s.push_str(&format!(
+        "# {}\n\n",
+        t!(if port {
+            "wizard.titlePort"
+        } else {
+            "wizard.titleNew"
+        })
+    ));
+    s.push_str(&format!(
+        "{}\n\n",
+        t!(if port {
+            "wizard.leadPort"
+        } else {
+            "wizard.leadNew"
+        })
+    ));
 
     // The conditions.
     let mut items = Vec::new();
@@ -177,8 +208,22 @@ pub fn prompt(a: &Answers) -> String {
         }
     }
     for (label, v, note, yes, no, auto) in [
-        ("wizard.inputLabel", &a.input, &a.input_note, "wizard.inputYes", "wizard.inputNo", "wizard.inputAuto"),
-        ("wizard.outputLabel", &a.output, &a.output_note, "wizard.outputYes", "wizard.outputNo", "wizard.outputAuto"),
+        (
+            "wizard.inputLabel",
+            &a.input,
+            &a.input_note,
+            "wizard.inputYes",
+            "wizard.inputNo",
+            "wizard.inputAuto",
+        ),
+        (
+            "wizard.outputLabel",
+            &a.output,
+            &a.output_note,
+            "wizard.outputYes",
+            "wizard.outputNo",
+            "wizard.outputAuto",
+        ),
     ] {
         if !port && v.is_empty() && note.trim().is_empty() {
             continue;
@@ -198,9 +243,20 @@ pub fn prompt(a: &Answers) -> String {
     // What it should do.
     let overview = a.overview.trim();
     if !overview.is_empty() {
-        s.push_str(&format!("## {}\n\n{overview}\n\n", t!(if port { "wizard.overviewPort" } else { "wizard.overviewNew" })));
+        s.push_str(&format!(
+            "## {}\n\n{overview}\n\n",
+            t!(if port {
+                "wizard.overviewPort"
+            } else {
+                "wizard.overviewNew"
+            })
+        ));
     } else if port {
-        s.push_str(&format!("## {}\n\n{}\n\n", t!("wizard.overviewPort"), t!("wizard.overviewSame")));
+        s.push_str(&format!(
+            "## {}\n\n{}\n\n",
+            t!("wizard.overviewPort"),
+            t!("wizard.overviewSame")
+        ));
     }
 
     if port {
@@ -217,7 +273,11 @@ pub fn prompt(a: &Answers) -> String {
         s.push_str(&format!("- {}\n", t!("wizard.askExplain")));
     }
     s.push_str(&format!("- {}\n", t!("wizard.askAssume")));
-    let out = if a.name_mode == "auto" || (a.name_mode == "name" && a.name.trim().is_empty()) { t!("wizard.askFileAuto") } else { t!("wizard.askFile", file) };
+    let out = if a.name_mode == "auto" || (a.name_mode == "name" && a.name.trim().is_empty()) {
+        t!("wizard.askFileAuto")
+    } else {
+        t!("wizard.askFile", file)
+    };
     s.push_str(&format!("- {out}\n"));
     if a.mode == "app" {
         s.push_str(&format!("- {}\n", t!("wizard.askApp")));
@@ -228,7 +288,8 @@ pub fn prompt(a: &Answers) -> String {
 /// A color for the prompt: what the color input gives (#rrggbb), else nothing.
 fn color(c: &str) -> Option<&str> {
     let c = c.trim();
-    (c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit())).then_some(c)
+    (c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|x| x.is_ascii_hexdigit()))
+        .then_some(c)
 }
 
 /// The look asked for (None = the defaults): the options of ui.form, or
@@ -240,7 +301,9 @@ fn look(a: &Answers) -> Option<String> {
     let custom = a.title_bar == "custom";
     let accent = color(&a.accent);
     let background = color(&a.background);
-    let radius = ["none", "small", "large", "full"].contains(&a.radius.as_str()).then_some(a.radius.as_str());
+    let radius = ["none", "small", "large", "full"]
+        .contains(&a.radius.as_str())
+        .then_some(a.radius.as_str());
     if !custom && accent.is_none() && background.is_none() && radius.is_none() {
         return None;
     }
@@ -281,7 +344,10 @@ fn look(a: &Answers) -> Option<String> {
         app.push(t!("wizard.lookAppTitleBar"));
     }
     if !css.is_empty() {
-        app.push(t!("wizard.lookAppCss", css.join(t!("wizard.lookSep").as_str())));
+        app.push(t!(
+            "wizard.lookAppCss",
+            css.join(t!("wizard.lookSep").as_str())
+        ));
     }
     let app = app.join(t!("wizard.lookSep").as_str());
     Some(match a.mode.as_str() {
@@ -294,13 +360,19 @@ fn look(a: &Answers) -> Option<String> {
 /// The file the wizard creates before the AI answers: a script that only
 /// says so, or for an app the app's frame.
 pub fn placeholder(title: &str) -> String {
-    format!("// ==xljs==\n// @title {title}\n// ==/xljs==\n\n// {}\n", t!("wizard.placeholder"))
+    format!(
+        "// ==xljs==\n// @title {title}\n// ==/xljs==\n\n// {}\n",
+        t!("wizard.placeholder")
+    )
 }
 
 /// Whether a workbook can be given to the wizard.
 pub fn is_book(p: &str) -> bool {
     let e = super::project::ext_of(p);
-    matches!(e.as_str(), "xlsm" | "xlsb" | "xlam" | "xltm" | "xls" | "xlsx" | "xltx")
+    matches!(
+        e.as_str(),
+        "xlsm" | "xlsb" | "xlam" | "xltm" | "xls" | "xlsx" | "xltx"
+    )
 }
 
 /// Writes the macros and outlines next to the first workbook (for chats

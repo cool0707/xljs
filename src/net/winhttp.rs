@@ -13,7 +13,10 @@ use windows::Win32::Networking::WinHttp::*;
 use windows::core::{HSTRING, PCWSTR, PWSTR};
 
 use super::auth::{self, Login, LoginPrompt};
-use super::{CONNECT_TIMEOUT, Cancel, Credentials, IO_TIMEOUT, Request, Response, Target, parse_headers, parse_status};
+use super::{
+    CONNECT_TIMEOUT, Cancel, Credentials, IO_TIMEOUT, Request, Response, Target, parse_headers,
+    parse_status,
+};
 use crate::{Error, Result, err};
 
 /// The sessions by proxy ("": the system's), as handles (0: WinHttpOpen
@@ -30,12 +33,30 @@ fn session(agent: &str, proxy: Option<&str>) -> Option<*mut c_void> {
                 let a = HSTRING::from(agent);
                 match proxy {
                     // <-loopback>: also for this computer (the tests).
-                    Some(p) => WinHttpOpen(&a, WINHTTP_ACCESS_TYPE_NAMED_PROXY, &HSTRING::from(p), &HSTRING::from("<-loopback>"), 0),
+                    Some(p) => WinHttpOpen(
+                        &a,
+                        WINHTTP_ACCESS_TYPE_NAMED_PROXY,
+                        &HSTRING::from(p),
+                        &HSTRING::from("<-loopback>"),
+                        0,
+                    ),
                     None => {
-                        let mut h = WinHttpOpen(&a, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, PCWSTR::null(), PCWSTR::null(), 0);
+                        let mut h = WinHttpOpen(
+                            &a,
+                            WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+                            PCWSTR::null(),
+                            PCWSTR::null(),
+                            0,
+                        );
                         if h.is_null() {
                             // Before Windows 8.1.
-                            h = WinHttpOpen(&a, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, PCWSTR::null(), PCWSTR::null(), 0);
+                            h = WinHttpOpen(
+                                &a,
+                                WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                PCWSTR::null(),
+                                PCWSTR::null(),
+                                0,
+                            );
                         }
                         h
                     }
@@ -69,10 +90,24 @@ fn message(c: u32) -> String {
         flags |= FORMAT_MESSAGE_FROM_HMODULE;
     }
     let n = unsafe {
-        FormatMessageW(flags, module.map(|m| m.0 as *const c_void), c, 0, PWSTR(buf.as_mut_ptr()), buf.len() as u32, None)
+        FormatMessageW(
+            flags,
+            module.map(|m| m.0 as *const c_void),
+            c,
+            0,
+            PWSTR(buf.as_mut_ptr()),
+            buf.len() as u32,
+            None,
+        )
     };
-    let s = String::from_utf16_lossy(&buf[..n as usize]).trim().to_string();
-    if s.is_empty() { format!("WinHTTP {c}") } else { format!("{s} (WinHTTP {c})") }
+    let s = String::from_utf16_lossy(&buf[..n as usize])
+        .trim()
+        .to_string();
+    if s.is_empty() {
+        format!("WinHTTP {c}")
+    } else {
+        format!("{s} (WinHTTP {c})")
+    }
 }
 
 fn error(req: &Request, c: u32) -> Error {
@@ -114,7 +149,16 @@ fn set_u32(h: *mut c_void, option: u32, v: u32) {
 /// The status text and the headers of the response.
 fn raw_headers(req: &Request, h: *mut c_void) -> Result<(String, Vec<(String, String)>)> {
     let mut size = 0u32;
-    let _ = unsafe { WinHttpQueryHeaders(h, WINHTTP_QUERY_RAW_HEADERS_CRLF, PCWSTR::null(), None, &mut size, std::ptr::null_mut()) };
+    let _ = unsafe {
+        WinHttpQueryHeaders(
+            h,
+            WINHTTP_QUERY_RAW_HEADERS_CRLF,
+            PCWSTR::null(),
+            None,
+            &mut size,
+            std::ptr::null_mut(),
+        )
+    };
     let mut raw = vec![0u16; (size as usize).div_ceil(2) + 1];
     let mut size = (raw.len() * 2) as u32;
     unsafe {
@@ -130,7 +174,11 @@ fn raw_headers(req: &Request, h: *mut c_void) -> Result<(String, Vec<(String, St
     .map_err(|e| error(req, code(&e)))?;
     let raw = String::from_utf16_lossy(&raw[..(size as usize / 2).min(raw.len())]);
     let mut lines = raw.split("\r\n");
-    let status_text = lines.next().and_then(parse_status).map(|(_, t)| t).unwrap_or_default();
+    let status_text = lines
+        .next()
+        .and_then(parse_status)
+        .map(|(_, t)| t)
+        .unwrap_or_default();
     Ok((status_text, parse_headers(lines)))
 }
 
@@ -145,7 +193,14 @@ pub(super) fn send(req: &Request, t: &Target, cancel: &Cancel) -> Result<Respons
     // using the first one given to a handle.
     let mut st = ProxyBasic::default();
     let r = loop {
-        let r = send_on(req, t, cancel, conn.0, proxy.as_deref().unwrap_or(""), &mut st);
+        let r = send_on(
+            req,
+            t,
+            cancel,
+            conn.0,
+            proxy.as_deref().unwrap_or(""),
+            &mut st,
+        );
         match r {
             Ok(None) if !cancel.cancelled() => {
                 // Closes this handle; the next one registers its own.
@@ -173,7 +228,14 @@ struct ProxyBasic {
 
 /// One request handle; None to send again on a new handle
 /// with st.login.
-fn send_on(req: &Request, t: &Target, cancel: &Cancel, conn: *mut c_void, proxy: &str, st: &mut ProxyBasic) -> Result<Option<Response>> {
+fn send_on(
+    req: &Request,
+    t: &Target,
+    cancel: &Cancel,
+    conn: *mut c_void,
+    proxy: &str,
+    st: &mut ProxyBasic,
+) -> Result<Option<Response>> {
     let mut flags = WINHTTP_FLAG_ESCAPE_DISABLE | WINHTTP_FLAG_ESCAPE_DISABLE_QUERY;
     if t.secure {
         flags |= WINHTTP_FLAG_SECURE;
@@ -205,7 +267,11 @@ fn send_on(req: &Request, t: &Target, cancel: &Cancel, conn: *mut c_void, proxy:
     unsafe {
         let _ = WinHttpSetTimeouts(h, 0, ms(CONNECT_TIMEOUT), io, io);
     }
-    set_u32(h, WINHTTP_OPTION_REDIRECT_POLICY, WINHTTP_OPTION_REDIRECT_POLICY_NEVER);
+    set_u32(
+        h,
+        WINHTTP_OPTION_REDIRECT_POLICY,
+        WINHTTP_OPTION_REDIRECT_POLICY_NEVER,
+    );
     // gzip and deflate (WINHTTP_DECOMPRESSION_FLAG_ALL).
     set_u32(h, WINHTTP_OPTION_DECOMPRESSION, 3);
     // The autologon policy is for the servers (credentials); proxies get
@@ -223,14 +289,30 @@ fn send_on(req: &Request, t: &Target, cancel: &Cancel, conn: *mut c_void, proxy:
     for (k, v) in &req.headers {
         has_auth |= k.eq_ignore_ascii_case("authorization");
         let line = wide(&format!("{k}: {v}"));
-        unsafe { WinHttpAddRequestHeaders(h, &line, WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE) }
-            .map_err(|e| error(req, code(&e)))?;
+        unsafe {
+            WinHttpAddRequestHeaders(
+                h,
+                &line,
+                WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE,
+            )
+        }
+        .map_err(|e| error(req, code(&e)))?;
     }
     // The session keeps the agent of its first request: each request
     // sends its own.
-    if !req.headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("user-agent")) {
+    if !req
+        .headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
+    {
         let line = wide(&format!("User-Agent: {}", req.agent));
-        let _ = unsafe { WinHttpAddRequestHeaders(h, &line, WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE) };
+        let _ = unsafe {
+            WinHttpAddRequestHeaders(
+                h,
+                &line,
+                WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE,
+            )
+        };
     }
 
     let body = req.body.as_deref().unwrap_or(&[]);
@@ -241,9 +323,15 @@ fn send_on(req: &Request, t: &Target, cancel: &Cancel, conn: *mut c_void, proxy:
     // The login given to this handle.
     let mut basic: Option<(String, Login)> = None;
     let (status, status_text, headers) = loop {
-        let (ptr, len) = if body.is_empty() { (None, 0) } else { (Some(body.as_ptr() as *const c_void), body.len() as u32) };
-        unsafe { WinHttpSendRequest(h, None, ptr, len, len, 0) }.map_err(|e| error(req, code(&e)))?;
-        unsafe { WinHttpReceiveResponse(h, std::ptr::null_mut()) }.map_err(|e| error(req, code(&e)))?;
+        let (ptr, len) = if body.is_empty() {
+            (None, 0)
+        } else {
+            (Some(body.as_ptr() as *const c_void), body.len() as u32)
+        };
+        unsafe { WinHttpSendRequest(h, None, ptr, len, len, 0) }
+            .map_err(|e| error(req, code(&e)))?;
+        unsafe { WinHttpReceiveResponse(h, std::ptr::null_mut()) }
+            .map_err(|e| error(req, code(&e)))?;
         let mut status = 0u32;
         let mut size = 4u32;
         unsafe {
@@ -266,15 +354,28 @@ fn send_on(req: &Request, t: &Target, cancel: &Cancel, conn: *mut c_void, proxy:
         if status == 407 {
             let (mut supported, mut first, mut target) = (0u32, 0u32, 0u32);
             let _ = unsafe { WinHttpQueryAuthSchemes(h, &mut supported, &mut first, &mut target) };
-            let integrated = [WINHTTP_AUTH_SCHEME_NEGOTIATE.0, WINHTTP_AUTH_SCHEME_NTLM.0].into_iter().find(|s| supported & s != 0);
+            let integrated = [WINHTTP_AUTH_SCHEME_NEGOTIATE.0, WINHTTP_AUTH_SCHEME_NTLM.0]
+                .into_iter()
+                .find(|s| supported & s != 0);
             if let Some(scheme) = integrated
                 && proxy_tries < 2
             {
                 // The signed-in user whatever the autologon policy says
                 // (it would keep it from proxies outside the intranet).
-                set_u32(h, WINHTTP_OPTION_AUTOLOGON_POLICY, WINHTTP_AUTOLOGON_SECURITY_LEVEL_LOW);
+                set_u32(
+                    h,
+                    WINHTTP_OPTION_AUTOLOGON_POLICY,
+                    WINHTTP_AUTOLOGON_SECURITY_LEVEL_LOW,
+                );
                 let ok = unsafe {
-                    WinHttpSetCredentials(h, WINHTTP_AUTH_TARGET_PROXY, scheme, PCWSTR::null(), PCWSTR::null(), std::ptr::null_mut())
+                    WinHttpSetCredentials(
+                        h,
+                        WINHTTP_AUTH_TARGET_PROXY,
+                        scheme,
+                        PCWSTR::null(),
+                        PCWSTR::null(),
+                        std::ptr::null_mut(),
+                    )
                 }
                 .is_ok();
                 if ok {
@@ -291,12 +392,20 @@ fn send_on(req: &Request, t: &Target, cancel: &Cancel, conn: *mut c_void, proxy:
                     .filter(|(k, _)| k.eq_ignore_ascii_case("proxy-authenticate"))
                     .find_map(|(_, v)| auth::basic_realm(v))
                     .unwrap_or_default();
-                let preset = if basic.is_none() { st.login.take().filter(|(r, _)| *r == realm) } else { None };
+                let preset = if basic.is_none() {
+                    st.login.take().filter(|(r, _)| *r == realm)
+                } else {
+                    None
+                };
                 let next = match preset {
                     Some((_, l)) => Some(l),
                     None => {
                         let failed = basic.take().map(|(_, l)| l);
-                        let prompt = LoginPrompt { proxy: true, host: proxy.to_string(), ..Default::default() };
+                        let prompt = LoginPrompt {
+                            proxy: true,
+                            host: proxy.to_string(),
+                            ..Default::default()
+                        };
                         if failed.is_some() {
                             st.prompts += 1;
                         }
@@ -350,7 +459,18 @@ fn send_on(req: &Request, t: &Target, cancel: &Cancel, conn: *mut c_void, proxy:
             break (status, status_text, headers);
         };
         // No user name: the signed-in user.
-        if unsafe { WinHttpSetCredentials(h, target, scheme, PCWSTR::null(), PCWSTR::null(), std::ptr::null_mut()) }.is_err() {
+        if unsafe {
+            WinHttpSetCredentials(
+                h,
+                target,
+                scheme,
+                PCWSTR::null(),
+                PCWSTR::null(),
+                std::ptr::null_mut(),
+            )
+        }
+        .is_err()
+        {
             break (status, status_text, headers);
         }
         server_tries += 1;
@@ -370,5 +490,10 @@ fn send_on(req: &Request, t: &Target, cancel: &Cancel, conn: *mut c_void, proxy:
     if cancel.cancelled() {
         return Err(err!("net.failed", req.url, "aborted"));
     }
-    Ok(Some(Response { status: status as u16, status_text, headers, body: out }))
+    Ok(Some(Response {
+        status: status as u16,
+        status_text,
+        headers,
+        body: out,
+    }))
 }

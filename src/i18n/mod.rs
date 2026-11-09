@@ -10,8 +10,8 @@ use std::sync::{Arc, LazyLock, RwLock};
 use regex::Regex;
 use serde::Deserialize;
 
-pub use translate::{error, text};
 pub(crate) use translate::os_text as translate_os_text;
+pub use translate::{error, text};
 
 /// Defaults for workbooks created by scripts.
 #[derive(Debug, Default, Clone, Deserialize)]
@@ -214,7 +214,9 @@ pub fn locales() -> &'static HashMap<String, Arc<Locale>> {
 
 impl Locale {
     pub(crate) fn rules(&self) -> impl Iterator<Item = (&Regex, &str)> {
-        self.rules.iter().zip(self.translations.iter().map(|(_, r)| r.as_str()))
+        self.rules
+            .iter()
+            .zip(self.translations.iter().map(|(_, r)| r.as_str()))
     }
 }
 

@@ -3,14 +3,36 @@ use super::*;
 #[test]
 fn target_parse() {
     let t = Target::parse("http://example.com").unwrap();
-    assert_eq!(t, Target { secure: false, host: "example.com".into(), port: 80, path: "/".into() });
+    assert_eq!(
+        t,
+        Target {
+            secure: false,
+            host: "example.com".into(),
+            port: 80,
+            path: "/".into()
+        }
+    );
     let t = Target::parse("HTTPS://user:pw@example.com:8443/a/b?x=1#frag").unwrap();
-    assert_eq!(t, Target { secure: true, host: "example.com".into(), port: 8443, path: "/a/b?x=1".into() });
+    assert_eq!(
+        t,
+        Target {
+            secure: true,
+            host: "example.com".into(),
+            port: 8443,
+            path: "/a/b?x=1".into()
+        }
+    );
     assert_eq!(t.host_header(), "example.com:8443");
     let t = Target::parse("http://[::1]:8080?q").unwrap();
-    assert_eq!((t.host.as_str(), t.port, t.path.as_str()), ("::1", 8080, "/?q"));
+    assert_eq!(
+        (t.host.as_str(), t.port, t.path.as_str()),
+        ("::1", 8080, "/?q")
+    );
     assert_eq!(t.host_header(), "[::1]:8080");
-    assert_eq!(Target::parse("https://example.com/").unwrap().host_header(), "example.com");
+    assert_eq!(
+        Target::parse("https://example.com/").unwrap().host_header(),
+        "example.com"
+    );
     assert!(Target::parse("ftp://example.com/").is_err());
     assert!(Target::parse("example.com").is_err());
     assert!(Target::parse("http:///x").is_err());
@@ -19,11 +41,17 @@ fn target_parse() {
 
 #[test]
 fn status_and_headers() {
-    assert_eq!(parse_status("HTTP/1.1 404 Not Found"), Some((404, "Not Found".into())));
+    assert_eq!(
+        parse_status("HTTP/1.1 404 Not Found"),
+        Some((404, "Not Found".into()))
+    );
     assert_eq!(parse_status("HTTP/2 200"), Some((200, String::new())));
     assert_eq!(parse_status("garbage"), None);
     let h = parse_headers(["A: 1", "B:2 ", "  continued", "", "C: 3"].into_iter());
-    assert_eq!(h, vec![("A".into(), "1".into()), ("B".into(), "2 continued".into())]);
+    assert_eq!(
+        h,
+        vec![("A".into(), "1".into()), ("B".into(), "2 continued".into())]
+    );
 }
 
 #[test]
@@ -76,9 +104,16 @@ fn plain_requests() {
     assert_eq!((r.status, r.status_text.as_str()), (404, "Not Found"));
     let r = get("/redirect/1").unwrap();
     assert_eq!(r.status, 302);
-    assert!(r.headers.iter().any(|(k, v)| k == "Location" && v == "/echo"));
+    assert!(
+        r.headers
+            .iter()
+            .any(|(k, v)| k == "Location" && v == "/echo")
+    );
     let r = get("/cookies").unwrap();
-    assert_eq!(r.headers.iter().filter(|(k, _)| k == "Set-Cookie").count(), 2);
+    assert_eq!(
+        r.headers.iter().filter(|(k, _)| k == "Set-Cookie").count(),
+        2
+    );
 }
 
 #[cfg(not(windows))]
@@ -97,7 +132,11 @@ fn plain_errors_and_abort() {
     };
     assert!(send(&req, &Cancel::default()).is_err());
     // Nothing listens on the port.
-    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     req.url = format!("http://127.0.0.1:{port}/");
     assert!(send(&req, &Cancel::default()).is_err());
     req.url = format!("{}/slow", testserver::url());

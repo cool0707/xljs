@@ -42,7 +42,11 @@ impl Run {
         wrap: fn(RunEvent) -> E,
     ) -> Result<Run> {
         let mut cmd = Command::new(exe);
-        cmd.args(args).current_dir(dir).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.args(args)
+            .current_dir(dir)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         for (k, v) in env {
             cmd.env(k, v);
         }
@@ -52,10 +56,18 @@ impl Run {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             cmd.creation_flags(CREATE_NO_WINDOW);
         }
-        let mut child = cmd.spawn().map_err(|e| Error::path("exec", exe.display().to_string(), e))?;
+        let mut child = cmd
+            .spawn()
+            .map_err(|e| Error::path("exec", exe.display().to_string(), e))?;
         let mut readers = Vec::new();
-        let out: Option<Box<dyn Read + Send>> = child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>);
-        let err: Option<Box<dyn Read + Send>> = child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>);
+        let out: Option<Box<dyn Read + Send>> = child
+            .stdout
+            .take()
+            .map(|s| Box::new(s) as Box<dyn Read + Send>);
+        let err: Option<Box<dyn Read + Send>> = child
+            .stderr
+            .take()
+            .map(|s| Box::new(s) as Box<dyn Read + Send>);
         for (stream, is_err) in [(out, false), (err, true)] {
             let Some(mut stream) = stream else { continue };
             let tx = tx.clone();
@@ -79,10 +91,18 @@ impl Run {
                     }
                     let text = super::project::decode(&pending[..cut]);
                     pending.drain(..cut);
-                    let _ = tx.send(wrap(RunEvent::Output { id, stderr: is_err, text }));
+                    let _ = tx.send(wrap(RunEvent::Output {
+                        id,
+                        stderr: is_err,
+                        text,
+                    }));
                 }
                 if !pending.is_empty() {
-                    let _ = tx.send(wrap(RunEvent::Output { id, stderr: is_err, text: super::project::decode(&pending) }));
+                    let _ = tx.send(wrap(RunEvent::Output {
+                        id,
+                        stderr: is_err,
+                        text: super::project::decode(&pending),
+                    }));
                 }
             }));
         }

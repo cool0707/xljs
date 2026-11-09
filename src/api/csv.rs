@@ -46,7 +46,12 @@ pub(crate) fn parse_csv(text: &str, delim: char, comment: Option<char>) -> Vec<V
                         i += 1;
                         // Lazy quotes: text after the closing quote up to
                         // the delimiter belongs to the field.
-                        if i < n && chars[i] != delim && chars[i] != '\n' && !(chars[i] == '\r' && i + 1 < n && chars[i + 1] == '\n') && chars[i] != '\r' {
+                        if i < n
+                            && chars[i] != delim
+                            && chars[i] != '\n'
+                            && !(chars[i] == '\r' && i + 1 < n && chars[i + 1] == '\n')
+                            && chars[i] != '\r'
+                        {
                             field.push('"');
                             continue;
                         }
@@ -61,7 +66,11 @@ pub(crate) fn parse_csv(text: &str, delim: char, comment: Option<char>) -> Vec<V
                     i += 1;
                 }
             } else {
-                while i < n && chars[i] != delim && chars[i] != '\n' && !(chars[i] == '\r' && (i + 1 == n || chars[i + 1] == '\n')) {
+                while i < n
+                    && chars[i] != delim
+                    && chars[i] != '\n'
+                    && !(chars[i] == '\r' && (i + 1 == n || chars[i + 1] == '\n'))
+                {
                     field.push(chars[i]);
                     i += 1;
                 }
@@ -97,7 +106,12 @@ fn needs_quotes(f: &str, delim: char) -> bool {
 
 /// Writes records. Line breaks inside fields are kept as-is (Excel stores
 /// in-cell line breaks as LF), only record separators use eol.
-pub(crate) fn stringify_csv(rows: &[Vec<String>], delim: char, crlf: bool, quote_all: bool) -> String {
+pub(crate) fn stringify_csv(
+    rows: &[Vec<String>],
+    delim: char,
+    crlf: bool,
+    quote_all: bool,
+) -> String {
     let eol = if crlf { "\r\n" } else { "\n" };
     let mut b = String::new();
     for row in rows {
@@ -136,8 +150,24 @@ pub(super) fn install(n: &N) {
     n.set("csvStringify", |_, a| {
         let rows: Vec<Vec<String>> = elems(&a.arg(0))
             .iter()
-            .map(|r| elems(r).iter().map(|e| if nullish(e) { String::new() } else { js::to_str(e) }).collect())
+            .map(|r| {
+                elems(r)
+                    .iter()
+                    .map(|e| {
+                        if nullish(e) {
+                            String::new()
+                        } else {
+                            js::to_str(e)
+                        }
+                    })
+                    .collect()
+            })
             .collect();
-        a.ret(stringify_csv(&rows, delim_char(&a.str(1), ','), a.bool(2), a.bool(3)))
+        a.ret(stringify_csv(
+            &rows,
+            delim_char(&a.str(1), ','),
+            a.bool(2),
+            a.bool(3),
+        ))
     });
 }

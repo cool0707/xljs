@@ -4,7 +4,11 @@ use crate::testutil::{lock_lang, repo_path};
 #[test]
 fn rules_book() {
     let _l = lock_lang("ja");
-    let wb = read_file(&repo_path("testdata/book/rules.xlsx").to_string_lossy(), &Include::ALL).unwrap();
+    let wb = read_file(
+        &repo_path("testdata/book/rules.xlsx").to_string_lossy(),
+        &Include::ALL,
+    )
+    .unwrap();
     let s = text("rules.xlsx", &wb, &Include::ALL);
     for want in [
         "# rules.xlsx の数式",
@@ -43,7 +47,10 @@ fn rules_book() {
     assert!(s.find("- D2:D11: 数式").unwrap() < s.find("- C2:C11: セルの値").unwrap());
 
     let s = text("rules.xlsx", &wb, &Include::parse(&["names"]).unwrap());
-    assert!(s.starts_with("# rules.xlsx の名前の定義") && !s.contains("数式"), "{s}");
+    assert!(
+        s.starts_with("# rules.xlsx の名前の定義") && !s.contains("数式"),
+        "{s}"
+    );
 }
 
 /// Shared formulas (written once with the range they fill), array
@@ -62,9 +69,18 @@ fn sheet_parts() {
 <x14:conditionalFormatting><x14:cfRule type="expression" priority="2" id="{BBB}"><xm:f>B1=他!$A$1</xm:f><x14:dxf><font><b/></font><fill><patternFill><bgColor theme="4" tint="0.79998168889431442"/></patternFill></fill></x14:dxf></x14:cfRule><xm:sqref>B1:B3 B4:B9</xm:sqref></x14:conditionalFormatting>
 </x14:conditionalFormattings></ext>
 <ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:dataValidations count="1"><x14:dataValidation type="list" allowBlank="1" showErrorMessage="1"><x14:formula1><xm:f>他!$A$1:$A$3</xm:f></x14:formula1><xm:sqref>B1:B9</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst></worksheet>"#;
-    let mut sh = Sheet { name: "S".into(), ..Default::default() };
+    let mut sh = Sheet {
+        name: "S".into(),
+        ..Default::default()
+    };
     read_sheet(xml.as_bytes(), &mut sh, false);
-    let wb = Workbook { sheets: vec![sh], theme: ["FFFFFF", "000000", "E7E6E6", "44546A", "4472C4"].map(String::from).to_vec(), ..Default::default() };
+    let wb = Workbook {
+        sheets: vec![sh],
+        theme: ["FFFFFF", "000000", "E7E6E6", "44546A", "4472C4"]
+            .map(String::from)
+            .to_vec(),
+        ..Default::default()
+    };
     let s = text("b.xlsx", &wb, &Include::ALL);
     for want in [
         "- C2:C4, E4: `=A2&B2`\n",
@@ -81,13 +97,28 @@ fn sheet_parts() {
 #[test]
 fn unreadable() {
     let _l = lock_lang("ja");
-    let e = read(&std::fs::read(repo_path("testdata/vba/macro.xls")).unwrap(), &Include::ALL).unwrap_err();
+    let e = read(
+        &std::fs::read(repo_path("testdata/vba/macro.xls")).unwrap(),
+        &Include::ALL,
+    )
+    .unwrap_err();
     assert_eq!(e.key(), Some("book.oldFormat"));
-    assert_eq!(read(b"not a workbook", &Include::ALL).unwrap_err().key(), Some("book.notWorkbook"));
+    assert_eq!(
+        read(b"not a workbook", &Include::ALL).unwrap_err().key(),
+        Some("book.notWorkbook")
+    );
     let s = error_text("a.xls", &Include::ALL, &e);
-    assert!(s.starts_with("# a.xls の数式\n\n") && s.contains("# a.xls の条件付き書式"), "{s}");
+    assert!(
+        s.starts_with("# a.xls の数式\n\n") && s.contains("# a.xls の条件付き書式"),
+        "{s}"
+    );
     assert!(Include::parse(&["vba", "nope"]).is_err());
-    assert_eq!(Include::parse(&["formulas,names".split(',').collect::<Vec<_>>()].concat()).unwrap().keys(), ["formulas", "names"]);
+    assert_eq!(
+        Include::parse(&["formulas,names".split(',').collect::<Vec<_>>()].concat())
+            .unwrap()
+            .keys(),
+        ["formulas", "names"]
+    );
 }
 
 /// Charts: names from cells with their cached text, data labels,
@@ -96,7 +127,13 @@ fn unreadable() {
 #[test]
 fn charts() {
     let _l = lock_lang("ja");
-    let c = |xml: &str, ex: bool| chart::Chart { name: "グラフ 2".into(), range: "B2:H15".into(), sized: true, root: xml::parse(xml.as_bytes()).unwrap(), ex };
+    let c = |xml: &str, ex: bool| chart::Chart {
+        name: "グラフ 2".into(),
+        range: "B2:H15".into(),
+        sized: true,
+        root: xml::parse(xml.as_bytes()).unwrap(),
+        ex,
+    };
     let scatter = c(
         r#"<c:chartSpace xmlns:c="c" xmlns:a="a"><c:chart><c:autoTitleDeleted val="1"/><c:plotArea>
 <c:scatterChart><c:scatterStyle val="lineMarker"/><c:ser><c:tx><c:strRef><c:f>Sheet1!$B$1</c:f><c:strCache><c:pt idx="0"><c:v>気温</c:v></c:pt></c:strCache></c:strRef></c:tx>
@@ -127,7 +164,14 @@ fn charts() {
     );
     assert_eq!(
         chart::describe(&bars),
-        ["種類: 3-D 100% 積み上げ横棒", "タイトル（自動）", "系列「計画」: 値 `=S!$B$2:$B$4`", "縦（項目）軸: タイトル `=S!$A$1`", "奥行き軸: 非表示", "凡例: 右上"]
+        [
+            "種類: 3-D 100% 積み上げ横棒",
+            "タイトル（自動）",
+            "系列「計画」: 値 `=S!$B$2:$B$4`",
+            "縦（項目）軸: タイトル `=S!$A$1`",
+            "奥行き軸: 非表示",
+            "凡例: 右上"
+        ]
     );
     let ex = c(
         r#"<cx:chartSpace xmlns:cx="cx"><cx:chartData><cx:data id="0"><cx:strDim type="cat"><cx:f>S!$A$2:$A$6</cx:f></cx:strDim><cx:numDim type="val"><cx:f>S!$B$2:$B$6</cx:f></cx:numDim></cx:data></cx:chartData>
@@ -136,12 +180,37 @@ fn charts() {
     );
     assert_eq!(
         chart::describe(&ex),
-        ["種類: ウォーターフォール", "タイトル「収支」", "系列「金額」（`=S!$B$1`）: 項目 `=S!$A$2:$A$6`、値 `=S!$B$2:$B$6`"]
+        [
+            "種類: ウォーターフォール",
+            "タイトル「収支」",
+            "系列「金額」（`=S!$B$1`）: 項目 `=S!$A$2:$A$6`、値 `=S!$B$2:$B$6`"
+        ]
     );
-    let sh = Sheet { name: "グラフ".into(), charts: vec![chart::Chart { range: String::new(), ..ex }], ..Default::default() };
-    let s = text("b.xlsx", &Workbook { sheets: vec![sh], ..Default::default() }, &Include::parse(&["charts"]).unwrap());
-    assert!(s.contains("## グラフ\n\n### グラフ 2\n\n- 種類: ウォーターフォール\n"), "{s}");
-    let s = text("b.xlsx", &Workbook::default(), &Include::parse(&["charts"]).unwrap());
+    let sh = Sheet {
+        name: "グラフ".into(),
+        charts: vec![chart::Chart {
+            range: String::new(),
+            ..ex
+        }],
+        ..Default::default()
+    };
+    let s = text(
+        "b.xlsx",
+        &Workbook {
+            sheets: vec![sh],
+            ..Default::default()
+        },
+        &Include::parse(&["charts"]).unwrap(),
+    );
+    assert!(
+        s.contains("## グラフ\n\n### グラフ 2\n\n- 種類: ウォーターフォール\n"),
+        "{s}"
+    );
+    let s = text(
+        "b.xlsx",
+        &Workbook::default(),
+        &Include::parse(&["charts"]).unwrap(),
+    );
     assert_eq!(s, "# b.xlsx のグラフ\n\nグラフはありません。\n\n");
 }
 
@@ -150,7 +219,11 @@ fn charts() {
 fn columns_book() {
     let _l = lock_lang("ja");
     let inc = Include::parse(&["columns"]).unwrap();
-    let wb = read_file(&repo_path("testdata/book/columns.xlsx").to_string_lossy(), &inc).unwrap();
+    let wb = read_file(
+        &repo_path("testdata/book/columns.xlsx").to_string_lossy(),
+        &inc,
+    )
+    .unwrap();
     let s = text("columns.xlsx", &wb, &inc);
     for want in [
         "# columns.xlsx の表の列\n\nデータが 100 行以上ある表",
@@ -187,8 +260,23 @@ fn columns_book() {
         assert!(!s.contains(not), "{not:?} in\n{s}");
     }
     // The other parts read no cells.
-    let wb = read_file(&repo_path("testdata/book/columns.xlsx").to_string_lossy(), &Include::parse(&["formulas"]).unwrap()).unwrap();
+    let wb = read_file(
+        &repo_path("testdata/book/columns.xlsx").to_string_lossy(),
+        &Include::parse(&["formulas"]).unwrap(),
+    )
+    .unwrap();
     assert!(wb.sheets.iter().all(|s| s.cells.is_empty()) && wb.strings.is_empty());
-    let s = text("rules.xlsx", &read_file(&repo_path("testdata/book/rules.xlsx").to_string_lossy(), &inc).unwrap(), &inc);
-    assert_eq!(s, "# rules.xlsx の表の列\n\nデータが 100 行以上ある表はありません。\n\n");
+    let s = text(
+        "rules.xlsx",
+        &read_file(
+            &repo_path("testdata/book/rules.xlsx").to_string_lossy(),
+            &inc,
+        )
+        .unwrap(),
+        &inc,
+    );
+    assert_eq!(
+        s,
+        "# rules.xlsx の表の列\n\nデータが 100 行以上ある表はありません。\n\n"
+    );
 }

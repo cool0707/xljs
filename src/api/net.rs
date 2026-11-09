@@ -19,7 +19,11 @@ pub(crate) fn install(n: &N) {
         let ctx = a.ctx.clone();
         let token = a.int(0) as u64;
         let headers: Vec<(String, String)> = serde_json::from_str(&a.str(3)).unwrap_or_default();
-        let body = if js::nullish(&a.arg(4)) { None } else { Some(a.bytes(4)?) };
+        let body = if js::nullish(&a.arg(4)) {
+            None
+        } else {
+            Some(a.bytes(4)?)
+        };
         let ms = a.f64(5);
         let req = net::Request {
             method: a.str(1),

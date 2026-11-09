@@ -19,20 +19,31 @@ pub fn bundle() -> String {
     let names = |dir: &str| -> Vec<String> {
         let mut v: Vec<String> = files
             .iter()
-            .filter_map(|f| f.name.strip_prefix(&format!("{dir}/")).and_then(|r| r.strip_suffix(".js")).map(str::to_string))
+            .filter_map(|f| {
+                f.name
+                    .strip_prefix(&format!("{dir}/"))
+                    .and_then(|r| r.strip_suffix(".js"))
+                    .map(str::to_string)
+            })
             .collect();
         v.sort();
         v
     };
     let file = |name: &str| -> String {
-        let d = files.iter().find(|f| f.name == name).unwrap_or_else(|| panic!("dayjs: {name} is missing"));
+        let d = files
+            .iter()
+            .find(|f| f.name == name)
+            .unwrap_or_else(|| panic!("dayjs: {name} is missing"));
         String::from_utf8_lossy(d.bytes()).into_owned()
     };
     let mut b = String::new();
     b.push_str("(function () { const mods = {}; const require = (name) => mods[name]; ");
     b.push_str("const load = (name, fn) => { const module = { exports: {} }; fn(module, module.exports, require); mods[name] = module.exports; }; ");
     let mut module = |name: &str, path: &str| {
-        b.push_str(&format!("load({}, function (module, exports, require) {{\n", quote(name)));
+        b.push_str(&format!(
+            "load({}, function (module, exports, require) {{\n",
+            quote(name)
+        ));
         b.push_str(&file(path));
         b.push_str("\n});\n");
     };
@@ -46,9 +57,21 @@ pub fn bundle() -> String {
         module(&format!("dayjs/plugin/{p}"), &format!("plugin/{p}.js"));
     }
     b.push_str("return { dayjs: mods.dayjs, locales: [");
-    b.push_str(&locales.iter().map(|l| quote(l)).collect::<Vec<_>>().join(", "));
+    b.push_str(
+        &locales
+            .iter()
+            .map(|l| quote(l))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
     b.push_str("], plugins: [");
-    b.push_str(&plugins.iter().map(|p| format!("mods[{}]", quote(&format!("dayjs/plugin/{p}")))).collect::<Vec<_>>().join(", "));
+    b.push_str(
+        &plugins
+            .iter()
+            .map(|p| format!("mods[{}]", quote(&format!("dayjs/plugin/{p}"))))
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
     b.push_str("] }; })()");
     b
 }

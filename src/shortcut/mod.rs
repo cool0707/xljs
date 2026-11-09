@@ -92,7 +92,10 @@ impl Operation {
 }
 
 fn ext_of(p: &str) -> String {
-    std::path::Path::new(p).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default()
+    std::path::Path::new(p)
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default()
 }
 
 /// Whether s is a URL ("https://...", "mailto:" is not a file shortcut target either).
@@ -101,8 +104,13 @@ pub fn is_url(s: &str) -> bool {
     let scheme = &s[..i];
     // "C:\..." is a drive, not a scheme.
     scheme.len() > 1
-        && scheme.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
-        && scheme.chars().all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
+        && scheme
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphabetic())
+        && scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "+.-".contains(c))
         && !scheme.eq_ignore_ascii_case("shell")
 }
 
@@ -132,15 +140,27 @@ fn is_url_file(p: &str) -> bool {
 
 /// Reads the shortcut at path (".lnk" / ".url" may be left out).
 pub fn read(path: &str) -> Result<Details> {
-    let p = if exists(path) { path.to_string() } else { shortcut_path(path, false) };
+    let p = if exists(path) {
+        path.to_string()
+    } else {
+        shortcut_path(path, false)
+    };
     std::fs::metadata(&p).map_err(|e| Error::path("open", p.clone(), e))?;
     let mut d = if is_url_file(&p) || looks_like_url_file(&p) {
         let u = read_url(&p)?;
-        Details { target: u.url, icon: u.icon, icon_index: u.icon_index, window_state: "normal".into(), ..Default::default() }
+        Details {
+            target: u.url,
+            icon: u.icon,
+            icon_index: u.icon_index,
+            window_state: "normal".into(),
+            ..Default::default()
+        }
     } else {
         to_details(&load_lnk(&p)?)
     };
-    d.path = std::path::absolute(&p).map(|a| a.to_string_lossy().into_owned()).unwrap_or(p);
+    d.path = std::path::absolute(&p)
+        .map(|a| a.to_string_lossy().into_owned())
+        .unwrap_or(p);
     Ok(d)
 }
 
@@ -149,10 +169,16 @@ pub fn read(path: &str) -> Result<Details> {
 pub fn write(path: &str, op: Operation, c: &Changes) -> Result<String> {
     let url_target = c.target.as_deref().is_some_and(is_url);
     let p = shortcut_path(path, url_target);
-    let p = std::path::absolute(&p).map(|a| a.to_string_lossy().into_owned()).unwrap_or(p);
+    let p = std::path::absolute(&p)
+        .map(|a| a.to_string_lossy().into_owned())
+        .unwrap_or(p);
     let found = exists(&p);
     if op != Operation::Create && !found {
-        return Err(Error::path("open", p, std::io::Error::from(std::io::ErrorKind::NotFound)));
+        return Err(Error::path(
+            "open",
+            p,
+            std::io::Error::from(std::io::ErrorKind::NotFound),
+        ));
     }
     if op != Operation::Update && c.target.as_deref().is_none_or(|t| t.trim().is_empty()) {
         return Err(err!("shell.shortcutTarget"));
@@ -161,18 +187,33 @@ pub fn write(path: &str, op: Operation, c: &Changes) -> Result<String> {
         && !dir.as_os_str().is_empty()
         && !dir.is_dir()
     {
-        return Err(Error::path("open", dir.to_string_lossy(), std::io::Error::from(std::io::ErrorKind::NotFound)));
+        return Err(Error::path(
+            "open",
+            dir.to_string_lossy(),
+            std::io::Error::from(std::io::ErrorKind::NotFound),
+        ));
     }
     if is_url_file(&p) {
-        let prev = if op == Operation::Update { Some(read_url(&p)?) } else { None };
+        let prev = if op == Operation::Update {
+            Some(read_url(&p)?)
+        } else {
+            None
+        };
         write_url(&p, prev.as_ref(), c)?;
         return Ok(p);
     }
     if url_target {
         return Err(err!("shell.shortcutURLTarget", p));
     }
-    let prev = if op == Operation::Update { Some(load_lnk(&p)?) } else { None };
-    let mut link = prev.clone().unwrap_or(Link { show: SW_SHOWNORMAL, ..Default::default() });
+    let prev = if op == Operation::Update {
+        Some(load_lnk(&p)?)
+    } else {
+        None
+    };
+    let mut link = prev.clone().unwrap_or(Link {
+        show: SW_SHOWNORMAL,
+        ..Default::default()
+    });
     apply(&mut link, c)?;
     save_lnk(&p, &link, prev.as_ref())?;
     Ok(p)
@@ -184,10 +225,17 @@ pub fn write(path: &str, op: Operation, c: &Changes) -> Result<String> {
 fn abs_path(s: &str) -> String {
     let s = s.trim();
     let windows_abs = s.as_bytes().get(1) == Some(&b':') || s.starts_with("\\\\");
-    if s.is_empty() || windows_abs || s.starts_with('%') || s.starts_with("::") || s.to_lowercase().starts_with("shell:") {
+    if s.is_empty()
+        || windows_abs
+        || s.starts_with('%')
+        || s.starts_with("::")
+        || s.to_lowercase().starts_with("shell:")
+    {
         return s.to_string();
     }
-    std::path::absolute(s).map(|a| a.to_string_lossy().into_owned()).unwrap_or_else(|_| s.to_string())
+    std::path::absolute(s)
+        .map(|a| a.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| s.to_string())
 }
 
 fn apply(l: &mut Link, c: &Changes) -> Result<()> {
@@ -357,7 +405,10 @@ fn key_code(name: &str) -> Option<u8> {
         "PGDN" => "PageDown",
         _ => name,
     };
-    KEY_NAMES.iter().find(|(n, _)| n.eq_ignore_ascii_case(alias)).map(|(_, v)| *v)
+    KEY_NAMES
+        .iter()
+        .find(|(n, _)| n.eq_ignore_ascii_case(alias))
+        .map(|(_, v)| *v)
 }
 
 /// "Ctrl+Alt+K" -> the hotkey word ("" = none).
@@ -389,7 +440,11 @@ pub fn format_hotkey(h: u16) -> String {
     }
     let f = h >> 8;
     let mut s = String::new();
-    for (bit, name) in [(HOTKEYF_CONTROL, "Ctrl+"), (HOTKEYF_SHIFT, "Shift+"), (HOTKEYF_ALT, "Alt+")] {
+    for (bit, name) in [
+        (HOTKEYF_CONTROL, "Ctrl+"),
+        (HOTKEYF_SHIFT, "Shift+"),
+        (HOTKEYF_ALT, "Alt+"),
+    ] {
         if f & bit != 0 {
             s.push_str(name);
         }
@@ -410,15 +465,24 @@ fn looks_like_url_file(p: &str) -> bool {
     ext_of(p) != "lnk"
         && std::fs::read(p).is_ok_and(|b| {
             let s = crate::api::decode(&b, "auto").unwrap_or_default();
-            s.lines().any(|l| l.trim().eq_ignore_ascii_case("[InternetShortcut]"))
+            s.lines()
+                .any(|l| l.trim().eq_ignore_ascii_case("[InternetShortcut]"))
         })
 }
 
 fn read_url(p: &str) -> Result<UrlFile> {
     let b = std::fs::read(p).map_err(|e| Error::path("open", p, e))?;
     let text = crate::api::decode(&b, "auto")?;
-    let lines: Vec<String> = text.lines().map(|l| l.trim_start_matches('\u{feff}').to_string()).collect();
-    let mut u = UrlFile { url: String::new(), icon: String::new(), icon_index: 0, lines };
+    let lines: Vec<String> = text
+        .lines()
+        .map(|l| l.trim_start_matches('\u{feff}').to_string())
+        .collect();
+    let mut u = UrlFile {
+        url: String::new(),
+        icon: String::new(),
+        icon_index: 0,
+        lines,
+    };
     let mut section = String::new();
     let mut found = false;
     for l in &u.lines {
@@ -431,7 +495,9 @@ fn read_url(p: &str) -> Result<UrlFile> {
         if !section.eq_ignore_ascii_case("InternetShortcut") {
             continue;
         }
-        let Some((k, v)) = t.split_once('=') else { continue };
+        let Some((k, v)) = t.split_once('=') else {
+            continue;
+        };
         match k.trim().to_lowercase().as_str() {
             "url" => u.url = v.trim().to_string(),
             "iconfile" => u.icon = v.trim().to_string(),
@@ -485,7 +551,10 @@ fn write_url(p: &str, prev: Option<&UrlFile>, c: &Changes) -> Result<()> {
         }
         if section.eq_ignore_ascii_case("InternetShortcut")
             && let Some((k, _)) = t.split_once('=')
-            && matches!(k.trim().to_lowercase().as_str(), "url" | "iconfile" | "iconindex")
+            && matches!(
+                k.trim().to_lowercase().as_str(),
+                "url" | "iconfile" | "iconindex"
+            )
         {
             continue;
         }
@@ -503,7 +572,11 @@ fn write_url(p: &str, prev: Option<&UrlFile>, c: &Changes) -> Result<()> {
         text.into_bytes()
     } else {
         let (b, _, bad) = encoding_rs::SHIFT_JIS.encode(&text);
-        if bad { crate::api::encode(&text, "utf16le")? } else { b.into_owned() }
+        if bad {
+            crate::api::encode(&text, "utf16le")?
+        } else {
+            b.into_owned()
+        }
     };
     std::fs::write(p, bytes).map_err(|e| Error::path("open", p, e))
 }

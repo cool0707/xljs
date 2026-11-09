@@ -8,9 +8,9 @@ use rquickjs::{Ctx, Function, Object, Value};
 
 use super::js::{self, nullish};
 use super::{A, N, R};
+use crate::Error;
 use crate::engine::watchdog;
 use crate::process::{Done, OnLines, Running, Spec, Stream, decode_output};
-use crate::Error;
 
 fn spec(a: &A) -> rquickjs::Result<Spec> {
     serde_json::from_str(&a.str(0)).map_err(|e| a.throw(&Error::from(e)))
@@ -28,7 +28,9 @@ fn input<'js>(a: &A<'js>, i: usize, enc: &str) -> rquickjs::Result<Option<Vec<u8
             "" | "auto" | "buffer" => "utf8",
             e => e,
         };
-        return crate::api::encode(&a.str(i), enc).map(Some).map_err(|e| a.throw(&e));
+        return crate::api::encode(&a.str(i), enc)
+            .map(Some)
+            .map_err(|e| a.throw(&e));
     }
     js::bytes(&a.ctx, &v).map(Some)
 }
@@ -92,10 +94,16 @@ pub(super) fn install<'js>(n: &N<'js>) {
         } else {
             loop {
                 match rx.recv_timeout(Duration::from_millis(20)) {
-                    Ok((s, lines)) if in_debugger => later.extend(lines.into_iter().map(|l| (s, l))),
+                    Ok((s, lines)) if in_debugger => {
+                        later.extend(lines.into_iter().map(|l| (s, l)))
+                    }
                     Ok((s, lines)) => {
                         watchdog::waited();
-                        if let Some(f) = if s == Stream::Stdout { &on_out } else { &on_err } {
+                        if let Some(f) = if s == Stream::Stdout {
+                            &on_out
+                        } else {
+                            &on_err
+                        } {
                             for l in lines {
                                 f.call::<_, Value>((l,))?;
                             }
@@ -114,7 +122,12 @@ pub(super) fn install<'js>(n: &N<'js>) {
         let res = result(&a.ctx, &done, &spec.encoding, r.pid)?;
         if in_debugger && want {
             let ctx = &a.ctx;
-            let items = later.into_iter().map(|(s, l)| js::array(ctx, [js::v(ctx, (s == Stream::Stderr) as i32), js::v(ctx, l)]));
+            let items = later.into_iter().map(|(s, l)| {
+                js::array(
+                    ctx,
+                    [js::v(ctx, (s == Stream::Stderr) as i32), js::v(ctx, l)],
+                )
+            });
             let items: Vec<Value> = items.collect::<rquickjs::Result<_>>()?;
             if let Some(o) = res.as_object() {
                 o.set("lines", js::array(ctx, items)?)?;
@@ -131,12 +144,17 @@ pub(super) fn install<'js>(n: &N<'js>) {
         let spec = spec(a)?;
         let input = input(a, 1, &spec.encoding)?;
         let ctx = a.ctx.clone();
-        let ids: Vec<Option<u64>> = [2, 3].iter().map(|&i| func(a.arg(i)).map(|f| h.keep_fn(&ctx, f))).collect();
+        let ids: Vec<Option<u64>> = [2, 3]
+            .iter()
+            .map(|&i| func(a.arg(i)).map(|f| h.keep_fn(&ctx, f)))
+            .collect();
         let (out_id, err_id) = (ids[0], ids[1]);
         let cb: Option<OnLines> = if out_id.is_some() || err_id.is_some() {
             let poster = h.poster();
             Some(Arc::new(move |s, lines: Vec<String>| {
-                let Some(id) = (if s == Stream::Stdout { out_id } else { err_id }) else { return };
+                let Some(id) = (if s == Stream::Stdout { out_id } else { err_id }) else {
+                    return;
+                };
                 poster.add_pending();
                 poster.post(Box::new(move |ctx, host| {
                     if let Some(f) = host.kept_fn(ctx, id) {
@@ -166,7 +184,9 @@ pub(super) fn install<'js>(n: &N<'js>) {
             "wait",
             Function::new(ctx.clone(), move |ctx: Ctx<'js>| -> R<'js> {
                 let (promise, resolve, _) = ctx.promise()?;
-                let Some(h) = hw.upgrade() else { return Ok(promise.into_value()) };
+                let Some(h) = hw.upgrade() else {
+                    return Ok(promise.into_value());
+                };
                 let id = h.keep_fn(&ctx, resolve);
                 let poster = h.poster();
                 poster.add_pending();
@@ -196,18 +216,22 @@ pub(super) fn install<'js>(n: &N<'js>) {
         let (r5, enc) = (r.clone(), spec.encoding.clone());
         obj.set(
             "write",
-            Function::new(ctx.clone(), move |ctx: Ctx<'js>, v: Value<'js>| -> rquickjs::Result<()> {
-                let b = if v.is_string() {
-                    let e = match enc.as_str() {
-                        "" | "auto" | "buffer" => "utf8",
-                        e => e,
+            Function::new(
+                ctx.clone(),
+                move |ctx: Ctx<'js>, v: Value<'js>| -> rquickjs::Result<()> {
+                    let b = if v.is_string() {
+                        let e = match enc.as_str() {
+                            "" | "auto" | "buffer" => "utf8",
+                            e => e,
+                        };
+                        crate::api::encode(&js::to_str(&v), e)
+                            .map_err(|e| super::throw(&ctx, &e))?
+                    } else {
+                        js::bytes(&ctx, &v)?
                     };
-                    crate::api::encode(&js::to_str(&v), e).map_err(|e| super::throw(&ctx, &e))?
-                } else {
-                    js::bytes(&ctx, &v)?
-                };
-                r5.write(&b).map_err(|e| super::throw(&ctx, &e))
-            })?,
+                    r5.write(&b).map_err(|e| super::throw(&ctx, &e))
+                },
+            )?,
         )?;
         Ok(obj.into_value())
     });

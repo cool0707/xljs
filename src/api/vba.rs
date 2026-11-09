@@ -9,17 +9,40 @@ pub(super) fn install(n: &N) {
     // { name, codePage, modules: [{ name, type, code, sheet }], text }, or
     // null without macros. text is vba::text, named after the file.
     fn result<'js>(c: &rquickjs::Ctx<'js>, p: Option<vba::Project>, file: &str) -> super::R<'js> {
-        let Some(p) = p else { return Ok(Value::new_null(c.clone())) };
+        let Some(p) = p else {
+            return Ok(Value::new_null(c.clone()));
+        };
         let mods: Vec<Value> = p
             .modules
             .iter()
             .map(|m| {
-                let sheet = if m.sheet.is_empty() { Value::new_null(c.clone()) } else { v(c, m.sheet.clone()) };
-                object(c, vec![("name", v(c, m.name.clone())), ("type", v(c, m.kind.clone())), ("code", v(c, m.code.clone())), ("sheet", sheet)]).unwrap()
+                let sheet = if m.sheet.is_empty() {
+                    Value::new_null(c.clone())
+                } else {
+                    v(c, m.sheet.clone())
+                };
+                object(
+                    c,
+                    vec![
+                        ("name", v(c, m.name.clone())),
+                        ("type", v(c, m.kind.clone())),
+                        ("code", v(c, m.code.clone())),
+                        ("sheet", sheet),
+                    ],
+                )
+                .unwrap()
             })
             .collect();
         let text = vba::text(file, &p);
-        object(c, vec![("name", v(c, p.name)), ("codePage", v(c, p.code_page)), ("modules", js::array(c, mods)?), ("text", v(c, text))])
+        object(
+            c,
+            vec![
+                ("name", v(c, p.name)),
+                ("codePage", v(c, p.code_page)),
+                ("modules", js::array(c, mods)?),
+                ("text", v(c, text)),
+            ],
+        )
     }
     n.set("vbaRead", |_, a| {
         let path = a.str(0);

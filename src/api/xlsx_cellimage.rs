@@ -39,7 +39,9 @@ impl CellImages {
 
     pub fn collect(data: &[u8]) -> CellImages {
         let mut out = CellImages::default();
-        let Ok(mut zr) = zip::ZipArchive::new(Cursor::new(data)) else { return out };
+        let Ok(mut zr) = zip::ZipArchive::new(Cursor::new(data)) else {
+            return out;
+        };
         if !zr.file_names().any(|n| n.starts_with("xl/richData/")) {
             return out;
         }
@@ -56,36 +58,80 @@ impl CellImages {
         // The parts by the type of their relationship from the workbook.
         let wb_rels = rels(xml(read("xl/_rels/workbook.xml.rels")).as_ref(), "xl");
         let part = |suffix: &str, default: &str| {
-            wb_rels.values().find(|(t, _)| t.rsplit('/').next() == Some(suffix)).map(|(_, p)| p.clone()).unwrap_or_else(|| default.to_string())
+            wb_rels
+                .values()
+                .find(|(t, _)| t.rsplit('/').next() == Some(suffix))
+                .map(|(_, p)| p.clone())
+                .unwrap_or_else(|| default.to_string())
         };
         let (meta_part, rv_part, st_part, rel_part) = (
             part("sheetMetadata", "xl/metadata.xml"),
             part("rdRichValue", "xl/richData/rdrichvalue.xml"),
-            part("rdRichValueStructure", "xl/richData/rdrichvaluestructure.xml"),
+            part(
+                "rdRichValueStructure",
+                "xl/richData/rdrichvaluestructure.xml",
+            ),
             part("richValueRel", "xl/richData/richValueRel.xml"),
         );
-        let (Some(meta), Some(rv), Some(st)) = (xml(read(&meta_part)), xml(read(&rv_part)), xml(read(&st_part))) else { return out };
+        let (Some(meta), Some(rv), Some(st)) = (
+            xml(read(&meta_part)),
+            xml(read(&rv_part)),
+            xml(read(&st_part)),
+        ) else {
+            return out;
+        };
         // richValueRel.xml: the pictures by position.
         let rel_dir = rel_part.rsplit_once('/').map(|x| x.0).unwrap_or("");
         let rel_file = rel_part.rsplit('/').next().unwrap_or("");
-        let pic_rels = rels(xml(read(&format!("{rel_dir}/_rels/{rel_file}.rels"))).as_ref(), rel_dir);
+        let pic_rels = rels(
+            xml(read(&format!("{rel_dir}/_rels/{rel_file}.rels"))).as_ref(),
+            rel_dir,
+        );
         let pictures: Vec<Option<String>> = xml(read(&rel_part))
-            .map(|r| r.all("rel").map(|x| x.attr("id").and_then(|id| pic_rels.get(id)).map(|(_, p)| p.clone())).collect())
+            .map(|r| {
+                r.all("rel")
+                    .map(|x| {
+                        x.attr("id")
+                            .and_then(|id| pic_rels.get(id))
+                            .map(|(_, p)| p.clone())
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
         // The structures' types and key names.
-        let structs: Vec<(String, Vec<String>)> = st.all("s").map(|s| (s.attr("t").unwrap_or("").to_string(), s.all("k").map(|k| k.attr("n").unwrap_or("").to_string()).collect())).collect();
+        let structs: Vec<(String, Vec<String>)> = st
+            .all("s")
+            .map(|s| {
+                (
+                    s.attr("t").unwrap_or("").to_string(),
+                    s.all("k")
+                        .map(|k| k.attr("n").unwrap_or("").to_string())
+                        .collect(),
+                )
+            })
+            .collect();
         // Rich value -> picture (index in out.images).
         let mut by_part: HashMap<String, usize> = HashMap::new();
         let mut rich: Vec<Option<usize>> = Vec::new();
         for v in rv.all("rv") {
-            let Some((kind, keys)) = v.attr("s").and_then(|s| s.parse::<usize>().ok()).and_then(|s| structs.get(s)) else {
+            let Some((kind, keys)) = v
+                .attr("s")
+                .and_then(|s| s.parse::<usize>().ok())
+                .and_then(|s| structs.get(s))
+            else {
                 rich.push(None);
                 continue;
             };
             let vals: Vec<&str> = v.all("v").map(|x| x.text.as_str()).collect();
-            let get = |key: &str| keys.iter().position(|k| k == key).and_then(|i| vals.get(i).copied());
+            let get = |key: &str| {
+                keys.iter()
+                    .position(|k| k == key)
+                    .and_then(|i| vals.get(i).copied())
+            };
             let alt = get("Text").unwrap_or("").to_string();
-            let img = match get("_rvRel:LocalImageIdentifier").and_then(|i| i.trim().parse::<usize>().ok()) {
+            let img = match get("_rvRel:LocalImageIdentifier")
+                .and_then(|i| i.trim().parse::<usize>().ok())
+            {
                 Some(i) => {
                     let Some(p) = pictures.get(i).cloned().flatten() else {
                         rich.push(None);
@@ -104,7 +150,11 @@ impl CellImages {
                 }
                 // IMAGE("https://..."): the picture is not in the file.
                 None if kind == "_webImage" => {
-                    out.images.push(CellImage { mime: None, data: Vec::new(), alt });
+                    out.images.push(CellImage {
+                        mime: None,
+                        data: Vec::new(),
+                        alt,
+                    });
                     Some(out.images.len() - 1)
                 }
                 None => None,
@@ -113,12 +163,33 @@ impl CellImages {
         }
         // metadata.xml: vm (1-based) -> valueMetadata bk -> rc t (1-based
         // metadataType) v (0-based) -> futureMetadata XLRICHVALUE bk -> rvb i.
-        let types: Vec<&str> = meta.child("metadataTypes").map(|t| t.all("metadataType").map(|x| x.attr("name").unwrap_or("")).collect()).unwrap_or_default();
-        let Some(rv_type) = types.iter().position(|t| *t == "XLRICHVALUE").map(|i| i + 1) else { return out };
+        let types: Vec<&str> = meta
+            .child("metadataTypes")
+            .map(|t| {
+                t.all("metadataType")
+                    .map(|x| x.attr("name").unwrap_or(""))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let Some(rv_type) = types
+            .iter()
+            .position(|t| *t == "XLRICHVALUE")
+            .map(|i| i + 1)
+        else {
+            return out;
+        };
         let future: Vec<Option<usize>> = meta
             .all("futureMetadata")
             .find(|f| f.attr("name") == Some("XLRICHVALUE"))
-            .map(|f| f.all("bk").map(|bk| bk.find("rvb").and_then(|r| r.attr("i")).and_then(|i| i.parse().ok())).collect())
+            .map(|f| {
+                f.all("bk")
+                    .map(|bk| {
+                        bk.find("rvb")
+                            .and_then(|r| r.attr("i"))
+                            .and_then(|i| i.parse().ok())
+                    })
+                    .collect()
+            })
             .unwrap_or_default();
         let vm: Vec<Option<usize>> = meta
             .child("valueMetadata")
@@ -129,7 +200,10 @@ impl CellImages {
                         if rc.attr("t")?.parse::<usize>().ok()? != rv_type {
                             return None;
                         }
-                        let f = future.get(rc.attr("v")?.parse::<usize>().ok()?).copied().flatten()?;
+                        let f = future
+                            .get(rc.attr("v")?.parse::<usize>().ok()?)
+                            .copied()
+                            .flatten()?;
                         rich.get(f).copied().flatten()
                     })
                     .collect()
@@ -153,31 +227,49 @@ fn rels(root: Option<&Node>, dir: &str) -> HashMap<String, (String, String)> {
     let mut out = HashMap::new();
     let Some(root) = root else { return out };
     for r in root.all("Relationship") {
-        let (Some(id), Some(target)) = (r.attr("Id"), r.attr("Target")) else { continue };
+        let (Some(id), Some(target)) = (r.attr("Id"), r.attr("Target")) else {
+            continue;
+        };
         if r.attr("TargetMode") == Some("External") {
             continue;
         }
-        out.insert(id.to_string(), (r.attr("Type").unwrap_or("").to_string(), resolve(dir, target)));
+        out.insert(
+            id.to_string(),
+            (
+                r.attr("Type").unwrap_or("").to_string(),
+                resolve(dir, target),
+            ),
+        );
     }
     out
 }
 
 fn mime_of(part: &str) -> Option<&'static str> {
-    Some(match part.rsplit('.').next().unwrap_or("").to_lowercase().as_str() {
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "bmp" => "image/bmp",
-        "svg" => "image/svg+xml",
-        "jpg" | "jpeg" => "image/jpeg",
-        "webp" => "image/webp",
-        _ => return None,
-    })
+    Some(
+        match part
+            .rsplit('.')
+            .next()
+            .unwrap_or("")
+            .to_lowercase()
+            .as_str()
+        {
+            "png" => "image/png",
+            "gif" => "image/gif",
+            "bmp" => "image/bmp",
+            "svg" => "image/svg+xml",
+            "jpg" | "jpeg" => "image/jpeg",
+            "webp" => "image/webp",
+            _ => return None,
+        },
+    )
 }
 
 /// The cells of a sheet's XML with a vm that is a picture.
 fn vm_cells(xml: &[u8], vm: &[Option<usize>]) -> HashMap<(u32, u32), usize> {
-    static CELL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"<c\b([^>]*\bvm="[^"]*"[^>]*)>"#).unwrap());
-    static ATTR: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"\b(r|vm)="([^"]*)""#).unwrap());
+    static CELL: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r#"<c\b([^>]*\bvm="[^"]*"[^>]*)>"#).unwrap());
+    static ATTR: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r#"\b(r|vm)="([^"]*)""#).unwrap());
     let s = String::from_utf8_lossy(xml);
     let mut out = HashMap::new();
     if !s.contains(" vm=\"") {

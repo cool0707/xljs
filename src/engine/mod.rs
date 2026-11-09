@@ -3,8 +3,8 @@
 
 mod bundle;
 mod debug;
-pub mod memory;
 pub(crate) mod loop_;
+pub mod memory;
 mod sourcemap;
 pub mod watchdog;
 
@@ -40,8 +40,7 @@ pub fn stderr() -> Out {
 pub const BUNDLE_NAME: &str = "xljs:bundle";
 
 /// Configures a script run.
-#[derive(Clone)]
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Options {
     /// The entry file. When code is set it is only used for naming and to
     /// derive the script directory.
@@ -89,7 +88,6 @@ pub struct Options {
     /// opens, instead of showing it (the form preview); "" = off.
     pub preview: String,
 }
-
 
 /// A JavaScript error that terminated the script.
 #[derive(Debug, Clone)]
@@ -141,11 +139,16 @@ impl fmt::Display for BundleError {
 }
 
 pub(crate) fn abs_path(p: &str) -> String {
-    std::path::absolute(p).map(|a| a.to_string_lossy().into_owned()).unwrap_or_else(|_| p.to_string())
+    std::path::absolute(p)
+        .map(|a| a.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| p.to_string())
 }
 
 pub(crate) fn script_dir(script: &str) -> std::path::PathBuf {
-    std::path::Path::new(script).parent().map(|p| p.to_path_buf()).unwrap_or_default()
+    std::path::Path::new(script)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_default()
 }
 
 /// Fills in the defaults of o (UI, output, metadata, code).
@@ -216,13 +219,21 @@ pub fn run(mut o: Options) -> Result<i32> {
     let host = Rc::new(Host::new(env, Mapper::from_bundle(&code)));
     {
         let h = Rc::downgrade(&host);
-        rt.set_host_promise_rejection_tracker(Some(Box::new(move |ctx, promise, reason, handled| {
-            if let Some(h) = h.upgrade() {
-                h.track_rejection(&ctx, promise, reason, handled);
-            }
-        })));
+        rt.set_host_promise_rejection_tracker(Some(Box::new(
+            move |ctx, promise, reason, handled| {
+                if let Some(h) = h.upgrade() {
+                    h.track_rejection(&ctx, promise, reason, handled);
+                }
+            },
+        )));
     }
-    let stop = watchdog::install(&rt, Rc::downgrade(&host), o.watchdog, o.stop_key.clone(), o.memory_floor);
+    let stop = watchdog::install(
+        &rt,
+        Rc::downgrade(&host),
+        o.watchdog,
+        o.stop_key.clone(),
+        o.memory_floor,
+    );
     let res = ctx.with(|ctx| run_in(&ctx, &host, &code));
     rt.set_interrupt_handler(None);
     drop(stop);
@@ -236,9 +247,15 @@ pub fn run(mut o: Options) -> Result<i32> {
 
 fn run_in<'js>(ctx: &Ctx<'js>, host: &Rc<Host>, code: &str) -> Result<i32> {
     // The setup runs JavaScript too: it can be stopped for lack of memory.
-    let internal = |e: String| host.stop_error.take().map(script_error).unwrap_or_else(|| err!("engine.internalError", e));
+    let internal = |e: String| {
+        host.stop_error
+            .take()
+            .map(script_error)
+            .unwrap_or_else(|| err!("engine.internalError", e))
+    };
     install_stack_mapper(ctx, host).map_err(|e| internal(e.to_string()))?;
-    host.install_loop(ctx).map_err(|e| internal(e.to_string()))?;
+    host.install_loop(ctx)
+        .map_err(|e| internal(e.to_string()))?;
     let natives = match api::install(ctx, host) {
         Ok(n) => n,
         Err(e) => return Err(internal(describe_error(ctx, e))),
@@ -247,14 +264,19 @@ fn run_in<'js>(ctx: &Ctx<'js>, host: &Rc<Host>, code: &str) -> Result<i32> {
     opts.global = true;
     opts.strict = false;
     opts.filename = Some(BUNDLE_NAME.into());
-    let main: Value = match ctx.eval_with_options(code.as_bytes().to_vec(), opts).catch(ctx) {
+    let main: Value = match ctx
+        .eval_with_options(code.as_bytes().to_vec(), opts)
+        .catch(ctx)
+    {
         Ok(v) => v,
         Err(e) => return finish_caught(ctx, host, e),
     };
     // An app opens its main window before the script runs; the script ends
     // when the window is closed (the window keeps the event loop busy).
     if host.env.meta.is_app() {
-        let open: Function = natives.get("openMain").map_err(|_| err!("engine.internalError", "openMain"))?;
+        let open: Function = natives
+            .get("openMain")
+            .map_err(|_| err!("engine.internalError", "openMain"))?;
         if let Err(e) = open.call::<_, Value>(()).catch(ctx) {
             return finish_caught(ctx, host, e);
         }
@@ -262,7 +284,9 @@ fn run_in<'js>(ctx: &Ctx<'js>, host: &Rc<Host>, code: &str) -> Result<i32> {
     let Some(main) = main.as_function().cloned() else {
         return Err(err!("engine.bundleNotFunction"));
     };
-    let hook: Value = natives.get("setExports").unwrap_or(Value::new_undefined(ctx.clone()));
+    let hook: Value = natives
+        .get("setExports")
+        .unwrap_or(Value::new_undefined(ctx.clone()));
     let result = main.call::<_, Value>((hook,)).catch(ctx);
     let result = match result {
         Ok(v) => v,
@@ -287,18 +311,27 @@ fn run_in<'js>(ctx: &Ctx<'js>, host: &Rc<Host>, code: &str) -> Result<i32> {
         host.forget_rejection(p.as_value());
         match p.state() {
             rquickjs::promise::PromiseState::Rejected => {
-                let v: Value = p.result::<Value>().and_then(|r| r.err()).map(|e| match e {
-                    rquickjs::Error::Exception => ctx.catch(),
-                    _ => Value::new_undefined(ctx.clone()),
-                }).unwrap_or_else(|| Value::new_undefined(ctx.clone()));
+                let v: Value = p
+                    .result::<Value>()
+                    .and_then(|r| r.err())
+                    .map(|e| match e {
+                        rquickjs::Error::Exception => ctx.catch(),
+                        _ => Value::new_undefined(ctx.clone()),
+                    })
+                    .unwrap_or_else(|| Value::new_undefined(ctx.clone()));
                 return Err(script_error(describe_value(&v)));
             }
-            rquickjs::promise::PromiseState::Pending => return Err(script_error(t!("engine.notFinished"))),
+            rquickjs::promise::PromiseState::Pending => {
+                return Err(script_error(t!("engine.notFinished")));
+            }
             _ => {}
         }
     }
     if let Some(reason) = host.first_unhandled(ctx) {
-        return Err(script_error(t!("engine.unhandledRejection", describe_value(&reason))));
+        return Err(script_error(t!(
+            "engine.unhandledRejection",
+            describe_value(&reason)
+        )));
     }
     Ok(0)
 }
@@ -313,12 +346,23 @@ fn finish_caught(ctx: &Ctx, host: &Rc<Host>, e: rquickjs::CaughtError) -> Result
     }
     if let Some(msg) = host.stop_error.take() {
         let at = stopped_at(&describe_caught(ctx, e));
-        return Err(script_error(if at.is_empty() { msg } else { format!("{msg}\n{at}") }));
+        return Err(script_error(if at.is_empty() {
+            msg
+        } else {
+            format!("{msg}\n{at}")
+        }));
     }
-    if matches!(host.exit_code(), watchdog::STOPPED_CODE | watchdog::STUCK_CODE) {
+    if matches!(
+        host.exit_code(),
+        watchdog::STOPPED_CODE | watchdog::STUCK_CODE
+    ) {
         let at = stopped_at(&describe_caught(ctx, e));
         if !at.is_empty() {
-            let _ = writeln!(host.env.stderr.lock().unwrap(), "{}\n{at}", t!("engine.stoppedAt"));
+            let _ = writeln!(
+                host.env.stderr.lock().unwrap(),
+                "{}\n{at}",
+                t!("engine.stoppedAt")
+            );
         }
     }
     Ok(host.exit_code())
@@ -327,7 +371,11 @@ fn finish_caught(ctx: &Ctx, host: &Rc<Host>, e: rquickjs::CaughtError) -> Result
 /// The frames of the stack of the exception that stopped the script (the
 /// place where it was running), "" when there are none.
 fn stopped_at(stack: &str) -> String {
-    stack.lines().filter(|l| l.trim_start().starts_with("at ")).collect::<Vec<_>>().join("\n")
+    stack
+        .lines()
+        .filter(|l| l.trim_start().starts_with("at "))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// Installs Error.prepareStackTrace: frames of the bundle are mapped to the
@@ -335,14 +383,17 @@ fn stopped_at(stack: &str) -> String {
 /// out. Every stack starts with "Name: message", like V8's.
 fn install_stack_mapper<'js>(ctx: &Ctx<'js>, host: &Rc<Host>) -> rquickjs::Result<()> {
     let h = Rc::downgrade(host);
-    let map = Function::new(ctx.clone(), move |file: String, line: u32, col: u32| -> Option<String> {
-        if file == BUNDLE_NAME {
-            let h = h.upgrade()?;
-            let (src, l, c) = h.mapper.as_ref()?.lookup(line, col)?;
-            return Some(format!("{src}:{l}:{c}"));
-        }
-        Some(format!("{file}:{line}:{col}"))
-    })?;
+    let map = Function::new(
+        ctx.clone(),
+        move |file: String, line: u32, col: u32| -> Option<String> {
+            if file == BUNDLE_NAME {
+                let h = h.upgrade()?;
+                let (src, l, c) = h.mapper.as_ref()?.lookup(line, col)?;
+                return Some(format!("{src}:{l}:{c}"));
+            }
+            Some(format!("{file}:{line}:{col}"))
+        },
+    )?;
     let install: Function = ctx.eval(STACK_MAPPER)?;
     install.call::<_, ()>((map,))
 }
@@ -407,11 +458,14 @@ pub fn describe_value(v: &Value) -> String {
 pub fn to_string(v: &Value) -> String {
     let ctx = v.ctx();
     let f: Option<Function> = ctx.globals().get("String").ok();
-    f.and_then(|f| f.call::<_, String>((v.clone(),)).ok()).unwrap_or_default()
+    f.and_then(|f| f.call::<_, String>((v.clone(),)).ok())
+        .unwrap_or_default()
 }
 
-static NATIVE_FRAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^\s*at .*\(native\)\s*$\n?").unwrap());
-static PRELUDE_FRAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?m)^\s*at .*xljs:prelude.*$\n?").unwrap());
+static NATIVE_FRAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s*at .*\(native\)\s*$\n?").unwrap());
+static PRELUDE_FRAME: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?m)^\s*at .*xljs:prelude.*$\n?").unwrap());
 
 /// Removes internal frames so the stack trace only shows the user's files.
 pub fn clean_stack(s: &str) -> String {

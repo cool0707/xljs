@@ -22,8 +22,10 @@ use serde::{Deserialize, Serialize};
 use crate::Result;
 use crate::meta::AssetFs;
 
-pub use builtin::{BUILTIN_PREFIX, BuiltinAssets, TITLE_BAR_HEIGHT, builtin_file, page_script, title_bar_script};
 pub(crate) use builtin::dayjs_files;
+pub use builtin::{
+    BUILTIN_PREFIX, BuiltinAssets, TITLE_BAR_HEIGHT, builtin_file, page_script, title_bar_script,
+};
 pub use console::Console;
 pub use icon::{check_icon, icon_image};
 pub use mock::Mock;
@@ -149,7 +151,13 @@ pub type OnBrowser = Arc<dyn Fn(BrowserEvent) + Send + Sync>;
 pub enum BrowserCommand {
     /// Shows the pane over a rectangle of the page, in CSS pixels; scale
     /// is the page's devicePixelRatio.
-    Show { x: f64, y: f64, width: f64, height: f64, scale: f64 },
+    Show {
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        scale: f64,
+    },
     Hide,
     Navigate(String),
     Back,
@@ -168,8 +176,13 @@ pub enum BrowserEvent {
     Url(String),
     /// A download has finished: where it was saved and the name the site
     /// gave it.
-    Downloaded { path: String, name: String },
-    DownloadFailed { name: String },
+    Downloaded {
+        path: String,
+        name: String,
+    },
+    DownloadFailed {
+        name: String,
+    },
     /// The pane cannot be shown (the error).
     Failed(String),
 }
@@ -468,7 +481,9 @@ pub fn quote(s: &str) -> String {
             '\u{8}' => out.push_str("\\b"),
             '\u{c}' => out.push_str("\\f"),
             '\u{b}' => out.push_str("\\v"),
-            c if (c as u32) < 0x20 || c as u32 == 0x7f => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
+                out.push_str(&format!("\\x{:02x}", c as u32))
+            }
             c => out.push(c),
         }
     }

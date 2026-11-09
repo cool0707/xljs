@@ -34,14 +34,20 @@ pub struct Browser {
 
 impl Browser {
     fn major(&self) -> u32 {
-        self.version.split('.').next().and_then(|m| m.parse().ok()).unwrap_or(0)
+        self.version
+            .split('.')
+            .next()
+            .and_then(|m| m.parse().ok())
+            .unwrap_or(0)
     }
 
     /// The User-Agent the browser sends (the reduced form: the minor
     /// version and the OS are fixed).
     pub fn user_agent(&self) -> String {
         let m = self.major();
-        let base = format!("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{m}.0.0.0 Safari/537.36");
+        let base = format!(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/{m}.0.0.0 Safari/537.36"
+        );
         match self.brand {
             Brand::Edge => format!("{base} Edg/{m}.0.0.0"),
             Brand::Chrome => base,
@@ -55,7 +61,14 @@ impl Browser {
     fn brands(&self, full: bool) -> Vec<Value> {
         const CHARS: [&str; 11] = [" ", "(", ":", "-", ".", "/", ")", ";", "=", "?", "_"];
         const VERSIONS: [&str; 3] = ["8", "99", "24"];
-        const ORDERS: [[usize; 3]; 6] = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+        const ORDERS: [[usize; 3]; 6] = [
+            [0, 1, 2],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
         let m = self.major() as usize;
         let name = match self.brand {
             Brand::Edge => "Microsoft Edge",
@@ -63,8 +76,16 @@ impl Browser {
         };
         let grease = format!("Not{}A{}Brand", CHARS[m % 11], CHARS[(m + 1) % 11]);
         let gv = VERSIONS[m % 3];
-        let (gv, v) = if full { (format!("{gv}.0.0.0"), self.version.clone()) } else { (gv.to_string(), m.to_string()) };
-        let all = [(grease, gv), ("Chromium".to_string(), v.clone()), (name.to_string(), v)];
+        let (gv, v) = if full {
+            (format!("{gv}.0.0.0"), self.version.clone())
+        } else {
+            (gv.to_string(), m.to_string())
+        };
+        let all = [
+            (grease, gv),
+            ("Chromium".to_string(), v.clone()),
+            (name.to_string(), v),
+        ];
         let order = ORDERS[m % 6];
         let mut out = vec![Value::Null; 3];
         for (i, (b, v)) in all.into_iter().enumerate() {
@@ -128,11 +149,19 @@ impl Os {
             (10240, 1),
             (0, 0),
         ];
-        let contract = CONTRACTS.iter().find(|(b, _)| build >= *b).map(|(_, c)| *c).unwrap_or(0);
+        let contract = CONTRACTS
+            .iter()
+            .find(|(b, _)| build >= *b)
+            .map(|(_, c)| *c)
+            .unwrap_or(0);
         let p = processor.to_ascii_uppercase();
         let architecture = if p.starts_with("ARM") { "arm" } else { "x86" };
         let bitness = if p == "X86" { "32" } else { "64" };
-        Os { platform_version: format!("{contract}.0.0"), architecture: architecture.into(), bitness: bitness.into() }
+        Os {
+            platform_version: format!("{contract}.0.0"),
+            architecture: architecture.into(),
+            bitness: bitness.into(),
+        }
     }
 }
 
@@ -168,8 +197,14 @@ impl Agent {
     /// What the chat pane is set to; none keeps WebView2's own.
     pub fn pane(&self, os: &Os) -> Option<PaneAgent> {
         match self {
-            Agent::Browser(b) => Some(PaneAgent { user_agent: b.user_agent(), devtools: Some(b.override_params(os)) }),
-            Agent::Text(t) => Some(PaneAgent { user_agent: t.clone(), devtools: None }),
+            Agent::Browser(b) => Some(PaneAgent {
+                user_agent: b.user_agent(),
+                devtools: Some(b.override_params(os)),
+            }),
+            Agent::Text(t) => Some(PaneAgent {
+                user_agent: t.clone(),
+                devtools: None,
+            }),
             Agent::Xljs => None,
         }
     }
@@ -185,10 +220,28 @@ pub trait Versions {
 /// Resolves a choice of the settings ("" = edge).
 pub fn resolve(choice: &str, v: &dyn Versions) -> Agent {
     let choice = choice.trim();
-    let edge = || v.version(Brand::Edge).or_else(|| v.webview2()).map(|version| Agent::Browser(Browser { brand: Brand::Edge, version }));
+    let edge = || {
+        v.version(Brand::Edge)
+            .or_else(|| v.webview2())
+            .map(|version| {
+                Agent::Browser(Browser {
+                    brand: Brand::Edge,
+                    version,
+                })
+            })
+    };
     match choice.to_ascii_lowercase().as_str() {
         "" | "edge" => edge().unwrap_or(Agent::Xljs),
-        "chrome" => v.version(Brand::Chrome).map(|version| Agent::Browser(Browser { brand: Brand::Chrome, version })).or_else(edge).unwrap_or(Agent::Xljs),
+        "chrome" => v
+            .version(Brand::Chrome)
+            .map(|version| {
+                Agent::Browser(Browser {
+                    brand: Brand::Chrome,
+                    version,
+                })
+            })
+            .or_else(edge)
+            .unwrap_or(Agent::Xljs),
         "xljs" => Agent::Xljs,
         _ => Agent::Text(choice.to_string()),
     }
@@ -208,7 +261,11 @@ pub fn choice_in(settings: &Path) -> String {
     std::fs::read(settings)
         .ok()
         .and_then(|b| serde_json::from_slice::<Value>(strip_bom(&b)).ok())
-        .and_then(|j| j.get("userAgent").and_then(|v| v.as_str()).map(str::to_string))
+        .and_then(|j| {
+            j.get("userAgent")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        })
         .unwrap_or_default()
 }
 
@@ -218,7 +275,9 @@ fn strip_bom(b: &[u8]) -> &[u8] {
 
 /// The settings file next to the running exe.
 fn exe_settings() -> std::path::PathBuf {
-    std::env::current_exe().map(|e| crate::dev::exe_settings(&e)).unwrap_or_default()
+    std::env::current_exe()
+        .map(|e| crate::dev::exe_settings(&e))
+        .unwrap_or_default()
 }
 
 /// The User-Agent of fetch (version: xljs's).
@@ -260,7 +319,11 @@ impl Versions for Installed {
 fn valid(v: &str) -> Option<String> {
     let v = v.trim();
     let parts: Vec<&str> = v.split('.').collect();
-    let ok = parts.len() == 4 && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|c| c.is_ascii_digit())) && parts[0] != "0";
+    let ok = parts.len() == 4
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.bytes().all(|c| c.is_ascii_digit()))
+        && parts[0] != "0";
     ok.then(|| v.to_string())
 }
 
@@ -273,7 +336,15 @@ mod win {
         unsafe {
             let mut key = HKEY::default();
             // The update services write to the 32-bit view.
-            if RegOpenKeyExW(root, &HSTRING::from(sub), Some(0), KEY_READ | KEY_WOW64_32KEY, &mut key).is_err() {
+            if RegOpenKeyExW(
+                root,
+                &HSTRING::from(sub),
+                Some(0),
+                KEY_READ | KEY_WOW64_32KEY,
+                &mut key,
+            )
+            .is_err()
+            {
                 return None;
             }
             let name = HSTRING::from(name);
@@ -282,7 +353,16 @@ mod win {
             if RegQueryValueExW(key, &name, None, None, None, Some(&mut size)).is_ok() && size > 0 {
                 let mut buf = vec![0u16; size as usize / 2 + 1];
                 let mut size2 = size;
-                if RegQueryValueExW(key, &name, None, None, Some(buf.as_mut_ptr() as *mut u8), Some(&mut size2)).is_ok() {
+                if RegQueryValueExW(
+                    key,
+                    &name,
+                    None,
+                    None,
+                    Some(buf.as_mut_ptr() as *mut u8),
+                    Some(&mut size2),
+                )
+                .is_ok()
+                {
                     let n = buf.iter().position(|c| *c == 0).unwrap_or(buf.len());
                     out = Some(String::from_utf16_lossy(&buf[..n]));
                 }
@@ -299,7 +379,11 @@ mod win {
         [HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER]
             .into_iter()
             .find_map(|root| reg_string(root, &sub, "pv").and_then(|v| super::valid(&v)))
-            .or_else(|| beacon.and_then(|b| reg_string(HKEY_CURRENT_USER, b, "version")).and_then(|v| super::valid(&v)))
+            .or_else(|| {
+                beacon
+                    .and_then(|b| reg_string(HKEY_CURRENT_USER, b, "version"))
+                    .and_then(|v| super::valid(&v))
+            })
     }
 }
 
@@ -307,9 +391,21 @@ impl Installed {
     #[cfg(windows)]
     fn find() -> Installed {
         Installed {
-            edge: win::version("Microsoft\\EdgeUpdate", "{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}", Some("Software\\Microsoft\\Edge\\BLBeacon")),
-            chrome: win::version("Google\\Update", "{8A69D345-D564-463c-AFF1-A69D9E530F96}", Some("Software\\Google\\Chrome\\BLBeacon")),
-            webview2: win::version("Microsoft\\EdgeUpdate", "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}", None),
+            edge: win::version(
+                "Microsoft\\EdgeUpdate",
+                "{56EB18F8-B008-4CBD-B6D2-8C97FE7E9062}",
+                Some("Software\\Microsoft\\Edge\\BLBeacon"),
+            ),
+            chrome: win::version(
+                "Google\\Update",
+                "{8A69D345-D564-463c-AFF1-A69D9E530F96}",
+                Some("Software\\Google\\Chrome\\BLBeacon"),
+            ),
+            webview2: win::version(
+                "Microsoft\\EdgeUpdate",
+                "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+                None,
+            ),
         }
     }
 
@@ -322,14 +418,20 @@ impl Installed {
 /// What the client hints tell about this Windows.
 fn os() -> Os {
     #[cfg(windows)]
-    let build = win::reg_string(windows::Win32::System::Registry::HKEY_LOCAL_MACHINE, "Software\\Microsoft\\Windows NT\\CurrentVersion", "CurrentBuildNumber")
-        .and_then(|b| b.trim().parse().ok())
-        .unwrap_or(0);
+    let build = win::reg_string(
+        windows::Win32::System::Registry::HKEY_LOCAL_MACHINE,
+        "Software\\Microsoft\\Windows NT\\CurrentVersion",
+        "CurrentBuildNumber",
+    )
+    .and_then(|b| b.trim().parse().ok())
+    .unwrap_or(0);
     #[cfg(not(windows))]
     let build = 0;
     // A 32-bit process on 64-bit Windows sees x86 here, the system's in
     // PROCESSOR_ARCHITEW6432.
-    let p = std::env::var("PROCESSOR_ARCHITEW6432").or_else(|_| std::env::var("PROCESSOR_ARCHITECTURE")).unwrap_or_else(|_| "AMD64".into());
+    let p = std::env::var("PROCESSOR_ARCHITEW6432")
+        .or_else(|_| std::env::var("PROCESSOR_ARCHITECTURE"))
+        .unwrap_or_else(|_| "AMD64".into());
     Os::new(build, &p)
 }
 

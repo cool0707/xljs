@@ -2,8 +2,8 @@
 //! folder, environment) is shared, so tests that touch it take the lock.
 
 use std::path::PathBuf;
-use std::sync::{Mutex, MutexGuard};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, MutexGuard};
 
 static LOCK: Mutex<()> = Mutex::new(());
 
@@ -28,7 +28,11 @@ pub fn lock_lang(lang: &str) -> LangGuard {
 /// A new empty temporary folder.
 pub fn tempdir() -> PathBuf {
     static N: AtomicU64 = AtomicU64::new(0);
-    let p = std::env::temp_dir().join(format!("xljs-test-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+    let p = std::env::temp_dir().join(format!(
+        "xljs-test-{}-{}",
+        std::process::id(),
+        N.fetch_add(1, Ordering::SeqCst)
+    ));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::create_dir_all(&p).unwrap();
     p

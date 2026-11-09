@@ -9,7 +9,9 @@
 use super::Link;
 
 const HEADER_SIZE: u32 = 0x4C;
-const CLSID: [u8; 16] = [0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46];
+const CLSID: [u8; 16] = [
+    0x01, 0x14, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46,
+];
 
 const HAS_ID_LIST: u32 = 0x1;
 const HAS_LINK_INFO: u32 = 0x2;
@@ -41,7 +43,12 @@ impl Rd<'_> {
     fn ansi(&self, at: usize) -> Option<String> {
         let s = self.b.get(at..)?;
         let n = s.iter().position(|&c| c == 0)?;
-        Some(encoding_rs::SHIFT_JIS.decode_without_bom_handling(&s[..n]).0.into_owned())
+        Some(
+            encoding_rs::SHIFT_JIS
+                .decode_without_bom_handling(&s[..n])
+                .0
+                .into_owned(),
+        )
     }
     /// A NUL-terminated UTF-16 string.
     fn wide(&self, at: usize) -> Option<String> {
@@ -60,7 +67,11 @@ impl Rd<'_> {
     /// A fixed-size NUL-padded UTF-16 field.
     fn wide_fixed(&self, at: usize, bytes: usize) -> Option<String> {
         let s = self.b.get(at..at + bytes)?;
-        let v: Vec<u16> = s.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|&c| c != 0).collect();
+        let v: Vec<u16> = s
+            .chunks_exact(2)
+            .map(|c| u16::from_le_bytes([c[0], c[1]]))
+            .take_while(|&c| c != 0)
+            .collect();
         Some(String::from_utf16_lossy(&v))
     }
 }
@@ -99,11 +110,18 @@ pub fn parse(b: &[u8]) -> Option<Link> {
         let s = if unicode {
             let s = b.get(*at..*at + n * 2)?;
             *at += n * 2;
-            String::from_utf16_lossy(&s.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect::<Vec<_>>())
+            String::from_utf16_lossy(
+                &s.chunks_exact(2)
+                    .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                    .collect::<Vec<_>>(),
+            )
         } else {
             let s = b.get(*at..*at + n)?;
             *at += n;
-            encoding_rs::SHIFT_JIS.decode_without_bom_handling(s).0.into_owned()
+            encoding_rs::SHIFT_JIS
+                .decode_without_bom_handling(s)
+                .0
+                .into_owned()
         };
         // Some writers count a terminating NUL.
         Some(s.trim_end_matches('\0').to_string())
@@ -128,7 +146,9 @@ pub fn parse(b: &[u8]) -> Option<Link> {
         let sig = r.u32(at + 4)?;
         match sig {
             ENVIRONMENT_BLOCK if flags & HAS_EXP_STRING != 0 => env_target = block_string(&r, at)?,
-            ICON_ENVIRONMENT_BLOCK if flags & HAS_EXP_ICON != 0 => l.icon = super::expand_env(&block_string(&r, at)?),
+            ICON_ENVIRONMENT_BLOCK if flags & HAS_EXP_ICON != 0 => {
+                l.icon = super::expand_env(&block_string(&r, at)?)
+            }
             _ => {}
         }
         at += size as usize;
@@ -148,7 +168,11 @@ pub fn parse(b: &[u8]) -> Option<Link> {
 /// The string of an environment variable block (Unicode, else ANSI).
 fn block_string(r: &Rd, at: usize) -> Option<String> {
     let w = r.wide_fixed(at + 8 + 260, 520)?;
-    if !w.is_empty() { Some(w) } else { r.ansi(at + 8) }
+    if !w.is_empty() {
+        Some(w)
+    } else {
+        r.ansi(at + 8)
+    }
 }
 
 /// The target in the link information, and whether it was in Unicode (the
@@ -175,11 +199,19 @@ fn link_info_path(b: &[u8]) -> Option<(String, bool)> {
     } else if flags & 2 != 0 {
         let at = r.u32(0x14)? as usize;
         let net_off = r.u32(at + 8)?;
-        let net = match (net_off > 0x14).then(|| r.u32(at + 0x14)).flatten().filter(|&o| o != 0) {
+        let net = match (net_off > 0x14)
+            .then(|| r.u32(at + 0x14))
+            .flatten()
+            .filter(|&o| o != 0)
+        {
             Some(o) => r.wide(at + o as usize)?,
             None => pick(None, at as u32 + net_off)?,
         };
-        if suffix.is_empty() || net.ends_with('\\') { net } else { net + "\\" }
+        if suffix.is_empty() || net.ends_with('\\') {
+            net
+        } else {
+            net + "\\"
+        }
     } else {
         return None;
     };
@@ -206,7 +238,8 @@ fn id_list_path(b: &[u8]) -> String {
                 path = s;
                 volume = true;
             }
-        } else if volume && kind & 0x70 == 0x30
+        } else if volume
+            && kind & 0x70 == 0x30
             && let Some(name) = file_entry_name(item)
         {
             if !path.is_empty() && !path.ends_with('\\') {
@@ -268,7 +301,11 @@ fn ansi(s: &str) -> Vec<u8> {
     let mut buf = [0u8; 4];
     for c in s.chars() {
         let (b, _, bad) = encoding_rs::SHIFT_JIS.encode(c.encode_utf8(&mut buf));
-        if bad { out.push(b'?') } else { out.extend_from_slice(&b) }
+        if bad {
+            out.push(b'?')
+        } else {
+            out.extend_from_slice(&b)
+        }
     }
     out
 }
@@ -376,7 +413,12 @@ pub fn build(l: &Link) -> Vec<u8> {
     if info.is_some() {
         flags |= HAS_LINK_INFO;
     }
-    let strings = [(HAS_NAME, &l.description), (HAS_WORKING_DIR, &l.cwd), (HAS_ARGUMENTS, &l.args), (HAS_ICON_LOCATION, &l.icon)];
+    let strings = [
+        (HAS_NAME, &l.description),
+        (HAS_WORKING_DIR, &l.cwd),
+        (HAS_ARGUMENTS, &l.args),
+        (HAS_ICON_LOCATION, &l.icon),
+    ];
     for (bit, s) in strings {
         if !s.is_empty() {
             flags |= bit;
@@ -399,7 +441,14 @@ pub fn build(l: &Link) -> Vec<u8> {
     v.extend([0u8; 24]); // creation, access and write times
     put32(&mut v, 0); // file size
     put32(&mut v, l.icon_index as u32);
-    put32(&mut v, if l.show == 0 { super::SW_SHOWNORMAL } else { l.show });
+    put32(
+        &mut v,
+        if l.show == 0 {
+            super::SW_SHOWNORMAL
+        } else {
+            l.show
+        },
+    );
     v.extend(l.hotkey.to_le_bytes());
     v.extend([0u8; 10]);
     if let Some(info) = info {

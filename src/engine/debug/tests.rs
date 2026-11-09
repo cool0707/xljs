@@ -14,7 +14,9 @@ use super::*;
 use crate::engine::loop_::Shared;
 use crate::engine::tests::{run_script_in, test_scripts};
 use crate::testutil::{lock_lang, repo_path};
-use crate::ui::{ASSET_ORIGIN, FormOptions, Mock, PickerOptions, Progress, ProgressOptions, TableOptions, Ui};
+use crate::ui::{
+    ASSET_ORIGIN, FormOptions, Mock, PickerOptions, Progress, ProgressOptions, TableOptions, Ui,
+};
 
 /// What broke in fake pages (not in the scripts).
 static PAGE_ERRORS: Mutex<Vec<String>> = Mutex::new(Vec::new());
@@ -107,10 +109,19 @@ fn page_error(e: String) {
 impl Page {
     fn start(o: WindowOptions) -> Arc<dyn Window> {
         let (tx, rx) = mpsc::channel();
-        let p = Arc::new(Page { o, closed: AtomicBool::new(false), answers: Mutex::new(tx), shared: Mutex::new(None), listen: Default::default() });
+        let p = Arc::new(Page {
+            o,
+            closed: AtomicBool::new(false),
+            answers: Mutex::new(tx),
+            shared: Mutex::new(None),
+            listen: Default::default(),
+        });
         let (ready_tx, ready_rx) = mpsc::channel();
         let p2 = p.clone();
-        std::thread::Builder::new().stack_size(16 << 20).spawn(move || p2.run(rx, ready_tx)).unwrap();
+        std::thread::Builder::new()
+            .stack_size(16 << 20)
+            .spawn(move || p2.run(rx, ready_tx))
+            .unwrap();
         ready_rx.recv().unwrap();
         p
     }
@@ -141,18 +152,22 @@ impl Page {
         let session_id: Rc<Cell<u64>> = Rc::new(Cell::new(0));
         {
             let (h, sid) = (Rc::downgrade(&host), session_id.clone());
-            rt.set_host_promise_rejection_tracker(Some(Box::new(move |ctx, promise, reason, handled| {
-                let Some(h) = h.upgrade() else { return };
-                if sid.get() == 0 {
-                    return;
-                }
-                let Some(s) = h.kept(&ctx, sid.get()) else { return };
-                let Some(so) = s.as_object() else { return };
-                let name = if handled { "handled" } else { "rejected" };
-                if let Ok(f) = so.get::<_, Function>(name) {
-                    let _ = f.call::<_, Value>((This(so.clone()), promise, reason));
-                }
-            })));
+            rt.set_host_promise_rejection_tracker(Some(Box::new(
+                move |ctx, promise, reason, handled| {
+                    let Some(h) = h.upgrade() else { return };
+                    if sid.get() == 0 {
+                        return;
+                    }
+                    let Some(s) = h.kept(&ctx, sid.get()) else {
+                        return;
+                    };
+                    let Some(so) = s.as_object() else { return };
+                    let name = if handled { "handled" } else { "rejected" };
+                    if let Ok(f) = so.get::<_, Function>(name) {
+                        let _ = f.call::<_, Value>((This(so.clone()), promise, reason));
+                    }
+                },
+            )));
         }
         let me = self.clone();
         ctx.with(|ctx| {
@@ -194,7 +209,13 @@ impl Page {
         (self.o.on_message.as_ref().unwrap())(DEBUG_CLOSE.into(), vec![]);
     }
 
-    fn setup<'js>(self: &Arc<Self>, ctx: &Ctx<'js>, host: &Rc<Host>, answers: mpsc::Receiver<String>, sid: &Rc<Cell<u64>>) -> rquickjs::Result<()> {
+    fn setup<'js>(
+        self: &Arc<Self>,
+        ctx: &Ctx<'js>,
+        host: &Rc<Host>,
+        answers: mpsc::Receiver<String>,
+        sid: &Rc<Cell<u64>>,
+    ) -> rquickjs::Result<()> {
         let g = ctx.globals();
         g.set(
             "btoa",
@@ -206,7 +227,9 @@ impl Page {
         g.set(
             "atob",
             Function::new(ctx.clone(), |s: String| {
-                let b = base64::engine::general_purpose::STANDARD.decode(s).unwrap_or_default();
+                let b = base64::engine::general_purpose::STANDARD
+                    .decode(s)
+                    .unwrap_or_default();
                 b.into_iter().map(|c| c as char).collect::<String>()
             })?,
         )?;
@@ -239,17 +262,25 @@ impl Page {
         hooks.set(
             "status",
             Function::new(ctx.clone(), move |args: Rest<Value<'js>>| {
-                let state = args.0.first().map(crate::api::js::to_str).unwrap_or_default();
+                let state = args
+                    .0
+                    .first()
+                    .map(crate::api::js::to_str)
+                    .unwrap_or_default();
                 if state == "done" {
                     // The user presses Close.
                     let me = me.clone();
-                    std::thread::spawn(move || (me.o.on_message.as_ref().unwrap())(DEBUG_CLOSE.into(), vec![]));
+                    std::thread::spawn(move || {
+                        (me.o.on_message.as_ref().unwrap())(DEBUG_CLOSE.into(), vec![])
+                    });
                 }
             })?,
         )?;
         let assets = self.o.assets.clone().unwrap();
         for name in ["debug/prelude.js", "debug/bundle.js", "debug.js"] {
-            let src = assets.read(&format!("{BUILTIN_PREFIX}{name}")).map_err(|_| rquickjs::Error::Unknown)?;
+            let src = assets
+                .read(&format!("{BUILTIN_PREFIX}{name}"))
+                .map_err(|_| rquickjs::Error::Unknown)?;
             let mut opts = rquickjs::context::EvalOptions::default();
             opts.global = true;
             opts.strict = false;
@@ -275,7 +306,9 @@ impl Window for Page {
             let _ = self.answers.lock().unwrap().send(a.to_string());
             return;
         }
-        let Some(shared) = self.shared.lock().unwrap().clone() else { return };
+        let Some(shared) = self.shared.lock().unwrap().clone() else {
+            return;
+        };
         let listen = self.listen.clone();
         shared.add_pending();
         shared.post(Box::new(move |ctx, host| {
@@ -323,14 +356,33 @@ fn write_script(name: &str, src: &str) -> String {
 #[test]
 fn debugger_error_stack() {
     let _l = lock_lang("ja");
-    let r = run_script_in(true, &repo_path("testdata/scripts/_errors.js").to_string_lossy(), "", &[]);
+    let r = run_script_in(
+        true,
+        &repo_path("testdata/scripts/_errors.js").to_string_lossy(),
+        "",
+        &[],
+    );
     let msg = r.err.as_ref().map(|e| e.to_string()).unwrap_or_default();
-    assert!(r.code == 1 && r.err.is_some(), "want failure, got {} {msg}", r.code);
-    for want in ["RangeError: boom from lib", "at fail (_errlib.js:2:", "_errors.js:3:"] {
-        assert!(msg.contains(want), "error {msg:?} does not contain {want:?}");
+    assert!(
+        r.code == 1 && r.err.is_some(),
+        "want failure, got {} {msg}",
+        r.code
+    );
+    for want in [
+        "RangeError: boom from lib",
+        "at fail (_errlib.js:2:",
+        "_errors.js:3:",
+    ] {
+        assert!(
+            msg.contains(want),
+            "error {msg:?} does not contain {want:?}"
+        );
     }
     for unwanted in ["bundle.js", "debug.js", "prelude", ASSET_ORIGIN] {
-        assert!(!msg.contains(unwanted), "error {msg:?} contains {unwanted:?}");
+        assert!(
+            !msg.contains(unwanted),
+            "error {msg:?} contains {unwanted:?}"
+        );
     }
     check_page();
 }
@@ -339,11 +391,41 @@ fn debugger_error_stack() {
 fn debugger_page() {
     let _l = lock_lang("ja");
     let cases: &[(&str, &str, i32, &str, &str)] = &[
-        ("exit", r#"console.log("a"); setTimeout(() => console.log("never"), 50); exit(3); console.log("b");"#, 3, "", "a\n"),
-        ("throw", "function f() { throw new RangeError(\"だめ\"); }\nsetTimeout(() => f(), 1);", 1, "RangeError: だめ", ""),
-        ("rejected", r#"await sleep(1); throw new TypeError("x");"#, 1, "TypeError: x", ""),
-        ("unhandled", r#"Promise.reject(new Error("y")); await sleep(5);"#, 1, "処理されなかった Promise の reject: Error: y", ""),
-        ("pending", "await new Promise(() => {});", 1, "完了しませんでした", ""),
+        (
+            "exit",
+            r#"console.log("a"); setTimeout(() => console.log("never"), 50); exit(3); console.log("b");"#,
+            3,
+            "",
+            "a\n",
+        ),
+        (
+            "throw",
+            "function f() { throw new RangeError(\"だめ\"); }\nsetTimeout(() => f(), 1);",
+            1,
+            "RangeError: だめ",
+            "",
+        ),
+        (
+            "rejected",
+            r#"await sleep(1); throw new TypeError("x");"#,
+            1,
+            "TypeError: x",
+            "",
+        ),
+        (
+            "unhandled",
+            r#"Promise.reject(new Error("y")); await sleep(5);"#,
+            1,
+            "処理されなかった Promise の reject: Error: y",
+            "",
+        ),
+        (
+            "pending",
+            "await new Promise(() => {});",
+            1,
+            "完了しませんでした",
+            "",
+        ),
         (
             "values",
             r#"
@@ -370,11 +452,17 @@ console.log(new Blob(["x"]) instanceof Blob, typeof Intl.NumberFormat);
         let r = run_script_in(true, &write_script("main.js", src), "", &[]);
         let msg = r.err.as_ref().map(|e| e.to_string()).unwrap_or_default();
         assert_eq!(r.code, *code, "{name}: err {msg}\nstderr:\n{}", r.stderr);
-        assert!((err.is_empty() == msg.is_empty()) && msg.contains(err), "{name}: error {msg:?}, want {err:?}");
+        assert!(
+            (err.is_empty() == msg.is_empty()) && msg.contains(err),
+            "{name}: error {msg:?}, want {err:?}"
+        );
         if !stdout.is_empty() {
             assert_eq!(r.stdout, *stdout, "{name}");
         }
-        assert!(!msg.contains(ASSET_ORIGIN), "{name}: error keeps the page URL: {msg}");
+        assert!(
+            !msg.contains(ASSET_ORIGIN),
+            "{name}: error keeps the page URL: {msg}"
+        );
     }
     check_page();
 }
@@ -400,20 +488,38 @@ fn debugger_app_window() {
         (r, o.text())
     };
     let start = Instant::now();
-    let (r, out) = run(Arc::new(SlowUi::new(Some(Duration::from_millis(100)), false)), &format!("{app}app.main.closed.then(() => console.log('closed')); console.log('end of script')"));
-    assert!(r == Ok(0) && start.elapsed() >= Duration::from_millis(100) && out == "end of script\nclosed\n", "{r:?} {out:?}");
+    let (r, out) = run(
+        Arc::new(SlowUi::new(Some(Duration::from_millis(100)), false)),
+        &format!(
+            "{app}app.main.closed.then(() => console.log('closed')); console.log('end of script')"
+        ),
+    );
+    assert!(
+        r == Ok(0)
+            && start.elapsed() >= Duration::from_millis(100)
+            && out == "end of script\nclosed\n",
+        "{r:?} {out:?}"
+    );
 
     let u = Arc::new(SlowUi::new(None, false));
-    let (r, _) = run(u.clone(), &format!("{app}app.open({{ title: 'sub' }}); setTimeout(() => exit(5), 10)"));
+    let (r, _) = run(
+        u.clone(),
+        &format!("{app}app.open({{ title: 'sub' }}); setTimeout(() => exit(5), 10)"),
+    );
     assert_eq!(r, Ok(5));
-    assert_eq!(u.events.lock().unwrap().join(","), "open a,open sub,closed by script,closed by script");
+    assert_eq!(
+        u.events.lock().unwrap().join(","),
+        "open a,open sub,closed by script,closed by script"
+    );
 
     for src in [
         "await app.open({ title: 'sub' }).closed; exit(7); console.log('after')",
         "app.open({ title: 'sub' }).closed.then(() => { exit(7); console.log('after') })",
     ] {
-        let (r, out) = run(Arc::new(SlowUi::new(Some(Duration::from_millis(20)), false)), src);
+        let (r, out) = run(
+            Arc::new(SlowUi::new(Some(Duration::from_millis(20)), false)),
+            src,
+        );
         assert!(r == Ok(7) && out.is_empty(), "{src}: {r:?} {out:?}");
     }
 }
-
