@@ -566,7 +566,7 @@ impl Session {
             }
             "wizardBooks" => {
                 let paths = self.u.open_files(&PickerOptions {
-                    title: t!("cli.selectMacroBooks"),
+                    title: t!("wizard.selectBooks"),
                     multiple: true,
                     filters: vec![FileFilter {
                         description: t!("wizard.books"),

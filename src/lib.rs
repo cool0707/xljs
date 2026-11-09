@@ -4,6 +4,7 @@
 
 pub mod ad;
 pub mod api;
+pub mod book;
 pub mod cli;
 pub mod db;
 pub mod dev;

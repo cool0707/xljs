@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use super::*;
+use crate::book::Include;
 use crate::testutil::{SharedBuf, lock_lang, repo_path, tempdir};
 
 fn launch_with(answers: serde_json::Value) -> (i32, String) {
@@ -37,9 +38,13 @@ fn launch_screen() {
 
     let book = dir.join("売上.xlsm");
     std::fs::copy(repo_path("testdata/scripts/macro.xlsm"), &book).unwrap();
-    let (code, log) = launch_with(serde_json::json!({"choose": [4], "showOpenFilePicker": [[book.to_string_lossy()]]}));
+    let (code, log) = launch_with(serde_json::json!({"choose": [4], "showOpenFilePicker": [[book.to_string_lossy()]], "form": [{"include": ["vba"]}]}));
     assert_eq!(code, 0, "vba\n{log}");
     assert!(dir.join("売上_VBA.txt").exists());
+    // Cancelled when asked what to extract.
+    std::fs::remove_file(dir.join("売上_VBA.txt")).unwrap();
+    let (code, log) = launch_with(serde_json::json!({"choose": [4], "showOpenFilePicker": [[book.to_string_lossy()]]}));
+    assert!(code == 0 && !dir.join("売上_VBA.txt").exists(), "vba cancel\n{log}");
 }
 
 #[test]
@@ -51,17 +56,44 @@ fn drop_vba() {
     std::fs::copy(repo_path("testdata/scripts/macro.xlsm"), &b).unwrap();
     let (a, b) = (a.to_string_lossy().into_owned(), b.to_string_lossy().into_owned());
     assert!(vba::is_workbook(&a) && vba::is_workbook("x.XLS") && !vba::is_workbook("x.ts"));
-    let u = Arc::new(ui::Mock::from_json("", None).unwrap());
-    assert_eq!(vba::drop_vba(&ConsoleState { has: true, own: false }, u, &[a.clone(), b]), 0);
+    let con = ConsoleState { has: true, own: false };
+    let log = SharedBuf::default();
+    let u = Arc::new(ui::Mock::from_json(r#"{"form": [{"include": []}, {"include": ["vba"]}]}"#, Some(log.sink())).unwrap());
+    assert_eq!(vba::drop_vba(&con, u, &[a.clone(), b]), 0);
+    // Nothing chosen: asked again.
+    assert!(log.text().contains("form error: include: 1 つ以上選んでください"), "{}", log.text());
     let text = std::fs::read_to_string(dir.join("売上_VBA.txt")).unwrap();
     assert!(text.starts_with("# ") && text.matches("\n# ").count() == 1, "want two workbooks:\n{text}");
     assert!(text.contains("Sub 売上集計()"));
 
     let plain = dir.join("plain.xlsx");
-    umya_spreadsheet::writer::xlsx::write(&umya_spreadsheet::new_file(), &plain).unwrap();
-    let e = vba::vba_text(&[a, plain.to_string_lossy().into_owned()]).unwrap_err();
+    std::fs::copy(repo_path("testdata/book/rules.xlsx"), &plain).unwrap();
+    let plain = plain.to_string_lossy().into_owned();
+    let e = vba::book_text(&[a.clone(), plain.clone()], &Include::VBA).unwrap_err();
     assert_eq!(e.key(), Some("cli.vbaNone"));
-    assert!(vba::vba_text(&[dir.join("missing.xlsm").to_string_lossy().into_owned()]).is_err());
+    assert!(vba::book_text(&[dir.join("missing.xlsm").to_string_lossy().into_owned()], &Include::ALL).is_err());
+
+    // With more than the VBA code, a workbook without macros says so.
+    let (text, modules) = vba::book_text(&[a.clone(), plain.clone()], &Include::ALL).unwrap();
+    assert!(modules > 0);
+    for want in ["# 売上.xlsm の VBA コード", "# 売上.xlsm の数式\n\n数式はありません。", "# plain.xlsx の VBA コード\n\nマクロ（VBA）は含まれていません。", "- D2:D11: `=B2*C2`"] {
+        assert!(text.contains(want), "want {want:?} in\n{text}");
+    }
+    // A workbook without macros is offered without the VBA code checked.
+    let log = SharedBuf::default();
+    let u = Arc::new(ui::Mock::from_json(r#"{"form": [{"include": ["formulas", "names"]}]}"#, Some(log.sink())).unwrap());
+    assert_eq!(vba::drop_vba(&con, u, &[plain.clone()]), 0);
+    let text = std::fs::read_to_string(dir.join("plain_数式.txt")).unwrap();
+    assert!(text.starts_with("# plain.xlsx の数式") && text.contains("# plain.xlsx の名前の定義") && !text.contains("VBA"), "{text}");
+
+    // xljs vba --include
+    let out = dir.join("out.txt").to_string_lossy().into_owned();
+    assert_eq!(vba::cmd_vba(&con, &["--include=formulas,conditional".into(), plain.clone(), "-o".into(), out.clone()]), 0);
+    let text = std::fs::read_to_string(&out).unwrap();
+    assert!(text.contains("# plain.xlsx の条件付き書式") && !text.contains("入力規則"), "{text}");
+    assert_eq!(vba::cmd_vba(&con, &["--all".into(), plain.clone(), "-o".into(), out.clone()]), 0);
+    assert!(std::fs::read_to_string(&out).unwrap().contains("# plain.xlsx の入力規則"));
+    assert_eq!(vba::cmd_vba(&con, &["--include=nope".into(), plain, "-o".into(), out]), 1);
 }
 
 #[test]
