@@ -1,7 +1,10 @@
 """Writes rules.xlsx for the tests of src/book: formulas filled down and
 across, input rules, defined names and conditional formats, some of them
 split into pieces as Excel leaves them after copying cells, and charts (a
-column chart with a line on a second axis, a pie).
+column chart with a line on a second axis, a pie); and columns.xlsx for
+the columns of the tables with many rows: a range with a title above its
+header and frozen panes, an Excel table, a range with a filter, ranges
+with neither and small ones that are left out.
 
     python3 make_book.py   (needs openpyxl)
 """
@@ -14,6 +17,7 @@ from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, DataBarRule, Fo
 from openpyxl.styles import Font, PatternFill
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.worksheet.table import Table
 
 wb = Workbook()
 ws = wb.active
@@ -89,4 +93,71 @@ wb.defined_names["税率"] = DefinedName("税率", attr_text="設定!$B$1")
 ws.defined_names["対象"] = DefinedName("対象", attr_text="売上!$A$2:$A$11")
 ws.print_area = "A1:E12"
 
-wb.save(os.path.join(os.path.dirname(os.path.abspath(__file__)), "rules.xlsx"))
+HERE = os.path.dirname(os.path.abspath(__file__))
+wb.save(os.path.join(HERE, "rules.xlsx"))
+
+wb = Workbook()
+ws = wb.active
+ws.title = "受注"
+ws["A1"] = "受注一覧"
+ws.append(["受注番号", "顧客コード", "受注日", "区分", "数量", "単価", "金額", "備考", "郵便番号"])
+kinds = ["通常", "通常", "至急", "返品"]
+for i in range(150):
+    r = i + 3
+    ws.append([
+        f"J{i + 1:06d}",
+        f"{(i * 7) % 120:06d}",
+        None if i % 50 == 49 else datetime.date(2025, 1, 1) + datetime.timedelta(days=i),
+        kinds[i % 4],
+        "未定" if i in (10, 20) else i % 100 + 1,
+        round(100 + i * 1.25, 2),
+        f"=E{r}*F{r}",
+        {3: "急ぎ ", 30: "ＡＢＣ商事", 60: "再送"}.get(i),
+        f"{100 + i:03d}-{i * 37 % 10000:04d}",
+    ])
+ws.append(["合計", None, None, None, None, None, "=SUM(G3:G152)"])
+ws.freeze_panes = "B3"
+dv = DataValidation(type="list", formula1='"通常,至急,返品"')
+dv.add("D3:D152")
+ws.add_data_validation(dv)
+# Notes next to the table but apart from it, and a small block.
+ws["L1"] = "メモ"
+ws["L2"] = "小さい表"
+ws["M2"] = 1
+
+ws = wb.create_sheet("社員")
+ws.append(["社員番号", "氏名", "入社日時", "在籍"])
+for i in range(120):
+    ws.append([1001 + i, "山田　太郎" if i % 2 else "佐藤花子", datetime.datetime(2020, 4, 1, 9, 30) + datetime.timedelta(days=i), i % 3 != 0])
+    ws.cell(row=i + 2, column=1).number_format = "00000"
+ws.add_table(Table(displayName="社員一覧", ref="A1:D121"))
+# A small table: left out.
+ws["G1"] = "コード"
+for i in range(5):
+    ws.cell(row=i + 2, column=7, value=i)
+ws.add_table(Table(displayName="小", ref="G1:G6"))
+
+ws = wb.create_sheet("記録")
+ws["A1"] = "記録"
+ws["A2"] = "2025 年度"
+ws.append([])
+ws.append(["時刻", "値", "コメント"])
+for i in range(100):
+    ws.append([datetime.time(9 + i % 8, i % 60), i * 0.5 - 10, "ok"])
+ws.auto_filter.ref = "A4:C104"
+
+# No frozen panes or filter: the title right above the header is left
+# out; a block of numbers alone has no header.
+ws = wb.create_sheet("一覧")
+ws["A1"] = "商品一覧"
+ws.append(["品番", "品名", "価格"])
+for i in range(100):
+    ws.append([f"ab-{i:03d}", "ｶﾞﾑ" if i % 10 == 0 else "ガム", str(i * 10) if i % 4 == 0 else i * 10])
+for i in range(120):
+    ws.cell(row=i + 1, column=5, value=i % 7)
+
+ws = wb.create_sheet("小さい")
+ws.append(["名前", "値"])
+for i in range(50):
+    ws.append([f"n{i}", i])
+wb.save(os.path.join(HERE, "columns.xlsx"))
