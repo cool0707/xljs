@@ -60,15 +60,15 @@ if ($rc -ne 0) { throw "test data generation failed (exit $rc)" }
 if ($MonitorOff) { Start-XljsAwake -Minutes 30 -MonitorOff | Out-Null }
 Start-XljsMute   # alert などの通知音を止める（終わったら元のミュート状態に戻す）
 try {
-    # 引数なし → 開始画面（Win32 のボタン。UIA では Pane に見えるので BM_CLICK で押す）
+    # 引数なし → 開始画面（WebView2 のページ web/launch.html。ボタンの名前は aria-label）
     Test-Case launch-screen {
         $p = Start-Xljs @()
         $w = Get-XljsWindow -ProcessId $p.Id -Name 'xljs'
-        Save-XljsScreenshot "$shots/launch.png" -Window $w | Out-Null
-        foreach ($n in 'スクリプトを実行', 'スクリプトをデバッグ', 'exe を作成', 'VBA コードを取り出す') {
-            Find-XljsElement -Root $w -Name $n -TimeoutSec 3 | Out-Null
+        foreach ($n in 'スクリプトを実行', 'スクリプトをデバッグ', '開発モード', 'exeを作成', 'VBAコード抽出') {
+            Find-XljsElement -Root $w -Name $n -TimeoutSec 10 | Out-Null
         }
-        Find-XljsElement -Root $w -Name 'キャンセル' -ClassName Button | Invoke-XljsElement
+        Save-XljsScreenshot "$shots/launch.png" -Window $w | Out-Null
+        $w | Close-XljsWindow
         Wait-Exit $p
     }
 

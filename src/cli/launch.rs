@@ -1,8 +1,9 @@
-use std::sync::Arc;
+use std::sync::{Arc, mpsc};
 
 use super::{ConsoleState, pack_output, pack_script, start};
-use crate::ui::{Choice, FileFilter, PickerOptions, Ui};
-use crate::t;
+use crate::meta::AssetFs;
+use crate::ui::{ASSET_ORIGIN, BUILTIN_PREFIX, BuiltinAssets, Choice, FileFilter, PickerOptions, Ui, WindowOptions};
+use crate::{Result, t};
 
 // What the start screen offers, in its order.
 const LAUNCH_RUN: i64 = 0;
@@ -11,7 +12,8 @@ const LAUNCH_DEV: i64 = 2;
 const LAUNCH_PACK: i64 = 3;
 const LAUNCH_VBA: i64 = 4;
 
-// Icons of the choices (drawn by tools/make_launch_icons.py).
+// Icons of the choices in the dialog without HTML windows (drawn by
+// tools/make_launch_icons.py) and in the page (web/icons.css).
 const ICON_RUN: &[u8] = include_bytes!("icons/run.ico");
 const ICON_DEBUG: &[u8] = include_bytes!("icons/debug.ico");
 const ICON_DEV: &[u8] = include_bytes!("icons/dev.ico");
@@ -31,7 +33,7 @@ pub(super) fn launch(con: &ConsoleState, u: Arc<dyn Ui>, explicit_lang: bool, st
         choice("cli.launchPack", "cli.launchPackNote", ICON_PACK),
         choice("cli.launchVBA", "cli.launchVBANote", ICON_VBA),
     ];
-    let Some(c) = u.choose("xljs", &t!("cli.launchMessage"), &choices) else {
+    let Some(c) = ask(&u, &choices) else {
         eprint!("{}", super::usage());
         return 2;
     };
@@ -62,6 +64,98 @@ pub(super) fn launch(con: &ConsoleState, u: Arc<dyn Ui>, explicit_lang: bool, st
             super::vba::drop_vba(con, u, &books)
         }
         _ => 0,
+    }
+}
+
+/// The icons of the choices in the page (web/icons.css), in their order.
+const PAGE_ICONS: [&str; 5] = ["play", "bug", "sparkles", "package", "scroll-text"];
+
+/// The size of the start screen's page (below its title bar).
+const PAGE_WIDTH: i64 = 600;
+const PAGE_HEIGHT: i64 = 424;
+
+/// Shows the start screen: a window of its own (web/launch.html) where the
+/// UI has HTML windows, else Ui::choose (also when the window cannot open,
+/// e.g. without the WebView2 runtime). The index of the choice, None when
+/// cancelled.
+fn ask(u: &Arc<dyn Ui>, choices: &[Choice]) -> Option<i64> {
+    if u.supports_windows() {
+        let data = serde_json::json!({
+            "message": t!("cli.launchMessage"),
+            "version": super::version(),
+            "choices": choices.iter().zip(PAGE_ICONS).map(|(c, icon)| serde_json::json!({
+                "label": c.label, "note": c.note, "icon": icon,
+            })).collect::<Vec<_>>(),
+        })
+        .to_string();
+        if let Ok(r) = crate::ui::run(u.clone(), move |su| ask_window(&*su, data)) {
+            return r;
+        }
+    }
+    u.choose("xljs", &t!("cli.launchMessage"), choices)
+}
+
+/// Opens the start screen's window with data (the texts) and waits for the
+/// choice.
+fn ask_window(u: &dyn Ui, data: String) -> Result<Option<i64>> {
+    // Some(message) from the page, None once the window has closed.
+    let (tx, rx) = mpsc::channel::<Option<String>>();
+    let (t1, t2) = (tx.clone(), tx);
+    let w = u.open_window(WindowOptions {
+        title: "xljs".into(),
+        width: PAGE_WIDTH,
+        height: PAGE_HEIGHT,
+        fixed_size: true,
+        custom_title_bar: true,
+        url: format!("{ASSET_ORIGIN}{BUILTIN_PREFIX}launch.html"),
+        assets: Some(Arc::new(LaunchAssets)),
+        on_message: Some(Arc::new(move |m, _| {
+            let _ = t1.send(Some(m));
+        })),
+        on_closed: Some(Arc::new(move || {
+            let _ = t2.send(None);
+        })),
+        ..Default::default()
+    })?;
+    let mut result = None;
+    // Whether the window is still open (the loop ends on the choice, Esc or
+    // the window closing).
+    let mut open = false;
+    while let Ok(Some(m)) = rx.recv() {
+        let v: serde_json::Value = serde_json::from_str(&m).unwrap_or_default();
+        match v["op"].as_str() {
+            Some("ready") => {
+                w.post(data.clone());
+                continue;
+            }
+            Some("choose") => result = v["index"].as_i64(),
+            Some("cancel") => {}
+            _ => continue,
+        }
+        open = true;
+        break;
+    }
+    if open {
+        // Wait until the window is gone, so that it is not left behind the
+        // dialogs that follow.
+        w.close();
+        while let Ok(Some(_)) = rx.recv() {}
+    }
+    Ok(result)
+}
+
+/// Serves the built-in files under BUILTIN_PREFIX.
+struct LaunchAssets;
+
+impl AssetFs for LaunchAssets {
+    fn read(&self, name: &str) -> std::io::Result<Vec<u8>> {
+        match name.strip_prefix(BUILTIN_PREFIX) {
+            Some(rest) => BuiltinAssets.read(rest),
+            None => Err(std::io::Error::new(std::io::ErrorKind::NotFound, name.to_string())),
+        }
+    }
+    fn files(&self, _: &str) -> std::io::Result<Vec<String>> {
+        Ok(Vec::new())
     }
 }
 

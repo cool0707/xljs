@@ -1,0 +1,45 @@
+/* The start screen (launch.html): the development mode's colors. */
+body { background: var(--bg); }
+#titlebar { --xljs-titlebar-bg: var(--bg); --xljs-titlebar-fg: var(--fg); }
+#titlebar .xljs-tb-title { font-size: 12px; gap: 8px; }
+#titlebar .xljs-tb-title img { flex: none; width: 16px; height: 16px; }
+#version { color: var(--muted); }
+
+main {
+  flex: 1; min-height: 0; overflow: auto;
+  padding: var(--sp-xs) var(--sp-xxl) var(--sp-xxl);
+}
+h1 {
+  margin: 0 0 var(--sp-l); font-size: 20px; line-height: 28px; font-weight: 600;
+  letter-spacing: .02em;
+}
+#choices { display: flex; flex-direction: column; gap: var(--sp-s); }
+
+button.choice {
+  display: grid; grid-template-columns: 40px 1fr 16px; align-items: center; gap: 14px;
+  width: 100%; min-width: 0; min-height: 64px; padding: 10px 14px;
+  justify-content: stretch; text-align: left; white-space: normal;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--panel); box-shadow: none;
+  transition: background-color .15s, border-color .15s, box-shadow .15s, transform .08s;
+}
+.choice .badge {
+  display: grid; place-items: center; width: 40px; height: 40px; border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent);
+  transition: background-color .15s, color .15s;
+}
+.choice .badge .ic { width: 20px; height: 20px; }
+.choice .text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.choice .label { font-size: 14px; line-height: 20px; font-weight: 600; }
+.choice .note { font-size: 12px; line-height: 18px; color: var(--muted); }
+.choice .go { width: 16px; height: 16px; color: var(--muted); opacity: 0; transform: translateX(-4px); transition: opacity .15s, transform .15s; }
+
+button.choice:hover:not(:disabled), button.choice:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+  background: color-mix(in srgb, var(--accent) 5%, var(--panel));
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+button.choice:focus-visible { outline: none; border-color: var(--accent); }
+button.choice:hover .badge, button.choice:focus-visible .badge { background: var(--accent); color: var(--accent-fg); }
+button.choice:hover .go, button.choice:focus-visible .go { opacity: 1; transform: none; color: var(--accent); }
+button.choice:active:not(:disabled) { transform: scale(.995); }

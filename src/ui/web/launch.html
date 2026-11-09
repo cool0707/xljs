@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ja" class="xljs-app">
+<head>
+<meta charset="utf-8">
+<title>xljs</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="icons.css">
+<link rel="stylesheet" href="launch.css">
+</head>
+<body>
+<!-- The start screen of xljs started without a script (src/cli/launch.rs).
+     The window's own title bar (web/titlebar.js drives the buttons). -->
+<header id="titlebar" class="xljs-titlebar" data-xljs-titlebar>
+  <div class="xljs-tb-title"><img src="xljs-logo.png" alt=""><span>xljs</span><span id="version"></span></div>
+  <button type="button" tabindex="-1" class="xljs-tb-btn xljs-tb-minimize" data-xljs-window="minimize">&#xE921;</button>
+  <button type="button" tabindex="-1" class="xljs-tb-btn xljs-tb-close" data-xljs-window="close">&#xE8BB;</button>
+</header>
+<main>
+  <h1 id="message"></h1>
+  <div id="choices" role="list"></div>
+</main>
+<script src="launch.js"></script>
+</body>
+</html>
