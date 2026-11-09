@@ -248,6 +248,22 @@ fn chat_follows_the_script() {
 }
 
 #[test]
+fn file_dragged_to_the_chat() {
+    let _l = lock_lang("ja");
+    let dir = tempdir();
+    write(&dir, "main.js", "1");
+    let (mut s, w, _rx) = session(&dir, "{}");
+    page(&mut s, json!({"op": "open", "path": dir.join("main.js").to_string_lossy()}));
+    page(&mut s, json!({"op": "dragFile", "file": "main.js"}));
+    let want = dir.join("main.js").to_string_lossy().into_owned();
+    assert_eq!(w.cmds.lock().unwrap().last(), Some(&BrowserCommand::DragFiles(vec![want])));
+    // A file that is not there is not dragged.
+    w.cmds.lock().unwrap().clear();
+    page(&mut s, json!({"op": "dragFile", "file": "none.js"}));
+    assert!(w.cmds.lock().unwrap().is_empty());
+}
+
+#[test]
 fn dropped_files_open_the_script() {
     let _l = lock_lang("ja");
     let dir = tempdir();

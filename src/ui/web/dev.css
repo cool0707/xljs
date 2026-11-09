@@ -63,6 +63,8 @@ i + span { margin-left: 6px; }
 #script-dir { margin-left: 8px; font-size: 12px; }
 .group { display: flex; gap: 4px; }
 button.tool { min-width: 0; padding: 0 10px; white-space: nowrap; }
+#file-drag { padding: 0 6px; cursor: grab; touch-action: none; }
+#file-drag .ic-grip-vertical { opacity: 0.6; margin-right: -2px; }
 button.tool.icon { padding: 0 8px; }
 button.tool.on { background: var(--sel); color: var(--sel-fg); border-color: var(--accent); }
 button.run:not(:disabled) i { color: var(--ok); }

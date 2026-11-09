@@ -220,6 +220,7 @@ impl Browser {
                 BrowserCommand::Reload => {
                     let _ = self.core.Reload();
                 }
+                BrowserCommand::DragFiles(files) => drag_files(self.host, &files),
             }
         }
     }
@@ -234,6 +235,47 @@ impl Browser {
         unsafe {
             let _ = self.controller.Close();
             let _ = DestroyWindow(self.host);
+        }
+    }
+}
+
+/// Drags files with the shell's data object (what Explorer gives a drop:
+/// CF_HDROP and the item list) and its drop source; the modal loop ends
+/// when the button is released or Escape is pressed.
+fn drag_files(hwnd: HWND, files: &[String]) {
+    use windows::Win32::System::Com::IDataObject;
+    use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_LINK, OleInitialize};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
+    use windows::Win32::UI::Shell::Common::ITEMIDLIST;
+    use windows::Win32::UI::Shell::{BHID_DataObject, ILFree, SHCreateShellItemArrayFromIDLists, SHDoDragDrop, SHParseDisplayName};
+    unsafe {
+        // The page asked while the button was down; it may be up by now.
+        let button = if GetSystemMetrics(SM_SWAPBUTTON) != 0 { VK_RBUTTON } else { VK_LBUTTON };
+        if (GetAsyncKeyState(button.0 as i32) as u16 & 0x8000) == 0 {
+            return;
+        }
+        // Drag and drop needs OLE on this thread (COM is there already);
+        // it stays initialized.
+        thread_local!(static OLE: bool = unsafe { OleInitialize(None).is_ok() });
+        if !OLE.with(|ok| *ok) {
+            return;
+        }
+        let mut pidls: Vec<*mut ITEMIDLIST> = Vec::new();
+        for f in files {
+            let mut p = std::ptr::null_mut();
+            if SHParseDisplayName(&hstr(f), None, &mut p, 0, None).is_ok() && !p.is_null() {
+                pidls.push(p);
+            }
+        }
+        if !pidls.is_empty() {
+            let list: Vec<*const ITEMIDLIST> = pidls.iter().map(|p| *p as *const _).collect();
+            let data = SHCreateShellItemArrayFromIDLists(&list).and_then(|a| a.BindToHandler::<_, IDataObject>(None, &BHID_DataObject));
+            if let Ok(data) = data {
+                let _ = SHDoDragDrop(Some(hwnd), &data, None, DROPEFFECT_COPY | DROPEFFECT_LINK);
+            }
+        }
+        for p in pidls {
+            ILFree(Some(p));
         }
     }
 }
