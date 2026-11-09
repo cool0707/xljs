@@ -13,19 +13,11 @@ fn console(input: &str, out: &SharedBuf) -> Console {
 }
 
 fn field(name: &str, label: &str, kind: &str) -> FormField {
-    FormField {
-        name: name.into(),
-        label: label.into(),
-        kind: kind.into(),
-        ..Default::default()
-    }
+    FormField { name: name.into(), label: label.into(), kind: kind.into(), ..Default::default() }
 }
 
 fn opt(v: &str) -> FormOption {
-    FormOption {
-        value: v.into(),
-        label: v.into(),
-    }
+    FormOption { value: v.into(), label: v.into() }
 }
 
 #[test]
@@ -38,61 +30,22 @@ fn console_form() {
         title: "設定".into(),
         error: "全体のエラー".into(),
         fields: vec![
-            FormField {
-                value: json!("太郎"),
-                required: true,
-                error: "短すぎます".into(),
-                ..field("name", "名前", "text")
-            },
-            FormField {
-                value: json!("顧客別"),
-                options: vec![opt("顧客別"), opt("商品別")],
-                ..field("mode", "単位", "select")
-            },
-            FormField {
-                value: json!(false),
-                ..field("tax", "税込", "checkbox")
-            },
+            FormField { value: json!("太郎"), required: true, error: "短すぎます".into(), ..field("name", "名前", "text") },
+            FormField { value: json!("顧客別"), options: vec![opt("顧客別"), opt("商品別")], ..field("mode", "単位", "select") },
+            FormField { value: json!(false), ..field("tax", "税込", "checkbox") },
             field("src", "フォルダ", "folder"),
-            FormField {
-                accept: vec![".xlsx".into()],
-                ..field("in", "入力", "files")
-            },
+            FormField { accept: vec![".xlsx".into()], ..field("in", "入力", "files") },
         ],
         ..Default::default()
     };
-    let v = c
-        .form(&o)
-        .unwrap_or_else(|| panic!("cancelled:\n{}", out.text()));
-    assert_eq!(
-        Value::Object(v),
-        json!({"name": "太郎", "mode": "商品別", "tax": true, "src": r"C:\data", "in": ["a.xlsx", "b.xlsx"]})
-    );
-    for s in [
-        "[設定]",
-        "! 全体のエラー",
-        "! 名前: 短すぎます",
-        "名前 * [太郎]: ",
-        " *1) 顧客別",
-        "1 から 2 までの番号",
-        "税込 [y/N]",
-        "(*.xlsx)",
-    ] {
-        assert!(
-            out.text().contains(s),
-            "output does not contain {s:?}:\n{}",
-            out.text()
-        );
+    let v = c.form(&o).unwrap_or_else(|| panic!("cancelled:\n{}", out.text()));
+    assert_eq!(Value::Object(v), json!({"name": "太郎", "mode": "商品別", "tax": true, "src": r"C:\data", "in": ["a.xlsx", "b.xlsx"]}));
+    for s in ["[設定]", "! 全体のエラー", "! 名前: 短すぎます", "名前 * [太郎]: ", " *1) 顧客別", "1 から 2 までの番号", "税込 [y/N]", "(*.xlsx)"] {
+        assert!(out.text().contains(s), "output does not contain {s:?}:\n{}", out.text());
     }
     // End of input cancels.
     let c = console("", &out);
-    assert!(
-        c.form(&FormOptions {
-            fields: vec![field("a", "", "text")],
-            ..Default::default()
-        })
-        .is_none()
-    );
+    assert!(c.form(&FormOptions { fields: vec![field("a", "", "text")], ..Default::default() }).is_none());
 }
 
 #[test]
@@ -100,10 +53,7 @@ fn console_form_tables_and_tabs() {
     let _l = lock_lang("ja");
     let out = SharedBuf::default();
     let c = console(&["", "5", "2-3", "", "-"].join("\n"), &out);
-    let rows: Vec<Vec<String>> = [["A社", "2"], ["B社", "1"], ["C社", "5"]]
-        .iter()
-        .map(|r| r.iter().map(|s| s.to_string()).collect())
-        .collect();
+    let rows: Vec<Vec<String>> = [["A社", "2"], ["B社", "1"], ["C社", "5"]].iter().map(|r| r.iter().map(|s| s.to_string()).collect()).collect();
     let cols = vec!["顧客".to_string(), "件数".to_string()];
     let table = |name: &str, label: &str, select: &str, value: Value, tab: &str| FormField {
         columns: cols.clone(),
@@ -115,46 +65,18 @@ fn console_form_tables_and_tabs() {
     };
     let o = FormOptions {
         fields: vec![
-            FormField {
-                value: json!("x"),
-                group: "グループ".into(),
-                group_help: "まとめた項目".into(),
-                ..field("a", "共通", "text")
-            },
-            FormField {
-                columns: vec!["名前".into()],
-                rows: vec![vec!["表示だけ".into()]],
-                tab: "基本".into(),
-                ..field("info", "一覧", "table")
-            },
+            FormField { value: json!("x"), group: "グループ".into(), group_help: "まとめた項目".into(), ..field("a", "共通", "text") },
+            FormField { columns: vec!["名前".into()], rows: vec![vec!["表示だけ".into()]], tab: "基本".into(), ..field("info", "一覧", "table") },
             table("pick", "対象", SELECT_MULTIPLE, json!([]), "基本"),
             table("one", "一つ", SELECT_SINGLE, json!([0.0]), "詳細"),
             table("none", "なし", SELECT_MULTIPLE, json!([1.0]), "詳細"),
         ],
         ..Default::default()
     };
-    let v = c
-        .form(&o)
-        .unwrap_or_else(|| panic!("cancelled:\n{}", out.text()));
-    assert_eq!(
-        Value::Object(v),
-        json!({"a": "x", "pick": [1, 2], "one": [0], "none": []})
-    );
-    for s in [
-        "-- グループ --\nまとめた項目\n",
-        "== 基本 ==",
-        "== 詳細 ==",
-        "表示だけ",
-        "│ 3 │ C社",
-        "Enter で 1 のまま",
-        "Enter で選択なし",
-        "1 から 3 までの番号",
-    ] {
-        assert!(
-            out.text().contains(s),
-            "output does not contain {s:?}:\n{}",
-            out.text()
-        );
+    let v = c.form(&o).unwrap_or_else(|| panic!("cancelled:\n{}", out.text()));
+    assert_eq!(Value::Object(v), json!({"a": "x", "pick": [1, 2], "one": [0], "none": []}));
+    for s in ["-- グループ --\nまとめた項目\n", "== 基本 ==", "== 詳細 ==", "表示だけ", "│ 3 │ C社", "Enter で 1 のまま", "Enter で選択なし", "1 から 3 までの番号"] {
+        assert!(out.text().contains(s), "output does not contain {s:?}:\n{}", out.text());
     }
 }
 
@@ -163,73 +85,28 @@ fn console_form_new_kinds() {
     let _l = lock_lang("ja");
     let out = SharedBuf::default();
     // checkboxes: a bad choice, then numbers; then by labels; combobox: free text and a label; tags; dateRange.
-    let input = [
-        "9",
-        "1,3",
-        "総務;経理",
-        "名古屋",
-        "東京",
-        "a; b",
-        "2026-04-01",
-        "",
-        "",
-    ]
-    .join("\n");
+    let input = ["9", "1,3", "総務;経理", "名古屋", "東京", "a; b", "2026-04-01", "", ""].join("\n");
     let c = console(&input, &out);
     let opts = vec![opt("営業"), opt("総務"), opt("経理")];
     let o = FormOptions {
         fields: vec![
-            FormField {
-                label: "注意".into(),
-                value: json!("1 行目\n2 行目"),
-                ..field("n", "", "note")
-            },
-            FormField {
-                options: opts.clone(),
-                value: json!(["総務"]),
-                ..field("a", "部署", "checkboxes")
-            },
-            FormField {
-                options: opts.clone(),
-                ..field("b", "部署 2", "checkboxes")
-            },
-            FormField {
-                options: vec![opt("東京")],
-                custom: true,
-                ..field("c", "都市", "combobox")
-            },
-            FormField {
-                options: vec![opt("東京")],
-                custom: true,
-                ..field("d", "都市 2", "combobox")
-            },
+            FormField { label: "注意".into(), value: json!("1 行目\n2 行目"), ..field("n", "", "note") },
+            FormField { options: opts.clone(), value: json!(["総務"]), ..field("a", "部署", "checkboxes") },
+            FormField { options: opts.clone(), ..field("b", "部署 2", "checkboxes") },
+            FormField { options: vec![opt("東京")], custom: true, ..field("c", "都市", "combobox") },
+            FormField { options: vec![opt("東京")], custom: true, ..field("d", "都市 2", "combobox") },
             field("t", "語", "tags"),
-            FormField {
-                value: json!(["", "2026-04-30"]),
-                ..field("r", "期間", "dateRange")
-            },
+            FormField { value: json!(["", "2026-04-30"]), ..field("r", "期間", "dateRange") },
         ],
         ..Default::default()
     };
-    let v = c
-        .form(&o)
-        .unwrap_or_else(|| panic!("cancelled:\n{}", out.text()));
+    let v = c.form(&o).unwrap_or_else(|| panic!("cancelled:\n{}", out.text()));
     assert_eq!(
         Value::Object(v),
         json!({"a": ["営業", "経理"], "b": ["総務", "経理"], "c": "名古屋", "d": "東京", "t": ["a", "b"], "r": ["2026-04-01", "2026-04-30"]})
     );
-    for s in [
-        "* 注意\n  1 行目\n  2 行目\n",
-        " *2) 総務",
-        "番号（カンマ区切り、なしは「-」） [2]: ",
-        "1 から 3 までの番号",
-        "  終了 [2026-04-30]: ",
-    ] {
-        assert!(
-            out.text().contains(s),
-            "output does not contain {s:?}:\n{}",
-            out.text()
-        );
+    for s in ["* 注意\n  1 行目\n  2 行目\n", " *2) 総務", "番号（カンマ区切り、なしは「-」） [2]: ", "1 から 3 までの番号", "  終了 [2026-04-30]: "] {
+        assert!(out.text().contains(s), "output does not contain {s:?}:\n{}", out.text());
     }
 }
 
@@ -239,28 +116,16 @@ fn console_form_buttons() {
     let out = SharedBuf::default();
     let c = console("\n\n\n2\n\n4\n読込\n", &out);
     let o = FormOptions {
-        fields: vec![FormField {
-            name: "a".into(),
-            value: json!("x"),
-            ..Default::default()
-        }],
+        fields: vec![FormField { name: "a".into(), value: json!("x"), ..Default::default() }],
         submit: "OK".into(),
         buttons: vec!["読込".into(), "確認".into()],
         ..Default::default()
     };
     for want in [Value::Null, json!(1), json!(0)] {
         let v = c.form(&o).unwrap();
-        assert!(
-            v["$button"] == want && v["a"] == "x",
-            "{v:?} want {want}\n{}",
-            out.text()
-        );
+        assert!(v["$button"] == want && v["a"] == "x", "{v:?} want {want}\n{}", out.text());
     }
-    assert!(
-        out.text().contains("実行する操作") && out.text().contains(" *3) OK"),
-        "{}",
-        out.text()
-    );
+    assert!(out.text().contains("実行する操作") && out.text().contains(" *3) OK"), "{}", out.text());
 }
 
 #[test]
@@ -270,65 +135,26 @@ fn console_form_editable_table() {
     let c = console("9\n2\n200\n1\ny\n\n", &out);
     let o = FormOptions {
         fields: vec![FormField {
-            columns: ["名前", "金額", "区分", "済"]
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
-            rows: vec![
-                vec!["a".into(), "1".into(), "売上".into(), "false".into()],
-                vec!["b".into(), "x".into()],
-            ],
+            columns: ["名前", "金額", "区分", "済"].iter().map(|s| s.to_string()).collect(),
+            rows: vec![vec!["a".into(), "1".into(), "売上".into(), "false".into()], vec!["b".into(), "x".into()]],
             editable: vec![
-                FormCellColumn {
-                    index: 1,
-                    kind: "number".into(),
-                    ..Default::default()
-                },
-                FormCellColumn {
-                    index: 2,
-                    kind: "select".into(),
-                    options: vec![opt("売上"), opt("返品")],
-                },
-                FormCellColumn {
-                    index: 3,
-                    kind: "checkbox".into(),
-                    ..Default::default()
-                },
+                FormCellColumn { index: 1, kind: "number".into(), ..Default::default() },
+                FormCellColumn { index: 2, kind: "select".into(), options: vec![opt("売上"), opt("返品")] },
+                FormCellColumn { index: 3, kind: "checkbox".into(), ..Default::default() },
             ],
             cell_errors: vec![
-                FormCellError {
-                    row: 1,
-                    col: 1,
-                    message: "数値を入力してください".into(),
-                },
-                FormCellError {
-                    row: 1,
-                    col: -1,
-                    message: "確認".into(),
-                },
+                FormCellError { row: 1, col: 1, message: "数値を入力してください".into() },
+                FormCellError { row: 1, col: -1, message: "確認".into() },
             ],
             ..field("t", "", "table")
         }],
         ..Default::default()
     };
     let v = c.form(&o).unwrap();
-    assert_eq!(
-        v["$cells"],
-        json!({"t": [[1, 1, "200"], [1, 2, "売上"], [1, 3, true]]}),
-        "{}",
-        out.text()
-    );
+    assert_eq!(v["$cells"], json!({"t": [[1, 1, "200"], [1, 2, "売上"], [1, 3, true]]}), "{}", out.text());
     assert!(!v.contains_key("t"));
-    for s in [
-        "! 2 行目 金額: 数値を入力してください",
-        "! 2 行目: 確認",
-        "1 から 2 までの番号",
-    ] {
-        assert!(
-            out.text().contains(s),
-            "output does not contain {s:?}:\n{}",
-            out.text()
-        );
+    for s in ["! 2 行目 金額: 数値を入力してください", "! 2 行目: 確認", "1 から 2 までの番号"] {
+        assert!(out.text().contains(s), "output does not contain {s:?}:\n{}", out.text());
     }
 }
 
@@ -337,18 +163,8 @@ fn console_table() {
     let _l = lock_lang("ja");
     let out = SharedBuf::default();
     let c = console("4\n3-2\n1, 3-4\n", &out);
-    let rows: Vec<Vec<String>> = vec![
-        vec!["あい".into(), "1".into()],
-        vec!["b".into(), "22".into()],
-        vec!["c\nd".into(), "".into()],
-        vec!["e".into()],
-    ];
-    let mut o = TableOptions {
-        title: "表".into(),
-        columns: vec!["名前".into(), "数".into()],
-        rows,
-        select: SELECT_MULTIPLE.into(),
-    };
+    let rows: Vec<Vec<String>> = vec![vec!["あい".into(), "1".into()], vec!["b".into(), "22".into()], vec!["c\nd".into(), "".into()], vec!["e".into()]];
+    let mut o = TableOptions { title: "表".into(), columns: vec!["名前".into(), "数".into()], rows, select: SELECT_MULTIPLE.into() };
     assert_eq!(c.table(&o), Some(vec![3]));
     assert_eq!(c.table(&o), Some(vec![0, 2, 3]));
     let want = "┌───┬──────┬────┐\n│ # │ 名前 │ 数 │\n├───┼──────┼────┤\n│ 1 │ あい │ 1  │\n│ 2 │ b    │ 22 │\n│ 3 │ c d  │    │\n│ 4 │ e    │    │\n└───┴──────┴────┘\n";
@@ -361,12 +177,7 @@ fn console_table() {
 
 #[test]
 fn selection() {
-    for (input, want) in [
-        ("1", vec![0]),
-        ("2,1", vec![1, 0]),
-        ("1-3", vec![0, 1, 2]),
-        ("1 2、2", vec![0, 1]),
-    ] {
+    for (input, want) in [("1", vec![0]), ("2,1", vec![1, 0]), ("1-3", vec![0, 1, 2]), ("1 2、2", vec![0, 1])] {
         assert_eq!(parse_selection(input, 5), Some(want), "{input}");
     }
     for input in ["0", "6", "a", "3-1", "1-9", ","] {
@@ -401,20 +212,9 @@ fn make_ico(sizes: &[usize]) -> Vec<u8> {
 #[test]
 fn icons() {
     let ico = make_ico(&[16, 256, 32, 48]);
-    for (size, want) in [
-        (16, 16),
-        (20, 32),
-        (32, 32),
-        (40, 48),
-        (64, 256),
-        (300, 256),
-    ] {
+    for (size, want) in [(16, 16), (20, 32), (32, 32), (40, 48), (64, 256), (300, 256)] {
         let img = icon_image(&ico, size).unwrap();
-        assert_eq!(
-            img[0] as usize | (img[1] as usize) << 8,
-            want,
-            "size {size}"
-        );
+        assert_eq!(img[0] as usize | (img[1] as usize) << 8, want, "size {size}");
     }
     let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
     png.extend([1, 2, 3]);
@@ -429,21 +229,14 @@ fn icons() {
 #[test]
 fn run_forwards_to_caller() {
     let log = SharedBuf::default();
-    let m = Mock::from_json(
-        r#"{"confirm": [true], "progress": [{"cancelAfter": 2}]}"#,
-        Some(log.sink()),
-    )
-    .unwrap();
+    let m = Mock::from_json(r#"{"confirm": [true], "progress": [{"cancelAfter": 2}]}"#, Some(log.sink())).unwrap();
     struct Rec {
         m: Mock,
         calls: std::sync::Mutex<Vec<(String, std::thread::ThreadId)>>,
     }
     impl Rec {
         fn note(&self, n: &str) {
-            self.calls
-                .lock()
-                .unwrap()
-                .push((n.into(), std::thread::current().id()));
+            self.calls.lock().unwrap().push((n.into(), std::thread::current().id()));
         }
     }
     impl Ui for Rec {
@@ -496,37 +289,20 @@ fn run_forwards_to_caller() {
             self.m.table(o)
         }
     }
-    let rec = Arc::new(Rec {
-        m,
-        calls: Default::default(),
-    });
+    let rec = Arc::new(Rec { m, calls: Default::default() });
     let caller = std::thread::current().id();
     let closed = Arc::new(AtomicBool::new(false));
     let c2 = closed.clone();
     let script = run(rec.clone(), move |su| {
-        assert!(
-            su.name() == "mock" && su.confirm("t", "m"),
-            "confirm was not forwarded"
-        );
-        let p = su.progress(&ProgressOptions {
-            title: "p".into(),
-            total: 3,
-            ..Default::default()
-        });
+        assert!(su.name() == "mock" && su.confirm("t", "m"), "confirm was not forwarded");
+        let p = su.progress(&ProgressOptions { title: "p".into(), total: 3, ..Default::default() });
         p.update(1, 3, "");
         assert!(!p.cancelled(), "cancelled too early");
         p.update(2, 3, "");
-        assert!(
-            p.cancelled(),
-            "updates must be applied before cancelled is answered"
-        );
+        assert!(p.cancelled(), "updates must be applied before cancelled is answered");
         p.close();
         let w = su
-            .open_window(WindowOptions {
-                title: "w".into(),
-                on_closed: Some(Arc::new(move || c2.store(true, Ordering::SeqCst))),
-                ..Default::default()
-            })
+            .open_window(WindowOptions { title: "w".into(), on_closed: Some(Arc::new(move || c2.store(true, Ordering::SeqCst))), ..Default::default() })
             .unwrap();
         w.post("hello".into()); // after close: ignored
         w.close();
@@ -539,11 +315,7 @@ fn run_forwards_to_caller() {
     for (name, id) in calls.iter() {
         assert_eq!(*id, caller, "{name} did not run on the caller");
     }
-    assert!(
-        log.text().contains("progress closed at 2/3"),
-        "{}",
-        log.text()
-    );
+    assert!(log.text().contains("progress closed at 2/3"), "{}", log.text());
 }
 
 /// The bundled Font Awesome stylesheet finds every font it refers to.
@@ -552,10 +324,7 @@ fn font_awesome() {
     const CSS: &str = "fontawesome/css/all.min.css";
     let src = String::from_utf8_lossy(builtin_file(CSS).expect(CSS)).into_owned();
     let re = regex::Regex::new(r"url\(([^)]+)\)").unwrap();
-    let urls: Vec<&str> = re
-        .captures_iter(&src)
-        .map(|c| c.get(1).unwrap().as_str())
-        .collect();
+    let urls: Vec<&str> = re.captures_iter(&src).map(|c| c.get(1).unwrap().as_str()).collect();
     assert!(!urls.is_empty(), "no url() in {CSS}");
     for u in urls {
         let mut parts: Vec<&str> = vec!["fontawesome", "css"];
@@ -569,10 +338,7 @@ fn font_awesome() {
             }
         }
         let name = parts.join("/");
-        assert!(
-            builtin_file(&name).is_some(),
-            "{CSS} refers to {u} ({name}): not found"
-        );
+        assert!(builtin_file(&name).is_some(), "{CSS} refers to {u} ({name}): not found");
     }
 }
 
@@ -580,9 +346,7 @@ fn font_awesome() {
 fn mock_and_console_notify() {
     let _l = lock_lang("ja");
     let log = SharedBuf::default();
-    Mock::from_json("", Some(log.sink()))
-        .unwrap()
-        .notify("集計", "完了しました");
+    Mock::from_json("", Some(log.sink())).unwrap().notify("集計", "完了しました");
     assert_eq!(log.text(), "[mock] notify(\"集計\", \"完了しました\")\n");
     let out = SharedBuf::default();
     console("", &out).notify("集計", "完了しました");

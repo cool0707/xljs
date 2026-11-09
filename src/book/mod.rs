@@ -40,38 +40,11 @@ pub struct Include {
 
 impl Include {
     /// The names of the parts (the CLI's --include, the form's values).
-    pub const KEYS: [&str; 7] = [
-        "vba",
-        "formulas",
-        "validation",
-        "names",
-        "conditional",
-        "charts",
-        "columns",
-    ];
+    pub const KEYS: [&str; 7] = ["vba", "formulas", "validation", "names", "conditional", "charts", "columns"];
 
-    pub const NONE: Include = Include {
-        vba: false,
-        formulas: false,
-        validation: false,
-        names: false,
-        conditional: false,
-        charts: false,
-        columns: false,
-    };
-    pub const VBA: Include = Include {
-        vba: true,
-        ..Include::NONE
-    };
-    pub const ALL: Include = Include {
-        vba: true,
-        formulas: true,
-        validation: true,
-        names: true,
-        conditional: true,
-        charts: true,
-        columns: true,
-    };
+    pub const NONE: Include = Include { vba: false, formulas: false, validation: false, names: false, conditional: false, charts: false, columns: false };
+    pub const VBA: Include = Include { vba: true, ..Include::NONE };
+    pub const ALL: Include = Include { vba: true, formulas: true, validation: true, names: true, conditional: true, charts: true, columns: true };
 
     /// The parts named (Include::KEYS); an unknown name is an error.
     pub fn parse<S: AsRef<str>>(keys: &[S]) -> Result<Include> {
@@ -94,31 +67,13 @@ impl Include {
     }
 
     pub fn keys(&self) -> Vec<&'static str> {
-        let on = [
-            self.vba,
-            self.formulas,
-            self.validation,
-            self.names,
-            self.conditional,
-            self.charts,
-            self.columns,
-        ];
-        Include::KEYS
-            .iter()
-            .zip(on)
-            .filter(|(_, on)| *on)
-            .map(|(k, _)| *k)
-            .collect()
+        let on = [self.vba, self.formulas, self.validation, self.names, self.conditional, self.charts, self.columns];
+        Include::KEYS.iter().zip(on).filter(|(_, on)| *on).map(|(k, _)| *k).collect()
     }
 
     /// Whether anything but the VBA code is asked for.
     pub fn sheets(&self) -> bool {
-        self.formulas
-            || self.validation
-            || self.names
-            || self.conditional
-            || self.charts
-            || self.columns
+        self.formulas || self.validation || self.names || self.conditional || self.charts || self.columns
     }
 
     pub fn is_empty(&self) -> bool {
@@ -203,13 +158,7 @@ pub fn read(data: &[u8], inc: &Include) -> Result<Workbook> {
         return Err(err!("book.oldFormat"));
     }
     let zr = zip::ZipArchive::new(Cursor::new(data)).map_err(|_| err!("book.notWorkbook"))?;
-    let mut pkg = Package {
-        names: zr
-            .file_names()
-            .map(|n| (n.to_lowercase(), n.to_string()))
-            .collect(),
-        zr,
-    };
+    let mut pkg = Package { names: zr.file_names().map(|n| (n.to_lowercase(), n.to_string())).collect(), zr };
     let Some(wb) = pkg.xml("xl/workbook.xml") else {
         if pkg.open("xl/workbook.bin").is_some() {
             return Err(err!("book.binary"));
@@ -219,35 +168,22 @@ pub fn read(data: &[u8], inc: &Include) -> Result<Workbook> {
     let rels = pkg.rels("xl/workbook.xml");
     let target = |id: &str| rels.iter().find(|r| r.0 == id).map(|r| r.2.clone());
     let mut out = Workbook {
-        date1904: wb
-            .child("workbookPr")
-            .is_some_and(|p| p.flag("date1904", false)),
+        date1904: wb.child("workbookPr").is_some_and(|p| p.flag("date1904", false)),
         ..Default::default()
     };
     if let Some(s) = pkg.xml("xl/styles.xml") {
-        out.dxfs = s
-            .child("dxfs")
-            .map(|d| d.children("dxf").cloned().collect())
-            .unwrap_or_default();
+        out.dxfs = s.child("dxfs").map(|d| d.children("dxf").cloned().collect()).unwrap_or_default();
         if values {
             out.formats = number_formats(&s);
         }
     }
     if values {
-        let part = rels
-            .iter()
-            .find(|r| r.1.ends_with("/sharedStrings"))
-            .map(|r| r.2.clone())
-            .unwrap_or_else(|| "xl/sharedStrings.xml".into());
+        let part = rels.iter().find(|r| r.1.ends_with("/sharedStrings")).map(|r| r.2.clone()).unwrap_or_else(|| "xl/sharedStrings.xml".into());
         if let Some(sst) = pkg.xml(&part) {
             out.strings = sst.children("si").map(columns::rich_text).collect();
         }
     }
-    let theme_path = rels
-        .iter()
-        .find(|r| r.1.ends_with("/theme"))
-        .map(|r| r.2.clone())
-        .unwrap_or_else(|| "xl/theme/theme1.xml".into());
+    let theme_path = rels.iter().find(|r| r.1.ends_with("/theme")).map(|r| r.2.clone()).unwrap_or_else(|| "xl/theme/theme1.xml".into());
     if let Some(th) = pkg.xml(&theme_path) {
         out.theme = rules::theme(&th);
     }
@@ -307,9 +243,7 @@ impl Package<'_> {
     /// The relationships of a part (internal ones): (id, type, part).
     fn rels(&mut self, part: &str) -> Vec<(String, String, String)> {
         let (dir, file) = part.rsplit_once('/').unwrap_or(("", part));
-        let Some(root) = self.xml(&format!("{dir}/_rels/{file}.rels")) else {
-            return Vec::new();
-        };
+        let Some(root) = self.xml(&format!("{dir}/_rels/{file}.rels")) else { return Vec::new() };
         root.children("Relationship")
             .filter(|r| r.attr("TargetMode") != Some("External"))
             .filter_map(|r| {
@@ -318,11 +252,7 @@ impl Package<'_> {
                     Some(t) => t.to_string(),
                     None => crate::meta::clean_path(&format!("{dir}/{t}")),
                 };
-                Some((
-                    r.attr("Id")?.to_string(),
-                    r.attr("Type").unwrap_or("").to_string(),
-                    path,
-                ))
+                Some((r.attr("Id")?.to_string(), r.attr("Type").unwrap_or("").to_string(), path))
             })
             .collect()
     }
@@ -348,9 +278,7 @@ impl Package<'_> {
             if !kind.ends_with("/drawing") {
                 continue;
             }
-            let Some(d) = self.xml(&drawing) else {
-                continue;
-            };
+            let Some(d) = self.xml(&drawing) else { continue };
             let rels = self.rels(&drawing);
             for anchor in d.children.iter().filter(|c| c.name.ends_with("Anchor")) {
                 let mut frames = Vec::new();
@@ -358,22 +286,14 @@ impl Package<'_> {
                 for frame in frames {
                     let mut refs = Vec::new();
                     frame.find("chart", &mut refs);
-                    let Some(id) = refs.first().and_then(|c| c.attr("id")) else {
-                        continue;
-                    };
-                    let Some((_, kind, part)) = rels.iter().find(|r| r.0 == id) else {
-                        continue;
-                    };
+                    let Some(id) = refs.first().and_then(|c| c.attr("id")) else { continue };
+                    let Some((_, kind, part)) = rels.iter().find(|r| r.0 == id) else { continue };
                     let Some(root) = self.xml(part) else { continue };
                     let mut names = Vec::new();
                     frame.find("cNvPr", &mut names);
                     let (range, sized) = anchor_range(anchor);
                     out.push(chart::Chart {
-                        name: names
-                            .first()
-                            .and_then(|n| n.attr("name"))
-                            .unwrap_or("")
-                            .to_string(),
+                        name: names.first().and_then(|n| n.attr("name")).unwrap_or("").to_string(),
                         range,
                         sized,
                         root,
@@ -390,28 +310,13 @@ impl Package<'_> {
 fn number_formats(styles: &Node) -> Vec<(u32, String)> {
     let custom: HashMap<u32, String> = styles
         .child("numFmts")
-        .map(|n| {
-            n.children("numFmt")
-                .filter_map(|f| {
-                    Some((
-                        f.attr("numFmtId")?.parse().ok()?,
-                        f.attr("formatCode").unwrap_or("").to_string(),
-                    ))
-                })
-                .collect()
-        })
+        .map(|n| n.children("numFmt").filter_map(|f| Some((f.attr("numFmtId")?.parse().ok()?, f.attr("formatCode").unwrap_or("").to_string()))).collect())
         .unwrap_or_default();
-    let Some(xfs) = styles.child("cellXfs") else {
-        return Vec::new();
-    };
+    let Some(xfs) = styles.child("cellXfs") else { return Vec::new() };
     xfs.children("xf")
         .map(|x| {
             let id: u32 = x.attr("numFmtId").and_then(|v| v.parse().ok()).unwrap_or(0);
-            let code = custom
-                .get(&id)
-                .cloned()
-                .or_else(|| crate::api::xlsx::builtin_code(id).map(str::to_string))
-                .unwrap_or_else(|| "General".into());
+            let code = custom.get(&id).cloned().or_else(|| crate::api::xlsx::builtin_code(id).map(str::to_string)).unwrap_or_else(|| "General".into());
             (id, code)
         })
         .collect()
@@ -422,10 +327,7 @@ fn number_formats(styles: &Node) -> Vec<(u32, String)> {
 fn anchor_range(a: &Node) -> (String, bool) {
     let at = |n: &str| -> Option<(u32, u32)> {
         let m = a.child(n)?;
-        let num = |k: &str| {
-            m.child(k)
-                .and_then(|c| c.all_text().trim().parse::<u32>().ok())
-        };
+        let num = |k: &str| m.child(k).and_then(|c| c.all_text().trim().parse::<u32>().ok());
         Some((num("col")? + 1, num("row")? + 1))
     };
     match (at("from"), at("to")) {
@@ -479,11 +381,7 @@ fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
                 }
                 let c = xml::subtree(&mut r, n);
                 if let Some(f) = c.child("f") {
-                    cells.push(CellFormula {
-                        col,
-                        row,
-                        f: f.clone(),
-                    });
+                    cells.push(CellFormula { col, row, f: f.clone() });
                 }
                 if values && sh.cut.is_none() {
                     if sh.cells.len() >= columns::MAX_CELLS {
@@ -495,10 +393,7 @@ fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
             }
             b"pane" if sh.frozen.is_none() => {
                 let n = xml::element(&e);
-                let y = n
-                    .attr("ySplit")
-                    .and_then(|v| v.parse::<f64>().ok())
-                    .unwrap_or(0.0);
+                let y = n.attr("ySplit").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0);
                 if matches!(n.attr("state"), Some("frozen" | "frozenSplit")) && y >= 1.0 {
                     sh.frozen = Some(y as u32);
                 }
@@ -529,11 +424,7 @@ fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
         ids.insert(n.all_text().trim().to_string());
     }
     let sqref = |n: &Node| -> Vec<Rect> {
-        let s = n
-            .attr("sqref")
-            .map(str::to_string)
-            .or_else(|| n.child("sqref").map(|s| s.all_text()))
-            .unwrap_or_default();
+        let s = n.attr("sqref").map(str::to_string).or_else(|| n.child("sqref").map(|s| s.all_text())).unwrap_or_default();
         formula::parse_sqref(&s)
     };
     let mut cf: Vec<(i64, Rule)> = Vec::new();
@@ -547,10 +438,7 @@ fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
             p.find("conditionalFormatting", &mut cfs);
         }
         for d in dvs {
-            sh.validations.push(Rule {
-                rects: sqref(d),
-                node: d.clone(),
-            });
+            sh.validations.push(Rule { rects: sqref(d), node: d.clone() });
         }
         for c in cfs {
             let rects = sqref(c);
@@ -558,17 +446,8 @@ fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
                 if p.name == "extLst" && rule.attr("id").is_some_and(|id| ids.contains(id)) {
                     continue;
                 }
-                let priority = rule
-                    .attr("priority")
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(i64::MAX);
-                cf.push((
-                    priority,
-                    Rule {
-                        rects: rects.clone(),
-                        node: rule.clone(),
-                    },
-                ));
+                let priority = rule.attr("priority").and_then(|v| v.parse().ok()).unwrap_or(i64::MAX);
+                cf.push((priority, Rule { rects: rects.clone(), node: rule.clone() }));
             }
         }
     }
@@ -593,10 +472,7 @@ fn formula_groups(cells: Vec<CellFormula>) -> Vec<FormulaGroup> {
         let text = c.f.all_text();
         match c.f.attr("t").unwrap_or("normal") {
             "array" | "dataTable" => {
-                let rect =
-                    c.f.attr("ref")
-                        .and_then(formula::parse_range)
-                        .unwrap_or(Rect::cell(c.col, c.row));
+                let rect = c.f.attr("ref").and_then(formula::parse_range).unwrap_or(Rect::cell(c.col, c.row));
                 let formula = if c.f.attr("t") == Some("dataTable") {
                     // {=TABLE(row input, column input)}
                     let (r1, r2) = (c.f.attr("r1").unwrap_or(""), c.f.attr("r2").unwrap_or(""));
@@ -610,12 +486,7 @@ fn formula_groups(cells: Vec<CellFormula>) -> Vec<FormulaGroup> {
                 } else {
                     text
                 };
-                groups.push(G {
-                    first: at,
-                    formula,
-                    cells: Vec::new(),
-                    array: Some(rect),
-                });
+                groups.push(G { first: at, formula, cells: Vec::new(), array: Some(rect) });
             }
             t => {
                 let si = (t == "shared").then(|| c.f.attr("si").unwrap_or("").to_string());
@@ -628,12 +499,7 @@ fn formula_groups(cells: Vec<CellFormula>) -> Vec<FormulaGroup> {
                 } else {
                     let key = formula::shape(&text, c.col, c.row);
                     let i = *by_shape.entry(key).or_insert_with(|| {
-                        groups.push(G {
-                            first: at,
-                            formula: text.clone(),
-                            cells: Vec::new(),
-                            array: None,
-                        });
+                        groups.push(G { first: at, formula: text.clone(), cells: Vec::new(), array: None });
                         groups.len() - 1
                     });
                     if let Some(si) = si {
@@ -648,19 +514,11 @@ fn formula_groups(cells: Vec<CellFormula>) -> Vec<FormulaGroup> {
     let mut out: Vec<FormulaGroup> = groups
         .into_iter()
         .map(|g| match g.array {
-            Some(r) => FormulaGroup {
-                rects: vec![r],
-                formula: g.formula,
-                array: true,
-            },
+            Some(r) => FormulaGroup { rects: vec![r], formula: g.formula, array: true },
             None => {
                 let rects = formula::cells_to_rects(g.cells);
                 let formula = formula::shift(&g.formula, g.first, (rects[0].c1, rects[0].r1));
-                FormulaGroup {
-                    rects,
-                    formula,
-                    array: false,
-                }
+                FormulaGroup { rects, formula, array: false }
             }
         })
         .collect();
@@ -672,16 +530,11 @@ fn formula_groups(cells: Vec<CellFormula>) -> Vec<FormulaGroup> {
 /// formulas, each relative to its own first cell) as one, over all their
 /// ranges; the first of them gives the order. describe(rule, fmt) turns
 /// a rule into text.
-fn merge_rules(
-    rules: &[Rule],
-    describe: &dyn Fn(&Node, rules::Fmt) -> String,
-) -> Vec<(Vec<Rect>, String)> {
+fn merge_rules(rules: &[Rule], describe: &dyn Fn(&Node, rules::Fmt) -> String) -> Vec<(Vec<Rect>, String)> {
     let mut groups: Vec<(Vec<Rect>, usize)> = Vec::new();
     let mut by_key: HashMap<String, usize> = HashMap::new();
     for (i, r) in rules.iter().enumerate() {
-        let Some(first) = r.rects.first() else {
-            continue;
-        };
+        let Some(first) = r.rects.first() else { continue };
         let base = (first.c1, first.r1);
         let key = describe(&r.node, &|f: &str| formula::shape(f, base.0, base.1));
         match by_key.get(&key) {
@@ -699,12 +552,7 @@ fn merge_rules(
             let from = (r.rects[0].c1, r.rects[0].r1);
             let rects = formula::merge_rects(rects);
             let to = (rects[0].c1, rects[0].r1);
-            let text = describe(&r.node, &|f: &str| {
-                code(&format!(
-                    "={}",
-                    formula::display(&formula::shift(f, from, to))
-                ))
-            });
+            let text = describe(&r.node, &|f: &str| code(&format!("={}", formula::display(&formula::shift(f, from, to)))));
             (rects, text)
         })
         .collect()
@@ -733,19 +581,11 @@ pub(crate) fn code(s: &str) -> String {
         best = best.max(n);
     }
     let fence = "`".repeat(best + 1);
-    if best > 0 {
-        format!("{fence} {s} {fence}")
-    } else {
-        format!("{fence}{s}{fence}")
-    }
+    if best > 0 { format!("{fence} {s} {fence}") } else { format!("{fence}{s}{fence}") }
 }
 
 fn sheet_heading(s: &Sheet) -> String {
-    if s.hidden {
-        format!("## {}（{}）\n\n", s.name, t!("book.hidden"))
-    } else {
-        format!("## {}\n\n", s.name)
-    }
+    if s.hidden { format!("## {}（{}）\n\n", s.name, t!("book.hidden")) } else { format!("## {}\n\n", s.name) }
 }
 
 /// Lists lines under a heading per sheet; None when no sheet has any.
@@ -793,36 +633,20 @@ pub fn text(file: &str, wb: &Workbook, inc: &Include) -> String {
                 .iter()
                 .map(|g| {
                     let f = code(&format!("={}", formula::display(&g.formula)));
-                    if g.array {
-                        format!("{}: {f}{}", ranges(&g.rects), t!("book.array"))
-                    } else {
-                        format!("{}: {f}", ranges(&g.rects))
-                    }
+                    if g.array { format!("{}: {f}{}", ranges(&g.rects), t!("book.array")) } else { format!("{}: {f}", ranges(&g.rects)) }
                 })
                 .collect()
         });
-        part(
-            t!("book.formulasTitle", file),
-            Some(t!("book.formulasIntro")),
-            body,
-            t!("book.formulasNone"),
-        );
+        part(t!("book.formulasTitle", file), Some(t!("book.formulasIntro")), body, t!("book.formulasNone"));
     }
     if inc.validation {
         let body = per_sheet(wb, &|s| {
-            merge_rules(&s.validations, &|n, fmt| {
-                rules::validation(n, fmt, wb.date1904)
-            })
-            .into_iter()
-            .map(|(r, d)| format!("{}: {d}", ranges(&r)))
-            .collect()
+            merge_rules(&s.validations, &|n, fmt| rules::validation(n, fmt, wb.date1904))
+                .into_iter()
+                .map(|(r, d)| format!("{}: {d}", ranges(&r)))
+                .collect()
         });
-        part(
-            t!("book.validationTitle", file),
-            Some(t!("book.rulesIntro")),
-            body,
-            t!("book.validationNone"),
-        );
+        part(t!("book.validationTitle", file), Some(t!("book.rulesIntro")), body, t!("book.validationNone"));
     }
     if inc.names {
         let mut body = String::new();
@@ -839,67 +663,33 @@ pub fn text(file: &str, wb: &Workbook, inc: &Include) -> String {
             };
             let mut notes = Vec::new();
             if let Some(s) = n.sheet {
-                notes.push(t!(
-                    "book.nameSheet",
-                    wb.sheets.get(s).map(|s| s.name.as_str()).unwrap_or("?")
-                ));
+                notes.push(t!("book.nameSheet", wb.sheets.get(s).map(|s| s.name.as_str()).unwrap_or("?")));
             }
             if n.hidden {
                 notes.push(t!("book.hidden"));
             }
-            let notes = if notes.is_empty() {
-                String::new()
-            } else {
-                format!("（{}）", notes.join(&t!("vba.separator")))
-            };
-            let comment = if n.comment.is_empty() {
-                String::new()
-            } else {
-                format!(" — {}", n.comment.replace(['\r', '\n'], " "))
-            };
-            body.push_str(&format!(
-                "- {name}{notes}: {}{comment}\n",
-                code(&format!("={}", formula::display(&n.formula)))
-            ));
+            let notes = if notes.is_empty() { String::new() } else { format!("（{}）", notes.join(&t!("vba.separator"))) };
+            let comment = if n.comment.is_empty() { String::new() } else { format!(" — {}", n.comment.replace(['\r', '\n'], " ")) };
+            body.push_str(&format!("- {name}{notes}: {}{comment}\n", code(&format!("={}", formula::display(&n.formula)))));
         }
         let body = (!body.is_empty()).then(|| body + "\n");
-        part(
-            t!("book.namesTitle", file),
-            None,
-            body,
-            t!("book.namesNone"),
-        );
+        part(t!("book.namesTitle", file), None, body, t!("book.namesNone"));
     }
     if inc.conditional {
         let body = per_sheet(wb, &|s| {
-            merge_rules(&s.conditional, &|n, fmt| {
-                rules::conditional(n, fmt, &wb.dxfs, &wb.theme)
-            })
-            .into_iter()
-            .map(|(r, d)| format!("{}: {d}", ranges(&r)))
-            .collect()
+            merge_rules(&s.conditional, &|n, fmt| rules::conditional(n, fmt, &wb.dxfs, &wb.theme))
+                .into_iter()
+                .map(|(r, d)| format!("{}: {d}", ranges(&r)))
+                .collect()
         });
-        part(
-            t!("book.conditionalTitle", file),
-            Some(format!(
-                "{}{}",
-                t!("book.rulesIntro"),
-                t!("book.conditionalOrder")
-            )),
-            body,
-            t!("book.conditionalNone"),
-        );
+        part(t!("book.conditionalTitle", file), Some(format!("{}{}", t!("book.rulesIntro"), t!("book.conditionalOrder"))), body, t!("book.conditionalNone"));
     }
     if inc.charts {
         let mut body = String::new();
         for s in wb.sheets.iter().filter(|s| !s.charts.is_empty()) {
             body.push_str(&sheet_heading(s));
             for (i, c) in s.charts.iter().enumerate() {
-                let name = if c.name.is_empty() {
-                    t!("book.chart.unnamed", i + 1)
-                } else {
-                    c.name.clone()
-                };
+                let name = if c.name.is_empty() { t!("book.chart.unnamed", i + 1) } else { c.name.clone() };
                 let at = match (c.range.as_str(), c.sized) {
                     ("", _) => String::new(),
                     (r, true) => format!("（{r}）"),
@@ -913,12 +703,7 @@ pub fn text(file: &str, wb: &Workbook, inc: &Include) -> String {
             }
         }
         let body = (!body.is_empty()).then_some(body);
-        part(
-            t!("book.chartsTitle", file),
-            None,
-            body,
-            t!("book.chartsNone"),
-        );
+        part(t!("book.chartsTitle", file), None, body, t!("book.chartsNone"));
     }
     if inc.columns {
         let mut body = String::new();
@@ -929,12 +714,7 @@ pub fn text(file: &str, wb: &Workbook, inc: &Include) -> String {
             }
         }
         let body = (!body.is_empty()).then_some(body);
-        part(
-            t!("book.columnsTitle", file),
-            Some(t!("book.columnsIntro", columns::MIN_ROWS)),
-            body,
-            t!("book.columnsNone", columns::MIN_ROWS),
-        );
+        part(t!("book.columnsTitle", file), Some(t!("book.columnsIntro", columns::MIN_ROWS)), body, t!("book.columnsNone", columns::MIN_ROWS));
     }
     b
 }

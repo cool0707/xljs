@@ -1,4 +1,4 @@
-use encoding_rs::{EncoderResult, Encoding};
+use encoding_rs::{Encoding, EncoderResult};
 
 use super::N;
 use crate::{Result, err};
@@ -13,8 +13,7 @@ pub fn norm_encoding(name: &str) -> String {
         "" | "auto" => "auto",
         "utf8" | "utf-8" => "utf8",
         "utf8bom" | "utf-8bom" | "utf8-bom" | "utf-8-bom" | "utf-8-sig" | "utf8-sig" => "utf8bom",
-        "cp932" | "shift-jis" | "shiftjis" | "sjis" | "windows-31j" | "ms932" | "x-sjis"
-        | "ms-kanji" | "csshiftjis" => "cp932",
+        "cp932" | "shift-jis" | "shiftjis" | "sjis" | "windows-31j" | "ms932" | "x-sjis" | "ms-kanji" | "csshiftjis" => "cp932",
         "euc-jp" | "eucjp" => "eucjp",
         "iso-2022-jp" | "jis" => "iso2022jp",
         "utf16le" | "utf-16le" | "utf-16" => "utf16le",
@@ -89,11 +88,7 @@ pub fn encode(s: &str, name: &str) -> Result<Vec<u8>> {
         }
         "utf16le" | "utf16be" => {
             let le = norm == "utf16le";
-            let mut out = if le {
-                vec![0xFF, 0xFE]
-            } else {
-                vec![0xFE, 0xFF]
-            };
+            let mut out = if le { vec![0xFF, 0xFE] } else { vec![0xFE, 0xFF] };
             for u in s.encode_utf16() {
                 out.extend_from_slice(&if le { u.to_le_bytes() } else { u.to_be_bytes() });
             }
@@ -106,9 +101,7 @@ pub fn encode(s: &str, name: &str) -> Result<Vec<u8>> {
     let mut out = Vec::with_capacity(s.len() * 2);
     let mut rest = s;
     loop {
-        let need = e
-            .max_buffer_length_from_utf8_without_replacement(rest.len())
-            .unwrap_or(rest.len() * 4 + 16);
+        let need = e.max_buffer_length_from_utf8_without_replacement(rest.len()).unwrap_or(rest.len() * 4 + 16);
         out.reserve(need);
         let (res, read) = e.encode_from_utf8_to_vec_without_replacement(rest, &mut out, true);
         rest = &rest[read..];
@@ -130,8 +123,6 @@ pub(super) fn install(n: &N) {
         let b = encode(&a.str(0), &a.opt_str(1, "utf8")).map_err(|e| a.throw(&e))?;
         super::js::array_buffer(&a.ctx, b)
     });
-    n.set("detectEncoding", |_, a| {
-        a.ret(detect_encoding(&a.bytes(0)?))
-    });
+    n.set("detectEncoding", |_, a| a.ret(detect_encoding(&a.bytes(0)?)));
     n.set("normEncoding", |_, a| a.ret(norm_encoding(&a.str(0))));
 }

@@ -84,23 +84,14 @@ pub(crate) fn hstr(s: &str) -> HSTRING {
 }
 
 fn message_box(title: &str, message: &str, flags: MESSAGEBOX_STYLE) -> MESSAGEBOX_RESULT {
-    unsafe {
-        MessageBoxW(
-            owner(),
-            &hstr(message),
-            &hstr(title),
-            flags | MB_SETFOREGROUND | MB_TOPMOST,
-        )
-    }
+    unsafe { MessageBoxW(owner(), &hstr(message), &hstr(title), flags | MB_SETFOREGROUND | MB_TOPMOST) }
 }
 
 const ERROR_CANCELLED_HR: u32 = 0x800704C7;
 
 fn shell_item_path(item: &IShellItem) -> Result<String> {
     unsafe {
-        let p = item
-            .GetDisplayName(SIGDN_FILESYSPATH)
-            .map_err(|e| Error::msg(format!("IShellItem.GetDisplayName: {e}")))?;
+        let p = item.GetDisplayName(SIGDN_FILESYSPATH).map_err(|e| Error::msg(format!("IShellItem.GetDisplayName: {e}")))?;
         let s = p.to_string().unwrap_or_default();
         CoTaskMemFree(Some(p.0 as *const _));
         Ok(s)
@@ -140,22 +131,17 @@ fn file_dialog(save: bool, folder: bool, o: &PickerOptions) -> Result<Vec<String
             let mut specs = Vec::new();
             for f in &o.filters {
                 let pat = f.patterns.join(";");
-                let name = if f.description.is_empty() {
-                    pat.clone()
-                } else {
-                    f.description.clone()
-                };
+                let name = if f.description.is_empty() { pat.clone() } else { f.description.clone() };
                 keep.push(hstr(&name));
                 keep.push(hstr(&pat));
             }
             for i in 0..o.filters.len() {
-                specs.push(windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC {
-                    pszName: PCWSTR(keep[2 * i].as_ptr()),
-                    pszSpec: PCWSTR(keep[2 * i + 1].as_ptr()),
-                });
+                specs.push(windows::Win32::UI::Shell::Common::COMDLG_FILTERSPEC { pszName: PCWSTR(keep[2 * i].as_ptr()), pszSpec: PCWSTR(keep[2 * i + 1].as_ptr()) });
             }
             let _ = dlg.SetFileTypes(&specs);
-            if save && let Some(first) = o.filters[0].patterns.first() {
+            if save
+                && let Some(first) = o.filters[0].patterns.first()
+            {
                 let ext = first.trim_start_matches("*.");
                 if !ext.is_empty() && !ext.contains(['*', '?']) {
                     let _ = dlg.SetDefaultExtension(&hstr(ext));
@@ -164,8 +150,7 @@ fn file_dialog(save: bool, folder: bool, o: &PickerOptions) -> Result<Vec<String
         }
         if !o.start_in.is_empty()
             && let Ok(abs) = std::path::absolute(&o.start_in)
-            && let Ok(item) =
-                SHCreateItemFromParsingName::<_, _, IShellItem>(&hstr(&abs.to_string_lossy()), None)
+            && let Ok(item) = SHCreateItemFromParsingName::<_, _, IShellItem>(&hstr(&abs.to_string_lossy()), None)
         {
             let _ = dlg.SetFolder(&item);
         }
@@ -179,11 +164,8 @@ fn file_dialog(save: bool, folder: bool, o: &PickerOptions) -> Result<Vec<String
             return Err(Error::msg(format!("IFileDialog.Show: {e}")));
         }
         if !save && !folder && o.multiple {
-            let open: IFileOpenDialog =
-                windows::core::Interface::cast(&dlg).map_err(|e| Error::msg(e.to_string()))?;
-            let arr = open
-                .GetResults()
-                .map_err(|e| Error::msg(format!("GetResults: {e}")))?;
+            let open: IFileOpenDialog = windows::core::Interface::cast(&dlg).map_err(|e| Error::msg(e.to_string()))?;
+            let arr = open.GetResults().map_err(|e| Error::msg(format!("GetResults: {e}")))?;
             let n = arr.GetCount().unwrap_or(0);
             let mut out = Vec::new();
             for i in 0..n {
@@ -195,9 +177,7 @@ fn file_dialog(save: bool, folder: bool, o: &PickerOptions) -> Result<Vec<String
             }
             return Ok(out);
         }
-        let item = dlg
-            .GetResult()
-            .map_err(|e| Error::msg(format!("GetResult: {e}")))?;
+        let item = dlg.GetResult().map_err(|e| Error::msg(format!("GetResult: {e}")))?;
         Ok(vec![shell_item_path(&item)?])
     }
 }
@@ -210,9 +190,7 @@ impl Ui for Native {
     fn alert(&self, title: &str, message: &str) {
         // Only an alert shows a notification when it opens in the
         // background: the same title and text as the alert.
-        notify::watching(title, message, || {
-            message_box(title, message, MB_OK | MB_ICONINFORMATION)
-        });
+        notify::watching(title, message, || message_box(title, message, MB_OK | MB_ICONINFORMATION));
     }
 
     fn confirm(&self, title: &str, message: &str) -> bool {
@@ -327,28 +305,16 @@ unsafe impl Sync for NativeProgress {}
 impl NativeProgress {
     fn start(o: &ProgressOptions) -> Option<NativeProgress> {
         unsafe {
-            let dlg: IProgressDialog =
-                CoCreateInstance(&CLSID_ProgressDialog, None, CLSCTX_INPROC_SERVER).ok()?;
+            let dlg: IProgressDialog = CoCreateInstance(&CLSID_ProgressDialog, None, CLSCTX_INPROC_SERVER).ok()?;
             progress_opened();
             let _ = dlg.SetTitle(&hstr(&o.title));
-            let mut flags = if o.total <= 0 {
-                PROGDLG_MARQUEEPROGRESS | PROGDLG_NOTIME
-            } else {
-                PROGDLG_AUTOTIME
-            };
+            let mut flags = if o.total <= 0 { PROGDLG_MARQUEEPROGRESS | PROGDLG_NOTIME } else { PROGDLG_AUTOTIME };
             if !o.cancellable {
                 flags |= PROGDLG_NOCANCEL;
             }
             let _ = dlg.StartProgressDialog(owner(), None, flags, None);
             let _ = dlg.Timer(PDTIMER_RESET, None);
-            let p = NativeProgress {
-                st: Mutex::new(ProgressState {
-                    dlg,
-                    total: o.total,
-                    last: None,
-                    closed: false,
-                }),
-            };
+            let p = NativeProgress { st: Mutex::new(ProgressState { dlg, total: o.total, last: None, closed: false }) };
             p.set_lines(&p.st.lock().unwrap(), 0, &o.message);
             Some(p)
         }
@@ -382,11 +348,7 @@ impl Progress for NativeProgress {
         if total > 0 {
             st.total = total;
         }
-        if st
-            .last
-            .is_some_and(|l| l.elapsed() < Duration::from_millis(50))
-            && done < st.total
-        {
+        if st.last.is_some_and(|l| l.elapsed() < Duration::from_millis(50)) && done < st.total {
             return;
         }
         st.last = Some(Instant::now());
@@ -416,9 +378,7 @@ impl Progress for NativeProgress {
 
 /// Opens Explorer with the files selected. Files in different folders open
 /// one Explorer window per folder.
-pub(crate) fn show_in_folder(
-    groups: &[(std::path::PathBuf, Vec<std::path::PathBuf>)],
-) -> Result<()> {
+pub(crate) fn show_in_folder(groups: &[(std::path::PathBuf, Vec<std::path::PathBuf>)]) -> Result<()> {
     unsafe {
         // COM must be initialised on this thread (no-op if it already is).
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
@@ -436,15 +396,7 @@ pub(crate) fn show_in_folder(
                     children.push(ILFindLastID(it) as *const _);
                 }
             }
-            let r = SHOpenFolderAndSelectItems(
-                folder,
-                if children.is_empty() {
-                    None
-                } else {
-                    Some(&children)
-                },
-                0,
-            );
+            let r = SHOpenFolderAndSelectItems(folder, if children.is_empty() { None } else { Some(&children) }, 0);
             for it in items {
                 ILFree(Some(it));
             }
@@ -458,14 +410,7 @@ pub(crate) fn show_in_folder(
 /// Opens a file, folder or URL with its default application.
 pub(crate) fn shell_execute(target: &str) -> Result<()> {
     unsafe {
-        let r = ShellExecuteW(
-            None,
-            w!("open"),
-            &hstr(target),
-            PCWSTR::null(),
-            PCWSTR::null(),
-            SW_SHOWNORMAL,
-        );
+        let r = ShellExecuteW(None, w!("open"), &hstr(target), PCWSTR::null(), PCWSTR::null(), SW_SHOWNORMAL);
         if r.0 as isize <= 32 {
             return Err(err!("shell.cannotOpen", target, r.0 as isize));
         }

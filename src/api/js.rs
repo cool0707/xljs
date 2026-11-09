@@ -21,9 +21,7 @@ pub fn to_str(v: &Value) -> String {
     if let Some(s) = v.as_string() {
         return s.to_string().unwrap_or_default();
     }
-    Coerced::<String>::from_js(v.ctx(), v.clone())
-        .map(|c| c.0)
-        .unwrap_or_default()
+    Coerced::<String>::from_js(v.ctx(), v.clone()).map(|c| c.0).unwrap_or_default()
 }
 
 /// Number(v).
@@ -34,9 +32,7 @@ pub fn to_f64(v: &Value) -> f64 {
     if v.is_undefined() {
         return f64::NAN;
     }
-    Coerced::<f64>::from_js(v.ctx(), v.clone())
-        .map(|c| c.0)
-        .unwrap_or(f64::NAN)
+    Coerced::<f64>::from_js(v.ctx(), v.clone()).map(|c| c.0).unwrap_or(f64::NAN)
 }
 
 /// ToInteger: truncated, NaN and infinities as 0 (like goja's ToInteger).
@@ -50,34 +46,21 @@ pub fn to_bool(v: &Value) -> bool {
     if let Some(b) = v.as_bool() {
         return b;
     }
-    Coerced::<bool>::from_js(v.ctx(), v.clone())
-        .map(|c| c.0)
-        .unwrap_or(false)
+    Coerced::<bool>::from_js(v.ctx(), v.clone()).map(|c| c.0).unwrap_or(false)
 }
 
 impl<'js> A<'js> {
     pub fn arg(&self, i: usize) -> Value<'js> {
-        self.v
-            .get(i)
-            .cloned()
-            .unwrap_or_else(|| Value::new_undefined(self.ctx.clone()))
+        self.v.get(i).cloned().unwrap_or_else(|| Value::new_undefined(self.ctx.clone()))
     }
     /// The argument as a string ("" for null and undefined).
     pub fn str(&self, i: usize) -> String {
         let v = self.arg(i);
-        if nullish(&v) {
-            String::new()
-        } else {
-            to_str(&v)
-        }
+        if nullish(&v) { String::new() } else { to_str(&v) }
     }
     pub fn opt_str(&self, i: usize, def: &str) -> String {
         let v = self.arg(i);
-        if nullish(&v) {
-            def.to_string()
-        } else {
-            to_str(&v)
-        }
+        if nullish(&v) { def.to_string() } else { to_str(&v) }
     }
     pub fn f64(&self, i: usize) -> f64 {
         to_f64(&self.arg(i))
@@ -119,20 +102,9 @@ pub fn elems<'js>(v: &Value<'js>) -> Vec<Value<'js>> {
     if let Some(a) = v.as_array() {
         return a.iter::<Value>().filter_map(Result::ok).collect();
     }
-    let Some(o) = v.as_object() else {
-        return Vec::new();
-    };
-    let n = o
-        .get::<_, Value>("length")
-        .map(|l| to_int(&l))
-        .unwrap_or(0)
-        .max(0);
-    (0..n)
-        .map(|i| {
-            o.get::<_, Value>(i as u32)
-                .unwrap_or_else(|_| Value::new_undefined(v.ctx().clone()))
-        })
-        .collect()
+    let Some(o) = v.as_object() else { return Vec::new() };
+    let n = o.get::<_, Value>("length").map(|l| to_int(&l)).unwrap_or(0).max(0);
+    (0..n).map(|i| o.get::<_, Value>(i as u32).unwrap_or_else(|_| Value::new_undefined(v.ctx().clone()))).collect()
 }
 
 /// A string or an array of strings (nullish elements are skipped).
@@ -143,11 +115,7 @@ pub fn strings(v: &Value) -> Vec<String> {
     if v.is_string() {
         return vec![to_str(v)];
     }
-    elems(v)
-        .iter()
-        .filter(|e| !nullish(e))
-        .map(to_str)
-        .collect()
+    elems(v).iter().filter(|e| !nullish(e)).map(to_str).collect()
 }
 
 /// An ArrayBuffer, typed array, DataView or string as bytes.
@@ -169,16 +137,8 @@ pub fn bytes<'js>(ctx: &Ctx<'js>, v: &Value<'js>) -> rquickjs::Result<Vec<u8>> {
             && let Some(ab) = ArrayBuffer::from_object(bo.clone())
             && let Some(b) = unsafe { ab.as_bytes() }
         {
-            let off = o
-                .get::<_, Value>("byteOffset")
-                .map(|v| to_int(&v))
-                .unwrap_or(0)
-                .max(0) as usize;
-            let len = o
-                .get::<_, Value>("byteLength")
-                .map(|v| to_int(&v))
-                .unwrap_or(0)
-                .max(0) as usize;
+            let off = o.get::<_, Value>("byteOffset").map(|v| to_int(&v)).unwrap_or(0).max(0) as usize;
+            let len = o.get::<_, Value>("byteLength").map(|v| to_int(&v)).unwrap_or(0).max(0) as usize;
             if off + len <= b.len() {
                 return Ok(b[off..off + len].to_vec());
             }
@@ -210,14 +170,12 @@ pub fn object<'js>(ctx: &Ctx<'js>, pairs: Vec<(&str, Value<'js>)>) -> R<'js> {
 }
 
 pub fn v<'js, T: IntoJs<'js>>(ctx: &Ctx<'js>, x: T) -> Value<'js> {
-    x.into_js(ctx)
-        .unwrap_or_else(|_| Value::new_undefined(ctx.clone()))
+    x.into_js(ctx).unwrap_or_else(|_| Value::new_undefined(ctx.clone()))
 }
 
 fn construct<'js>(ctx: &Ctx<'js>, name: &str, msg: &str) -> Value<'js> {
     let c: Option<Constructor> = ctx.globals().get(name).ok();
-    c.and_then(|c| c.construct::<_, Value>((msg,)).ok())
-        .unwrap_or_else(|| v(ctx, msg))
+    c.and_then(|c| c.construct::<_, Value>((msg,)).ok()).unwrap_or_else(|| v(ctx, msg))
 }
 
 /// Raises an Error with the message.
@@ -244,28 +202,11 @@ pub fn date_ms<'js>(ctx: &Ctx<'js>, ms: f64) -> R<'js> {
 }
 
 /// A Date whose local wall-clock time is the given one.
-pub fn date_local<'js>(
-    ctx: &Ctx<'js>,
-    y: i32,
-    mo: u32,
-    d: u32,
-    h: u32,
-    mi: u32,
-    s: u32,
-    ms: u32,
-) -> R<'js> {
+pub fn date_local<'js>(ctx: &Ctx<'js>, y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32, ms: u32) -> R<'js> {
     let c: Constructor = ctx.globals().get("Date")?;
     let args = rquickjs::function::Args::new(ctx.clone(), 7);
     let mut args = args;
-    for x in [
-        y as f64,
-        mo as f64 - 1.0,
-        d as f64,
-        h as f64,
-        mi as f64,
-        s as f64,
-        ms as f64,
-    ] {
+    for x in [y as f64, mo as f64 - 1.0, d as f64, h as f64, mi as f64, s as f64, ms as f64] {
         args.push_arg(x)?;
     }
     let d: Value = c.construct_args(args)?;
@@ -282,9 +223,7 @@ pub fn date_local<'js>(
 /// Whether v is a Date.
 pub fn is_date(v: &Value) -> bool {
     let Some(o) = v.as_object() else { return false };
-    let Ok(c) = v.ctx().globals().get::<_, Constructor>("Date") else {
-        return false;
-    };
+    let Ok(c) = v.ctx().globals().get::<_, Constructor>("Date") else { return false };
     o.is_instance_of(&c)
 }
 
@@ -294,8 +233,7 @@ pub fn date_fields(v: &Value) -> Option<(i32, u32, u32, u32, u32, u32, u32)> {
     let o = v.as_object()?;
     let call = |name: &str| -> Option<f64> {
         let f: Function = o.get(name).ok()?;
-        f.call::<_, f64>((rquickjs::function::This(o.clone()),))
-            .ok()
+        f.call::<_, f64>((rquickjs::function::This(o.clone()),)).ok()
     };
     let y = call("getFullYear")?;
     if y.is_nan() {
@@ -314,9 +252,7 @@ pub fn date_fields(v: &Value) -> Option<(i32, u32, u32, u32, u32, u32, u32)> {
 
 /// A property of an object (undefined when missing).
 pub fn get<'js>(o: &Value<'js>, key: &str) -> Value<'js> {
-    o.as_object()
-        .and_then(|o| o.get::<_, Value>(key).ok())
-        .unwrap_or_else(|| Value::new_undefined(o.ctx().clone()))
+    o.as_object().and_then(|o| o.get::<_, Value>(key).ok()).unwrap_or_else(|| Value::new_undefined(o.ctx().clone()))
 }
 
 /// Whether the object has the key with a value other than undefined.

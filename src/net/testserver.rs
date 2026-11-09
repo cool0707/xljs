@@ -94,32 +94,16 @@ fn serve(s: TcpStream) -> std::io::Result<()> {
     // As a proxy (an absolute URL): Basic proxyuser:proxypass.
     let mut path = path;
     if let Some(rest) = path.strip_prefix("http://") {
-        let want = format!(
-            "Basic {}",
-            base64::Engine::encode(
-                &base64::engine::general_purpose::STANDARD,
-                "proxyuser:proxypass"
-            )
-        );
+        let want = format!("Basic {}", base64::Engine::encode(&base64::engine::general_purpose::STANDARD, "proxyuser:proxypass"));
         if headers.get("proxy-authorization").and_then(|v| v.as_str()) != Some(want.as_str()) {
             let head = "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"xljs test proxy\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
             w.write_all(head.as_bytes())?;
             return w.flush();
         }
-        path = rest
-            .find('/')
-            .map(|i| rest[i..].to_string())
-            .unwrap_or_else(|| "/".into());
+        path = rest.find('/').map(|i| rest[i..].to_string()).unwrap_or_else(|| "/".into());
     }
-    let reply = |w: &mut TcpStream,
-                 status: &str,
-                 extra: &[(&str, &str)],
-                 body: &[u8]|
-     -> std::io::Result<()> {
-        let mut head = format!(
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n",
-            body.len()
-        );
+    let reply = |w: &mut TcpStream, status: &str, extra: &[(&str, &str)], body: &[u8]| -> std::io::Result<()> {
+        let mut head = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n", body.len());
         for (k, v) in extra {
             head.push_str(&format!("{k}: {v}\r\n"));
         }
@@ -139,12 +123,7 @@ fn serve(s: TcpStream) -> std::io::Result<()> {
             "body": String::from_utf8_lossy(&body),
             "length": body.len(),
         });
-        return reply(
-            &mut w,
-            "200 OK",
-            &[("Content-Type", "application/json")],
-            j.to_string().as_bytes(),
-        );
+        return reply(&mut w, "200 OK", &[("Content-Type", "application/json")], j.to_string().as_bytes());
     }
     if let Some(n) = route.strip_prefix("/status/") {
         let n: u16 = n.parse().unwrap_or(500);
@@ -155,46 +134,23 @@ fn serve(s: TcpStream) -> std::io::Result<()> {
             204 => "No Content",
             _ => "Status",
         };
-        let b = if n == 204 {
-            String::new()
-        } else {
-            format!("status {n}")
-        };
-        return reply(
-            &mut w,
-            &format!("{n} {text}"),
-            &[("Content-Type", "text/plain")],
-            b.as_bytes(),
-        );
+        let b = if n == 204 { String::new() } else { format!("status {n}") };
+        return reply(&mut w, &format!("{n} {text}"), &[("Content-Type", "text/plain")], b.as_bytes());
     }
     if let Some(n) = route.strip_prefix("/redirect/") {
         let n: u32 = n.parse().unwrap_or(0);
-        let to = if n <= 1 {
-            "/echo".to_string()
-        } else {
-            format!("/redirect/{}", n - 1)
-        };
+        let to = if n <= 1 { "/echo".to_string() } else { format!("/redirect/{}", n - 1) };
         return reply(&mut w, "302 Found", &[("Location", &to)], b"");
     }
     if route == "/redirect-to" {
         let status = query(&path, "status").unwrap_or_else(|| "302".into());
         let to = query(&path, "url").unwrap_or_default();
-        return reply(
-            &mut w,
-            &format!("{status} Redirect"),
-            &[("Location", &to)],
-            b"",
-        );
+        return reply(&mut w, &format!("{status} Redirect"), &[("Location", &to)], b"");
     }
     match route {
         "/sjis" => {
             let (b, _, _) = encoding_rs::SHIFT_JIS.encode("日本語のテキスト");
-            reply(
-                &mut w,
-                "200 OK",
-                &[("Content-Type", "text/plain; charset=Shift_JIS")],
-                &b,
-            )
+            reply(&mut w, "200 OK", &[("Content-Type", "text/plain; charset=Shift_JIS")], &b)
         }
         "/chunked" => {
             w.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n")?;
@@ -204,18 +160,8 @@ fn serve(s: TcpStream) -> std::io::Result<()> {
             w.write_all(b"0\r\n\r\n")?;
             w.flush()
         }
-        "/json" => reply(
-            &mut w,
-            "200 OK",
-            &[("Content-Type", "application/json; charset=utf-8")],
-            r#"{"a":1,"b":"あ"}"#.as_bytes(),
-        ),
-        "/cookies" => reply(
-            &mut w,
-            "200 OK",
-            &[("Set-Cookie", "a=1; Path=/"), ("Set-Cookie", "b=2; Path=/")],
-            b"ok",
-        ),
+        "/json" => reply(&mut w, "200 OK", &[("Content-Type", "application/json; charset=utf-8")], r#"{"a":1,"b":"あ"}"#.as_bytes()),
+        "/cookies" => reply(&mut w, "200 OK", &[("Set-Cookie", "a=1; Path=/"), ("Set-Cookie", "b=2; Path=/")], b"ok"),
         "/slow" => {
             std::thread::sleep(Duration::from_secs(3));
             reply(&mut w, "200 OK", &[], b"slow")
@@ -225,12 +171,7 @@ fn serve(s: TcpStream) -> std::io::Result<()> {
                 let a = headers["authorization"].as_str().unwrap_or("").to_string();
                 reply(&mut w, "200 OK", &[], a.as_bytes())
             } else {
-                reply(
-                    &mut w,
-                    "401 Unauthorized",
-                    &[("WWW-Authenticate", "Basic realm=\"test\"")],
-                    b"no",
-                )
+                reply(&mut w, "401 Unauthorized", &[("WWW-Authenticate", "Basic realm=\"test\"")], b"no")
             }
         }
         _ => reply(&mut w, "404 Not Found", &[], b"not found"),

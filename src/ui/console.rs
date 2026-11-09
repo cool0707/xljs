@@ -29,16 +29,8 @@ impl Console {
     }
 
     /// A console UI reading input and writing to out (tests).
-    pub fn with_io(
-        input: impl BufRead + Send + 'static,
-        out: impl Write + Send + 'static,
-    ) -> Console {
-        Console {
-            input: Mutex::new(Box::new(input)),
-            out: Arc::new(Mutex::new(Box::new(out))),
-            in_tty: false,
-            out_tty: false,
-        }
+    pub fn with_io(input: impl BufRead + Send + 'static, out: impl Write + Send + 'static) -> Console {
+        Console { input: Mutex::new(Box::new(input)), out: Arc::new(Mutex::new(Box::new(out))), in_tty: false, out_tty: false }
     }
 
     pub(crate) fn w(&self, s: &str) {
@@ -60,21 +52,12 @@ impl Console {
     }
 
     fn header(title: &str) -> String {
-        if title.is_empty() {
-            String::new()
-        } else {
-            format!("[{title}] ")
-        }
+        if title.is_empty() { String::new() } else { format!("[{title}] ") }
     }
 
     fn ask_path(&self, title: &str, message: &str) -> Vec<String> {
-        let Some(line) = self.prompt(title, message, "") else {
-            return Vec::new();
-        };
-        line.split(';')
-            .map(|p| p.trim().trim_matches('"').to_string())
-            .filter(|p| !p.is_empty())
-            .collect()
+        let Some(line) = self.prompt(title, message, "") else { return Vec::new() };
+        line.split(';').map(|p| p.trim().trim_matches('"').to_string()).filter(|p| !p.is_empty()).collect()
     }
 
     pub(crate) fn read_password(&self, label: &str, cur: &str) -> Option<Value> {
@@ -98,15 +81,8 @@ impl Default for Console {
 }
 
 pub(crate) fn filter_hint(fs: &[FileFilter]) -> String {
-    let pats: Vec<&str> = fs
-        .iter()
-        .flat_map(|f| f.patterns.iter().map(String::as_str))
-        .collect();
-    if pats.is_empty() {
-        String::new()
-    } else {
-        format!(" ({})", pats.join(", "))
-    }
+    let pats: Vec<&str> = fs.iter().flat_map(|f| f.patterns.iter().map(String::as_str)).collect();
+    if pats.is_empty() { String::new() } else { format!(" ({})", pats.join(", ")) }
 }
 
 impl Ui for Console {
@@ -128,10 +104,7 @@ impl Ui for Console {
             self.w("\n");
             return false;
         };
-        matches!(
-            line.trim().to_lowercase().as_str(),
-            "y" | "yes" | "はい" | "ok"
-        )
+        matches!(line.trim().to_lowercase().as_str(), "y" | "yes" | "はい" | "ok")
     }
 
     fn prompt(&self, title: &str, message: &str, def: &str) -> Option<String> {
@@ -144,11 +117,7 @@ impl Ui for Console {
             self.w("\n");
             return None;
         };
-        Some(if line.is_empty() {
-            def.to_string()
-        } else {
-            line
-        })
+        Some(if line.is_empty() { def.to_string() } else { line })
     }
 
     fn open_files(&self, o: &PickerOptions) -> Vec<String> {
@@ -166,16 +135,9 @@ impl Ui for Console {
     fn save_file(&self, o: &PickerOptions) -> Option<String> {
         let mut def = o.suggested_name.clone();
         if !def.is_empty() && !o.start_in.is_empty() {
-            def = std::path::Path::new(&o.start_in)
-                .join(&def)
-                .to_string_lossy()
-                .into_owned();
+            def = std::path::Path::new(&o.start_in).join(&def).to_string_lossy().into_owned();
         }
-        let p = self.prompt(
-            &o.title,
-            &(t!("ui.saveAs") + &filter_hint(&o.filters)),
-            &def,
-        )?;
+        let p = self.prompt(&o.title, &(t!("ui.saveAs") + &filter_hint(&o.filters)), &def)?;
         let p = p.trim().trim_matches('"').to_string();
         if p.is_empty() { None } else { Some(p) }
     }
@@ -197,10 +159,7 @@ impl Ui for Console {
         self.w(&format!("{}{message}\n", Self::header(&title)));
         let user = self.prompt("", &t!("net.loginUser"), &p.user)?;
         let password = self.read_password(&t!("net.loginPassword"), "")?;
-        Some(crate::net::auth::Login {
-            user,
-            password: password.as_str().unwrap_or("").to_string(),
-        })
+        Some(crate::net::auth::Login { user, password: password.as_str().unwrap_or("").to_string() })
     }
 
     fn progress(&self, o: &ProgressOptions) -> Arc<dyn Progress> {
@@ -282,10 +241,7 @@ impl ConsoleProgress {
 
     fn render(&self, p: &mut ProgressState, force: bool) {
         if self.tty {
-            if !force
-                && p.last
-                    .is_some_and(|l| l.elapsed() < Duration::from_millis(100))
-            {
+            if !force && p.last.is_some_and(|l| l.elapsed() < Duration::from_millis(100)) {
                 return;
             }
             p.last = Some(Instant::now());
@@ -295,11 +251,7 @@ impl ConsoleProgress {
             return;
         }
         // Not a terminal: print a line every 10% (or at start/end).
-        let pct = if p.total > 0 {
-            p.done * 100 / p.total
-        } else {
-            -1
-        };
+        let pct = if p.total > 0 { p.done * 100 / p.total } else { -1 };
         if force || (pct >= 0 && pct / 10 != p.last_pct / 10) {
             p.last_pct = pct;
             let line = self.line(p);

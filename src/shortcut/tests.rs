@@ -73,29 +73,13 @@ fn lnk_round_trip() {
     let l = sample();
     assert_eq!(lnk::parse(&lnk::build(&l)).unwrap(), l);
 
-    let unc = Link {
-        target: "\\\\server\\共有\\部署\\一覧.xlsx".into(),
-        show: SW_SHOWNORMAL,
-        ..Default::default()
-    };
+    let unc = Link { target: "\\\\server\\共有\\部署\\一覧.xlsx".into(), show: SW_SHOWNORMAL, ..Default::default() };
     assert_eq!(lnk::parse(&lnk::build(&unc)).unwrap(), unc);
-    let share = Link {
-        target: "\\\\server\\share".into(),
-        show: SW_SHOWNORMAL,
-        ..Default::default()
-    };
-    assert_eq!(
-        lnk::parse(&lnk::build(&share)).unwrap().target,
-        "\\\\server\\share"
-    );
+    let share = Link { target: "\\\\server\\share".into(), show: SW_SHOWNORMAL, ..Default::default() };
+    assert_eq!(lnk::parse(&lnk::build(&share)).unwrap().target, "\\\\server\\share");
 
     // Environment variables are kept in the file and expanded when read.
-    let env = Link {
-        target: "%XLJS_LNK_TEST%\\notepad.exe".into(),
-        icon: "%XLJS_LNK_TEST%\\a.ico".into(),
-        show: 1,
-        ..Default::default()
-    };
+    let env = Link { target: "%XLJS_LNK_TEST%\\notepad.exe".into(), icon: "%XLJS_LNK_TEST%\\a.ico".into(), show: 1, ..Default::default() };
     let b = lnk::build(&env);
     let _g = crate::test_lang("en");
     unsafe { std::env::set_var("XLJS_LNK_TEST", "C:\\Win") };
@@ -103,10 +87,7 @@ fn lnk_round_trip() {
     unsafe { std::env::remove_var("XLJS_LNK_TEST") };
     assert_eq!(got.target, "C:\\Win\\notepad.exe");
     assert_eq!(got.icon, "C:\\Win\\a.ico");
-    assert_eq!(
-        lnk::parse(&b).unwrap().target,
-        "%XLJS_LNK_TEST%\\notepad.exe"
-    );
+    assert_eq!(lnk::parse(&b).unwrap().target, "%XLJS_LNK_TEST%\\notepad.exe");
 
     assert!(lnk::parse(b"[InternetShortcut]\r\n").is_none());
     assert!(lnk::parse(&[]).is_none());
@@ -140,10 +121,7 @@ fn lnk_id_list() {
         b.extend(ext);
         item(&b)
     }
-    let mut list = item(&[
-        0x1F, 0x50, 0xE0, 0x4F, 0xD0, 0x20, 0xEA, 0x3A, 0x69, 0x10, 0xA2, 0xD8, 0x08, 0x00, 0x2B,
-        0x30, 0x30, 0x9D,
-    ]);
+    let mut list = item(&[0x1F, 0x50, 0xE0, 0x4F, 0xD0, 0x20, 0xEA, 0x3A, 0x69, 0x10, 0xA2, 0xD8, 0x08, 0x00, 0x2B, 0x30, 0x30, 0x9D]);
     let mut drive = vec![0x2F];
     drive.extend(b"C:\\");
     drive.resize(23, 0);
@@ -152,11 +130,7 @@ fn lnk_id_list() {
     list.extend(file_entry(0x32, "URIAGE~1.XLS", "売上.xlsx"));
     list.extend([0, 0]);
 
-    let mut b = lnk::build(&Link {
-        args: "x".into(),
-        show: 1,
-        ..Default::default()
-    });
+    let mut b = lnk::build(&Link { args: "x".into(), show: 1, ..Default::default() });
     b[20] |= 1; // HasLinkTargetIDList
     let mut with = b[..0x4C].to_vec();
     with.extend((list.len() as u16).to_le_bytes());
@@ -202,12 +176,7 @@ fn write_and_read() {
     let dir = tempdir();
     let _back = cd(&dir);
     std::fs::write("a.txt", "x").unwrap();
-    let abs = |p: &str| {
-        std::path::absolute(p)
-            .unwrap()
-            .to_string_lossy()
-            .into_owned()
-    };
+    let abs = |p: &str| std::path::absolute(p).unwrap().to_string_lossy().into_owned();
 
     let c = Changes {
         target: Some("a.txt".into()),
@@ -231,90 +200,29 @@ fn write_and_read() {
     assert!(!d.run_as_admin);
 
     // update keeps what is not given; create and replace start over.
-    write(
-        "メモ.lnk",
-        Operation::Update,
-        &Changes {
-            args: Some("--y".into()),
-            run_as_admin: Some(true),
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    write("メモ.lnk", Operation::Update, &Changes { args: Some("--y".into()), run_as_admin: Some(true), ..Default::default() }).unwrap();
     let d = read("メモ.lnk").unwrap();
-    assert_eq!(
-        (d.args.as_str(), d.description.as_str(), d.target.as_str()),
-        ("--y", "メモ", abs("a.txt").as_str())
-    );
+    assert_eq!((d.args.as_str(), d.description.as_str(), d.target.as_str()), ("--y", "メモ", abs("a.txt").as_str()));
     assert!(d.run_as_admin || wine());
-    write(
-        "メモ.lnk",
-        Operation::Replace,
-        &Changes {
-            target: Some("a.txt".into()),
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    write("メモ.lnk", Operation::Replace, &Changes { target: Some("a.txt".into()), ..Default::default() }).unwrap();
     let d = read("メモ.lnk").unwrap();
-    assert_eq!(
-        (
-            d.args.as_str(),
-            d.description.as_str(),
-            d.hotkey.as_str(),
-            d.window_state.as_str()
-        ),
-        ("", "", "", "normal")
-    );
+    assert_eq!((d.args.as_str(), d.description.as_str(), d.hotkey.as_str(), d.window_state.as_str()), ("", "", "", "normal"));
 
     // Errors.
     let e = write("none", Operation::Update, &Changes::default()).unwrap_err();
     assert!(e.is_not_found(), "{e}");
     let e = write("none", Operation::Replace, &c).unwrap_err();
     assert!(e.is_not_found(), "{e}");
-    assert_eq!(
-        write("x", Operation::Create, &Changes::default())
-            .unwrap_err()
-            .key(),
-        Some("shell.shortcutTarget")
-    );
-    let e = write(
-        "x.lnk",
-        Operation::Create,
-        &Changes {
-            target: Some("https://example.com/".into()),
-            ..Default::default()
-        },
-    )
-    .unwrap_err();
+    assert_eq!(write("x", Operation::Create, &Changes::default()).unwrap_err().key(), Some("shell.shortcutTarget"));
+    let e = write("x.lnk", Operation::Create, &Changes { target: Some("https://example.com/".into()), ..Default::default() }).unwrap_err();
     assert_eq!(e.key(), Some("shell.shortcutURLTarget"));
-    let e = write(
-        "x",
-        Operation::Create,
-        &Changes {
-            target: Some("a.txt".into()),
-            hotkey: Some("Win+K".into()),
-            ..Default::default()
-        },
-    )
-    .unwrap_err();
+    let e = write("x", Operation::Create, &Changes { target: Some("a.txt".into()), hotkey: Some("Win+K".into()), ..Default::default() }).unwrap_err();
     assert_eq!(e.key(), Some("shell.shortcutHotkey"));
-    let e = write(
-        "no/dir/x",
-        Operation::Create,
-        &Changes {
-            target: Some("a.txt".into()),
-            ..Default::default()
-        },
-    )
-    .unwrap_err();
+    let e = write("no/dir/x", Operation::Create, &Changes { target: Some("a.txt".into()), ..Default::default() }).unwrap_err();
     assert!(e.is_not_found(), "{e}");
     assert!(read("none").unwrap_err().is_not_found());
     assert_eq!(read("a.txt").unwrap_err().key(), Some("shell.notShortcut"));
-    assert_eq!(
-        Operation::parse("move").unwrap_err().key(),
-        Some("shell.shortcutOperation")
-    );
+    assert_eq!(Operation::parse("move").unwrap_err().key(), Some("shell.shortcutOperation"));
     drop(_back);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -324,34 +232,16 @@ fn url_files() {
     let _g = crate::test_lang("en");
     let dir = tempdir();
     let _back = cd(&dir);
-    let c = Changes {
-        target: Some("https://example.com/a?b=1".into()),
-        ..Default::default()
-    };
+    let c = Changes { target: Some("https://example.com/a?b=1".into()), ..Default::default() };
     let p = write("サイト", Operation::Create, &c).unwrap();
     assert!(p.ends_with("サイト.url"), "{p}");
-    assert_eq!(
-        std::fs::read_to_string(&p).unwrap(),
-        "[InternetShortcut]\r\nURL=https://example.com/a?b=1\r\n"
-    );
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), "[InternetShortcut]\r\nURL=https://example.com/a?b=1\r\n");
     let d = read("サイト").unwrap();
-    assert_eq!(
-        (d.target.as_str(), d.icon.as_str(), d.icon_index),
-        ("https://example.com/a?b=1", "", 0)
-    );
+    assert_eq!((d.target.as_str(), d.icon.as_str(), d.icon_index), ("https://example.com/a?b=1", "", 0));
 
     // Windows' own keys and sections stay on update.
     std::fs::write(&p, "[{000214A0-0000-0000-C000-000000000046}]\r\nProp3=19,11\r\n[InternetShortcut]\r\nIDList=\r\nURL=https://old.example/\r\nHotKey=0\r\n").unwrap();
-    write(
-        &p,
-        Operation::Update,
-        &Changes {
-            icon: Some("C:\\アイコン\\a.ico".into()),
-            icon_index: Some(2),
-            ..Default::default()
-        },
-    )
-    .unwrap();
+    write(&p, Operation::Update, &Changes { icon: Some("C:\\アイコン\\a.ico".into()), icon_index: Some(2), ..Default::default() }).unwrap();
     let b = std::fs::read(&p).unwrap();
     let text = encoding_rs::SHIFT_JIS.decode(&b).0;
     assert_eq!(
@@ -359,19 +249,8 @@ fn url_files() {
         "[{000214A0-0000-0000-C000-000000000046}]\r\nProp3=19,11\r\n[InternetShortcut]\r\nURL=https://old.example/\r\nIconFile=C:\\アイコン\\a.ico\r\nIconIndex=2\r\nIDList=\r\nHotKey=0\r\n"
     );
     let d = read(&p).unwrap();
-    assert_eq!(
-        (d.target.as_str(), d.icon.as_str(), d.icon_index),
-        ("https://old.example/", "C:\\アイコン\\a.ico", 2)
-    );
-    let e = write(
-        &p,
-        Operation::Update,
-        &Changes {
-            target: Some("a.txt".into()),
-            ..Default::default()
-        },
-    )
-    .unwrap_err();
+    assert_eq!((d.target.as_str(), d.icon.as_str(), d.icon_index), ("https://old.example/", "C:\\アイコン\\a.ico", 2));
+    let e = write(&p, Operation::Update, &Changes { target: Some("a.txt".into()), ..Default::default() }).unwrap_err();
     assert_eq!(e.key(), Some("shell.expectedURL"));
     drop(_back);
     let _ = std::fs::remove_dir_all(&dir);
@@ -388,11 +267,7 @@ fn windows_agrees_with_the_format() {
     let dir = tempdir();
     let target = dir.join("売上 2026.xlsx");
     std::fs::write(&target, "x").unwrap();
-    let l = Link {
-        target: target.to_string_lossy().into_owned(),
-        cwd: dir.to_string_lossy().into_owned(),
-        ..sample()
-    };
+    let l = Link { target: target.to_string_lossy().into_owned(), cwd: dir.to_string_lossy().into_owned(), ..sample() };
 
     let p = dir.join("com.lnk").to_string_lossy().into_owned();
     win::save(&p, &l, None).unwrap();
@@ -405,32 +280,15 @@ fn windows_agrees_with_the_format() {
 
     // update keeps the rest of the file.
     let prev = win::load(&p).unwrap();
-    let next = Link {
-        args: "--other".into(),
-        ..prev.clone()
-    };
+    let next = Link { args: "--other".into(), ..prev.clone() };
     win::save(&p, &next, Some(&prev)).unwrap();
     assert_eq!(win::load(&p).unwrap(), next);
 
-    let env = Link {
-        target: "%SystemRoot%\\notepad.exe".into(),
-        show: SW_SHOWNORMAL,
-        ..Default::default()
-    };
+    let env = Link { target: "%SystemRoot%\\notepad.exe".into(), show: SW_SHOWNORMAL, ..Default::default() };
     let p = dir.join("env.lnk").to_string_lossy().into_owned();
     win::save(&p, &env, None).unwrap();
     let windir = std::env::var("SystemRoot").unwrap();
-    assert!(
-        win::load(&p)
-            .unwrap()
-            .target
-            .eq_ignore_ascii_case(&format!("{windir}\\notepad.exe"))
-    );
-    assert!(
-        lnk::parse(&std::fs::read(&p).unwrap())
-            .unwrap()
-            .target
-            .eq_ignore_ascii_case(&format!("{windir}\\notepad.exe"))
-    );
+    assert!(win::load(&p).unwrap().target.eq_ignore_ascii_case(&format!("{windir}\\notepad.exe")));
+    assert!(lnk::parse(&std::fs::read(&p).unwrap()).unwrap().target.eq_ignore_ascii_case(&format!("{windir}\\notepad.exe")));
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -16,9 +16,7 @@ pub fn page_script() -> &'static str {
 
 /// A built-in text file that is always there.
 fn builtin_text(name: &str) -> &'static str {
-    embed::find(&WEB_FILES, name)
-        .unwrap_or_else(|| panic!("web/{name} is missing"))
-        .text()
+    embed::find(&WEB_FILES, name).unwrap_or_else(|| panic!("web/{name} is missing")).text()
 }
 
 /// The height of the custom title bar in logical pixels
@@ -41,10 +39,7 @@ pub fn title_bar_script(o: &super::WindowOptions, non_client: bool) -> String {
             "close": crate::t!("window.close"),
         },
     });
-    format!(
-        "window.__xljsTitleBar = {cfg};\n{}",
-        builtin_text("titlebar.js")
-    )
+    format!("window.__xljsTitleBar = {cfg};\n{}", builtin_text("titlebar.js"))
 }
 
 /// A built-in file (form.html, table.html, their scripts and styles, Font
@@ -59,17 +54,11 @@ pub struct BuiltinAssets;
 
 impl AssetFs for BuiltinAssets {
     fn read(&self, name: &str) -> io::Result<Vec<u8>> {
-        builtin_file(name)
-            .map(<[u8]>::to_vec)
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, name.to_string()))
+        builtin_file(name).map(<[u8]>::to_vec).ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, name.to_string()))
     }
     fn files(&self, root: &str) -> io::Result<Vec<String>> {
         let roots = [root.to_string()];
-        Ok(WEB_FILES
-            .iter()
-            .map(|f| f.name.to_string())
-            .filter(|n| covered(&roots, n))
-            .collect())
+        Ok(WEB_FILES.iter().map(|f| f.name.to_string()).filter(|n| covered(&roots, n)).collect())
     }
 }
 

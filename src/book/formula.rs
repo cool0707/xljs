@@ -18,12 +18,7 @@ pub struct Rect {
 
 impl Rect {
     pub fn cell(col: u32, row: u32) -> Rect {
-        Rect {
-            r1: row,
-            c1: col,
-            r2: row,
-            c2: col,
-        }
+        Rect { r1: row, c1: col, r2: row, c2: col }
     }
 
     /// A1, A1:B5, A:C (whole columns), 3:5 (whole rows).
@@ -35,11 +30,7 @@ impl Rect {
             return format!("{}:{}", self.r1, self.r2);
         }
         let a = format!("{}{}", col_name(self.c1), self.r1);
-        if self.r1 == self.r2 && self.c1 == self.c2 {
-            a
-        } else {
-            format!("{a}:{}{}", col_name(self.c2), self.r2)
-        }
+        if self.r1 == self.r2 && self.c1 == self.c2 { a } else { format!("{a}:{}{}", col_name(self.c2), self.r2) }
     }
 }
 
@@ -83,29 +74,14 @@ pub fn parse_range(s: &str) -> Option<Rect> {
     let s = s.trim();
     let (a, b) = s.split_once(':').unwrap_or((s, s));
     if let (Some((c1, r1)), Some((c2, r2))) = (parse_cell(a), parse_cell(b)) {
-        return Some(Rect {
-            r1: r1.min(r2),
-            c1: c1.min(c2),
-            r2: r1.max(r2),
-            c2: c1.max(c2),
-        });
+        return Some(Rect { r1: r1.min(r2), c1: c1.min(c2), r2: r1.max(r2), c2: c1.max(c2) });
     }
     let (a, b) = (a.replace('$', ""), b.replace('$', ""));
     if let (Some(c1), Some(c2)) = (col_number(&a), col_number(&b)) {
-        return Some(Rect {
-            r1: 1,
-            c1: c1.min(c2),
-            r2: MAX_ROW,
-            c2: c1.max(c2),
-        });
+        return Some(Rect { r1: 1, c1: c1.min(c2), r2: MAX_ROW, c2: c1.max(c2) });
     }
     if let (Some(r1), Some(r2)) = (row_number(&a), row_number(&b)) {
-        return Some(Rect {
-            r1: r1.min(r2),
-            c1: 1,
-            r2: r1.max(r2),
-            c2: MAX_COL,
-        });
+        return Some(Rect { r1: r1.min(r2), c1: 1, r2: r1.max(r2), c2: MAX_COL });
     }
     None
 }
@@ -281,15 +257,11 @@ pub fn shift(f: &str, (col, row): (u32, u32), (to_col, to_row): (u32, u32)) -> S
     map_refs(f, |p| match p {
         Part::Col { abs, n } => {
             let n = if abs { n as i64 } else { n as i64 + dc };
-            (1..=MAX_COL as i64)
-                .contains(&n)
-                .then(|| format!("{}{}", if abs { "$" } else { "" }, col_name(n as u32)))
+            (1..=MAX_COL as i64).contains(&n).then(|| format!("{}{}", if abs { "$" } else { "" }, col_name(n as u32)))
         }
         Part::Row { abs, n } => {
             let n = if abs { n as i64 } else { n as i64 + dr };
-            (1..=MAX_ROW as i64)
-                .contains(&n)
-                .then(|| format!("{}{n}", if abs { "$" } else { "" }))
+            (1..=MAX_ROW as i64).contains(&n).then(|| format!("{}{n}", if abs { "$" } else { "" }))
         }
     })
 }
@@ -297,9 +269,7 @@ pub fn shift(f: &str, (col, row): (u32, u32), (to_col, to_row): (u32, u32)) -> S
 /// The formula as Excel shows it: without the prefixes of newer
 /// functions (_xlfn.XLOOKUP, _xlfn._xlws.FILTER, _xlpm.x of LAMBDA).
 pub fn display(f: &str) -> String {
-    f.replace("_xlfn._xlws.", "")
-        .replace("_xlfn.", "")
-        .replace("_xlpm.", "")
+    f.replace("_xlfn._xlws.", "").replace("_xlfn.", "").replace("_xlpm.", "")
 }
 
 /// Rectangles that cover the cells ((column, row), each once): runs along
@@ -324,12 +294,7 @@ pub fn cells_to_rects(mut cells: Vec<(u32, u32)>) -> Vec<Rect> {
             Some(&k) if out[k].r2 + 1 == row => out[k].r2 = row,
             _ => {
                 open.insert((c1, c2), out.len());
-                out.push(Rect {
-                    r1: row,
-                    c1,
-                    r2: row,
-                    c2,
-                });
+                out.push(Rect { r1: row, c1, r2: row, c2 });
             }
         }
     }
@@ -356,17 +321,10 @@ pub fn merge_rects(mut v: Vec<Rect>) -> Vec<Rect> {
                 }
                 let (a, b) = (v[i], v[j]);
                 let inside = b.r1 >= a.r1 && b.r2 <= a.r2 && b.c1 >= a.c1 && b.c2 <= a.c2;
-                let down =
-                    a.c1 == b.c1 && a.c2 == b.c2 && b.r1 >= a.r1 && b.r1 <= a.r2.saturating_add(1);
-                let across =
-                    a.r1 == b.r1 && a.r2 == b.r2 && b.c1 >= a.c1 && b.c1 <= a.c2.saturating_add(1);
+                let down = a.c1 == b.c1 && a.c2 == b.c2 && b.r1 >= a.r1 && b.r1 <= a.r2.saturating_add(1);
+                let across = a.r1 == b.r1 && a.r2 == b.r2 && b.c1 >= a.c1 && b.c1 <= a.c2.saturating_add(1);
                 if inside || down || across {
-                    v[i] = Rect {
-                        r1: a.r1.min(b.r1),
-                        c1: a.c1.min(b.c1),
-                        r2: a.r2.max(b.r2),
-                        c2: a.c2.max(b.c2),
-                    };
+                    v[i] = Rect { r1: a.r1.min(b.r1), c1: a.c1.min(b.c1), r2: a.r2.max(b.r2), c2: a.c2.max(b.c2) };
                     v.remove(j);
                     changed = true;
                     break 'outer;
@@ -391,14 +349,8 @@ mod tests {
         assert_ne!(shape("B2*C2", 4, 2), shape("B2*C3", 4, 3));
         assert_eq!(shape("SUM($B$2:B5)", 2, 5), "SUM(C2R2:C[0]R[0])");
         // Not references: functions, sheet names, strings, names, numbers.
-        assert_eq!(
-            shape("LOG10(A1)&\"B2\"&Sheet1!A1&'B 2'!A1+1.5E+10", 1, 1),
-            "LOG10(C[0]R[0])&\"B2\"&Sheet1!C[0]R[0]&'B 2'!C[0]R[0]+1.5E+10"
-        );
-        assert_eq!(
-            shape("Table1[[#This Row],[A1]]+税率", 1, 1),
-            "Table1[[#This Row],[A1]]+税率"
-        );
+        assert_eq!(shape("LOG10(A1)&\"B2\"&Sheet1!A1&'B 2'!A1+1.5E+10", 1, 1), "LOG10(C[0]R[0])&\"B2\"&Sheet1!C[0]R[0]&'B 2'!C[0]R[0]+1.5E+10");
+        assert_eq!(shape("Table1[[#This Row],[A1]]+税率", 1, 1), "Table1[[#This Row],[A1]]+税率");
         assert_eq!(shape("SUM(A:A,$2:$3)", 3, 3), "SUM(C[-2]:C[-2],R2:R3)");
         assert_eq!(shape("TRUE+XFE1", 1, 1), "TRUE+XFE1");
     }
@@ -408,10 +360,7 @@ mod tests {
         assert_eq!(shift("B2*$C$2+C$1+$D3", (4, 2), (5, 4)), "C4*$C$2+D$1+$D5");
         assert_eq!(shift("A1", (2, 2), (1, 2)), "#REF!");
         assert_eq!(shift("SUM(A:A)", (1, 1), (2, 1)), "SUM(B:B)");
-        assert_eq!(
-            display("_xlfn.XLOOKUP(A1,_xlfn._xlws.FILTER(B:B,1))"),
-            "XLOOKUP(A1,FILTER(B:B,1))"
-        );
+        assert_eq!(display("_xlfn.XLOOKUP(A1,_xlfn._xlws.FILTER(B:B,1))"), "XLOOKUP(A1,FILTER(B:B,1))");
     }
 
     #[test]
@@ -425,9 +374,6 @@ mod tests {
         let d: Vec<String> = r.iter().map(Rect::display).collect();
         assert_eq!(d, ["A1:B2", "D1", "A3"]);
         let m = merge_rects(parse_sqref("A1:A5 A6:A10 B1:B10 C3 A2"));
-        assert_eq!(
-            m.iter().map(Rect::display).collect::<Vec<_>>(),
-            ["A1:B10", "C3"]
-        );
+        assert_eq!(m.iter().map(Rect::display).collect::<Vec<_>>(), ["A1:B10", "C3"]);
     }
 }

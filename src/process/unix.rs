@@ -42,10 +42,7 @@ fn stdio(io: Io) -> Stdio {
 }
 
 pub(crate) fn shell_quote(a: &str) -> Result<String> {
-    if !a.is_empty()
-        && a.bytes()
-            .all(|c| c.is_ascii_alphanumeric() || b"-_./=:,+@%".contains(&c))
-    {
+    if !a.is_empty() && a.bytes().all(|c| c.is_ascii_alphanumeric() || b"-_./=:,+@%".contains(&c)) {
         return Ok(a.to_string());
     }
     Ok(format!("'{}'", a.replace('\'', r"'\''")))
@@ -75,20 +72,10 @@ pub(crate) fn spawn(spec: &Spec) -> Result<Started> {
             None => cmd.env_remove(k),
         };
     }
-    cmd.stdin(stdio(spec.stdin))
-        .stdout(stdio(spec.stdout))
-        .stderr(stdio(spec.stderr));
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| Error::path("exec", spec.command.clone(), e))?;
+    cmd.stdin(stdio(spec.stdin)).stdout(stdio(spec.stdout)).stderr(stdio(spec.stderr));
+    let mut child = cmd.spawn().map_err(|e| Error::path("exec", spec.command.clone(), e))?;
     let stdin = child.stdin.take().map(|s| File::from(OwnedFd::from(s)));
     let stdout = child.stdout.take().map(|s| File::from(OwnedFd::from(s)));
     let stderr = child.stderr.take().map(|s| File::from(OwnedFd::from(s)));
-    Ok(Started {
-        pid: child.id(),
-        handle: Handle(Mutex::new(child)),
-        stdin,
-        stdout,
-        stderr,
-    })
+    Ok(Started { pid: child.id(), handle: Handle(Mutex::new(child)), stdin, stdout, stderr })
 }

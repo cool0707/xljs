@@ -62,15 +62,8 @@ pub fn shell_open(target: &str) -> Result<()> {
     }
     #[cfg(not(windows))]
     {
-        let name = if cfg!(target_os = "macos") {
-            "open"
-        } else {
-            "xdg-open"
-        };
-        std::process::Command::new(name)
-            .arg(target)
-            .spawn()
-            .map_err(|e| Error::msg(e.to_string()))?;
+        let name = if cfg!(target_os = "macos") { "open" } else { "xdg-open" };
+        std::process::Command::new(name).arg(target).spawn().map_err(|e| Error::msg(e.to_string()))?;
         Ok(())
     }
 }

@@ -50,10 +50,7 @@ fn presets() -> &'static HashMap<String, Node> {
     static P: OnceLock<HashMap<String, Node>> = OnceLock::new();
     P.get_or_init(|| {
         let root = parse(crate::embed::PRESET_SHAPES.bytes()).unwrap_or_default();
-        root.children
-            .into_iter()
-            .map(|c| (c.name.clone(), c))
-            .collect()
+        root.children.into_iter().map(|c| (c.name.clone(), c)).collect()
     })
 }
 
@@ -76,10 +73,7 @@ fn text_warps() -> &'static HashMap<String, Node> {
     static P: OnceLock<HashMap<String, Node>> = OnceLock::new();
     P.get_or_init(|| {
         let root = parse(crate::embed::PRESET_TEXT_WARPS.bytes()).unwrap_or_default();
-        root.children
-            .into_iter()
-            .map(|c| (c.name.clone(), c))
-            .collect()
+        root.children.into_iter().map(|c| (c.name.clone(), c)).collect()
     })
 }
 
@@ -88,12 +82,7 @@ fn text_warps() -> &'static HashMap<String, Node> {
 pub fn text_warp(prst: &str, warp: Option<&Node>, w: f64, h: f64) -> Option<Vec<Vec<(f64, f64)>>> {
     let def = text_warps().get(prst)?;
     let g = evaluate(def, warp.and_then(|g| g.child("avLst")), w, h);
-    let paths: Vec<Vec<(f64, f64)>> = g
-        .paths
-        .into_iter()
-        .map(|p| p.points)
-        .filter(|p| p.len() >= 2)
-        .collect();
+    let paths: Vec<Vec<(f64, f64)>> = g.paths.into_iter().map(|p| p.points).filter(|p| p.len() >= 2).collect();
     (!paths.is_empty()).then_some(paths)
 }
 
@@ -110,18 +99,7 @@ impl Guides {
     fn new(w: f64, h: f64) -> Guides {
         let mut v = HashMap::new();
         let ss = w.min(h);
-        for (k, x) in [
-            ("w", w),
-            ("h", h),
-            ("l", 0.0),
-            ("t", 0.0),
-            ("r", w),
-            ("b", h),
-            ("hc", w / 2.0),
-            ("vc", h / 2.0),
-            ("ss", ss),
-            ("ls", w.max(h)),
-        ] {
+        for (k, x) in [("w", w), ("h", h), ("l", 0.0), ("t", 0.0), ("r", w), ("b", h), ("hc", w / 2.0), ("vc", h / 2.0), ("ss", ss), ("ls", w.max(h))] {
             v.insert(k.to_string(), x);
         }
         for d in 2..=32 {
@@ -129,25 +107,14 @@ impl Guides {
             v.insert(format!("hd{d}"), h / d as f64);
             v.insert(format!("ssd{d}"), ss / d as f64);
         }
-        for (k, x) in [
-            ("cd2", 10800000.0),
-            ("cd4", 5400000.0),
-            ("cd8", 2700000.0),
-            ("3cd4", 16200000.0),
-            ("3cd8", 8100000.0),
-            ("5cd8", 13500000.0),
-            ("7cd8", 18900000.0),
-        ] {
+        for (k, x) in [("cd2", 10800000.0), ("cd4", 5400000.0), ("cd8", 2700000.0), ("3cd4", 16200000.0), ("3cd8", 8100000.0), ("5cd8", 13500000.0), ("7cd8", 18900000.0)] {
             v.insert(k.to_string(), x);
         }
         Guides { vars: v }
     }
 
     fn get(&self, s: &str) -> f64 {
-        s.parse::<f64>()
-            .ok()
-            .or_else(|| self.vars.get(s).copied())
-            .unwrap_or(0.0)
+        s.parse::<f64>().ok().or_else(|| self.vars.get(s).copied()).unwrap_or(0.0)
     }
 
     fn opt(&self, s: Option<&str>) -> f64 {
@@ -203,8 +170,7 @@ impl Guides {
         for gd in list.into_iter().flat_map(|l| l.all("gd")) {
             if let (Some(name), Some(f)) = (gd.attr("name"), gd.attr("fmla")) {
                 let v = self.eval(f);
-                self.vars
-                    .insert(name.to_string(), if v.is_finite() { v } else { 0.0 });
+                self.vars.insert(name.to_string(), if v.is_finite() { v } else { 0.0 });
             }
         }
     }
@@ -230,11 +196,7 @@ fn evaluate(def: &Node, av: Option<&Node>, w: f64, h: f64) -> Geom {
 }
 
 fn path(g: &Guides, p: &Node, we: f64, he: f64) -> GPath {
-    let num = |k: &str| {
-        p.attr(k)
-            .and_then(|v| v.parse::<f64>().ok())
-            .filter(|v| *v > 0.0)
-    };
+    let num = |k: &str| p.attr(k).and_then(|v| v.parse::<f64>().ok()).filter(|v| *v > 0.0);
     // Path coordinates → pt.
     let kx = num("w").map(|pw| we / pw).unwrap_or(1.0) / EMU_PT;
     let ky = num("h").map(|ph| he / ph).unwrap_or(1.0) / EMU_PT;
@@ -282,10 +244,7 @@ fn path(g: &Guides, p: &Node, we: f64, he: f64) -> GPath {
                 curve(&mut points, &|t| {
                     let u = 1.0 - t;
                     let k = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
-                    (
-                        k[0] * p0.0 + k[1] * p1.0 + k[2] * p2.0 + k[3] * p3.0,
-                        k[0] * p0.1 + k[1] * p1.1 + k[2] * p2.1 + k[3] * p3.1,
-                    )
+                    (k[0] * p0.0 + k[1] * p1.0 + k[2] * p2.0 + k[3] * p3.0, k[0] * p0.1 + k[1] * p1.1 + k[2] * p2.1 + k[3] * p3.1)
                 });
                 cur = ps[2];
                 let _ = write!(d, "C{} {} {} ", xy(ps[0]), xy(ps[1]), xy(ps[2]));
@@ -295,10 +254,7 @@ fn path(g: &Guides, p: &Node, we: f64, he: f64) -> GPath {
                 let (p0, p1, p2) = (cur, ps[0], ps[1]);
                 curve(&mut points, &|t| {
                     let u = 1.0 - t;
-                    (
-                        u * u * p0.0 + 2.0 * u * t * p1.0 + t * t * p2.0,
-                        u * u * p0.1 + 2.0 * u * t * p1.1 + t * t * p2.1,
-                    )
+                    (u * u * p0.0 + 2.0 * u * t * p1.0 + t * t * p2.0, u * u * p0.1 + 2.0 * u * t * p1.1 + t * t * p2.1)
                 });
                 cur = ps[1];
                 let _ = write!(d, "Q{} {} ", xy(ps[0]), xy(ps[1]));
@@ -325,30 +281,14 @@ fn path(g: &Guides, p: &Node, we: f64, he: f64) -> GPath {
         }
     }
     let d = d.trim_end().to_string();
-    GPath {
-        d,
-        fill,
-        stroke,
-        open,
-        points,
-    }
+    GPath { d, fill, stroke, open, points }
 }
 
 /// An arcTo from cur: an arc of the ellipse wr × hr from the angle st by
 /// sw (60000ths of a degree; the angles are of the ellipse as drawn, not
 /// its parameter). Returns the end point.
 #[allow(clippy::too_many_arguments)]
-fn arc(
-    d: &mut String,
-    points: &mut Vec<(f64, f64)>,
-    cur: (f64, f64),
-    wr: f64,
-    hr: f64,
-    st: f64,
-    sw: f64,
-    kx: f64,
-    ky: f64,
-) -> (f64, f64) {
+fn arc(d: &mut String, points: &mut Vec<(f64, f64)>, cur: (f64, f64), wr: f64, hr: f64, st: f64, sw: f64, kx: f64, ky: f64) -> (f64, f64) {
     let rad = |v: f64| v / 60000.0 * PI / 180.0;
     // The parameter of the point at a visual angle.
     let param = |a: f64| (wr * a.sin()).atan2(hr * a.cos());
@@ -417,11 +357,7 @@ pub fn shade(color: &str, fill: Fill) -> String {
     };
     let ch = |s: u32| {
         let c = ((v >> s) & 0xff) as f64;
-        let c = if white {
-            255.0 - (255.0 - c) * f
-        } else {
-            c * f
-        };
+        let c = if white { 255.0 - (255.0 - c) * f } else { c * f };
         c.round().clamp(0.0, 255.0) as u32
     };
     format!("#{:02X}{:02X}{:02X}", ch(16), ch(8), ch(0))
@@ -432,12 +368,7 @@ mod tests {
     use super::*;
 
     fn d(prst: &str, w: f64, h: f64) -> Vec<String> {
-        preset(prst, None, w, h)
-            .unwrap()
-            .paths
-            .into_iter()
-            .map(|p| p.d)
-            .collect()
+        preset(prst, None, w, h).unwrap().paths.into_iter().map(|p| p.d).collect()
     }
 
     #[test]
@@ -448,11 +379,7 @@ mod tests {
             let g = preset(name, None, 100.0, 60.0).unwrap();
             assert!(!g.paths.is_empty(), "{name}");
             for p in &g.paths {
-                assert!(
-                    !p.d.contains("NaN") && !p.d.contains("inf"),
-                    "{name}: {}",
-                    p.d
-                );
+                assert!(!p.d.contains("NaN") && !p.d.contains("inf"), "{name}: {}", p.d);
             }
         }
     }
@@ -462,26 +389,15 @@ mod tests {
         assert_eq!(d("rect", 10.0, 5.0), ["M0,0 L10,0 L10,5 L0,5 Z"]);
         assert_eq!(d("diamond", 10.0, 6.0), ["M0,3 L5,0 L10,3 L5,6 Z"]);
         // A right arrow: shaft half the height, head half the short side.
-        assert_eq!(
-            d("rightArrow", 20.0, 10.0),
-            ["M0,2.5 L15,2.5 L15,0 L20,5 L15,10 L15,7.5 L0,7.5 Z"]
-        );
+        assert_eq!(d("rightArrow", 20.0, 10.0), ["M0,2.5 L15,2.5 L15,0 L20,5 L15,10 L15,7.5 L0,7.5 Z"]);
         let line = preset("straightConnector1", None, 10.0, 0.0).unwrap();
         assert!(line.paths.iter().all(|p| p.fill == Fill::None && p.open));
         // An ellipse: two half turns from the left.
-        assert_eq!(
-            d("ellipse", 10.0, 6.0),
-            ["M0,3 A5,3 0 0 1 5,0 A5,3 0 0 1 10,3 A5,3 0 0 1 5,6 A5,3 0 0 1 0,3 Z"]
-        );
+        assert_eq!(d("ellipse", 10.0, 6.0), ["M0,3 A5,3 0 0 1 5,0 A5,3 0 0 1 10,3 A5,3 0 0 1 5,6 A5,3 0 0 1 0,3 Z"]);
         // A rounded rectangle with its adjust value.
-        let av = parse(br#"<prstGeom><avLst><gd name="adj" fmla="val 50000"/></avLst></prstGeom>"#)
-            .unwrap();
+        let av = parse(br#"<prstGeom><avLst><gd name="adj" fmla="val 50000"/></avLst></prstGeom>"#).unwrap();
         let g = preset("roundRect", Some(&av), 10.0, 4.0).unwrap();
-        assert!(
-            g.paths[0].d.starts_with("M0,2 A2,2 0 0 1 2,0 L8,0"),
-            "{}",
-            g.paths[0].d
-        );
+        assert!(g.paths[0].d.starts_with("M0,2 A2,2 0 0 1 2,0 L8,0"), "{}", g.paths[0].d);
         assert!(preset("noSuchShape", None, 10.0, 10.0).is_none());
         // The lines of chartPlus are drawn over its fill.
         let g = preset("chartPlus", None, 10.0, 10.0).unwrap();
@@ -493,14 +409,7 @@ mod tests {
         // The text of an ellipse is in the rectangle inside it.
         let g = preset("ellipse", None, 100.0, 100.0).unwrap();
         let (l, t, r, b) = g.text.unwrap();
-        assert!(
-            (l - 14.645).abs() < 0.01
-                && (t - l).abs() < 1e-9
-                && (r - 85.355).abs() < 0.01
-                && (b - r).abs() < 1e-9,
-            "{:?}",
-            g.text
-        );
+        assert!((l - 14.645).abs() < 0.01 && (t - l).abs() < 1e-9 && (r - 85.355).abs() < 0.01 && (b - r).abs() < 1e-9, "{:?}", g.text);
     }
 
     #[test]
@@ -515,39 +424,18 @@ mod tests {
         }
         assert!(text_warp("textNoShape", None, 100.0, 60.0).is_none());
         // Plain: the top and the bottom of the box.
-        assert_eq!(
-            text_warp("textPlain", None, 100.0, 60.0).unwrap(),
-            vec![
-                vec![(0.0, 0.0), (100.0, 0.0)],
-                vec![(0.0, 60.0), (100.0, 60.0)]
-            ]
-        );
+        assert_eq!(text_warp("textPlain", None, 100.0, 60.0).unwrap(), vec![vec![(0.0, 0.0), (100.0, 0.0)], vec![(0.0, 60.0), (100.0, 60.0)]]);
         // Arch up: one path over the top half of the ellipse, from the left to the right.
         let arch = text_warp("textArchUp", None, 100.0, 60.0).unwrap();
         assert_eq!(arch.len(), 1);
         let (first, last) = (arch[0][0], *arch[0].last().unwrap());
-        assert!(
-            (first.0).abs() < 1e-6
-                && (first.1 - 30.0).abs() < 1e-6
-                && (last.0 - 100.0).abs() < 1e-6,
-            "{first:?} {last:?}"
-        );
-        assert!(
-            arch[0].iter().all(|p| p.1 <= 30.0 + 1e-6) && arch[0].iter().any(|p| p.1.abs() < 0.1)
-        );
+        assert!((first.0).abs() < 1e-6 && (first.1 - 30.0).abs() < 1e-6 && (last.0 - 100.0).abs() < 1e-6, "{first:?} {last:?}");
+        assert!(arch[0].iter().all(|p| p.1 <= 30.0 + 1e-6) && arch[0].iter().any(|p| p.1.abs() < 0.1));
         // An adjust value (pinned to at most 20%): the ends of an inflated band come in by it.
-        let av =
-            parse(br#"<prstTxWarp><avLst><gd name="adj" fmla="val 25000"/></avLst></prstTxWarp>"#)
-                .unwrap();
-        let top = text_warp("textInflate", Some(&av), 100.0, 60.0)
-            .unwrap()
-            .remove(0);
+        let av = parse(br#"<prstTxWarp><avLst><gd name="adj" fmla="val 25000"/></avLst></prstTxWarp>"#).unwrap();
+        let top = text_warp("textInflate", Some(&av), 100.0, 60.0).unwrap().remove(0);
         let min = top.iter().map(|p| p.1).fold(f64::MAX, f64::min);
-        assert!(
-            min.abs() < 0.5 && (top[0].1 - 12.0).abs() < 1e-6,
-            "{min} {:?}",
-            top[0]
-        );
+        assert!(min.abs() < 0.5 && (top[0].1 - 12.0).abs() < 1e-6, "{min} {:?}", top[0]);
     }
 
     #[test]

@@ -81,11 +81,7 @@ fn kind(g: &Node) -> String {
     };
     let s = match g.name.trim_end_matches("3DChart").trim_end_matches("Chart") {
         "bar" => {
-            let base = if val(g, "barDir") == Some("bar") {
-                t!("book.chart.bar")
-            } else {
-                t!("book.chart.column")
-            };
+            let base = if val(g, "barDir") == Some("bar") { t!("book.chart.bar") } else { t!("book.chart.column") };
             match grouping {
                 "stacked" | "percentStacked" => stacked(&base),
                 _ => t!("book.chart.clustered", base),
@@ -121,61 +117,32 @@ fn kind(g: &Node) -> String {
 /// The newer kinds (cx:series layoutId).
 fn ex_kind(layout: &str) -> String {
     match layout {
-        "waterfall" | "funnel" | "treemap" | "sunburst" | "boxWhisker" | "paretoLine"
-        | "regionMap" => t!(&format!("book.chart.{layout}")),
+        "waterfall" | "funnel" | "treemap" | "sunburst" | "boxWhisker" | "paretoLine" | "regionMap" => t!(&format!("book.chart.{layout}")),
         "clusteredColumn" => t!("book.chart.histogram"),
         other => other.to_string(),
     }
 }
 
 const GROUPS: &[&str] = &[
-    "barChart",
-    "bar3DChart",
-    "lineChart",
-    "line3DChart",
-    "pieChart",
-    "pie3DChart",
-    "ofPieChart",
-    "doughnutChart",
-    "areaChart",
-    "area3DChart",
-    "scatterChart",
-    "bubbleChart",
-    "radarChart",
-    "stockChart",
-    "surfaceChart",
-    "surface3DChart",
+    "barChart", "bar3DChart", "lineChart", "line3DChart", "pieChart", "pie3DChart", "ofPieChart", "doughnutChart", "areaChart",
+    "area3DChart", "scatterChart", "bubbleChart", "radarChart", "stockChart", "surfaceChart", "surface3DChart",
 ];
 
 /// What the data labels show (c:dLbls), "" for none.
 fn labels(n: &Node) -> String {
-    let Some(d) = n.child("dLbls") else {
-        return String::new();
-    };
+    let Some(d) = n.child("dLbls") else { return String::new() };
     let on = |k: &str| val(d, k).is_some_and(|v| v == "1" || v == "true");
-    let parts: Vec<String> = [
-        ("showVal", "book.chart.lblVal"),
-        ("showPercent", "book.chart.lblPercent"),
-        ("showCatName", "book.chart.lblCat"),
-        ("showSerName", "book.chart.lblSer"),
-    ]
-    .into_iter()
-    .filter(|(k, _)| on(k))
-    .map(|(_, key)| t!(key))
-    .collect();
-    if parts.is_empty() {
-        String::new()
-    } else {
-        t!("book.chart.labels", parts.join(&t!("vba.separator")))
-    }
+    let parts: Vec<String> = [("showVal", "book.chart.lblVal"), ("showPercent", "book.chart.lblPercent"), ("showCatName", "book.chart.lblCat"), ("showSerName", "book.chart.lblSer")]
+        .into_iter()
+        .filter(|(k, _)| on(k))
+        .map(|(_, key)| t!(key))
+        .collect();
+    if parts.is_empty() { String::new() } else { t!("book.chart.labels", parts.join(&t!("vba.separator"))) }
 }
 
 /// The axis with the id.
 fn axis<'a>(plot: &'a Node, id: &str) -> Option<&'a Node> {
-    plot.children.iter().find(|a| {
-        matches!(a.name.as_str(), "catAx" | "valAx" | "dateAx" | "serAx")
-            && val(a, "axId") == Some(id)
-    })
+    plot.children.iter().find(|a| matches!(a.name.as_str(), "catAx" | "valAx" | "dateAx" | "serAx") && val(a, "axId") == Some(id))
 }
 
 /// The lines describing a chart (without its heading).
@@ -185,17 +152,9 @@ pub(crate) fn describe(c: &Chart) -> Vec<String> {
     }
     let sep = t!("vba.separator");
     let mut out = Vec::new();
-    let Some(chart) = c.root.child("chart") else {
-        return out;
-    };
-    let Some(plot) = chart.child("plotArea") else {
-        return out;
-    };
-    let groups: Vec<&Node> = plot
-        .children
-        .iter()
-        .filter(|g| GROUPS.contains(&g.name.as_str()))
-        .collect();
+    let Some(chart) = c.root.child("chart") else { return out };
+    let Some(plot) = chart.child("plotArea") else { return out };
+    let groups: Vec<&Node> = plot.children.iter().filter(|g| GROUPS.contains(&g.name.as_str())).collect();
     let kinds: Vec<String> = groups.iter().map(|g| kind(g)).collect();
     let mut uniq: Vec<String> = Vec::new();
     for k in &kinds {
@@ -208,25 +167,13 @@ pub(crate) fn describe(c: &Chart) -> Vec<String> {
         out.push(t!("book.chart.pivot", p.all_text()));
     }
     if let Some(title) = chart.child("title")
-        && !chart
-            .child("autoTitleDeleted")
-            .is_some_and(|d| d.flag("val", true))
+        && !chart.child("autoTitleDeleted").is_some_and(|d| d.flag("val", true))
     {
         let text = title.child("tx").map(tx_text).unwrap_or_default();
-        out.push(t!(
-            "book.chart.title",
-            if text.is_empty() {
-                t!("book.chart.autoTitle")
-            } else {
-                text
-            }
-        ));
+        out.push(t!("book.chart.title", if text.is_empty() { t!("book.chart.autoTitle") } else { text }));
     }
     // The axes of the first group are the primary ones.
-    let primary: Vec<&str> = groups
-        .first()
-        .map(|g| g.children("axId").filter_map(|a| a.attr("val")).collect())
-        .unwrap_or_default();
+    let primary: Vec<&str> = groups.first().map(|g| g.children("axId").filter_map(|a| a.attr("val")).collect()).unwrap_or_default();
     let mut axis_names: Vec<(String, String)> = Vec::new();
     for g in &groups {
         let horizontal_bars = val(g, "barDir") == Some("bar");
@@ -235,35 +182,21 @@ pub(crate) fn describe(c: &Chart) -> Vec<String> {
                 continue;
             }
             let value_axis = axis(plot, id).is_some_and(|a| a.name == "valAx");
-            let role = if value_axis {
-                t!("book.chart.valueRole")
-            } else {
-                t!("book.chart.catRole")
-            };
+            let role = if value_axis { t!("book.chart.valueRole") } else { t!("book.chart.catRole") };
             let name = match (i, horizontal_bars) {
                 (0, false) | (1, true) => t!("book.chart.hAxis", role),
                 (1, false) | (0, true) => t!("book.chart.vAxis", role),
                 _ => t!("book.chart.depthAxis"),
             };
-            let name = if primary.contains(&id) {
-                name
-            } else {
-                t!("book.chart.secondary", name)
-            };
+            let name = if primary.contains(&id) { name } else { t!("book.chart.secondary", name) };
             axis_names.push((id.to_string(), name));
         }
     }
     for (gi, g) in groups.iter().enumerate() {
-        let secondary = g
-            .children("axId")
-            .any(|a| a.attr("val").is_some_and(|v| !primary.contains(&v)));
+        let secondary = g.children("axId").any(|a| a.attr("val").is_some_and(|v| !primary.contains(&v)));
         let group_labels = labels(g);
         for s in g.children("ser") {
-            let name = s
-                .child("tx")
-                .map(tx_text)
-                .filter(|n| !n.is_empty())
-                .unwrap_or_else(|| t!("book.chart.noName"));
+            let name = s.child("tx").map(tx_text).filter(|n| !n.is_empty()).unwrap_or_else(|| t!("book.chart.noName"));
             let mut notes = Vec::new();
             if uniq.len() > 1 {
                 notes.push(kinds[gi].clone());
@@ -271,11 +204,7 @@ pub(crate) fn describe(c: &Chart) -> Vec<String> {
             if secondary {
                 notes.push(t!("book.chart.onSecondary"));
             }
-            let notes = if notes.is_empty() {
-                String::new()
-            } else {
-                format!("（{}）", notes.join(&sep))
-            };
+            let notes = if notes.is_empty() { String::new() } else { format!("（{}）", notes.join(&sep)) };
             let mut parts = Vec::new();
             for (k, key) in [
                 ("cat", "book.chart.cat"),
@@ -290,11 +219,7 @@ pub(crate) fn describe(c: &Chart) -> Vec<String> {
             }
             let l = labels(s);
             if !l.is_empty() || !group_labels.is_empty() {
-                parts.push(if l.is_empty() {
-                    group_labels.clone()
-                } else {
-                    l
-                });
+                parts.push(if l.is_empty() { group_labels.clone() } else { l });
             }
             for tl in s.children("trendline") {
                 let ty = val(tl, "trendlineType").unwrap_or("linear");
@@ -311,14 +236,7 @@ pub(crate) fn describe(c: &Chart) -> Vec<String> {
         }
         if let Some(tt) = a.child("title") {
             let text = tt.child("tx").map(tx_text).unwrap_or_default();
-            parts.push(t!(
-                "book.chart.title",
-                if text.is_empty() {
-                    t!("book.chart.autoTitle")
-                } else {
-                    text
-                }
-            ));
+            parts.push(t!("book.chart.title", if text.is_empty() { t!("book.chart.autoTitle") } else { text }));
         }
         if let Some(sc) = a.child("scaling") {
             if let Some(v) = val(sc, "min") {
@@ -385,31 +303,16 @@ fn describe_ex(root: &Node) -> Vec<String> {
     }
     if let Some(title) = titles.first() {
         let text = title.child("tx").map(tx_text).unwrap_or_default();
-        out.push(t!(
-            "book.chart.title",
-            if text.is_empty() {
-                t!("book.chart.autoTitle")
-            } else {
-                text
-            }
-        ));
+        out.push(t!("book.chart.title", if text.is_empty() { t!("book.chart.autoTitle") } else { text }));
     }
     let mut datas = Vec::new();
     root.find("data", &mut datas);
     for s in &series {
-        let name = s
-            .child("tx")
-            .map(tx_text)
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| t!("book.chart.noName"));
+        let name = s.child("tx").map(tx_text).filter(|n| !n.is_empty()).unwrap_or_else(|| t!("book.chart.noName"));
         let id = s.child("dataId").and_then(|d| d.attr("val")).unwrap_or("0");
         let mut parts = Vec::new();
         if let Some(d) = datas.iter().find(|d| d.attr("id") == Some(id)) {
-            for dim in d
-                .children
-                .iter()
-                .filter(|c| c.name == "numDim" || c.name == "strDim")
-            {
+            for dim in d.children.iter().filter(|c| c.name == "numDim" || c.name == "strDim") {
                 let key = match dim.attr("type").unwrap_or("") {
                     "cat" => "book.chart.cat",
                     "x" => "book.chart.x",

@@ -64,11 +64,7 @@ fn open_directory(server: &str) -> Result<Box<dyn Directory>> {
 
 /// The error for a domain controller that cannot be reached.
 fn server_down(server: &str) -> crate::Error {
-    if server.is_empty() {
-        err!("ad.serverDown")
-    } else {
-        err!("ad.serverDownNamed", server)
-    }
+    if server.is_empty() { err!("ad.serverDown") } else { err!("ad.serverDownNamed", server) }
 }
 
 /// Whether the computer is joined to a domain (without asking the domain).
@@ -98,38 +94,10 @@ pub type Obj = Vec<(String, Val)>;
 
 /// The attributes read by default (more with properties).
 pub const DEFAULT_ATTRS: &[&str] = &[
-    "name",
-    "distinguishedName",
-    "objectClass",
-    "objectGUID",
-    "objectSid",
-    "sAMAccountName",
-    "userPrincipalName",
-    "displayName",
-    "givenName",
-    "sn",
-    "mail",
-    "department",
-    "title",
-    "company",
-    "description",
-    "employeeID",
-    "telephoneNumber",
-    "mobile",
-    "physicalDeliveryOfficeName",
-    "manager",
-    "memberOf",
-    "userAccountControl",
-    "lockoutTime",
-    "lastLogonTimestamp",
-    "pwdLastSet",
-    "accountExpires",
-    "whenCreated",
-    "whenChanged",
-    "dNSHostName",
-    "operatingSystem",
-    "operatingSystemVersion",
-    "groupType",
+    "name", "distinguishedName", "objectClass", "objectGUID", "objectSid", "sAMAccountName", "userPrincipalName", "displayName",
+    "givenName", "sn", "mail", "department", "title", "company", "description", "employeeID", "telephoneNumber", "mobile",
+    "physicalDeliveryOfficeName", "manager", "memberOf", "userAccountControl", "lockoutTime", "lastLogonTimestamp", "pwdLastSet",
+    "accountExpires", "whenCreated", "whenChanged", "dNSHostName", "operatingSystem", "operatingSystemVersion", "groupType",
     "managedBy",
 ];
 
@@ -198,19 +166,11 @@ fn types_filter(types: &[String]) -> Result<Option<String>> {
             None => return Ok(None),
         }
     }
-    Ok(if parts.is_empty() {
-        None
-    } else {
-        Some(filter::or(&parts))
-    })
+    Ok(if parts.is_empty() { None } else { Some(filter::or(&parts)) })
 }
 
 fn cond_filter(attr: &str, c: &Cond) -> Result<String> {
-    if attr.is_empty()
-        || !attr
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.' || b == b';')
-    {
+    if attr.is_empty() || !attr.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.' || b == b';') {
         return Err(err!("ad.badAttribute", attr));
     }
     Ok(match c {
@@ -218,15 +178,8 @@ fn cond_filter(attr: &str, c: &Cond) -> Result<String> {
         Cond::Present(true) => format!("({attr}=*)"),
         Cond::Present(false) => format!("(!({attr}=*))"),
         Cond::Any(v) => {
-            let parts = v
-                .iter()
-                .map(|c| cond_filter(attr, c))
-                .collect::<Result<Vec<_>>>()?;
-            if parts.is_empty() {
-                "(!(objectClass=*))".into()
-            } else {
-                filter::or(&parts)
-            }
+            let parts = v.iter().map(|c| cond_filter(attr, c)).collect::<Result<Vec<_>>>()?;
+            if parts.is_empty() { "(!(objectClass=*))".into() } else { filter::or(&parts) }
         }
     })
 }
@@ -256,11 +209,7 @@ pub fn dns_name(dn: &str) -> String {
 /// Whether s looks like a distinguished name ("CN=...,DC=...").
 pub fn is_dn(s: &str) -> bool {
     match s.split_once('=') {
-        Some((k, _)) => {
-            !k.is_empty()
-                && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-                && s.contains(',')
-        }
+        Some((k, _)) => !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') && s.contains(','),
         None => false,
     }
 }
@@ -288,13 +237,7 @@ fn first(e: &Entry, attr: &str) -> String {
 }
 
 fn num_of(o: &Obj, key: &str) -> Option<i64> {
-    o.iter().find(|(k, _)| k == key).and_then(|(_, v)| {
-        if let Val::Num(n) = v {
-            Some(*n as i64)
-        } else {
-            None
-        }
-    })
+    o.iter().find(|(k, _)| k == key).and_then(|(_, v)| if let Val::Num(n) = v { Some(*n as i64) } else { None })
 }
 
 /// The attribute names to ask for and the order of the properties: the
@@ -318,14 +261,7 @@ impl Session {
             base: String::new(),
             scope: Scope::Base,
             filter: "(objectClass=*)".into(),
-            attrs: [
-                "defaultNamingContext",
-                "configurationNamingContext",
-                "rootDomainNamingContext",
-                "dnsHostName",
-            ]
-            .map(String::from)
-            .to_vec(),
+            attrs: ["defaultNamingContext", "configurationNamingContext", "rootDomainNamingContext", "dnsHostName"].map(String::from).to_vec(),
             limit: 0,
         };
         dir.search(&q, &mut |e| {
@@ -337,9 +273,7 @@ impl Session {
             });
             false
         })?;
-        let root = root
-            .filter(|r| !r.default_nc.is_empty())
-            .ok_or_else(|| server_down(server))?;
+        let root = root.filter(|r| !r.default_nc.is_empty()).ok_or_else(|| server_down(server))?;
         Ok(Session { dir, root })
     }
 
@@ -350,10 +284,7 @@ impl Session {
             let q = Query {
                 base: format!("CN=Partitions,{}", self.root.config_nc),
                 scope: Scope::OneLevel,
-                filter: format!(
-                    "(&(objectClass=crossRef)(nCName={}))",
-                    filter::escape(&self.root.default_nc, false)
-                ),
+                filter: format!("(&(objectClass=crossRef)(nCName={}))", filter::escape(&self.root.default_nc, false)),
                 attrs: vec!["nETBIOSName".into()],
                 limit: 1,
             };
@@ -369,10 +300,7 @@ impl Session {
         Ok(vec![
             ("name".into(), Val::Str(dns_name(&self.root.default_nc))),
             ("netbiosName".into(), netbios),
-            (
-                "distinguishedName".into(),
-                Val::Str(self.root.default_nc.clone()),
-            ),
+            ("distinguishedName".into(), Val::Str(self.root.default_nc.clone())),
             ("forest".into(), Val::Str(dns_name(&self.root.root_nc))),
             ("server".into(), Val::Str(self.root.server.clone())),
         ])
@@ -394,35 +322,21 @@ impl Session {
 
     fn complete_ranges(&self, e: &mut Entry) -> Result<()> {
         for (name, vals) in e.attrs.iter_mut() {
-            let Some((attr, range)) = name.split_once(";range=") else {
-                continue;
-            };
+            let Some((attr, range)) = name.split_once(";range=") else { continue };
             let attr = attr.to_string();
             let mut range = range.to_string();
             while let Some((_, hi)) = range.split_once('-') {
                 let Ok(hi) = hi.parse::<u64>() else { break }; // "*": the last range
                 let ask = format!("{attr};range={}-*", hi + 1);
-                let q = Query {
-                    base: e.dn.clone(),
-                    scope: Scope::Base,
-                    filter: "(objectClass=*)".into(),
-                    attrs: vec![ask],
-                    limit: 0,
-                };
+                let q = Query { base: e.dn.clone(), scope: Scope::Base, filter: "(objectClass=*)".into(), attrs: vec![ask], limit: 0 };
                 let mut next = None;
                 self.dir.search(&q, &mut |r| {
-                    next = r.attrs.into_iter().find(|(k, _)| {
-                        k.to_lowercase()
-                            .starts_with(&format!("{};range=", attr.to_lowercase()))
-                    });
+                    next = r.attrs.into_iter().find(|(k, _)| k.to_lowercase().starts_with(&format!("{};range=", attr.to_lowercase())));
                     false
                 })?;
                 let Some((k, more)) = next else { break };
                 vals.extend(more);
-                range = k
-                    .split_once(";range=")
-                    .map(|(_, r)| r.to_string())
-                    .unwrap_or_default();
+                range = k.split_once(";range=").map(|(_, r)| r.to_string()).unwrap_or_default();
             }
             *name = attr;
         }
@@ -448,22 +362,12 @@ impl Session {
     fn object(e: Entry, order: &[String]) -> Obj {
         let all = order.iter().any(|a| a == "*");
         let keep_computed = order.iter().any(|a| a.eq_ignore_ascii_case(COMPUTED_UAC));
-        let mut attrs: Vec<Option<(String, Vec<Vec<u8>>)>> =
-            e.attrs.into_iter().map(Some).collect();
+        let mut attrs: Vec<Option<(String, Vec<Vec<u8>>)>> = e.attrs.into_iter().map(Some).collect();
         let mut take = |name: &str| -> Option<(String, Vec<Vec<u8>>)> {
-            attrs
-                .iter_mut()
-                .find(|a| {
-                    a.as_ref()
-                        .is_some_and(|(k, _)| k.eq_ignore_ascii_case(name))
-                })
-                .and_then(Option::take)
+            attrs.iter_mut().find(|a| a.as_ref().is_some_and(|(k, _)| k.eq_ignore_ascii_case(name))).and_then(Option::take)
         };
         let classes = take("objectClass").map(|(_, v)| v).unwrap_or_default();
-        let classes: Vec<String> = classes
-            .iter()
-            .map(|c| String::from_utf8_lossy(c).into_owned())
-            .collect();
+        let classes: Vec<String> = classes.iter().map(|c| String::from_utf8_lossy(c).into_owned()).collect();
         let has = |c: &str| classes.iter().any(|x| x.eq_ignore_ascii_case(c));
         let kind = if has("computer") {
             "computer".to_string()
@@ -479,14 +383,10 @@ impl Session {
             classes.last().cloned().unwrap_or_default()
         };
         let mut o: Obj = vec![("type".into(), Val::Str(kind))];
-        let name = take("name")
-            .and_then(|(_, v)| v.into_iter().next())
-            .map(|v| String::from_utf8_lossy(&v).into_owned());
+        let name = take("name").and_then(|(_, v)| v.into_iter().next()).map(|v| String::from_utf8_lossy(&v).into_owned());
         let name = name.unwrap_or_else(|| {
             let rdn = e.dn.split(',').next().unwrap_or("");
-            rdn.split_once('=')
-                .map(|(_, v)| v.to_string())
-                .unwrap_or_default()
+            rdn.split_once('=').map(|(_, v)| v.to_string()).unwrap_or_default()
         });
         o.push(("name".into(), Val::Str(name)));
         take("distinguishedName");
@@ -495,19 +395,14 @@ impl Session {
         for key in order {
             match key.as_str() {
                 "*" | "name" | "distinguishedName" => continue,
-                "objectClass" => o.push((
-                    key.clone(),
-                    Val::List(classes.iter().cloned().map(Val::Str).collect()),
-                )),
+                "objectClass" => o.push((key.clone(), Val::List(classes.iter().cloned().map(Val::Str).collect()))),
                 _ => {
                     if key.eq_ignore_ascii_case(COMPUTED_UAC) {
                         continue;
                     }
                     match take(key) {
                         Some((_, v)) => o.push((key.clone(), value::convert(key, &v))),
-                        None if value::is_in(value::MULTI, key) => {
-                            o.push((key.clone(), Val::List(Vec::new())))
-                        }
+                        None if value::is_in(value::MULTI, key) => o.push((key.clone(), Val::List(Vec::new()))),
                         None => {}
                     }
                 }
@@ -521,10 +416,7 @@ impl Session {
                 }
             }
         }
-        let computed = computed.and_then(|(_, v)| {
-            v.first()
-                .and_then(|b| String::from_utf8_lossy(b).trim().parse::<i64>().ok())
-        });
+        let computed = computed.and_then(|(_, v)| v.first().and_then(|b| String::from_utf8_lossy(b).trim().parse::<i64>().ok()));
         if keep_computed && let Some(c) = computed {
             o.push((COMPUTED_UAC.into(), Val::Num(c as f64)));
         }
@@ -532,14 +424,8 @@ impl Session {
             o.push(("enabled".into(), Val::Bool(uac & UF_ACCOUNTDISABLE == 0)));
             let c = computed.unwrap_or(0);
             o.push(("lockedOut".into(), Val::Bool(c & UF_LOCKOUT != 0)));
-            o.push((
-                "passwordExpired".into(),
-                Val::Bool(c & UF_PASSWORD_EXPIRED != 0),
-            ));
-            o.push((
-                "passwordNeverExpires".into(),
-                Val::Bool(uac & UF_DONT_EXPIRE_PASSWD != 0),
-            ));
+            o.push(("passwordExpired".into(), Val::Bool(c & UF_PASSWORD_EXPIRED != 0)));
+            o.push(("passwordNeverExpires".into(), Val::Bool(uac & UF_DONT_EXPIRE_PASSWD != 0)));
         }
         if let Some(gt) = num_of(&o, "groupType") {
             let scope = if gt & 0x2 != 0 {
@@ -552,47 +438,27 @@ impl Session {
                 "builtin"
             };
             o.push(("groupScope".into(), Val::Str(scope.into())));
-            let cat = if gt & 0x8000_0000 != 0 {
-                "security"
-            } else {
-                "distribution"
-            };
+            let cat = if gt & 0x8000_0000 != 0 { "security" } else { "distribution" };
             o.push(("groupCategory".into(), Val::Str(cat.into())));
         }
         o
     }
 
     fn base(&self, base: &str) -> String {
-        if base.is_empty() {
-            self.root.default_nc.clone()
-        } else {
-            base.to_string()
-        }
+        if base.is_empty() { self.root.default_nc.clone() } else { base.to_string() }
     }
 
     /// The objects the options select.
     pub fn search(&self, o: &SearchOptions) -> Result<Vec<Obj>> {
         let mut parts = Vec::new();
-        let types = if o.types.is_empty() {
-            vec!["user".to_string()]
-        } else {
-            o.types.clone()
-        };
+        let types = if o.types.is_empty() { vec!["user".to_string()] } else { o.types.clone() };
         if let Some(f) = types_filter(&types)? {
             parts.push(f);
         }
         if let Some(n) = &o.name {
             let v = filter::escape(n, true);
-            let alts: Vec<String> = [
-                "name",
-                "sAMAccountName",
-                "displayName",
-                "userPrincipalName",
-                "mail",
-            ]
-            .iter()
-            .map(|a| format!("({a}={v})"))
-            .collect();
+            let alts: Vec<String> =
+                ["name", "sAMAccountName", "displayName", "userPrincipalName", "mail"].iter().map(|a| format!("({a}={v})")).collect();
             parts.push(filter::or(&alts));
         }
         for (k, c) in &o.conds {
@@ -617,64 +483,32 @@ impl Session {
         }
         if let Some(d) = o.expiring_days {
             let until = value::to_filetime(now_ms() + (d * DAY_MS) as i64);
-            parts.push(format!(
-                "(&(accountExpires>={now})(accountExpires<={until}))"
-            ));
+            parts.push(format!("(&(accountExpires>={now})(accountExpires<={until}))"));
         }
         if let Some(d) = o.inactive_days {
             let since = value::to_filetime(now_ms() - (d * DAY_MS) as i64);
-            parts.push(format!(
-                "(|(!(lastLogonTimestamp=*))(lastLogonTimestamp<={since}))"
-            ));
+            parts.push(format!("(|(!(lastLogonTimestamp=*))(lastLogonTimestamp<={since}))"));
         }
         if let Some(g) = &o.member_of {
             let dn = if is_dn(g) {
                 g.clone()
             } else {
                 match self.get(g, &["group".to_string()], &[])? {
-                    Some(obj) => obj
-                        .iter()
-                        .find(|(k, _)| k == "distinguishedName")
-                        .map(|(_, v)| {
-                            if let Val::Str(s) = v {
-                                s.clone()
-                            } else {
-                                String::new()
-                            }
-                        })
-                        .unwrap_or_default(),
+                    Some(obj) => obj.iter().find(|(k, _)| k == "distinguishedName").map(|(_, v)| if let Val::Str(s) = v { s.clone() } else { String::new() }).unwrap_or_default(),
                     None => return Err(err!("ad.groupNotFound", g)),
                 }
             };
             let dn = filter::escape(&dn, false);
-            parts.push(if o.recursive {
-                format!("(memberOf:{}:={dn})", filter::RULE_CHAIN)
-            } else {
-                format!("(memberOf={dn})")
-            });
+            parts.push(if o.recursive { format!("(memberOf:{}:={dn})", filter::RULE_CHAIN) } else { format!("(memberOf={dn})") });
         }
         let post = o.locked_out.is_some() || o.password_expired.is_some();
         let (ask, order) = self.ask(&o.properties);
-        let q = Query {
-            base: self.base(&o.base),
-            scope: o.scope,
-            filter: filter::and(&parts),
-            attrs: ask,
-            limit: if post { 0 } else { o.limit },
-        };
+        let q = Query { base: self.base(&o.base), scope: o.scope, filter: filter::and(&parts), attrs: ask, limit: if post { 0 } else { o.limit } };
         let mut out = Vec::new();
         self.query(&q, &mut |e| {
             let obj = Self::object(e, &order);
-            let flag = |k: &str| {
-                obj.iter()
-                    .find(|(n, _)| n == k)
-                    .map(|(_, v)| *v == Val::Bool(true))
-                    .unwrap_or(false)
-            };
-            if o.locked_out.is_some_and(|x| x != flag("lockedOut"))
-                || o.password_expired
-                    .is_some_and(|x| x != flag("passwordExpired"))
-            {
+            let flag = |k: &str| obj.iter().find(|(n, _)| n == k).map(|(_, v)| *v == Val::Bool(true)).unwrap_or(false);
+            if o.locked_out.is_some_and(|x| x != flag("lockedOut")) || o.password_expired.is_some_and(|x| x != flag("passwordExpired")) {
                 return true;
             }
             out.push(obj);
@@ -693,13 +527,7 @@ impl Session {
         }
         let mut parts: Vec<String> = types_filter(types)?.into_iter().collect();
         let (ask, order) = self.ask(props);
-        let mut q = Query {
-            base: self.root.default_nc.clone(),
-            scope: Scope::Subtree,
-            filter: String::new(),
-            attrs: ask,
-            limit: 0,
-        };
+        let mut q = Query { base: self.root.default_nc.clone(), scope: Scope::Subtree, filter: String::new(), attrs: ask, limit: 0 };
         let mut rank: Vec<String> = Vec::new();
         if is_dn(id) {
             q.base = id.to_string();
@@ -732,24 +560,12 @@ impl Session {
             found.len() < 20
         });
         match r {
-            Err(e) if q.scope == Scope::Base && e.key() == Some("ad.noSuchObject") => {
-                return Ok(None);
-            }
+            Err(e) if q.scope == Scope::Base && e.key() == Some("ad.noSuchObject") => return Ok(None),
             r => r?,
         }
         let score = |o: &Obj| {
-            let sam = o
-                .iter()
-                .find(|(k, _)| k == "sAMAccountName")
-                .and_then(|(_, v)| {
-                    if let Val::Str(s) = v {
-                        Some(s.to_lowercase())
-                    } else {
-                        None
-                    }
-                });
-            sam.and_then(|s| rank.iter().position(|r| *r == s))
-                .unwrap_or(rank.len())
+            let sam = o.iter().find(|(k, _)| k == "sAMAccountName").and_then(|(_, v)| if let Val::Str(s) = v { Some(s.to_lowercase()) } else { None });
+            sam.and_then(|s| rank.iter().position(|r| *r == s)).unwrap_or(rank.len())
         };
         found.sort_by_key(score);
         Ok(found.into_iter().next())
@@ -758,8 +574,7 @@ impl Session {
     /// The signed-in user (or this computer).
     pub fn me(&self, computer: bool, props: &[String]) -> Result<Obj> {
         let dn = self_dn(computer)?;
-        self.get(&dn, &[], props)?
-            .ok_or_else(|| err!("ad.noSuchObject", dn))
+        self.get(&dn, &[], props)?.ok_or_else(|| err!("ad.noSuchObject", dn))
     }
 }
 
@@ -768,22 +583,11 @@ mod tests {
     use super::*;
 
     fn s(o: &Obj, k: &str) -> Val {
-        o.iter()
-            .find(|(n, _)| n == k)
-            .map(|(_, v)| v.clone())
-            .unwrap_or(Val::Null)
+        o.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()).unwrap_or(Val::Null)
     }
 
     fn names(v: &[Obj]) -> Vec<String> {
-        v.iter()
-            .map(|o| {
-                if let Val::Str(n) = s(o, "sAMAccountName") {
-                    n
-                } else {
-                    String::new()
-                }
-            })
-            .collect()
+        v.iter().map(|o| if let Val::Str(n) = s(o, "sAMAccountName") { n } else { String::new() }).collect()
     }
 
     #[test]
@@ -806,85 +610,30 @@ mod tests {
 
         let all = ses.search(&SearchOptions::default()).unwrap();
         assert_eq!(names(&all), ["yamada", "suzuki", "tanaka", "sato"]);
-        let disabled = ses
-            .search(&SearchOptions {
-                disabled: Some(true),
-                ..Default::default()
-            })
-            .unwrap();
+        let disabled = ses.search(&SearchOptions { disabled: Some(true), ..Default::default() }).unwrap();
         assert_eq!(names(&disabled), ["tanaka"]);
-        let locked = ses
-            .search(&SearchOptions {
-                locked_out: Some(true),
-                ..Default::default()
-            })
-            .unwrap();
+        let locked = ses.search(&SearchOptions { locked_out: Some(true), ..Default::default() }).unwrap();
         assert_eq!(names(&locked), ["suzuki"]);
-        let pc = ses
-            .search(&SearchOptions {
-                types: vec!["computer".into()],
-                ..Default::default()
-            })
-            .unwrap();
+        let pc = ses.search(&SearchOptions { types: vec!["computer".into()], ..Default::default() }).unwrap();
         assert_eq!(names(&pc), ["PC001$", "PC002$"]);
-        let by_name = ses
-            .search(&SearchOptions {
-                name: Some("山田*".into()),
-                ..Default::default()
-            })
-            .unwrap();
+        let by_name = ses.search(&SearchOptions { name: Some("山田*".into()), ..Default::default() }).unwrap();
         assert_eq!(names(&by_name), ["yamada"]);
         let conds = SearchOptions {
-            conds: vec![(
-                "department".into(),
-                Cond::Any(vec![Cond::Eq("営業部".into()), Cond::Eq("総務部".into())]),
-            )],
+            conds: vec![("department".into(), Cond::Any(vec![Cond::Eq("営業部".into()), Cond::Eq("総務部".into())]))],
             ..Default::default()
         };
-        assert_eq!(
-            names(&ses.search(&conds).unwrap()),
-            ["yamada", "suzuki", "sato"]
-        );
-        let members = SearchOptions {
-            member_of: Some("営業部".into()),
-            types: vec!["all".into()],
-            ..Default::default()
-        };
+        assert_eq!(names(&ses.search(&conds).unwrap()), ["yamada", "suzuki", "sato"]);
+        let members = SearchOptions { member_of: Some("営業部".into()), types: vec!["all".into()], ..Default::default() };
         assert_eq!(names(&ses.search(&members).unwrap()), ["yamada", "suzuki"]);
-        let nested = SearchOptions {
-            member_of: Some("全社員".into()),
-            recursive: true,
-            ..Default::default()
-        };
-        assert_eq!(
-            names(&ses.search(&nested).unwrap()),
-            ["yamada", "suzuki", "sato"]
-        );
-        let limited = ses
-            .search(&SearchOptions {
-                limit: 2,
-                ..Default::default()
-            })
-            .unwrap();
+        let nested = SearchOptions { member_of: Some("全社員".into()), recursive: true, ..Default::default() };
+        assert_eq!(names(&ses.search(&nested).unwrap()), ["yamada", "suzuki", "sato"]);
+        let limited = ses.search(&SearchOptions { limit: 2, ..Default::default() }).unwrap();
         assert_eq!(limited.len(), 2);
-        let ou = SearchOptions {
-            base: "OU=総務部,DC=corp,DC=example,DC=com".into(),
-            ..Default::default()
-        };
+        let ou = SearchOptions { base: "OU=総務部,DC=corp,DC=example,DC=com".into(), ..Default::default() };
         assert_eq!(names(&ses.search(&ou).unwrap()), ["sato"]);
-        let e = ses
-            .search(&SearchOptions {
-                filters: vec!["(cn=a".into()],
-                ..Default::default()
-            })
-            .unwrap_err();
+        let e = ses.search(&SearchOptions { filters: vec!["(cn=a".into()], ..Default::default() }).unwrap_err();
         assert!(e.to_string().contains("検索条件"), "{e}");
-        let e = ses
-            .search(&SearchOptions {
-                types: vec!["printer".into()],
-                ..Default::default()
-            })
-            .unwrap_err();
+        let e = ses.search(&SearchOptions { types: vec!["printer".into()], ..Default::default() }).unwrap_err();
         assert!(e.to_string().contains("printer"), "{e}");
 
         let y = ses.get("yamada", &[], &[]).unwrap().unwrap();
@@ -893,40 +642,14 @@ mod tests {
         assert_eq!(s(&y, "objectSid"), Val::Str("S-1-5-21-1-2-3-1105".into()));
         assert!(matches!(s(&y, "whenCreated"), Val::Date(_)));
         assert_eq!(ses.get("CORP\\yamada", &[], &[]).unwrap().unwrap()[1], y[1]);
-        assert_eq!(
-            ses.get("yamada@corp.example.com", &[], &[])
-                .unwrap()
-                .unwrap()[1],
-            y[1]
-        );
-        assert_eq!(
-            ses.get("S-1-5-21-1-2-3-1105", &[], &[]).unwrap().unwrap()[1],
-            y[1]
-        );
-        assert_eq!(
-            ses.get("CN=山田 太郎,OU=営業部,DC=corp,DC=example,DC=com", &[], &[])
-                .unwrap()
-                .unwrap()[1],
-            y[1]
-        );
-        assert!(
-            ses.get("CN=いない,DC=corp,DC=example,DC=com", &[], &[])
-                .unwrap()
-                .is_none()
-        );
+        assert_eq!(ses.get("yamada@corp.example.com", &[], &[]).unwrap().unwrap()[1], y[1]);
+        assert_eq!(ses.get("S-1-5-21-1-2-3-1105", &[], &[]).unwrap().unwrap()[1], y[1]);
+        assert_eq!(ses.get("CN=山田 太郎,OU=営業部,DC=corp,DC=example,DC=com", &[], &[]).unwrap().unwrap()[1], y[1]);
+        assert!(ses.get("CN=いない,DC=corp,DC=example,DC=com", &[], &[]).unwrap().is_none());
         assert!(ses.get("nobody", &[], &[]).unwrap().is_none());
-        let pc = ses
-            .get("PC001", &["computer".into()], &[])
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            s(&pc, "dNSHostName"),
-            Val::Str("pc001.corp.example.com".into())
-        );
-        let g = ses
-            .get("営業部", &["group".into()], &["member".into()])
-            .unwrap()
-            .unwrap();
+        let pc = ses.get("PC001", &["computer".into()], &[]).unwrap().unwrap();
+        assert_eq!(s(&pc, "dNSHostName"), Val::Str("pc001.corp.example.com".into()));
+        let g = ses.get("営業部", &["group".into()], &["member".into()]).unwrap().unwrap();
         assert_eq!(s(&g, "groupScope"), Val::Str("global".into()));
         assert_eq!(s(&g, "groupCategory"), Val::Str("security".into()));
         assert!(matches!(s(&g, "member"), Val::List(v) if v.len() == 2));
@@ -934,9 +657,6 @@ mod tests {
         let me = ses.me(false, &["tokenGroups".into()]).unwrap();
         assert_eq!(s(&me, "sAMAccountName"), Val::Str("yamada".into()));
         assert!(matches!(s(&me, "tokenGroups"), Val::List(v) if v.len() == 2));
-        assert_eq!(
-            s(&ses.me(true, &[]).unwrap(), "name"),
-            Val::Str("PC001".into())
-        );
+        assert_eq!(s(&ses.me(true, &[]).unwrap(), "name"), Val::Str("PC001".into()));
     }
 }

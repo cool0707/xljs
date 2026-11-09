@@ -19,12 +19,7 @@ fn val<'js>(ctx: &Ctx<'js>, v: Val) -> R<'js> {
         Val::Str(s) => js::v(ctx, s),
         Val::Date(ms) => js::date_ms(ctx, ms)?,
         Val::Bytes(b) => js::array_buffer(ctx, b)?,
-        Val::List(l) => js::array(
-            ctx,
-            l.into_iter()
-                .map(|x| val(ctx, x))
-                .collect::<rquickjs::Result<Vec<_>>>()?,
-        )?,
+        Val::List(l) => js::array(ctx, l.into_iter().map(|x| val(ctx, x)).collect::<rquickjs::Result<Vec<_>>>()?)?,
     })
 }
 
@@ -37,33 +32,19 @@ fn obj<'js>(ctx: &Ctx<'js>, o: Obj) -> R<'js> {
 }
 
 fn keys(o: &Value) -> Vec<String> {
-    o.as_object()
-        .map(|o| o.keys::<String>().flatten().collect())
-        .unwrap_or_default()
+    o.as_object().map(|o| o.keys::<String>().flatten().collect()).unwrap_or_default()
 }
 
 fn opt_bool(v: &Value) -> Option<bool> {
-    if js::nullish(v) {
-        None
-    } else {
-        Some(js::to_bool(v))
-    }
+    if js::nullish(v) { None } else { Some(js::to_bool(v)) }
 }
 
 fn opt_num(v: &Value) -> Option<f64> {
-    if js::nullish(v) {
-        None
-    } else {
-        Some(js::to_f64(v)).filter(|n| n.is_finite())
-    }
+    if js::nullish(v) { None } else { Some(js::to_f64(v)).filter(|n| n.is_finite()) }
 }
 
 fn opt_str(v: &Value) -> Option<String> {
-    if js::nullish(v) {
-        None
-    } else {
-        Some(to_str(v))
-    }
+    if js::nullish(v) { None } else { Some(to_str(v)) }
 }
 
 /// A value of the filter object: a string (with "*"), true / false
@@ -93,23 +74,8 @@ fn check_keys(o: &Value, allowed: &[&str], func: &str) -> Result<()> {
 }
 
 const SEARCH_KEYS: &[&str] = &[
-    "type",
-    "name",
-    "filter",
-    "disabled",
-    "lockedOut",
-    "expired",
-    "expiringDays",
-    "inactiveDays",
-    "passwordExpired",
-    "passwordNeverExpires",
-    "memberOf",
-    "recursive",
-    "searchBase",
-    "scope",
-    "properties",
-    "limit",
-    "server",
+    "type", "name", "filter", "disabled", "lockedOut", "expired", "expiringDays", "inactiveDays", "passwordExpired",
+    "passwordNeverExpires", "memberOf", "recursive", "searchBase", "scope", "properties", "limit", "server",
 ];
 
 fn search_options(o: &Value) -> Result<(SearchOptions, String)> {
@@ -132,11 +98,7 @@ fn search_options(o: &Value) -> Result<(SearchOptions, String)> {
         limit: js::to_int(&g("limit")).max(0) as usize,
         ..Default::default()
     };
-    s.scope = match opt_str(&g("scope"))
-        .unwrap_or_default()
-        .to_ascii_lowercase()
-        .as_str()
-    {
+    s.scope = match opt_str(&g("scope")).unwrap_or_default().to_ascii_lowercase().as_str() {
         "" | "subtree" => Scope::Subtree,
         "onelevel" => Scope::OneLevel,
         "base" => Scope::Base,
@@ -226,12 +188,6 @@ pub(super) fn install(n: &N) {
     n.set("adSearch", move |_, a| {
         let (o, server) = search_options(&a.arg(0)).map_err(|e| a.throw(&e))?;
         let found = with(&c, &server, |s| s.search(&o)).map_err(|e| a.throw(&e))?;
-        js::array(
-            &a.ctx,
-            found
-                .into_iter()
-                .map(|x| obj(&a.ctx, x))
-                .collect::<rquickjs::Result<Vec<_>>>()?,
-        )
+        js::array(&a.ctx, found.into_iter().map(|x| obj(&a.ctx, x)).collect::<rquickjs::Result<Vec<_>>>()?)
     });
 }

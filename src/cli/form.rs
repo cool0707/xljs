@@ -14,12 +14,7 @@ pub(super) type Check = fn(&Map<String, Value>) -> Option<(String, String)>;
 
 /// Asks the form (simple fields: no pickers, tables or charts) and returns
 /// the values, None when cancelled. size is that of the window's page.
-pub(super) fn ask(
-    u: &Arc<dyn Ui>,
-    o: &FormOptions,
-    size: (i64, i64),
-    check: Check,
-) -> Option<Map<String, Value>> {
+pub(super) fn ask(u: &Arc<dyn Ui>, o: &FormOptions, size: (i64, i64), check: Check) -> Option<Map<String, Value>> {
     if u.supports_windows() {
         let o2 = o.clone();
         if let Ok(r) = crate::ui::run(u.clone(), move |su| window(&*su, &o2, size, check)) {
@@ -29,15 +24,9 @@ pub(super) fn ask(
     let mut o = o.clone();
     loop {
         let v = u.form(&o)?;
-        let Some((field, msg)) = check(&v) else {
-            return Some(v);
-        };
+        let Some((field, msg)) = check(&v) else { return Some(v) };
         for f in &mut o.fields {
-            f.error = if f.name == field {
-                msg.clone()
-            } else {
-                String::new()
-            };
+            f.error = if f.name == field { msg.clone() } else { String::new() };
             if let Some(x) = v.get(&f.name) {
                 f.value = x.clone();
             }
@@ -67,12 +56,7 @@ fn texts() -> Value {
     Value::Object(m)
 }
 
-fn window(
-    u: &dyn Ui,
-    o: &FormOptions,
-    (width, height): (i64, i64),
-    check: Check,
-) -> Result<Option<Map<String, Value>>> {
+fn window(u: &dyn Ui, o: &FormOptions, (width, height): (i64, i64), check: Check) -> Result<Option<Map<String, Value>>> {
     // Some(message) from the page, None once the window has closed.
     let (tx, rx) = mpsc::channel::<Option<String>>();
     let (t1, t2) = (tx.clone(), tx);
@@ -112,10 +96,7 @@ fn window(
             Some("submit") => {
                 let values = v["values"].as_object().cloned().unwrap_or_default();
                 if let Some((field, msg)) = check(&values) {
-                    w.post(
-                        json!({ "type": "errors", "errors": { field: msg }, "error": "" })
-                            .to_string(),
-                    );
+                    w.post(json!({ "type": "errors", "errors": { field: msg }, "error": "" }).to_string());
                     continue;
                 }
                 result = Some(values);

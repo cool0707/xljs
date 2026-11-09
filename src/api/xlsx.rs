@@ -47,11 +47,7 @@ pub struct Book {
 
 pub(crate) fn zerr(e: impl std::fmt::Display) -> Error {
     let s = e.to_string();
-    if s.contains("InvalidArchive")
-        || s.contains("invalid Zip archive")
-        || s.contains("Could not find EOCD")
-        || s.contains("zip")
-    {
+    if s.contains("InvalidArchive") || s.contains("invalid Zip archive") || s.contains("Could not find EOCD") || s.contains("zip") {
         return Error::msg("zip: not a valid zip file");
     }
     Error::msg(s)
@@ -59,39 +55,20 @@ pub(crate) fn zerr(e: impl std::fmt::Display) -> Error {
 
 impl Book {
     fn new(wb: Workbook, path: String, styles_xml: Option<&[u8]>) -> Book {
-        let default_font = styles_xml
-            .and_then(first_font)
-            .unwrap_or(("Calibri".into(), 11.0));
+        let default_font = styles_xml.and_then(first_font).unwrap_or(("Calibri".into(), 11.0));
         let date1904 = false; // see read_date1904
-        Book {
-            wb,
-            path,
-            date1904,
-            fresh: false,
-            formulas: false,
-            closed: false,
-            default_font,
-            font_changed: false,
-            charts: None,
-            print: Default::default(),
-            table_styles: Default::default(),
-            cell_images: Default::default(),
-        }
+        Book { wb, path, date1904, fresh: false, formulas: false, closed: false, default_font, font_changed: false, charts: None, print: Default::default(), table_styles: Default::default(), cell_images: Default::default() }
     }
 
     pub fn sheet(&self, name: &str) -> Result<&Worksheet> {
-        self.wb
-            .sheet_by_name(name)
-            .map_err(|_| Error::msg(format!("sheet {name} does not exist")))
+        self.wb.sheet_by_name(name).map_err(|_| Error::msg(format!("sheet {name} does not exist")))
     }
 
     pub fn sheet_mut(&mut self, name: &str) -> Result<&mut Worksheet> {
         if self.fresh && name == "Sheet1" {
             self.fresh = false;
         }
-        self.wb
-            .sheet_by_name_mut(name)
-            .map_err(|_| Error::msg(format!("sheet {name} does not exist")))
+        self.wb.sheet_by_name_mut(name).map_err(|_| Error::msg(format!("sheet {name} does not exist")))
     }
 
     /// The workbook as xlsx bytes.
@@ -117,27 +94,14 @@ impl Book {
             f.read_to_end(&mut content).map_err(zerr)?;
             if name == "xl/workbook.xml" && self.formulas {
                 let s = String::from_utf8_lossy(&content);
-                content = CALC_PR
-                    .replace(&s, |c: &regex::Captures| {
-                        if c[0].contains("fullCalcOnLoad") {
-                            c[0].to_string()
-                        } else {
-                            format!("{} fullCalcOnLoad=\"1\"{}", &c[1], &c[2])
-                        }
-                    })
-                    .into_owned()
-                    .into_bytes();
+                content = CALC_PR.replace(&s, |c: &regex::Captures| {
+                    if c[0].contains("fullCalcOnLoad") { c[0].to_string() } else { format!("{} fullCalcOnLoad=\"1\"{}", &c[1], &c[2]) }
+                }).into_owned().into_bytes();
             }
             if name == "xl/styles.xml" && self.font_changed {
-                content = set_first_font(
-                    &String::from_utf8_lossy(&content),
-                    &self.default_font.0,
-                    self.default_font.1,
-                )
-                .into_bytes();
+                content = set_first_font(&String::from_utf8_lossy(&content), &self.default_font.0, self.default_font.1).into_bytes();
             }
-            let opts = zip::write::SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
+            let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
             zw.start_file(name, opts).map_err(zerr)?;
             zw.write_all(&content).map_err(zerr)?;
         }
@@ -145,28 +109,17 @@ impl Book {
     }
 }
 
-static CALC_PR: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(<calcPr\b[^>]*?)(\s*/?>)").unwrap());
-static FONTS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?s)<fonts\b[^>]*>\s*<font\b[^>]*>(.*?)</font>").unwrap());
-static FONT_NAME: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"<name\s+val="([^"]*)"\s*/>"#).unwrap());
-static FONT_SIZE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"<sz\s+val="([^"]*)"\s*/>"#).unwrap());
+static CALC_PR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(<calcPr\b[^>]*?)(\s*/?>)").unwrap());
+static FONTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<fonts\b[^>]*>\s*<font\b[^>]*>(.*?)</font>").unwrap());
+static FONT_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<name\s+val="([^"]*)"\s*/>"#).unwrap());
+static FONT_SIZE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<sz\s+val="([^"]*)"\s*/>"#).unwrap());
 
 fn xml_unescape(s: &str) -> String {
-    s.replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&apos;", "'")
-        .replace("&amp;", "&")
+    s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&")
 }
 
 fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
 /// The first font of styles.xml (the Normal style's).
@@ -175,32 +128,17 @@ fn first_font(styles: &[u8]) -> Option<(String, f64)> {
     let c = FONTS.captures(&s)?;
     let body = &c[1];
     let name = FONT_NAME.captures(body).map(|m| xml_unescape(&m[1]))?;
-    let size = FONT_SIZE
-        .captures(body)
-        .and_then(|m| m[1].parse().ok())
-        .unwrap_or(11.0);
+    let size = FONT_SIZE.captures(body).and_then(|m| m[1].parse().ok()).unwrap_or(11.0);
     Some((name, size))
 }
 
 fn set_first_font(styles: &str, name: &str, size: f64) -> String {
-    let Some(m) = FONTS.captures(styles).and_then(|c| c.get(1)) else {
-        return styles.to_string();
-    };
+    let Some(m) = FONTS.captures(styles).and_then(|c| c.get(1)) else { return styles.to_string() };
     let body = m.as_str();
-    let mut nb = FONT_NAME
-        .replace(
-            body,
-            format!("<name val=\"{}\"/>", xml_escape(name)).as_str(),
-        )
-        .into_owned();
-    nb = FONT_SIZE
-        .replace(&nb, format!("<sz val=\"{}\"/>", fmt_num(size)).as_str())
-        .into_owned();
+    let mut nb = FONT_NAME.replace(body, format!("<name val=\"{}\"/>", xml_escape(name)).as_str()).into_owned();
+    nb = FONT_SIZE.replace(&nb, format!("<sz val=\"{}\"/>", fmt_num(size)).as_str()).into_owned();
     // The theme's font would win over the name.
-    nb = Regex::new(r#"<scheme\s+val="[^"]*"\s*/>"#)
-        .unwrap()
-        .replace(&nb, "")
-        .into_owned();
+    nb = Regex::new(r#"<scheme\s+val="[^"]*"\s*/>"#).unwrap().replace(&nb, "").into_owned();
     format!("{}{}{}", &styles[..m.start()], nb, &styles[m.end()..])
 }
 
@@ -217,9 +155,7 @@ fn read_date1904(data: &[u8]) -> bool {
     zip_part(data, "xl/workbook.xml")
         .map(|b| {
             let s = String::from_utf8_lossy(&b);
-            Regex::new(r#"<workbookPr\b[^>]*\bdate1904="(1|true)""#)
-                .unwrap()
-                .is_match(&s)
+            Regex::new(r#"<workbookPr\b[^>]*\bdate1904="(1|true)""#).unwrap().is_match(&s)
         })
         .unwrap_or(false)
 }
@@ -232,10 +168,7 @@ pub fn open_bytes(data: &[u8], path: String) -> Result<Book> {
     let wb = umya_spreadsheet::reader::xlsx::read_reader(Cursor::new(data), true).map_err(zerr)?;
     let styles = zip_part(data, "xl/styles.xml");
     let mut b = Book::new(wb, path, styles.as_deref());
-    b.table_styles = styles
-        .as_deref()
-        .map(super::xlsx_table::custom_styles)
-        .unwrap_or_default();
+    b.table_styles = styles.as_deref().map(super::xlsx_table::custom_styles).unwrap_or_default();
     b.date1904 = read_date1904(data);
     b.charts = Some(super::xlsx_chart::ChartParts::collect(data));
     b.print = super::xlsx_print::collect_raw(data);
@@ -248,9 +181,7 @@ pub fn open_bytes(data: &[u8], path: String) -> Result<Book> {
 /// "A" for 1, "AB" for 28.
 pub fn column_name(mut n: i64) -> Result<String> {
     if !(1..=16384).contains(&n) {
-        return Err(Error::msg(format!(
-            "the column number must be greater than or equal to 1 and less than or equal to 16384, got {n}"
-        )));
+        return Err(Error::msg(format!("the column number must be greater than or equal to 1 and less than or equal to 16384, got {n}")));
     }
     let mut s = Vec::new();
     while n > 0 {
@@ -290,11 +221,7 @@ pub(crate) fn cell(col: u32, row: u32) -> String {
 
 /// The (column, row) of "B3" (1-based).
 pub fn parse_ref(r: &str) -> Result<(u32, u32)> {
-    let bad = || {
-        Error::msg(format!(
-            "cannot convert cell \"{r}\" to coordinates: invalid cell name \"{r}\""
-        ))
-    };
+    let bad = || Error::msg(format!("cannot convert cell \"{r}\" to coordinates: invalid cell name \"{r}\""));
     let s = r.replace('$', "");
     let i = s.find(|c: char| c.is_ascii_digit()).ok_or_else(bad)?;
     let (c, rr) = s.split_at(i);
@@ -314,11 +241,7 @@ pub fn parse_ref(r: &str) -> Result<(u32, u32)> {
 /// The Excel serial number of a wall-clock time.
 pub fn to_serial(y: i32, mo: u32, d: u32, h: u32, mi: u32, s: u32, ms: u32, date1904: bool) -> f64 {
     let date = chrono::NaiveDate::from_ymd_opt(y, mo, d).unwrap_or_default();
-    let base = if date1904 {
-        chrono::NaiveDate::from_ymd_opt(1904, 1, 1).unwrap()
-    } else {
-        chrono::NaiveDate::from_ymd_opt(1899, 12, 30).unwrap()
-    };
+    let base = if date1904 { chrono::NaiveDate::from_ymd_opt(1904, 1, 1).unwrap() } else { chrono::NaiveDate::from_ymd_opt(1899, 12, 30).unwrap() };
     let mut days = (date - base).num_days() as f64;
     if !date1904 && days < 61.0 {
         days -= 1.0; // Excel's 1900-02-29
@@ -401,8 +324,7 @@ pub fn date_format_code(code: &str) -> bool {
     }
     let out = out.replace("general", "");
     // g / e: Japanese era and era year (e is the exponent when the code has digits).
-    out.contains(['y', 'm', 'd', 'h', 's', 'g'])
-        || (out.contains('e') && !out.contains(['0', '#', '?']))
+    out.contains(['y', 'm', 'd', 'h', 's', 'g']) || (out.contains('e') && !out.contains(['0', '#', '?']))
 }
 
 /// Whether a style's number format displays dates.
@@ -460,9 +382,7 @@ pub fn builtin_code(id: u32) -> Option<&'static str> {
 
 /// The code a number format displays with.
 pub(crate) fn format_code(nf: Option<&NumberingFormat>) -> String {
-    let Some(nf) = nf else {
-        return "General".into();
-    };
+    let Some(nf) = nf else { return "General".into() };
     let id = nf.number_format_id();
     if id < 164
         && let Some(c) = builtin_code(id)
@@ -470,11 +390,7 @@ pub(crate) fn format_code(nf: Option<&NumberingFormat>) -> String {
         return c.to_string();
     }
     let c = nf.format_code();
-    if c.is_empty() {
-        "General".into()
-    } else {
-        c.to_string()
-    }
+    if c.is_empty() { "General".into() } else { c.to_string() }
 }
 
 // ---- values ----
@@ -496,21 +412,14 @@ pub fn fmt_num(f: f64) -> String {
 pub(crate) fn cell_text(b: &Book, c: &umya_spreadsheet::Cell) -> String {
     match c.raw_value() {
         CellRawValue::Empty => String::new(),
-        CellRawValue::Bool(v) => {
-            if *v {
-                "TRUE".into()
-            } else {
-                "FALSE".into()
-            }
-        }
+        CellRawValue::Bool(v) => if *v { "TRUE".into() } else { "FALSE".into() },
         CellRawValue::Numeric(f) => {
             let nf = c.style().number_format();
             let code = format_code(nf);
             if style_is_date(nf)
-                && let Some(t) = from_serial(*f, b.date1904)
-            {
-                return super::numfmt::format_date(t, &code);
-            }
+                && let Some(t) = from_serial(*f, b.date1904) {
+                    return super::numfmt::format_date(t, &code);
+                }
             super::numfmt::format_number(*f, &code)
         }
         other => other.to_string(),
@@ -518,14 +427,8 @@ pub(crate) fn cell_text(b: &Book, c: &umya_spreadsheet::Cell) -> String {
 }
 
 /// The value of a cell as JavaScript.
-pub(crate) fn cell_value<'js>(
-    ctx: &Ctx<'js>,
-    b: &Book,
-    c: Option<&umya_spreadsheet::Cell>,
-) -> R<'js> {
-    let Some(c) = c else {
-        return Ok(Value::new_null(ctx.clone()));
-    };
+pub(crate) fn cell_value<'js>(ctx: &Ctx<'js>, b: &Book, c: Option<&umya_spreadsheet::Cell>) -> R<'js> {
+    let Some(c) = c else { return Ok(Value::new_null(ctx.clone())) };
     match c.raw_value() {
         CellRawValue::Empty => Ok(Value::new_null(ctx.clone())),
         CellRawValue::Bool(v) => Ok(Value::new_bool(ctx.clone(), *v)),
@@ -545,11 +448,7 @@ pub(crate) fn cell_value<'js>(
         }
         other => {
             let s = other.to_string();
-            if s.is_empty() {
-                Ok(Value::new_null(ctx.clone()))
-            } else {
-                Ok(js::v(ctx, s))
-            }
+            if s.is_empty() { Ok(Value::new_null(ctx.clone())) } else { Ok(js::v(ctx, s)) }
         }
     }
 }
@@ -565,15 +464,11 @@ fn has_value(c: &umya_spreadsheet::Cell) -> bool {
 /// The used cells of a sheet as rows (like excelize's GetRows): every row
 /// up to the last one with a value, each up to its last value.
 pub(crate) fn rows(ws: &Worksheet) -> Vec<Vec<(u32, &umya_spreadsheet::Cell)>> {
-    let mut by_row: std::collections::BTreeMap<u32, Vec<(u32, &umya_spreadsheet::Cell)>> =
-        Default::default();
+    let mut by_row: std::collections::BTreeMap<u32, Vec<(u32, &umya_spreadsheet::Cell)>> = Default::default();
     for c in ws.cells() {
         if has_value(c) {
             let co = c.coordinate();
-            by_row
-                .entry(co.row_num())
-                .or_default()
-                .push((co.col_num(), c));
+            by_row.entry(co.row_num()).or_default().push((co.col_num(), c));
         }
     }
     let last = by_row.keys().next_back().copied().unwrap_or(0);
@@ -610,11 +505,7 @@ pub(crate) fn set_value(b: &mut Book, sheet: &str, r: &str, v: &Value) -> Result
         c.cell_value_mut().remove_formula();
         c.set_value_number(to_serial(y, mo, d, h, mi, s, ms, date1904));
         if !style_is_date(c.style().number_format()) {
-            let code = if h == 0 && mi == 0 && s == 0 && ms == 0 {
-                "yyyy/m/d"
-            } else {
-                "yyyy/m/d h:mm"
-            };
+            let code = if h == 0 && mi == 0 && s == 0 && ms == 0 { "yyyy/m/d" } else { "yyyy/m/d h:mm" };
             c.style_mut().set_number_format(date_style(code));
         }
         return Ok(());
@@ -643,18 +534,10 @@ pub(crate) fn handle_id(v: &Value) -> Option<u64> {
 }
 
 /// Runs f with the open workbook of the handle.
-pub(crate) fn with_book<'js, T>(
-    h: &Host,
-    a: &A<'js>,
-    f: impl FnOnce(&mut Book) -> rquickjs::Result<T>,
-) -> rquickjs::Result<T> {
-    let Some(id) = handle_id(&a.arg(0)) else {
-        return Err(a.throw(&err!("xlsx.invalidHandle")));
-    };
+pub(crate) fn with_book<'js, T>(h: &Host, a: &A<'js>, f: impl FnOnce(&mut Book) -> rquickjs::Result<T>) -> rquickjs::Result<T> {
+    let Some(id) = handle_id(&a.arg(0)) else { return Err(a.throw(&err!("xlsx.invalidHandle"))) };
     let mut books = h.books.borrow_mut();
-    let Some(b) = books.get_mut(&id) else {
-        return Err(a.throw(&err!("xlsx.invalidHandle")));
-    };
+    let Some(b) = books.get_mut(&id) else { return Err(a.throw(&err!("xlsx.invalidHandle"))) };
     if b.closed {
         return Err(a.throw(&err!("xlsx.closed")));
     }
@@ -677,14 +560,10 @@ fn check_sheet_name(name: &str) -> Result<()> {
         return Err(Error::msg("the sheet name can not be blank"));
     }
     if name.chars().count() > 31 {
-        return Err(Error::msg(
-            "the sheet name length exceeds the 31 characters limit",
-        ));
+        return Err(Error::msg("the sheet name length exceeds the 31 characters limit"));
     }
     if name.contains([':', '\\', '/', '?', '*', '[', ']']) {
-        return Err(Error::msg(
-            "the sheet can not contain any of the characters :\\/?*[or]",
-        ));
+        return Err(Error::msg("the sheet can not contain any of the characters :\\/?*[or]"));
     }
     Ok(())
 }
@@ -692,8 +571,7 @@ fn check_sheet_name(name: &str) -> Result<()> {
 pub(super) fn install(n: &N) {
     n.set("xlsxOpen", |h, a| {
         let path = a.str(0);
-        let data =
-            std::fs::read(&path).map_err(|e| a.throw(&Error::path("open", path.clone(), e)))?;
+        let data = std::fs::read(&path).map_err(|e| a.throw(&Error::path("open", path.clone(), e)))?;
         let b = open_bytes(&data, path.clone()).map_err(|e| super::throw_path(&a.ctx, &path, e))?;
         track(h, &a.ctx, b)
     });
@@ -710,11 +588,7 @@ pub(super) fn install(n: &N) {
         let o = a.arg(0);
         if o.is_object() && js::has(&o, "font") {
             let f = js::get(&o, "font");
-            font = if f.is_null() {
-                String::new()
-            } else {
-                js::to_str(&f)
-            };
+            font = if f.is_null() { String::new() } else { js::to_str(&f) };
         }
         if !font.is_empty() {
             b.default_font.0 = font;
@@ -735,13 +609,7 @@ pub(super) fn install(n: &N) {
         if p.is_empty() { a.null() } else { a.ret(p) }
     });
     n.set("xlsxSheetNames", |h, a| {
-        let names = with_book(h, a, |b| {
-            Ok(b.wb
-                .sheet_collection()
-                .iter()
-                .map(|s| s.name().to_string())
-                .collect::<Vec<_>>())
-        })?;
+        let names = with_book(h, a, |b| Ok(b.wb.sheet_collection().iter().map(|s| s.name().to_string()).collect::<Vec<_>>()))?;
         a.ret(names)
     });
     n.set("xlsxAddSheet", |h, a| {
@@ -753,12 +621,10 @@ pub(super) fn install(n: &N) {
             check_sheet_name(&name).map_err(|e| a.throw(&e))?;
             if b.fresh {
                 b.fresh = false;
-                b.wb.set_sheet_name(0, name.clone())
-                    .map_err(|e| a.throw(&Error::msg(e.to_string())))?;
+                b.wb.set_sheet_name(0, name.clone()).map_err(|e| a.throw(&Error::msg(e.to_string())))?;
                 return Ok(());
             }
-            b.wb.new_sheet(name.clone())
-                .map_err(|e| a.throw(&Error::msg(e.to_string())))?;
+            b.wb.new_sheet(name.clone()).map_err(|e| a.throw(&Error::msg(e.to_string())))?;
             Ok(())
         })?;
         a.undefined()
@@ -769,8 +635,7 @@ pub(super) fn install(n: &N) {
             if b.wb.sheet_by_name(&name).is_err() {
                 return Err(a.throw(&Error::msg(format!("sheet {name} does not exist"))));
             }
-            b.wb.remove_sheet_by_name(&name)
-                .map_err(|e| a.throw(&Error::msg(e.to_string())))?;
+            b.wb.remove_sheet_by_name(&name).map_err(|e| a.throw(&Error::msg(e.to_string())))?;
             Ok(())
         })?;
         a.undefined()
@@ -778,13 +643,8 @@ pub(super) fn install(n: &N) {
     n.set("xlsxRenameSheet", |h, a| {
         let (from, to) = (a.str(1), a.str(2));
         with_book(h, a, |b| {
-            let idx =
-                b.wb.sheet_collection()
-                    .iter()
-                    .position(|s| s.name() == from);
-            let Some(idx) = idx else {
-                return Err(a.throw(&Error::msg(format!("sheet {from} does not exist"))));
-            };
+            let idx = b.wb.sheet_collection().iter().position(|s| s.name() == from);
+            let Some(idx) = idx else { return Err(a.throw(&Error::msg(format!("sheet {from} does not exist")))) };
             if from == to {
                 return Ok(());
             }
@@ -792,8 +652,7 @@ pub(super) fn install(n: &N) {
             if b.wb.sheet_by_name(&to).is_ok() {
                 return Err(a.throw(&err!("xlsx.sheetExists", to)));
             }
-            b.wb.set_sheet_name(idx, to.clone())
-                .map_err(|e| a.throw(&Error::msg(e.to_string())))?;
+            b.wb.set_sheet_name(idx, to.clone()).map_err(|e| a.throw(&Error::msg(e.to_string())))?;
             if let Some(p) = b.print.remove(&from) {
                 b.print.insert(to.clone(), p);
             }
@@ -821,18 +680,13 @@ pub(super) fn install(n: &N) {
         let s = with_book(h, a, |b| {
             let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
-            Ok(ws
-                .cell((col, row))
-                .map(|c| cell_text(b, c))
-                .unwrap_or_default())
+            Ok(ws.cell((col, row)).map(|c| cell_text(b, c)).unwrap_or_default())
         })?;
         a.ret(s)
     });
     n.set("xlsxSet", |h, a| {
         let (sheet, r, v) = (a.str(1), upper(a.str(2)), a.arg(3));
-        with_book(h, a, |b| {
-            set_value(b, &sheet, &r, &v).map_err(|e| a.throw(&e))
-        })?;
+        with_book(h, a, |b| set_value(b, &sheet, &r, &v).map_err(|e| a.throw(&e)))?;
         a.undefined()
     });
     n.set("xlsxGetFormula", |h, a| {
@@ -840,19 +694,12 @@ pub(super) fn install(n: &N) {
         let f = with_book(h, a, |b| {
             let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
-            Ok(ws
-                .cell((col, row))
-                .map(|c| c.formula().to_string())
-                .unwrap_or_default())
+            Ok(ws.cell((col, row)).map(|c| c.formula().to_string()).unwrap_or_default())
         })?;
         if f.is_empty() {
             return a.null();
         }
-        a.ret(if f.starts_with('=') {
-            f
-        } else {
-            format!("={f}")
-        })
+        a.ret(if f.starts_with('=') { f } else { format!("={f}") })
     });
     n.set("xlsxSetFormula", |h, a| {
         let (sheet, r) = (a.str(1), upper(a.str(2)));
@@ -871,9 +718,7 @@ pub(super) fn install(n: &N) {
     });
     n.set("xlsxCalc", |h, a| {
         let (sheet, r) = (a.str(1), upper(a.str(2)));
-        let s = with_book(h, a, |b| {
-            super::xlsx_calc::calc_cell(b, &sheet, &r).map_err(|e| a.throw(&e))
-        })?;
+        let s = with_book(h, a, |b| super::xlsx_calc::calc_cell(b, &sheet, &r).map_err(|e| a.throw(&e)))?;
         a.ret(s)
     });
     // xlsxReadAll(book, sheet, text) -> any[][]
@@ -917,8 +762,7 @@ pub(super) fn install(n: &N) {
                         continue;
                     }
                     let name = cell_name(c0 + c as u32, r0 + r as u32).map_err(|e| a.throw(&e))?;
-                    set_value(b, &sheet, &name, v)
-                        .map_err(|e| a.throw(&e.context(format!("{sheet}!{name}"))))?;
+                    set_value(b, &sheet, &name, v).map_err(|e| a.throw(&e.context(format!("{sheet}!{name}"))))?;
                 }
             }
             Ok(())
@@ -927,20 +771,14 @@ pub(super) fn install(n: &N) {
     });
     n.set("xlsxRowCount", |h, a| {
         let sheet = a.str(1);
-        let n = with_book(h, a, |b| {
-            Ok(rows(b.sheet(&sheet).map_err(|e| a.throw(&e))?).len())
-        })?;
+        let n = with_book(h, a, |b| Ok(rows(b.sheet(&sheet).map_err(|e| a.throw(&e))?).len()))?;
         a.ret(n as f64)
     });
     n.set("xlsxDimension", |h, a| {
         let sheet = a.str(1);
         let d = with_book(h, a, |b| {
             let rs = rows(b.sheet(&sheet).map_err(|e| a.throw(&e))?);
-            let max_col = rs
-                .iter()
-                .filter_map(|r| r.last().map(|(c, _)| *c))
-                .max()
-                .unwrap_or(0);
+            let max_col = rs.iter().filter_map(|r| r.last().map(|(c, _)| *c)).max().unwrap_or(0);
             if rs.is_empty() || max_col == 0 {
                 return Ok(String::new());
             }
@@ -950,9 +788,7 @@ pub(super) fn install(n: &N) {
     });
     n.set("xlsxSetColWidth", |h, a| {
         let (sheet, c1, c2, w) = (a.str(1), a.str(2), a.str(3), a.f64(4));
-        with_book(h, a, |b| {
-            set_col_width(b, &sheet, &c1, &c2, w).map_err(|e| a.throw(&e))
-        })?;
+        with_book(h, a, |b| set_col_width(b, &sheet, &c1, &c2, w).map_err(|e| a.throw(&e)))?;
         a.undefined()
     });
     n.set("xlsxSave", |h, a| {
@@ -965,8 +801,7 @@ pub(super) fn install(n: &N) {
                 return Err(a.throw(&err!("xlsx.noDestination")));
             }
             let data = b.to_bytes().map_err(|e| a.throw(&e))?;
-            std::fs::write(&path, data)
-                .map_err(|e| a.throw(&Error::path("open", path.clone(), e)))?;
+            std::fs::write(&path, data).map_err(|e| a.throw(&Error::path("open", path.clone(), e)))?;
             b.path = path.clone();
             Ok(())
         })?;
@@ -980,19 +815,12 @@ pub(super) fn install(n: &N) {
         if let Some(id) = handle_id(&a.arg(0)) {
             h.books.borrow_mut().remove(&id);
             // A closed handle keeps reporting "closed".
-            h.books.borrow_mut().insert(
-                id,
-                Book {
-                    closed: true,
-                    ..Book::new(Workbook::default(), String::new(), None)
-                },
-            );
+            h.books.borrow_mut().insert(id, Book { closed: true, ..Book::new(Workbook::default(), String::new(), None) });
         }
         a.undefined()
     });
     n.set("xlsxCellName", |_, a| {
-        let s =
-            cell_name(a.int(0).max(0) as u32, a.int(1).max(0) as u32).map_err(|e| a.throw(&e))?;
+        let s = cell_name(a.int(0).max(0) as u32, a.int(1).max(0) as u32).map_err(|e| a.throw(&e))?;
         a.ret(s)
     });
     n.set("xlsxParseRef", |_, a| {
@@ -1011,9 +839,7 @@ pub(crate) fn set_col_width(b: &mut Book, sheet: &str, c1: &str, c2: &str, w: f6
         std::mem::swap(&mut x, &mut y);
     }
     if !(0.0..=255.0).contains(&w) {
-        return Err(Error::msg(
-            "the width of the column must be less than or equal to 255 characters",
-        ));
+        return Err(Error::msg("the width of the column must be less than or equal to 255 characters"));
     }
     let ws = b.sheet_mut(sheet)?;
     for c in x..=y {
@@ -1027,9 +853,5 @@ pub(crate) fn col_width(b: &Book, sheet: &str, col: &str) -> Result<f64> {
     let n = column_number(col)?;
     let ws = b.sheet(sheet)?;
     let name = column_name(n as i64)?;
-    Ok(ws
-        .column_dimension(&name)
-        .map(|c| c.width())
-        .filter(|w| *w > 0.0)
-        .unwrap_or(9.140625))
+    Ok(ws.column_dimension(&name).map(|c| c.width()).filter(|w| *w > 0.0).unwrap_or(9.140625))
 }

@@ -30,8 +30,7 @@ use serde_json::{Value, json};
 
 use crate::meta::AssetFs;
 use crate::ui::{
-    ASSET_ORIGIN, BUILTIN_PREFIX, BrowserCommand, BrowserEvent, BrowserOptions, BuiltinAssets,
-    FileFilter, PickerOptions, Ui, Window, WindowOptions,
+    ASSET_ORIGIN, BUILTIN_PREFIX, BrowserCommand, BrowserEvent, BrowserOptions, BuiltinAssets, FileFilter, PickerOptions, Ui, Window, WindowOptions,
 };
 use crate::{Error, Result, err, i18n, t};
 use project::{Project, read_text, write_text};
@@ -53,16 +52,8 @@ const PROJECT_PREFIX: &str = "_project/";
 /// The icon is a class of the bundled Font Awesome brands (dev.css colors
 /// it per service).
 pub const SERVICES: &[(&str, &str, &str)] = &[
-    (
-        "Microsoft Copilot",
-        "https://copilot.microsoft.com/",
-        "copilot",
-    ),
-    (
-        "Microsoft 365 Copilot",
-        "https://m365.cloud.microsoft/chat",
-        "m365",
-    ),
+    ("Microsoft Copilot", "https://copilot.microsoft.com/", "copilot"),
+    ("Microsoft 365 Copilot", "https://m365.cloud.microsoft/chat", "m365"),
     ("Gemini", "https://gemini.google.com/app", "gemini"),
     ("ChatGPT", "https://chatgpt.com/", "openai"),
     ("Claude", "https://claude.ai/new", "claude"),
@@ -90,9 +81,7 @@ pub const EXE_SETTINGS: &str = "xljs.json";
 
 /// The settings file next to exe.
 pub fn exe_settings(exe: &Path) -> PathBuf {
-    exe.parent()
-        .map(|d| d.join(EXE_SETTINGS))
-        .unwrap_or_default()
+    exe.parent().map(|d| d.join(EXE_SETTINGS)).unwrap_or_default()
 }
 
 /// The settings distributed with the exe (xljs.json):
@@ -117,11 +106,7 @@ struct DevDefaults {
 
 impl Default for DevDefaults {
     fn default() -> Self {
-        DevDefaults {
-            chat: String::new(),
-            services: Vec::new(),
-            builtin_services: true,
-        }
+        DevDefaults { chat: String::new(), services: Vec::new(), builtin_services: true }
     }
 }
 
@@ -143,8 +128,7 @@ fn load_exe_settings(p: &Path) -> Result<DevDefaults> {
         return Ok(DevDefaults::default());
     }
     let text = read_text(p)?;
-    let s: ExeSettings = serde_json::from_str(text.trim_start_matches('\u{feff}'))
-        .map_err(|e| err!("dev.exeSettingsInvalid", p.display(), e))?;
+    let s: ExeSettings = serde_json::from_str(text.trim_start_matches('\u{feff}')).map_err(|e| err!("dev.exeSettingsInvalid", p.display(), e))?;
     let mut d = s.dev;
     d.chat = d.chat.trim().to_string();
     if !is_web(&d.chat) {
@@ -198,10 +182,7 @@ struct ProjectSettings {
 }
 
 fn load<T: for<'a> Deserialize<'a> + Default>(p: &Path) -> T {
-    std::fs::read(p)
-        .ok()
-        .and_then(|b| serde_json::from_slice(&b).ok())
-        .unwrap_or_default()
+    std::fs::read(p).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 
 fn store<T: Serialize>(p: &Path, v: &T) {
@@ -226,10 +207,7 @@ impl AssetFs for DevAssets {
         {
             return std::fs::read(dir.join(rest));
         }
-        Err(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            name.to_string(),
-        ))
+        Err(std::io::Error::new(std::io::ErrorKind::NotFound, name.to_string()))
     }
     fn files(&self, _root: &str) -> std::io::Result<Vec<String>> {
         Ok(Vec::new())
@@ -257,9 +235,7 @@ pub fn run(u: Arc<dyn Ui>, o: DevOptions) -> Result<i32> {
         return Err(err!("dev.needsWindows"));
     }
     let (tx, rx) = mpsc::channel::<Event>();
-    let downloads = std::env::temp_dir()
-        .join("xljs-dev")
-        .join(format!("{}", std::process::id()));
+    let downloads = std::env::temp_dir().join("xljs-dev").join(format!("{}", std::process::id()));
     let _ = std::fs::create_dir_all(&downloads);
     let dir = Arc::new(Mutex::new(None));
     let (t1, t2, t3) = (tx.clone(), tx.clone(), tx.clone());
@@ -355,28 +331,8 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(
-        u: Arc<dyn Ui>,
-        w: Arc<dyn Window>,
-        o: DevOptions,
-        tx: Sender<Event>,
-        dir: Arc<Mutex<Option<PathBuf>>>,
-    ) -> Session {
-        Session {
-            u,
-            w,
-            o,
-            tx,
-            dir,
-            project: None,
-            current: String::new(),
-            saved: Vec::new(),
-            running: None,
-            next_run: 1,
-            ready: false,
-            chat_url: String::new(),
-            defaults: DevDefaults::default(),
-        }
+    pub fn new(u: Arc<dyn Ui>, w: Arc<dyn Window>, o: DevOptions, tx: Sender<Event>, dir: Arc<Mutex<Option<PathBuf>>>) -> Session {
+        Session { u, w, o, tx, dir, project: None, current: String::new(), saved: Vec::new(), running: None, next_run: 1, ready: false, chat_url: String::new(), defaults: DevDefaults::default() }
     }
 
     fn post(&self, v: Value) {
@@ -434,23 +390,15 @@ impl Session {
                     }
                 }
                 // Nothing to show yet: the default chat.
-                if self.project.is_none()
-                    && self.chat_url.is_empty()
-                    && !self.defaults.chat.is_empty()
-                {
+                if self.project.is_none() && self.chat_url.is_empty() && !self.defaults.chat.is_empty() {
                     self.chat_url = self.defaults.chat.clone();
-                    self.w
-                        .browser(BrowserCommand::Navigate(self.chat_url.clone()));
+                    self.w.browser(BrowserCommand::Navigate(self.chat_url.clone()));
                     self.post(json!({"type": "url", "url": self.chat_url}));
                 }
             }
             "open" => {
                 if r.path.is_empty() {
-                    let start = self
-                        .project
-                        .as_ref()
-                        .map(|p| p.dir.to_string_lossy().into_owned())
-                        .unwrap_or_default();
+                    let start = self.project.as_ref().map(|p| p.dir.to_string_lossy().into_owned()).unwrap_or_default();
                     self.open_dialog(&start);
                 } else {
                     self.open(&r.path)?;
@@ -462,11 +410,7 @@ impl Session {
                 let p = self.project()?;
                 let path = p.path(&r.file)?;
                 let exists = path.is_file();
-                let text = if exists {
-                    read_text(&path)?
-                } else {
-                    String::new()
-                };
+                let text = if exists { read_text(&path)? } else { String::new() };
                 self.post(json!({"type": "file", "file": r.file, "text": text, "exists": exists}));
             }
             "edit" => {
@@ -489,11 +433,7 @@ impl Session {
             "apply" => {
                 let p = self.project()?.clone();
                 p.path(&r.file)?;
-                let note = if r.note.is_empty() {
-                    t!("dev.noteApplied")
-                } else {
-                    t!("dev.noteAppliedFrom", r.note)
-                };
+                let note = if r.note.is_empty() { t!("dev.noteApplied") } else { t!("dev.noteAppliedFrom", r.note) };
                 versions::replace(&p.dir, &r.file, &r.text, &note)?;
                 // The AI's answer: what it knows of the file now.
                 notify::remember(&p.dir, &r.file, &r.text)?;
@@ -521,11 +461,7 @@ impl Session {
                 self.post(json!({"type": "applied", "file": r.file, "text": text}));
                 self.post_versions(&r.file);
             }
-            "run" => self.start_run(if r.debug {
-                RunKind::Debug
-            } else {
-                RunKind::Run
-            })?,
+            "run" => self.start_run(if r.debug { RunKind::Debug } else { RunKind::Run })?,
             "preview" => {
                 if r.auto {
                     // Shown by itself: not while something runs, and only
@@ -580,19 +516,13 @@ impl Session {
             "notify" => {
                 // The user's own changes since the AI's answers.
                 let p = self.project()?;
-                let current = if r.file.is_empty() {
-                    self.current.clone()
-                } else {
-                    r.file.clone()
-                };
+                let current = if r.file.is_empty() { self.current.clone() } else { r.file.clone() };
                 let changes = notify::changes(p, &current);
                 if changes.is_empty() {
                     self.post(json!({"type": "info", "message": t!("dev.notifyNone")}));
                     return Ok(());
                 }
-                self.post(
-                    json!({"type": "copy", "what": "notify", "text": notify::prompt(&changes)}),
-                );
+                self.post(json!({"type": "copy", "what": "notify", "text": notify::prompt(&changes)}));
                 for c in &changes {
                     notify::remember(&p.dir, &c.file, &c.text)?;
                 }
@@ -603,16 +533,13 @@ impl Session {
                 let p = self.project()?;
                 let path = p.path(&r.file)?;
                 if path.is_file() {
-                    self.w.browser(BrowserCommand::DragFiles(vec![
-                        path.to_string_lossy().into_owned(),
-                    ]));
+                    self.w.browser(BrowserCommand::DragFiles(vec![path.to_string_lossy().into_owned()]));
                 }
             }
             "pack" => self.pack()?,
             "showFolder" => {
                 let p = self.project()?;
-                self.u
-                    .show_in_folder(&[p.entry.to_string_lossy().into_owned()])?;
+                self.u.show_in_folder(&[p.entry.to_string_lossy().into_owned()])?;
             }
             "openUrl" => {
                 if r.url.starts_with("https://") || r.url.starts_with("http://") {
@@ -633,8 +560,7 @@ impl Session {
                 }
                 if r.url.is_empty() {
                     self.chat_url.clear();
-                    self.w
-                        .browser(BrowserCommand::Navigate("about:blank".into()));
+                    self.w.browser(BrowserCommand::Navigate("about:blank".into()));
                     self.w.browser(BrowserCommand::Hide);
                 } else {
                     self.w.browser(BrowserCommand::Navigate(r.url));
@@ -646,29 +572,17 @@ impl Session {
                     multiple: true,
                     filters: vec![FileFilter {
                         description: t!("wizard.books"),
-                        patterns: ["*.xlsm", "*.xlsb", "*.xls", "*.xlsx", "*.xltm", "*.xlam"]
-                            .iter()
-                            .map(|s| s.to_string())
-                            .collect(),
+                        patterns: ["*.xlsm", "*.xlsb", "*.xls", "*.xlsx", "*.xltm", "*.xlam"].iter().map(|s| s.to_string()).collect(),
                     }],
                     ..Default::default()
                 });
                 if !paths.is_empty() {
-                    let dir = Path::new(&paths[0])
-                        .parent()
-                        .map(|d| d.to_string_lossy().into_owned())
-                        .unwrap_or_default();
-                    self.post(
-                        json!({"type": "wizardBooks", "books": wizard::books(&paths), "dir": dir}),
-                    );
+                    let dir = Path::new(&paths[0]).parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default();
+                    self.post(json!({"type": "wizardBooks", "books": wizard::books(&paths), "dir": dir}));
                 }
             }
             "wizardFolder" => {
-                if let Some(d) = self.u.pick_directory(&PickerOptions {
-                    title: t!("wizard.folderTitle"),
-                    start_in: r.path,
-                    ..Default::default()
-                }) {
+                if let Some(d) = self.u.pick_directory(&PickerOptions { title: t!("wizard.folderTitle"), start_in: r.path, ..Default::default() }) {
                     self.post(json!({"type": "wizardFolder", "path": d}));
                 }
             }
@@ -679,21 +593,12 @@ impl Session {
             "wizardSave" => {
                 let first = r.answers.books.first().cloned().unwrap_or_default();
                 let p = Path::new(&first);
-                let stem = p
-                    .file_stem()
-                    .map(|s| s.to_string_lossy().into_owned())
-                    .unwrap_or_default();
+                let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
                 if let Some(out) = self.u.save_file(&PickerOptions {
                     title: t!("wizard.saveTitle"),
-                    start_in: p
-                        .parent()
-                        .map(|d| d.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
+                    start_in: p.parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
                     suggested_name: format!("{stem}_xljs.md"),
-                    filters: vec![FileFilter {
-                        description: t!("wizard.textFiles"),
-                        patterns: vec!["*.md".into(), "*.txt".into()],
-                    }],
+                    filters: vec![FileFilter { description: t!("wizard.textFiles"), patterns: vec!["*.md".into(), "*.txt".into()] }],
                     ..Default::default()
                 }) {
                     wizard::save_text(&r.answers, Path::new(&out))?;
@@ -703,13 +608,7 @@ impl Session {
             "wizardCreate" => self.wizard_create(&r.answers, &r.path, &r.text)?,
             "browser" => {
                 let cmd = match r.path.as_str() {
-                    "show" => BrowserCommand::Show {
-                        x: r.x,
-                        y: r.y,
-                        width: r.width,
-                        height: r.height,
-                        scale: if r.scale > 0.0 { r.scale } else { 1.0 },
-                    },
+                    "show" => BrowserCommand::Show { x: r.x, y: r.y, width: r.width, height: r.height, scale: if r.scale > 0.0 { r.scale } else { 1.0 } },
                     "hide" => BrowserCommand::Hide,
                     "back" => BrowserCommand::Back,
                     "forward" => BrowserCommand::Forward,
@@ -750,14 +649,8 @@ impl Session {
     /// settings, then the built-in ones.
     fn services(&self) -> Vec<Value> {
         let d = &self.defaults;
-        let own = d
-            .services
-            .iter()
-            .map(|s| json!({"name": s.name, "url": s.url, "icon": s.icon}));
-        let builtin = SERVICES
-            .iter()
-            .filter(|_| d.builtin_services)
-            .map(|(n, u, i)| json!({"name": n, "url": u, "icon": i}));
+        let own = d.services.iter().map(|s| json!({"name": s.name, "url": s.url, "icon": s.icon}));
+        let builtin = SERVICES.iter().filter(|_| d.builtin_services).map(|(n, u, i)| json!({"name": n, "url": u, "icon": i}));
         let mut v: Vec<Value> = own.chain(builtin).collect();
         // The default chat is always among them (to come back to it).
         if !d.chat.is_empty() && !v.iter().any(|s| s["url"] == d.chat.as_str()) {
@@ -770,10 +663,7 @@ impl Session {
         let paths = self.u.open_files(&PickerOptions {
             title: t!("cli.selectScript"),
             start_in: start.to_string(),
-            filters: vec![FileFilter {
-                description: t!("cli.scripts"),
-                patterns: vec!["*.js".into(), "*.mjs".into(), "*.ts".into()],
-            }],
+            filters: vec![FileFilter { description: t!("cli.scripts"), patterns: vec!["*.js".into(), "*.mjs".into(), "*.ts".into()] }],
             ..Default::default()
         });
         if let Some(p) = paths.into_iter().next()
@@ -794,13 +684,7 @@ impl Session {
         match files.iter().find(|f| is_script(f)) {
             Some(f) => self.open(f),
             None => match files.first() {
-                Some(f) => Err(err!(
-                    "dev.dropNotScript",
-                    Path::new(f.as_str())
-                        .file_name()
-                        .map(|n| n.to_string_lossy())
-                        .unwrap_or_default()
-                )),
+                Some(f) => Err(err!("dev.dropNotScript", Path::new(f.as_str()).file_name().map(|n| n.to_string_lossy()).unwrap_or_default())),
                 None => Ok(()),
             },
         }
@@ -888,10 +772,7 @@ impl Session {
         let Some(path) = self.u.save_file(&PickerOptions {
             title: t!("dev.newTitle"),
             suggested_name: format!("{name}.js"),
-            filters: vec![FileFilter {
-                description: t!("cli.scripts"),
-                patterns: vec!["*.js".into(), "*.ts".into()],
-            }],
+            filters: vec![FileFilter { description: t!("cli.scripts"), patterns: vec!["*.js".into(), "*.ts".into()] }],
             ..Default::default()
         }) else {
             return Ok(());
@@ -913,10 +794,7 @@ impl Session {
         } else {
             write_text(&path, &wizard::placeholder(&path_title(&path)))?;
         }
-        let entry = path
-            .file_name()
-            .map(|s| s.to_string_lossy().into_owned())
-            .unwrap_or_default();
+        let entry = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         if a.name_mode != "name" || a.name.trim().is_empty() {
             let f = dir.join(project::DATA_DIR).join("dev.json");
             let mut ps: ProjectSettings = load(&f);
@@ -935,26 +813,13 @@ impl Session {
         let script = p.entry.to_string_lossy().into_owned();
         let f = settings_path(&p);
         let mut ps: ProjectSettings = load(&f);
-        let last = ps
-            .exe
-            .get(&p.entry_name())
-            .cloned()
-            .unwrap_or_else(|| crate::pack::default_output(&script));
+        let last = ps.exe.get(&p.entry_name()).cloned().unwrap_or_else(|| crate::pack::default_output(&script));
         let last = Path::new(&last);
         let Some(out) = self.u.save_file(&PickerOptions {
             title: t!("cli.packSaveTitle"),
-            start_in: last
-                .parent()
-                .map(|d| d.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            suggested_name: last
-                .file_name()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default(),
-            filters: vec![FileFilter {
-                description: t!("cli.programs"),
-                patterns: vec!["*.exe".into()],
-            }],
+            start_in: last.parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
+            suggested_name: last.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default(),
+            filters: vec![FileFilter { description: t!("cli.programs"), patterns: vec!["*.exe".into()] }],
             ..Default::default()
         }) else {
             return Ok(());
@@ -976,22 +841,10 @@ impl Session {
         let from = p.entry_name();
         let new = p.path(to)?;
         if new.exists() {
-            return Err(Error::path(
-                "rename",
-                new.display().to_string(),
-                std::io::Error::from(std::io::ErrorKind::AlreadyExists),
-            ));
+            return Err(Error::path("rename", new.display().to_string(), std::io::Error::from(std::io::ErrorKind::AlreadyExists)));
         }
-        std::fs::rename(&p.entry, &new).map_err(|e| Error::Link {
-            op: "rename".into(),
-            old: p.entry.display().to_string(),
-            new: new.display().to_string(),
-            source: e,
-        })?;
-        let (vo, vn) = (
-            versions::folder(&p.dir, &from),
-            versions::folder(&p.dir, to),
-        );
+        std::fs::rename(&p.entry, &new).map_err(|e| Error::Link { op: "rename".into(), old: p.entry.display().to_string(), new: new.display().to_string(), source: e })?;
+        let (vo, vn) = (versions::folder(&p.dir, &from), versions::folder(&p.dir, to));
         if vo.is_dir() && !vn.exists() {
             let _ = std::fs::rename(vo, vn);
         }
@@ -1036,9 +889,7 @@ impl Template {
 
 /// The title of a new script: its file name without the extension.
 fn path_title(p: &Path) -> String {
-    p.file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default()
+    p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
 /// Writes a new script at p from a template (an app also gets ui/index.html).
@@ -1046,55 +897,37 @@ fn write_template(p: &Path, tpl: Template) -> Result<()> {
     let title = path_title(p);
     match tpl {
         Template::App => {
-            write_text(
-                p,
-                &format!(
-                    "// ==xljs==\n// @mode   app\n// @html   ui/index.html\n// @assets ui/\n// @title  {title}\n// ==/xljs==\n\n// {}\nexport function hello() {{\n  return \"{}\";\n}}\n",
-                    t!("dev.templateAppComment"),
-                    t!("dev.templateHello"),
-                ),
-            )?;
-            let html = p
-                .parent()
-                .unwrap_or(Path::new("."))
-                .join("ui")
-                .join("index.html");
+            write_text(p, &format!(
+                "// ==xljs==\n// @mode   app\n// @html   ui/index.html\n// @assets ui/\n// @title  {title}\n// ==/xljs==\n\n// {}\nexport function hello() {{\n  return \"{}\";\n}}\n",
+                t!("dev.templateAppComment"),
+                t!("dev.templateHello"),
+            ))?;
+            let html = p.parent().unwrap_or(Path::new(".")).join("ui").join("index.html");
             if !html.exists() {
-                write_text(
-                    &html,
-                    &format!(
-                        "<!doctype html>\n<html lang=\"{}\">\n<head>\n<meta charset=\"utf-8\">\n<title>{title}</title>\n</head>\n<body>\n  <h1>{title}</h1>\n  <button data-action=\"hello\" data-result=\"message\">OK</button>\n  <p data-bind=\"message\"></p>\n</body>\n</html>\n",
-                        i18n::lang()
-                    ),
-                )?;
+                write_text(&html, &format!(
+                    "<!doctype html>\n<html lang=\"{}\">\n<head>\n<meta charset=\"utf-8\">\n<title>{title}</title>\n</head>\n<body>\n  <h1>{title}</h1>\n  <button data-action=\"hello\" data-result=\"message\">OK</button>\n  <p data-bind=\"message\"></p>\n</body>\n</html>\n",
+                    i18n::lang()
+                ))?;
             }
         }
         Template::Form => {
             let js_title = serde_json::to_string(&title).unwrap_or_default();
-            write_text(
-                p,
-                &format!(
-                    "// ==xljs==\n// @title {title}\n// ==/xljs==\n\n// {}\nconst values = await ui.form({{\n  title: {js_title},\n  fields: [\n    {{ name: \"name\", label: {}, required: true }},\n  ],\n  submit: \"OK\",\n}});\nif (values) {{\n  alert({});\n}}\n",
-                    t!("dev.templateFormComment"),
-                    serde_json::to_string(&t!("dev.templateFormLabel")).unwrap_or_default(),
-                    format!("`{}`", t!("dev.templateFormHello", "${values.name}")),
-                ),
-            )?;
+            write_text(p, &format!(
+                "// ==xljs==\n// @title {title}\n// ==/xljs==\n\n// {}\nconst values = await ui.form({{\n  title: {js_title},\n  fields: [\n    {{ name: \"name\", label: {}, required: true }},\n  ],\n  submit: \"OK\",\n}});\nif (values) {{\n  alert({});\n}}\n",
+                t!("dev.templateFormComment"),
+                serde_json::to_string(&t!("dev.templateFormLabel")).unwrap_or_default(),
+                format!("`{}`", t!("dev.templateFormHello", "${values.name}")),
+            ))?;
         }
         Template::Script => {
-            write_text(
-                p,
-                &format!(
-                    "// ==xljs==\n// @title {title}\n// ==/xljs==\n\nalert(\"{}\");\n",
-                    t!("dev.templateHello")
-                ),
-            )?;
+            write_text(p, &format!("// ==xljs==\n// @title {title}\n// ==/xljs==\n\nalert(\"{}\");\n", t!("dev.templateHello")))?;
         }
     }
     Ok(())
 }
 
 impl Session {
+
     fn browser_event(&mut self, b: BrowserEvent) {
         match b {
             BrowserEvent::Url(url) => {
@@ -1117,9 +950,7 @@ impl Session {
                     self.fail(&e);
                 }
             }
-            BrowserEvent::DownloadFailed { name } => {
-                self.post(json!({"type": "error", "message": t!("dev.downloadFailed", name)}))
-            }
+            BrowserEvent::DownloadFailed { name } => self.post(json!({"type": "error", "message": t!("dev.downloadFailed", name)})),
             BrowserEvent::Failed(e) => self.post(json!({"type": "browserFailed", "message": e})),
         }
     }
@@ -1145,16 +976,12 @@ impl Session {
         // A script with a temporary name takes the name of the AI's file.
         let ps: ProjectSettings = load(&settings_path(p));
         let entry = p.entry_name();
-        let rename = (target.as_deref() == Some(entry.as_str())
-            && ps.unnamed.contains(&entry)
-            && project::is_script(name))
-        .then(|| {
-            let ext = project::ext_of(name);
-            format!("{}.{ext}", project::base_stem(name).trim())
-        })
-        .filter(|n| {
-            n != &entry && !n.starts_with('.') && !p.dir.join(n).exists() && p.path(n).is_ok()
-        });
+        let rename = (target.as_deref() == Some(entry.as_str()) && ps.unnamed.contains(&entry) && project::is_script(name))
+            .then(|| {
+                let ext = project::ext_of(name);
+                format!("{}.{ext}", project::base_stem(name).trim())
+            })
+            .filter(|n| n != &entry && !n.starts_with('.') && !p.dir.join(n).exists() && p.path(n).is_ok());
         self.post(json!({
             "type": "download",
             "name": name,
@@ -1178,46 +1005,21 @@ impl Session {
         }
         args.push(p.entry.to_string_lossy().into_owned());
         let mut env = vec![(runner::DEV_ENV.to_string(), "1".to_string())];
-        if std::env::var("XLJS_WATCHDOG")
-            .unwrap_or_default()
-            .is_empty()
-        {
+        if std::env::var("XLJS_WATCHDOG").unwrap_or_default().is_empty() {
             env.push(("XLJS_WATCHDOG".into(), "on".into()));
         }
-        if std::env::var("XLJS_STOP_KEY")
-            .unwrap_or_default()
-            .is_empty()
-        {
+        if std::env::var("XLJS_STOP_KEY").unwrap_or_default().is_empty() {
             env.push(("XLJS_STOP_KEY".into(), "on".into()));
         }
-        let preview = (kind == RunKind::Preview).then(|| {
-            std::env::temp_dir().join(format!(
-                "xljs-preview-{}-{}.json",
-                std::process::id(),
-                self.next_run
-            ))
-        });
+        let preview = (kind == RunKind::Preview).then(|| std::env::temp_dir().join(format!("xljs-preview-{}-{}.json", std::process::id(), self.next_run)));
         if let Some(f) = &preview {
             let _ = std::fs::remove_file(f);
             env.push((runner::PREVIEW_ENV.into(), f.to_string_lossy().into_owned()));
         }
         let id = self.next_run;
         self.next_run += 1;
-        let run = Run::start(
-            &self.o.exe,
-            &args,
-            &p.dir,
-            &env,
-            id,
-            self.tx.clone(),
-            Event::Run,
-        )?;
-        self.running = Some(Running {
-            run,
-            kind,
-            stderr: String::new(),
-            preview,
-        });
+        let run = Run::start(&self.o.exe, &args, &p.dir, &env, id, self.tx.clone(), Event::Run)?;
+        self.running = Some(Running { run, kind, stderr: String::new(), preview });
         self.post(json!({"type": "runStarted", "kind": format!("{kind:?}").to_lowercase()}));
         Ok(())
     }
@@ -1233,18 +1035,14 @@ impl Session {
                     r.stderr.push_str(&text);
                     if r.stderr.len() > 1 << 20 {
                         let cut = r.stderr.len() - (1 << 19);
-                        let cut = (cut..r.stderr.len())
-                            .find(|&i| r.stderr.is_char_boundary(i))
-                            .unwrap_or(0);
+                        let cut = (cut..r.stderr.len()).find(|&i| r.stderr.is_char_boundary(i)).unwrap_or(0);
                         r.stderr.drain(..cut);
                     }
                 }
                 self.post(json!({"type": "output", "stream": if stderr { "stderr" } else { "stdout" }, "text": text}));
             }
             RunEvent::Exited { id, code } => {
-                let Some(r) = self.running.take_if(|r| r.run.id == id) else {
-                    return;
-                };
+                let Some(r) = self.running.take_if(|r| r.run.id == id) else { return };
                 self.finished(r, code);
             }
         }
@@ -1252,22 +1050,14 @@ impl Session {
 
     /// Reports the end of a run.
     fn finished(&mut self, r: Running, code: Option<i32>) {
-        let Some(p) = self.project.clone() else {
-            return;
-        };
+        let Some(p) = self.project.clone() else { return };
         if let Some(f) = &r.preview {
-            let form = std::fs::read_to_string(f)
-                .ok()
-                .and_then(|s| serde_json::from_str::<Value>(&s).ok());
+            let form = std::fs::read_to_string(f).ok().and_then(|s| serde_json::from_str::<Value>(&s).ok());
             let _ = std::fs::remove_file(f);
             match form {
                 Some(form) => self.post(json!({"type": "previewForm", "form": form})),
                 None => {
-                    let message = if code == Some(0) {
-                        t!("dev.previewNoForm")
-                    } else {
-                        report::last_error(&r.stderr)
-                    };
+                    let message = if code == Some(0) { t!("dev.previewNoForm") } else { report::last_error(&r.stderr) };
                     self.post(json!({"type": "previewFailed", "message": message}));
                 }
             }
@@ -1283,8 +1073,7 @@ impl Session {
         let mut ev = json!({"type": "runEnded", "kind": format!("{:?}", r.kind).to_lowercase(), "code": code, "stopped": stopped, "stuck": stuck});
         if failed {
             let message = report::last_error(&r.stderr);
-            let loc = report::find_location(&message, &p.dir)
-                .or_else(|| report::find_location(&r.stderr, &p.dir));
+            let loc = report::find_location(&message, &p.dir).or_else(|| report::find_location(&r.stderr, &p.dir));
             ev["message"] = json!(message);
             ev["location"] = json!(loc);
             ev["prompt"] = json!(report::prompt(&p, stuck, &message, loc.as_ref()));
@@ -1303,22 +1092,12 @@ impl Session {
 /// Where the wizard proposes to create scripts: the folder of the last
 /// script, else the documents folder.
 fn default_dir(gs: &GlobalSettings) -> String {
-    if let Some(d) = gs
-        .recent
-        .iter()
-        .filter_map(|r| Path::new(r).parent())
-        .find(|d| d.is_dir())
-    {
+    if let Some(d) = gs.recent.iter().filter_map(|r| Path::new(r).parent()).find(|d| d.is_dir()) {
         return d.to_string_lossy().into_owned();
     }
-    let home = std::env::var_os("USERPROFILE")
-        .or_else(|| std::env::var_os("HOME"))
-        .map(PathBuf::from)
-        .unwrap_or_default();
+    let home = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from).unwrap_or_default();
     let docs = home.join("Documents");
-    if docs.is_dir() { docs } else { home }
-        .to_string_lossy()
-        .into_owned()
+    if docs.is_dir() { docs } else { home }.to_string_lossy().into_owned()
 }
 
 fn settings_path(p: &Project) -> PathBuf {
@@ -1327,10 +1106,7 @@ fn settings_path(p: &Project) -> PathBuf {
 
 /// Whether a path names a script that can be opened (.js, .mjs, .ts).
 fn is_script(path: &str) -> bool {
-    let ext = Path::new(path)
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
+    let ext = Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     matches!(ext.as_str(), "js" | "mjs" | "ts")
 }
 
@@ -1341,10 +1117,8 @@ fn texts() -> Value {
 
 /// The messages whose keys start with prefix, without it.
 fn texts_under(prefix: &str) -> Value {
-    let m: serde_json::Map<String, Value> = i18n::messages()
-        .into_iter()
-        .filter_map(|(k, v)| k.strip_prefix(prefix).map(|k| (k.to_string(), json!(v))))
-        .collect();
+    let m: serde_json::Map<String, Value> =
+        i18n::messages().into_iter().filter_map(|(k, v)| k.strip_prefix(prefix).map(|k| (k.to_string(), json!(v)))).collect();
     Value::Object(m)
 }
 

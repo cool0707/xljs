@@ -8,27 +8,27 @@ mod csv;
 mod dayjs;
 mod encoding;
 mod fs;
-pub(crate) mod gopath;
-pub(crate) mod js;
 mod net;
 pub(crate) mod numfmt;
 mod pdf;
 mod process;
-pub mod remote;
 mod sqlite;
+mod xlsx_calc;
+mod xlsx_cellimage;
+pub(crate) mod gopath;
+pub(crate) mod js;
+pub mod remote;
 mod ui;
 mod vba;
 pub(crate) mod xlsx;
-mod xlsx_calc;
-mod xlsx_cellimage;
 mod xlsx_chart;
 mod xlsx_cond;
-mod xlsx_geom;
 mod xlsx_outline;
 mod xlsx_print;
+mod xlsx_table;
+mod xlsx_geom;
 mod xlsx_shape;
 mod xlsx_style;
-mod xlsx_table;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -46,9 +46,9 @@ use crate::ui::Ui;
 use crate::{Error, i18n};
 
 pub use app::{WindowAssets, page_url};
+pub use xlsx_outline::outline as workbook_outline;
 pub use encoding::{decode, detect_encoding, encode, norm_encoding};
 pub use js::A;
-pub use xlsx_outline::outline as workbook_outline;
 
 pub(crate) type R<'js> = rquickjs::Result<Value<'js>>;
 
@@ -114,10 +114,7 @@ impl Host {
     pub fn new(env: Env, mapper: Option<Mapper>) -> Host {
         let mut env = env;
         if env.title.is_empty() {
-            env.title = std::path::Path::new(&env.script)
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default();
+            env.title = std::path::Path::new(&env.script).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         }
         Host {
             env,
@@ -203,17 +200,12 @@ impl Host {
     /// Keeps a function for a later callback (posted from another thread).
     pub fn keep_fn<'js>(&self, ctx: &Ctx<'js>, f: Function<'js>) -> u64 {
         let id = self.next_id();
-        self.callbacks
-            .borrow_mut()
-            .insert(id, Persistent::save(ctx, f));
+        self.callbacks.borrow_mut().insert(id, Persistent::save(ctx, f));
         id
     }
 
     pub fn kept_fn<'js>(&self, ctx: &Ctx<'js>, id: u64) -> Option<Function<'js>> {
-        self.callbacks
-            .borrow()
-            .get(&id)
-            .and_then(|p| p.clone().restore(ctx).ok())
+        self.callbacks.borrow().get(&id).and_then(|p| p.clone().restore(ctx).ok())
     }
 
     pub fn drop_fn(&self, id: u64) {
@@ -223,17 +215,12 @@ impl Host {
     /// Keeps any value (promise resolvers and the like).
     pub fn keep<'js>(&self, ctx: &Ctx<'js>, v: Value<'js>) -> u64 {
         let id = self.next_id();
-        self.values
-            .borrow_mut()
-            .insert(id, Persistent::save(ctx, v));
+        self.values.borrow_mut().insert(id, Persistent::save(ctx, v));
         id
     }
 
     pub fn kept<'js>(&self, ctx: &Ctx<'js>, id: u64) -> Option<Value<'js>> {
-        self.values
-            .borrow()
-            .get(&id)
-            .and_then(|p| p.clone().restore(ctx).ok())
+        self.values.borrow().get(&id).and_then(|p| p.clone().restore(ctx).ok())
     }
 
     pub fn drop_kept(&self, id: u64) {
@@ -246,19 +233,10 @@ impl Host {
     }
 
     pub fn natives<'js>(&self, ctx: &Ctx<'js>) -> Option<Object<'js>> {
-        self.natives
-            .borrow()
-            .as_ref()
-            .and_then(|p| p.clone().restore(ctx).ok())
+        self.natives.borrow().as_ref().and_then(|p| p.clone().restore(ctx).ok())
     }
 
-    pub(crate) fn track_rejection<'js>(
-        &self,
-        ctx: &Ctx<'js>,
-        promise: Value<'js>,
-        reason: Value<'js>,
-        handled: bool,
-    ) {
+    pub(crate) fn track_rejection<'js>(&self, ctx: &Ctx<'js>, promise: Value<'js>, reason: Value<'js>, handled: bool) {
         if handled {
             self.forget_rejection(&promise);
         } else {
@@ -270,19 +248,11 @@ impl Host {
 
     pub(crate) fn forget_rejection(&self, promise: &Value) {
         let ctx = promise.ctx().clone();
-        self.rejections.borrow_mut().retain(|(p, _)| {
-            p.clone()
-                .restore(&ctx)
-                .map(|v| v != *promise)
-                .unwrap_or(true)
-        });
+        self.rejections.borrow_mut().retain(|(p, _)| p.clone().restore(&ctx).map(|v| v != *promise).unwrap_or(true));
     }
 
     pub(crate) fn first_unhandled<'js>(&self, ctx: &Ctx<'js>) -> Option<Value<'js>> {
-        self.rejections
-            .borrow()
-            .first()
-            .and_then(|(_, r)| r.clone().restore(ctx).ok())
+        self.rejections.borrow().first().and_then(|(_, r)| r.clone().restore(ctx).ok())
     }
 
     /// Defines setTimeout and friends.
@@ -290,48 +260,26 @@ impl Host {
         let g = ctx.globals();
         for (name, repeat) in [("setTimeout", false), ("setInterval", true)] {
             let h = Rc::downgrade(self);
-            let f = Function::new(
-                ctx.clone(),
-                move |ctx: Ctx<'js>, args: Rest<Value<'js>>| -> rquickjs::Result<i64> {
-                    let a = A {
-                        ctx: ctx.clone(),
-                        v: args.0,
-                    };
-                    let Some(func) = a.arg(0).as_function().cloned() else {
-                        return Err(js::throw_type(
-                            &ctx,
-                            &i18n::t("engine.callbackNotFunction", &[]),
-                        ));
-                    };
-                    let rest = a.v.iter().skip(2).cloned().collect();
-                    Ok(h.upgrade()
-                        .map(|h| h.lp.add_timer(&ctx, func, a.f64(1), repeat, rest))
-                        .unwrap_or(0))
-                },
-            )?;
+            let f = Function::new(ctx.clone(), move |ctx: Ctx<'js>, args: Rest<Value<'js>>| -> rquickjs::Result<i64> {
+                let a = A { ctx: ctx.clone(), v: args.0 };
+                let Some(func) = a.arg(0).as_function().cloned() else {
+                    return Err(js::throw_type(&ctx, &i18n::t("engine.callbackNotFunction", &[])));
+                };
+                let rest = a.v.iter().skip(2).cloned().collect();
+                Ok(h.upgrade().map(|h| h.lp.add_timer(&ctx, func, a.f64(1), repeat, rest)).unwrap_or(0))
+            })?;
             f.set_name(name)?;
             g.set(name, f)?;
         }
         let h = Rc::downgrade(self);
-        let f = Function::new(
-            ctx.clone(),
-            move |ctx: Ctx<'js>, args: Rest<Value<'js>>| -> rquickjs::Result<i64> {
-                let a = A {
-                    ctx: ctx.clone(),
-                    v: args.0,
-                };
-                let Some(func) = a.arg(0).as_function().cloned() else {
-                    return Err(js::throw_type(
-                        &ctx,
-                        &i18n::t("engine.callbackNotFunction", &[]),
-                    ));
-                };
-                let rest = a.v.iter().skip(1).cloned().collect();
-                Ok(h.upgrade()
-                    .map(|h| h.lp.add_timer(&ctx, func, 0.0, false, rest))
-                    .unwrap_or(0))
-            },
-        )?;
+        let f = Function::new(ctx.clone(), move |ctx: Ctx<'js>, args: Rest<Value<'js>>| -> rquickjs::Result<i64> {
+            let a = A { ctx: ctx.clone(), v: args.0 };
+            let Some(func) = a.arg(0).as_function().cloned() else {
+                return Err(js::throw_type(&ctx, &i18n::t("engine.callbackNotFunction", &[])));
+            };
+            let rest = a.v.iter().skip(1).cloned().collect();
+            Ok(h.upgrade().map(|h| h.lp.add_timer(&ctx, func, 0.0, false, rest)).unwrap_or(0))
+        })?;
         f.set_name("setImmediate")?;
         g.set("setImmediate", f)?;
         for name in ["clearTimeout", "clearInterval", "clearImmediate"] {
@@ -372,11 +320,8 @@ pub(crate) struct N<'js> {
 impl<'js> N<'js> {
     pub fn set(&self, name: &str, f: impl Fn(&Host, &A<'js>) -> R<'js> + 'js) {
         let host = self.host.clone();
-        let func = Function::new(
-            self.ctx.clone(),
-            move |ctx: Ctx<'js>, args: Rest<Value<'js>>| f(&host, &A { ctx, v: args.0 }),
-        )
-        .expect("cannot create a native function");
+        let func = Function::new(self.ctx.clone(), move |ctx: Ctx<'js>, args: Rest<Value<'js>>| f(&host, &A { ctx, v: args.0 }))
+            .expect("cannot create a native function");
         let _ = func.set_name(name);
         self.obj.set(name, func).expect("cannot set a native");
     }
@@ -387,11 +332,7 @@ impl<'js> N<'js> {
 }
 
 /// The prelude with Day.js put in (see dayjs::bundle).
-static PRELUDE: LazyLock<String> = LazyLock::new(|| {
-    crate::embed::PRELUDE
-        .text()
-        .replacen(dayjs::PLACEHOLDER, &dayjs::bundle(), 1)
-});
+static PRELUDE: LazyLock<String> = LazyLock::new(|| crate::embed::PRELUDE.text().replacen(dayjs::PLACEHOLDER, &dayjs::bundle(), 1));
 
 /// The prelude: a function expression that receives the natives object.
 /// The print layout (book.toHtml) of every visible sheet of xlsx bytes.
@@ -419,17 +360,10 @@ pub(crate) fn install<'js>(ctx: &Ctx<'js>, host: &Rc<Host>) -> rquickjs::Result<
 }
 
 /// Defines the natives (without the prelude).
-pub(crate) fn install_natives<'js>(
-    ctx: &Ctx<'js>,
-    host: &Rc<Host>,
-) -> rquickjs::Result<Object<'js>> {
+pub(crate) fn install_natives<'js>(ctx: &Ctx<'js>, host: &Rc<Host>) -> rquickjs::Result<Object<'js>> {
     let obj = Object::new(ctx.clone())?;
     *host.natives.borrow_mut() = Some(Persistent::save(ctx, obj.clone()));
-    let n = N {
-        ctx: ctx.clone(),
-        obj: obj.clone(),
-        host: host.clone(),
-    };
+    let n = N { ctx: ctx.clone(), obj: obj.clone(), host: host.clone() };
     install_core(&n);
     fs::install(&n);
     encoding::install(&n);
@@ -454,6 +388,8 @@ fn write_out(out: &Out, s: &str) {
     let _ = o.flush();
 }
 
+
+
 fn install_core(n: &N) {
     n.set("stdout", |h, a| {
         write_out(&h.env.stdout, &a.str(0));
@@ -472,11 +408,7 @@ fn install_core(n: &N) {
         a.undefined()
     });
     n.set("exit", |h, a| {
-        let code = if a.arg(0).is_null() || a.arg(0).is_undefined() {
-            0
-        } else {
-            a.int(0) as i32
-        };
+        let code = if a.arg(0).is_null() || a.arg(0).is_undefined() { 0 } else { a.int(0) as i32 };
         if let Some(hook) = &*h.exit_hook.borrow() {
             hook(code);
             return a.undefined();
@@ -520,13 +452,7 @@ pub fn computer_name() -> String {
     use windows::Win32::System::SystemInformation::*;
     let mut buf = [0u16; 256];
     let mut n = buf.len() as u32;
-    match unsafe {
-        GetComputerNameExW(
-            ComputerNameNetBIOS,
-            Some(windows::core::PWSTR(buf.as_mut_ptr())),
-            &mut n,
-        )
-    } {
+    match unsafe { GetComputerNameExW(ComputerNameNetBIOS, Some(windows::core::PWSTR(buf.as_mut_ptr())), &mut n) } {
         Ok(()) => String::from_utf16_lossy(&buf[..n as usize]),
         Err(_) => std::env::var("COMPUTERNAME").unwrap_or_default(),
     }
@@ -556,9 +482,7 @@ pub fn user_name() -> String {
 
 #[cfg(not(windows))]
 pub fn user_name() -> String {
-    std::env::var("USER")
-        .or_else(|_| std::env::var("LOGNAME"))
-        .unwrap_or_default()
+    std::env::var("USER").or_else(|_| std::env::var("LOGNAME")).unwrap_or_default()
 }
 
 /// Raises err as a JavaScript Error with a localized message.

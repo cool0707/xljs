@@ -169,11 +169,7 @@ impl Target {
         if host.is_empty() {
             return Err(bad());
         }
-        let port = if port.is_empty() {
-            if secure { 443 } else { 80 }
-        } else {
-            port.parse().map_err(|_| bad())?
-        };
+        let port = if port.is_empty() { if secure { 443 } else { 80 } } else { port.parse().map_err(|_| bad())? };
         let path = if path.is_empty() {
             "/".to_string()
         } else if path.starts_with('?') {
@@ -181,27 +177,14 @@ impl Target {
         } else {
             path.to_string()
         };
-        Ok(Target {
-            secure,
-            host,
-            port,
-            path,
-        })
+        Ok(Target { secure, host, port, path })
     }
 
     /// The Host header (WinHTTP makes its own).
     #[cfg_attr(all(windows, not(test)), allow(dead_code))]
     pub fn host_header(&self) -> String {
-        let h = if self.host.contains(':') {
-            format!("[{}]", self.host)
-        } else {
-            self.host.clone()
-        };
-        if self.port == if self.secure { 443 } else { 80 } {
-            h
-        } else {
-            format!("{h}:{}", self.port)
-        }
+        let h = if self.host.contains(':') { format!("[{}]", self.host) } else { self.host.clone() };
+        if self.port == if self.secure { 443 } else { 80 } { h } else { format!("{h}:{}", self.port) }
     }
 }
 

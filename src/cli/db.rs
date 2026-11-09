@@ -12,41 +12,22 @@ use crate::{Result, t};
 
 /// Whether path is a SQLite database rather than a script.
 pub(crate) fn is_database(path: &str) -> bool {
-    let ext = Path::new(path)
-        .extension()
-        .map(|e| e.to_string_lossy().to_lowercase())
-        .unwrap_or_default();
+    let ext = Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
     matches!(ext.as_str(), "db" | "sqlite" | "sqlite3" | "db3")
 }
 
 fn backups_note(path: &Path) -> String {
-    let snaps = db::share::Sidecar::find(path)
-        .map(|s| s.snapshots())
-        .unwrap_or_default();
+    let snaps = db::share::Sidecar::find(path).map(|s| s.snapshots()).unwrap_or_default();
     match snaps.last() {
-        Some(s) => t!(
-            "cli.dbBackups",
-            snaps.len(),
-            s.time.format("%Y-%m-%d %H:%M")
-        ),
+        Some(s) => t!("cli.dbBackups", snaps.len(), s.time.format("%Y-%m-%d %H:%M")),
         None => String::new(),
     }
 }
 
 /// The message for a repair, like the one scripts show.
 fn report_text(path: &str, r: &Report) -> String {
-    let backup = r
-        .backup
-        .clone()
-        .map(|b| b.chars().take(16).collect::<String>())
-        .unwrap_or_default();
-    let mut lines = vec![t!(
-        &format!("sqlite.repaired.{}", r.method),
-        path,
-        backup,
-        r.replayed,
-        r.skipped
-    )];
+    let backup = r.backup.clone().map(|b| b.chars().take(16).collect::<String>()).unwrap_or_default();
+    let mut lines = vec![t!(&format!("sqlite.repaired.{}", r.method), path, backup, r.replayed, r.skipped)];
     if !r.notes.is_empty() {
         lines.push(String::new());
         lines.extend(r.notes.iter().cloned());
@@ -61,11 +42,7 @@ fn report_text(path: &str, r: &Report) -> String {
 /// Checks path; when damaged, asks (unless yes) and repairs it.
 fn check_and_repair(path: &str, force: bool, ask: &dyn Fn(&str) -> bool) -> Result<Option<String>> {
     let abs = std::path::absolute(path).map_err(|e| crate::Error::path("open", path, e))?;
-    let problems = if abs.exists() {
-        db::check_file(&abs).unwrap_or_else(|e| vec![crate::i18n::error(&e)])
-    } else {
-        vec![t!("sqlite.missing")]
-    };
+    let problems = if abs.exists() { db::check_file(&abs).unwrap_or_else(|e| vec![crate::i18n::error(&e)]) } else { vec![t!("sqlite.missing")] };
     let ok = problems.len() == 1 && problems[0] == "ok";
     if ok && !force {
         return Ok(Some(t!("cli.dbOk", path, backups_note(&abs))));
@@ -117,14 +94,11 @@ mod tests {
         let dir = crate::testutil::tempdir();
         let p = dir.join("a.db");
         let c = rusqlite::Connection::open(&p).unwrap();
-        c.execute_batch("CREATE TABLE t(a); INSERT INTO t VALUES(1);")
-            .unwrap();
+        c.execute_batch("CREATE TABLE t(a); INSERT INTO t VALUES(1);").unwrap();
         drop(c);
         assert!(is_database("x.DB") && is_database("y.sqlite") && !is_database("y.js"));
         let ps = p.to_string_lossy().into_owned();
-        let msg = check_and_repair(&ps, false, &|_| panic!("not damaged"))
-            .unwrap()
-            .unwrap();
+        let msg = check_and_repair(&ps, false, &|_| panic!("not damaged")).unwrap().unwrap();
         assert!(msg.contains("not damaged"), "{msg}");
         std::fs::write(&p, b"this is not a database at all, really not one").unwrap();
         assert!(check_and_repair(&ps, false, &|_| false).unwrap().is_none());

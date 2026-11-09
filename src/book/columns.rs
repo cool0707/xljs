@@ -68,22 +68,11 @@ pub(super) fn table(n: &Node) -> Option<Table> {
     let rect = formula::parse_range(n.attr("ref")?)?;
     let num = |k: &str, d: u32| n.attr(k).and_then(|v| v.parse().ok()).unwrap_or(d);
     Some(Table {
-        name: n
-            .attr("displayName")
-            .or(n.attr("name"))
-            .unwrap_or("")
-            .to_string(),
+        name: n.attr("displayName").or(n.attr("name")).unwrap_or("").to_string(),
         rect,
         header_rows: num("headerRowCount", 1),
         totals_rows: num("totalsRowCount", 0),
-        columns: n
-            .child("tableColumns")
-            .map(|c| {
-                c.children("tableColumn")
-                    .map(|c| c.attr("name").unwrap_or("").to_string())
-                    .collect()
-            })
-            .unwrap_or_default(),
+        columns: n.child("tableColumns").map(|c| c.children("tableColumn").map(|c| c.attr("name").unwrap_or("").to_string()).collect()).unwrap_or_default(),
     })
 }
 
@@ -122,13 +111,7 @@ pub(super) fn cell(c: &Node, col: u32, row: u32) -> Option<Cell> {
     if !formula && matches!(val, Val::Blank) {
         return None;
     }
-    Some(Cell {
-        row,
-        col,
-        style: c.attr("s").and_then(|s| s.parse().ok()).unwrap_or(0),
-        formula,
-        val,
-    })
+    Some(Cell { row, col, style: c.attr("s").and_then(|s| s.parse().ok()).unwrap_or(0), formula, val })
 }
 
 /// The cells of a sheet by row (sorted by row and column).
@@ -168,10 +151,7 @@ impl<'a> Grid<'a> {
     /// The cells of the rows r1..=r2.
     fn rows_in(&self, r1: u32, r2: u32) -> impl Iterator<Item = &'a [Cell]> + '_ {
         let start = self.rows.partition_point(|x| x.0 < r1);
-        self.rows[start..]
-            .iter()
-            .take_while(move |x| x.0 <= r2)
-            .map(|x| &self.cells[x.1..x.2])
+        self.rows[start..].iter().take_while(move |x| x.0 <= r2).map(|x| &self.cells[x.1..x.2])
     }
 }
 
@@ -204,24 +184,14 @@ struct Ctx<'a> {
 impl Ctx<'_> {
     fn text<'b>(&'b self, v: &'b Val) -> Option<&'b str> {
         match v {
-            Val::Shared(i) => Some(
-                self.wb
-                    .strings
-                    .get(*i as usize)
-                    .map(String::as_str)
-                    .unwrap_or(""),
-            ),
+            Val::Shared(i) => Some(self.wb.strings.get(*i as usize).map(String::as_str).unwrap_or("")),
             Val::Text(s) => Some(s),
             _ => None,
         }
     }
 
     fn format(&self, style: u32) -> (u32, &str) {
-        self.wb
-            .formats
-            .get(style as usize)
-            .map(|(id, c)| (*id, c.as_str()))
-            .unwrap_or((0, "General"))
+        self.wb.formats.get(style as usize).map(|(id, c)| (*id, c.as_str())).unwrap_or((0, "General"))
     }
 
     fn is_date(&self, style: u32) -> bool {
@@ -275,35 +245,22 @@ fn kind(k: &Key) -> Kind {
 }
 
 fn one_line(s: &str) -> String {
-    s.replace("\r\n", " ")
-        .replace(['\r', '\n'], " ")
-        .trim()
-        .to_string()
+    s.replace("\r\n", " ").replace(['\r', '\n'], " ").trim().to_string()
 }
 
 fn short(s: &str) -> String {
     let s = one_line(s);
-    if s.chars().count() > MAX_TEXT {
-        format!("{}…", s.chars().take(MAX_TEXT).collect::<String>())
-    } else {
-        s
-    }
+    if s.chars().count() > MAX_TEXT { format!("{}…", s.chars().take(MAX_TEXT).collect::<String>()) } else { s }
 }
 
 fn date_text(f: f64, date1904: bool, date: bool, time: bool) -> String {
-    let Some((y, mo, d, h, mi, s, _)) = from_serial(f, date1904) else {
-        return crate::api::numfmt::general(f);
-    };
+    let Some((y, mo, d, h, mi, s, _)) = from_serial(f, date1904) else { return crate::api::numfmt::general(f) };
     let mut out = Vec::new();
     if date {
         out.push(format!("{y:04}/{mo:02}/{d:02}"));
     }
     if time {
-        out.push(if s > 0 {
-            format!("{h:02}:{mi:02}:{s:02}")
-        } else {
-            format!("{h:02}:{mi:02}")
-        });
+        out.push(if s > 0 { format!("{h:02}:{mi:02}:{s:02}") } else { format!("{h:02}:{mi:02}") });
     }
     out.join(" ")
 }
@@ -338,11 +295,7 @@ fn pct(n: usize, total: usize) -> String {
 
 /// "3" or "1〜6".
 fn span(a: usize, b: usize) -> String {
-    if a == b {
-        a.to_string()
-    } else {
-        t!("book.col.span", a, b)
-    }
+    if a == b { a.to_string() } else { t!("book.col.span", a, b) }
 }
 
 /// The decimal places of a number (as Excel shows it, 15 significant
@@ -478,9 +431,7 @@ impl Stats {
                 }
                 if s.chars().all(|c| (' '..='~').contains(&c)) {
                     self.ascii += 1;
-                    if self.patterns.len() <= MAX_PATTERNS
-                        || self.patterns.contains_key(&pattern(s))
-                    {
+                    if self.patterns.len() <= MAX_PATTERNS || self.patterns.contains_key(&pattern(s)) {
                         *self.patterns.entry(pattern(s)).or_default() += 1;
                     }
                 }
@@ -549,8 +500,7 @@ impl Stats {
                 .map(|(i, (k, n))| {
                     let mut s = format!("{} {}", label(*k), pct(*n, filled));
                     if i > 0 {
-                        let ex: Vec<String> =
-                            self.examples[k].iter().map(|v| show(v, date1904)).collect();
+                        let ex: Vec<String> = self.examples[k].iter().map(|v| show(v, date1904)).collect();
                         s.push_str(&t!("book.col.examples", ex.join(&t!("vba.separator"))));
                     }
                     s
@@ -559,31 +509,17 @@ impl Stats {
             out.push(parts.join(&t!("book.col.kindSep")));
         }
         let blank = self.rows - filled;
-        out.push(if blank == 0 {
-            t!("book.col.noBlank")
-        } else {
-            t!("book.col.blank", blank, pct(blank, self.rows))
-        });
+        out.push(if blank == 0 { t!("book.col.noBlank") } else { t!("book.col.blank", blank, pct(blank, self.rows)) });
         if self.formulas > 0 {
             out.push(self.formulas_text());
         }
         // The details of the kinds that most of the values are.
         let nums = self.count(Kind::Num);
         if nums * 2 >= filled {
-            let (a, b) = (
-                crate::api::numfmt::general(self.num_min),
-                crate::api::numfmt::general(self.num_max),
-            );
-            out.push(if a == b {
-                t!("book.col.always", a)
-            } else {
-                t!("book.col.range", a, b)
-            });
+            let (a, b) = (crate::api::numfmt::general(self.num_min), crate::api::numfmt::general(self.num_max));
+            out.push(if a == b { t!("book.col.always", a) } else { t!("book.col.range", a, b) });
             if self.ints == nums {
-                out.push(t!(
-                    "book.col.digits",
-                    span(self.int_digits.0, self.int_digits.1)
-                ));
+                out.push(t!("book.col.digits", span(self.int_digits.0, self.int_digits.1)));
             } else if self.decimals > 0 {
                 out.push(t!("book.col.decimals", self.decimals));
             }
@@ -592,15 +528,8 @@ impl Stats {
         if dates * 2 >= filled {
             let only_time = self.count(Kind::Date) == 0;
             let time = only_time || self.with_time > 0;
-            let (a, b) = (
-                date_text(self.date_min, date1904, !only_time, time),
-                date_text(self.date_max, date1904, !only_time, time),
-            );
-            out.push(if a == b {
-                t!("book.col.always", a)
-            } else {
-                t!("book.col.range", a, b)
-            });
+            let (a, b) = (date_text(self.date_min, date1904, !only_time, time), date_text(self.date_max, date1904, !only_time, time));
+            out.push(if a == b { t!("book.col.always", a) } else { t!("book.col.range", a, b) });
             if self.with_time > 0 && self.with_time < self.count(Kind::Date) {
                 out.push(t!("book.col.withTime", self.with_time));
             }
@@ -611,11 +540,7 @@ impl Stats {
             if self.digit_only == strs {
                 out.push(t!("book.col.digitsOnly"));
             } else if self.digit_only > 0 {
-                out.push(t!(
-                    "book.col.digitsSome",
-                    self.digit_only,
-                    span(self.digit_len.0, self.digit_len.1)
-                ));
+                out.push(t!("book.col.digitsSome", self.digit_only, span(self.digit_len.0, self.digit_len.1)));
             }
             if self.zero_lead > 0 {
                 out.push(t!("book.col.zeroLead", self.zero_lead));
@@ -627,9 +552,7 @@ impl Stats {
                 let list: Vec<String> = if p.len() == 1 {
                     vec![code(p[0].0)]
                 } else {
-                    p.iter()
-                        .map(|(s, n)| format!("{} {}", code(s), pct(**n, strs)))
-                        .collect()
+                    p.iter().map(|(s, n)| format!("{} {}", code(s), pct(**n, strs))).collect()
                 };
                 out.push(t!("book.col.pattern", list.join(&t!("vba.separator"))));
                 shown_pattern = true;
@@ -662,15 +585,8 @@ impl Stats {
         } else if distinct <= MAX_LIST && distinct > 0 {
             let mut v: Vec<(usize, &Key)> = self.order.iter().enumerate().collect();
             v.sort_by(|a, b| self.values[b.1].cmp(&self.values[a.1]).then(a.0.cmp(&b.0)));
-            let list: Vec<String> = v
-                .iter()
-                .map(|(_, k)| t!("book.col.valueCount", show(k, date1904), self.values[*k]))
-                .collect();
-            out.push(t!(
-                "book.col.values",
-                distinct,
-                list.join(&t!("vba.separator"))
-            ));
+            let list: Vec<String> = v.iter().map(|(_, k)| t!("book.col.valueCount", show(k, date1904), self.values[*k])).collect();
+            out.push(t!("book.col.values", distinct, list.join(&t!("vba.separator"))));
         } else {
             out.push(t!("book.col.distinct", distinct));
             if distinct * 10 >= filled * 9 {
@@ -678,10 +594,7 @@ impl Stats {
             }
         }
         // The number format most of the values have.
-        if let Some((fmt, n)) = self
-            .formats
-            .iter()
-            .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0)))
+        if let Some((fmt, n)) = self.formats.iter().max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0)))
             && *n * 2 >= filled
             && !fmt.eq_ignore_ascii_case("General")
             && !fmt.is_empty()
@@ -699,15 +612,7 @@ impl Stats {
     }
 
     fn formulas_text(&self) -> String {
-        if self.formulas == self.rows {
-            t!("book.col.allFormulas")
-        } else {
-            t!(
-                "book.col.formulas",
-                self.formulas,
-                pct(self.formulas, self.rows)
-            )
-        }
+        if self.formulas == self.rows { t!("book.col.allFormulas") } else { t!("book.col.formulas", self.formulas, pct(self.formulas, self.rows)) }
     }
 }
 
@@ -754,11 +659,7 @@ fn totals_row(cx: &Ctx, sh: &Sheet, g: &Grid, r: u32, c1: u32, c2: u32) -> bool 
         if !c.formula
             && let Some(Key::Str(s)) = cx.key(c)
         {
-            let s: String = s
-                .chars()
-                .filter(|c| !c.is_whitespace() && *c != '\u{3000}')
-                .collect::<String>()
-                .to_lowercase();
+            let s: String = s.chars().filter(|c| !c.is_whitespace() && *c != '\u{3000}').collect::<String>().to_lowercase();
             if WORDS.iter().any(|w| w.replace(' ', "") == s) {
                 return true;
             }
@@ -771,9 +672,7 @@ fn totals_row(cx: &Ctx, sh: &Sheet, g: &Grid, r: u32, c1: u32, c2: u32) -> bool 
             continue;
         }
         for c in c1..=c2 {
-            if f.rects.iter().any(|x| inside(x, c, r))
-                && !f.rects.iter().any(|x| inside(x, c, r - 1))
-            {
+            if f.rects.iter().any(|x| inside(x, c, r)) && !f.rects.iter().any(|x| inside(x, c, r - 1)) {
                 return true;
             }
         }
@@ -798,11 +697,7 @@ fn overlaps(a: &Rect, b: &Rect) -> bool {
 /// that overlap as one.
 fn blocks(g: &Grid, tables: &[Rect]) -> Vec<Rect> {
     let cells = g.cells;
-    let free = |c: &Cell| {
-        !tables
-            .iter()
-            .any(|t| t.c1 <= c.col && c.col <= t.c2 && t.r1 <= c.row && c.row <= t.r2)
-    };
+    let free = |c: &Cell| !tables.iter().any(|t| t.c1 <= c.col && c.col <= t.c2 && t.r1 <= c.row && c.row <= t.r2);
     let mut parent: Vec<usize> = (0..cells.len()).collect();
     let union = |p: &mut Vec<usize>, a: usize, b: usize| {
         let (x, y) = (find(p, a), find(p, b));
@@ -849,8 +744,7 @@ fn blocks(g: &Grid, tables: &[Rect]) -> Vec<Rect> {
     let mut all: Vec<Rect> = rects.into_values().collect();
     all.sort();
     // The big ones take in what overlaps them until nothing does.
-    let (mut big, mut small): (Vec<Rect>, Vec<Rect>) =
-        all.into_iter().partition(|r| r.r2 - r.r1 + 1 >= MIN_ROWS);
+    let (mut big, mut small): (Vec<Rect>, Vec<Rect>) = all.into_iter().partition(|r| r.r2 - r.r1 + 1 >= MIN_ROWS);
     loop {
         let mut changed = false;
         let mut i = 0;
@@ -888,12 +782,7 @@ fn blocks(g: &Grid, tables: &[Rect]) -> Vec<Rect> {
 }
 
 fn union_rect(a: &Rect, b: &Rect) -> Rect {
-    Rect {
-        r1: a.r1.min(b.r1),
-        c1: a.c1.min(b.c1),
-        r2: a.r2.max(b.r2),
-        c2: a.c2.max(b.c2),
-    }
+    Rect { r1: a.r1.min(b.r1), c1: a.c1.min(b.c1), r2: a.r2.max(b.r2), c2: a.c2.max(b.c2) }
 }
 
 /// The tables of the sheet with MIN_ROWS rows of data or more.
@@ -901,9 +790,7 @@ fn regions(cx: &Ctx, sh: &Sheet, g: &Grid) -> Vec<Region> {
     let mut out = Vec::new();
     for tb in &sh.tables {
         let r1 = tb.rect.r1 + tb.header_rows;
-        let Some(r2) = tb.rect.r2.checked_sub(tb.totals_rows) else {
-            continue;
-        };
+        let Some(r2) = tb.rect.r2.checked_sub(tb.totals_rows) else { continue };
         if r2 < r1 || r2 - r1 + 1 < MIN_ROWS {
             continue;
         }
@@ -943,17 +830,12 @@ fn regions(cx: &Ctx, sh: &Sheet, g: &Grid) -> Vec<Region> {
             Some((last, hint)) => {
                 // Rows of text right above it are part of the header.
                 let mut first = last;
-                while first > b.r1
-                    && header_like(cx, g, first - 1, c1, c2)
-                    && header_like(cx, g, first, c1, c2)
-                {
+                while first > b.r1 && header_like(cx, g, first - 1, c1, c2) && header_like(cx, g, first, c1, c2) {
                     first -= 1;
                 }
                 Some((first, last, hint))
             }
-            None => (b.r1..=b.r2.min(b.r1 + HEADER_SEARCH - 1))
-                .find(|r| header_like(cx, g, *r, c1, c2))
-                .map(|r| (r, r, "book.tbl.byLayout")),
+            None => (b.r1..=b.r2.min(b.r1 + HEADER_SEARCH - 1)).find(|r| header_like(cx, g, *r, c1, c2)).map(|r| (r, r, "book.tbl.byLayout")),
         };
         let r1 = header.map_or(b.r1, |h| h.1 + 1);
         let mut r2 = b.r2;
@@ -966,13 +848,7 @@ fn regions(cx: &Ctx, sh: &Sheet, g: &Grid) -> Vec<Region> {
             continue;
         }
         out.push(Region {
-            title: Rect {
-                r1: header.map_or(r1, |h| h.0),
-                c1,
-                r2: b.r2,
-                c2,
-            }
-            .display(),
+            title: Rect { r1: header.map_or(r1, |h| h.0), c1, r2: b.r2, c2 }.display(),
             c1,
             c2,
             header: header.map(|h| (h.0, h.1)),
@@ -1008,12 +884,7 @@ pub(super) fn sheet_text(wb: &Workbook, sh: &Sheet) -> Option<String> {
             Some((a, z)) => info.push(t!("book.tbl.headers", a, z)),
             None => info.push(t!("book.tbl.noHeader")),
         }
-        info.push(t!(
-            "book.tbl.data",
-            rg.data.0,
-            rg.data.1,
-            rg.data.1 - rg.data.0 + 1
-        ));
+        info.push(t!("book.tbl.data", rg.data.0, rg.data.1, rg.data.1 - rg.data.0 + 1));
         if let Some(r) = rg.totals {
             info.push(t!("book.tbl.totals", r));
         }
@@ -1022,12 +893,7 @@ pub(super) fn sheet_text(wb: &Workbook, sh: &Sheet) -> Option<String> {
         }
         b.push_str(&format!("{}\n\n", t!("book.tbl.info", info.join(&sep))));
         let width = (rg.c2 - rg.c1 + 1) as usize;
-        let mut stats: Vec<Stats> = (0..width)
-            .map(|_| Stats {
-                rows: (rg.data.1 - rg.data.0 + 1) as usize,
-                ..Default::default()
-            })
-            .collect();
+        let mut stats: Vec<Stats> = (0..width).map(|_| Stats { rows: (rg.data.1 - rg.data.0 + 1) as usize, ..Default::default() }).collect();
         for row in g.rows_in(rg.data.0, rg.data.1) {
             let a = row.partition_point(|c| c.col < rg.c1);
             for c in row[a..].iter().take_while(|c| c.col <= rg.c2) {
@@ -1039,9 +905,7 @@ pub(super) fn sheet_text(wb: &Workbook, sh: &Sheet) -> Option<String> {
                 if let Some(n) = rg.names.get((c - rg.c1) as usize) {
                     return one_line(n);
                 }
-                let Some((h1, h2)) = rg.header else {
-                    return String::new();
-                };
+                let Some((h1, h2)) = rg.header else { return String::new() };
                 let mut parts: Vec<String> = Vec::new();
                 for r in h1..=h2 {
                     if let Some(cell) = g.row_in(r, c, c).first() {
@@ -1063,27 +927,11 @@ pub(super) fn sheet_text(wb: &Workbook, sh: &Sheet) -> Option<String> {
             }
             seen.insert(c);
             let mut parts = st.describe(wb.date1904);
-            if sh.validations.iter().any(|v| {
-                v.rects.iter().any(|x| {
-                    overlaps(
-                        x,
-                        &Rect {
-                            r1: rg.data.0,
-                            c1: c,
-                            r2: rg.data.1,
-                            c2: c,
-                        },
-                    )
-                })
-            }) {
+            if sh.validations.iter().any(|v| v.rects.iter().any(|x| overlaps(x, &Rect { r1: rg.data.0, c1: c, r2: rg.data.1, c2: c }))) {
                 parts.push(t!("book.col.validation"));
             }
             let col = formula::col_name(c);
-            let line = if name.is_empty() {
-                t!("book.col.lineNoName", col, parts.join(&sep))
-            } else {
-                t!("book.col.line", col, name, parts.join(&sep))
-            };
+            let line = if name.is_empty() { t!("book.col.lineNoName", col, parts.join(&sep)) } else { t!("book.col.line", col, name, parts.join(&sep)) };
             b.push_str(&format!("- {line}\n"));
         }
         b.push('\n');

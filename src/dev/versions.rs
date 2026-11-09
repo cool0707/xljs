@@ -30,19 +30,14 @@ pub fn folder(dir: &Path, rel: &str) -> PathBuf {
 }
 
 fn file_of(dir: &Path, rel: &str, n: u32) -> PathBuf {
-    let ext = Path::new(rel)
-        .extension()
-        .map(|e| format!(".{}", e.to_string_lossy()))
-        .unwrap_or_default();
+    let ext = Path::new(rel).extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
     folder(dir, rel).join(format!("{n:04}{ext}"))
 }
 
 /// The versions of a file, oldest first.
 pub fn list(dir: &Path, rel: &str) -> Vec<Version> {
     let log = folder(dir, rel).join("log.json");
-    let Ok(b) = std::fs::read(&log) else {
-        return Vec::new();
-    };
+    let Ok(b) = std::fs::read(&log) else { return Vec::new() };
     let mut v: Vec<Version> = serde_json::from_slice(&b).unwrap_or_default();
     v.retain(|x| file_of(dir, rel, x.n).exists());
     v
@@ -58,9 +53,7 @@ pub fn read(dir: &Path, rel: &str, n: u32) -> Result<String> {
 /// of the new version.
 pub fn keep(dir: &Path, rel: &str, note: &str) -> Result<Option<u32>> {
     let cur = dir.join(rel);
-    let Ok(text) = std::fs::read(&cur) else {
-        return Ok(None);
-    };
+    let Ok(text) = std::fs::read(&cur) else { return Ok(None) };
     let mut all = list(dir, rel);
     if let Some(last) = all.last()
         && std::fs::read(file_of(dir, rel, last.n)).ok().as_deref() == Some(&text[..])
@@ -73,11 +66,7 @@ pub fn keep(dir: &Path, rel: &str, note: &str) -> Result<Option<u32>> {
         std::fs::create_dir_all(d).map_err(|e| Error::path("mkdir", d.display().to_string(), e))?;
     }
     std::fs::write(&f, &text).map_err(|e| Error::path("open", f.display().to_string(), e))?;
-    all.push(Version {
-        n,
-        time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-        note: note.to_string(),
-    });
+    all.push(Version { n, time: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(), note: note.to_string() });
     let log = folder(dir, rel).join("log.json");
     let json = serde_json::to_string_pretty(&all).unwrap_or_default();
     std::fs::write(&log, json).map_err(|e| Error::path("open", log.display().to_string(), e))?;

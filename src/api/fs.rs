@@ -19,21 +19,13 @@ fn io_err(op: &str, path: &str, e: std::io::Error) -> Error {
 /// user declines.
 fn guard_remove(h: &super::Host, p: &str, recursive: bool) -> crate::Result<()> {
     use std::sync::atomic::Ordering;
-    let Ok(m) = std::fs::symlink_metadata(p) else {
-        return Ok(());
-    };
-    let abs = std::path::absolute(p)
-        .map(|a| a.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| p.to_string());
+    let Ok(m) = std::fs::symlink_metadata(p) else { return Ok(()) };
+    let abs = std::path::absolute(p).map(|a| a.to_string_lossy().into_owned()).unwrap_or_else(|_| p.to_string());
     let message = if m.is_dir() {
         if !recursive {
             return Ok(());
         }
-        let n = walkdir::WalkDir::new(p)
-            .min_depth(1)
-            .into_iter()
-            .take(100_000)
-            .count();
+        let n = walkdir::WalkDir::new(p).min_depth(1).into_iter().take(100_000).count();
         if n == 0 {
             return Ok(());
         }
@@ -57,21 +49,11 @@ pub(super) fn install(n: &N) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => a.null(),
             Err(e) => Err(a.throw(&io_err("stat", &p, e))),
             Ok(st) => {
-                let mtime = st
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_millis() as f64)
-                    .unwrap_or(0.0);
+                let mtime = st.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis() as f64).unwrap_or(0.0);
                 let c = &a.ctx;
                 object(
                     c,
-                    vec![
-                        ("isFile", v(c, st.is_file())),
-                        ("isDirectory", v(c, st.is_dir())),
-                        ("size", v(c, st.len() as f64)),
-                        ("mtimeMs", v(c, mtime)),
-                    ],
+                    vec![("isFile", v(c, st.is_file())), ("isDirectory", v(c, st.is_dir())), ("size", v(c, st.len() as f64)), ("mtimeMs", v(c, mtime))],
                 )
             }
         }
@@ -98,10 +80,7 @@ pub(super) fn install(n: &N) {
         let mut enc = a.opt_str(2, "utf8");
         if append && super::encoding::is_utf8_bom(&enc) {
             // Only write the BOM when creating the file.
-            if std::fs::metadata(&path)
-                .map(|m| m.len() > 0)
-                .unwrap_or(false)
-            {
+            if std::fs::metadata(&path).map(|m| m.len() > 0).unwrap_or(false) {
                 enc = "utf8".into();
             }
         }
@@ -128,22 +107,12 @@ pub(super) fn install(n: &N) {
         let c = &a.ctx;
         let vals: Vec<Value> = entries
             .into_iter()
-            .map(|(name, d)| {
-                object(c, vec![("name", v(c, name)), ("isDirectory", v(c, d))]).unwrap()
-            })
+            .map(|(name, d)| object(c, vec![("name", v(c, name)), ("isDirectory", v(c, d))]).unwrap())
             .collect();
         js::array(c, vals)
     });
     n.set("fsWalk", |_, a| {
-        let res = walk(
-            &a.str(0),
-            &a.strings(1),
-            &a.strings(2),
-            a.bool(3),
-            !a.bool(4),
-            a.bool(5),
-        )
-        .map_err(|e| a.throw(&e))?;
+        let res = walk(&a.str(0), &a.strings(1), &a.strings(2), a.bool(3), !a.bool(4), a.bool(5)).map_err(|e| a.throw(&e))?;
         walk_result(a, res)
     });
     n.set("fsGlob", |_, a| {
@@ -174,22 +143,14 @@ pub(super) fn install(n: &N) {
             }
         };
         match r {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                Err(a.throw(&io_err("remove", &p, e)))
-            }
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(a.throw(&io_err("remove", &p, e))),
             _ => a.undefined(),
         }
     });
     n.set("fsRename", |_, a| {
         let (from, to) = (a.str(0), a.str(1));
-        std::fs::rename(&from, &to).map_err(|e| {
-            a.throw(&Error::Link {
-                op: "rename".into(),
-                old: from.clone(),
-                new: to.clone(),
-                source: e,
-            })
-        })?;
+        std::fs::rename(&from, &to)
+            .map_err(|e| a.throw(&Error::Link { op: "rename".into(), old: from.clone(), new: to.clone(), source: e }))?;
         a.undefined()
     });
     n.set("fsCopy", |_, a| {
@@ -257,17 +218,7 @@ fn walk_result<'js>(a: &super::A<'js>, res: Vec<WalkEntry>) -> R<'js> {
     let c = &a.ctx;
     let vals: Vec<Value> = res
         .into_iter()
-        .map(|e| {
-            object(
-                c,
-                vec![
-                    ("path", v(c, e.path)),
-                    ("rel", v(c, e.rel)),
-                    ("isDirectory", v(c, e.dir)),
-                ],
-            )
-            .unwrap()
-        })
+        .map(|e| object(c, vec![("path", v(c, e.path)), ("rel", v(c, e.rel)), ("isDirectory", v(c, e.dir))]).unwrap())
         .collect();
     js::array(c, vals)
 }
@@ -293,10 +244,7 @@ fn copy_file(src: &str, dst: &str) -> crate::Result<()> {
     }
     std::fs::copy(src, dst).map_err(|e| io_err("open", dst, e))?;
     if let Ok(m) = st.modified() {
-        let f = std::fs::File::options()
-            .write(true)
-            .open(dst)
-            .map_err(|e| io_err("open", dst, e))?;
+        let f = std::fs::File::options().write(true).open(dst).map_err(|e| io_err("open", dst, e))?;
         f.set_modified(m).map_err(|e| io_err("chtimes", dst, e))?;
     }
     Ok(())
@@ -308,13 +256,7 @@ fn copy_file(src: &str, dst: &str) -> crate::Result<()> {
 pub(crate) fn match_pattern(pattern: &str, rel: &str) -> bool {
     let pattern = gopath::to_slash(pattern).to_lowercase();
     let rel = rel.to_lowercase();
-    let build = |p: &str| {
-        GlobBuilder::new(p)
-            .literal_separator(true)
-            .backslash_escape(true)
-            .build()
-            .map(|g| g.compile_matcher())
-    };
+    let build = |p: &str| GlobBuilder::new(p).literal_separator(true).backslash_escape(true).build().map(|g| g.compile_matcher());
     if !pattern.contains('/') {
         let base = rel.rsplit('/').next().unwrap_or(&rel);
         return build(&pattern).map(|m| m.is_match(base)).unwrap_or(false);
@@ -339,9 +281,7 @@ fn has_hidden_attribute(path: &Path) -> bool {
     use std::os::windows::fs::MetadataExt;
     const HIDDEN: u32 = 0x2;
     const SYSTEM: u32 = 0x4;
-    std::fs::symlink_metadata(path)
-        .map(|m| m.file_attributes() & (HIDDEN | SYSTEM) != 0)
-        .unwrap_or(false)
+    std::fs::symlink_metadata(path).map(|m| m.file_attributes() & (HIDDEN | SYSTEM) != 0).unwrap_or(false)
 }
 
 #[cfg(not(windows))]
@@ -351,24 +291,14 @@ fn has_hidden_attribute(_: &Path) -> bool {
 
 /// Lists the entries under root. Hidden entries and the contents of hidden
 /// directories are skipped unless hidden is set.
-fn walk(
-    root: &str,
-    include: &[String],
-    exclude: &[String],
-    dirs: bool,
-    files: bool,
-    hidden: bool,
-) -> crate::Result<Vec<WalkEntry>> {
+fn walk(root: &str, include: &[String], exclude: &[String], dirs: bool, files: bool, hidden: bool) -> crate::Result<Vec<WalkEntry>> {
     let abs = gopath::abs(root).map_err(|e| io_err("stat", root, e))?;
     let st = std::fs::metadata(&abs).map_err(|e| io_err("stat", root, e))?;
     if !st.is_dir() {
         return Err(err!("fs.notDirectory", root));
     }
     let mut out = Vec::new();
-    let mut it = walkdir::WalkDir::new(&abs)
-        .sort_by_file_name()
-        .min_depth(1)
-        .into_iter();
+    let mut it = walkdir::WalkDir::new(&abs).sort_by_file_name().min_depth(1).into_iter();
     while let Some(e) = it.next() {
         let Ok(e) = e else { continue }; // unreadable entries are skipped
         let is_dir = e.file_type().is_dir();
@@ -394,11 +324,7 @@ fn walk(
         if !include.is_empty() && !match_any(include, &slash) {
             continue;
         }
-        out.push(WalkEntry {
-            path: p,
-            rel,
-            dir: is_dir,
-        });
+        out.push(WalkEntry { path: p, rel, dir: is_dir });
     }
     Ok(out)
 }
@@ -462,18 +388,9 @@ mod tests {
 
         let root = dir.to_string_lossy();
         let res = walk(&root, &[], &[], false, true, false).unwrap();
-        assert!(
-            res.len() == 1 && res[0].rel == "a.xlsx",
-            "walk without hidden = {:?}",
-            res.iter().map(|e| &e.rel).collect::<Vec<_>>()
-        );
+        assert!(res.len() == 1 && res[0].rel == "a.xlsx", "walk without hidden = {:?}", res.iter().map(|e| &e.rel).collect::<Vec<_>>());
         let res = walk(&root, &[], &[], false, true, true).unwrap();
-        assert_eq!(
-            res.len(),
-            4,
-            "walk with hidden = {:?}",
-            res.iter().map(|e| &e.rel).collect::<Vec<_>>()
-        );
+        assert_eq!(res.len(), 4, "walk with hidden = {:?}", res.iter().map(|e| &e.rel).collect::<Vec<_>>());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

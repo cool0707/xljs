@@ -19,53 +19,26 @@ impl Versions for Fake {
     }
 }
 
-const ALL: Fake = Fake {
-    edge: Some("142.0.3595.53"),
-    chrome: Some("141.0.7390.123"),
-    webview2: Some("142.0.3595.40"),
-};
+const ALL: Fake = Fake { edge: Some("142.0.3595.53"), chrome: Some("141.0.7390.123"), webview2: Some("142.0.3595.40") };
 
 fn edge(v: &str) -> Agent {
-    Agent::Browser(Browser {
-        brand: Brand::Edge,
-        version: v.into(),
-    })
+    Agent::Browser(Browser { brand: Brand::Edge, version: v.into() })
 }
 
 #[test]
 fn resolves_the_choice() {
     assert_eq!(resolve("", &ALL), edge("142.0.3595.53"));
     assert_eq!(resolve(" Edge ", &ALL), edge("142.0.3595.53"));
-    assert_eq!(
-        resolve("chrome", &ALL),
-        Agent::Browser(Browser {
-            brand: Brand::Chrome,
-            version: "141.0.7390.123".into()
-        })
-    );
+    assert_eq!(resolve("chrome", &ALL), Agent::Browser(Browser { brand: Brand::Chrome, version: "141.0.7390.123".into() }));
     assert_eq!(resolve("XLJS", &ALL), Agent::Xljs);
-    assert_eq!(
-        resolve(" MyAgent/1.0 ", &ALL),
-        Agent::Text("MyAgent/1.0".into())
-    );
+    assert_eq!(resolve(" MyAgent/1.0 ", &ALL), Agent::Text("MyAgent/1.0".into()));
     // Chrome not installed: Edge; Edge not installed: the WebView2 runtime.
-    let no_chrome = Fake {
-        chrome: None,
-        ..ALL
-    };
+    let no_chrome = Fake { chrome: None, ..ALL };
     assert_eq!(resolve("chrome", &no_chrome), edge("142.0.3595.53"));
-    let runtime = Fake {
-        edge: None,
-        chrome: None,
-        ..ALL
-    };
+    let runtime = Fake { edge: None, chrome: None, ..ALL };
     assert_eq!(resolve("chrome", &runtime), edge("142.0.3595.40"));
     // Nothing (not Windows): xljs's.
-    let none = Fake {
-        edge: None,
-        chrome: None,
-        webview2: None,
-    };
+    let none = Fake { edge: None, chrome: None, webview2: None };
     assert_eq!(resolve("edge", &none), Agent::Xljs);
     assert_eq!(resolve("edge", &none).fetch("1.2.3"), "xljs/1.2.3");
     assert_eq!(resolve("edge", &none).pane(&Os::new(22631, "AMD64")), None);
@@ -83,71 +56,31 @@ fn user_agents() {
     );
     assert_eq!(resolve("MyAgent/1.0", &ALL).fetch("1"), "MyAgent/1.0");
     // A text of the settings goes to the pane without client hints.
-    assert_eq!(
-        resolve("MyAgent/1.0", &ALL).pane(&Os::new(0, "AMD64")),
-        Some(PaneAgent {
-            user_agent: "MyAgent/1.0".into(),
-            devtools: None
-        })
-    );
+    assert_eq!(resolve("MyAgent/1.0", &ALL).pane(&Os::new(0, "AMD64")), Some(PaneAgent { user_agent: "MyAgent/1.0".into(), devtools: None }));
 }
 
 fn brands(v: &Value) -> Vec<String> {
-    v.as_array()
-        .unwrap()
-        .iter()
-        .map(|b| {
-            format!(
-                "{}={}",
-                b["brand"].as_str().unwrap(),
-                b["version"].as_str().unwrap()
-            )
-        })
-        .collect()
+    v.as_array().unwrap().iter().map(|b| format!("{}={}", b["brand"].as_str().unwrap(), b["version"].as_str().unwrap())).collect()
 }
 
 #[test]
 fn client_hints_as_chromium() {
     // Sec-CH-UA of Chrome 130, 131 and 133 as the browsers send it.
-    let chrome = |v: &str| Browser {
-        brand: Brand::Chrome,
-        version: v.into(),
-    };
-    assert_eq!(
-        brands(&Value::Array(chrome("130.0.6723.70").brands(false))),
-        ["Chromium=130", "Google Chrome=130", "Not?A_Brand=99"]
-    );
-    assert_eq!(
-        brands(&Value::Array(chrome("131.0.6778.86").brands(false))),
-        ["Google Chrome=131", "Chromium=131", "Not_A Brand=24"]
-    );
-    assert_eq!(
-        brands(&Value::Array(chrome("133.0.6943.54").brands(false))),
-        ["Not(A:Brand=99", "Google Chrome=133", "Chromium=133"]
-    );
+    let chrome = |v: &str| Browser { brand: Brand::Chrome, version: v.into() };
+    assert_eq!(brands(&Value::Array(chrome("130.0.6723.70").brands(false))), ["Chromium=130", "Google Chrome=130", "Not?A_Brand=99"]);
+    assert_eq!(brands(&Value::Array(chrome("131.0.6778.86").brands(false))), ["Google Chrome=131", "Chromium=131", "Not_A Brand=24"]);
+    assert_eq!(brands(&Value::Array(chrome("133.0.6943.54").brands(false))), ["Not(A:Brand=99", "Google Chrome=133", "Chromium=133"]);
 
-    let pane = resolve("edge", &ALL)
-        .pane(&Os::new(22631, "AMD64"))
-        .unwrap();
+    let pane = resolve("edge", &ALL).pane(&Os::new(22631, "AMD64")).unwrap();
     assert!(pane.user_agent.ends_with("Edg/142.0.0.0"));
     let p: Value = serde_json::from_str(pane.devtools.as_deref().unwrap()).unwrap();
     assert_eq!(p["userAgent"], pane.user_agent);
     let m = &p["userAgentMetadata"];
     let b = brands(&m["brands"]);
-    assert!(
-        b.contains(&"Microsoft Edge=142".to_string()) && b.contains(&"Chromium=142".to_string()),
-        "{b:?}"
-    );
+    assert!(b.contains(&"Microsoft Edge=142".to_string()) && b.contains(&"Chromium=142".to_string()), "{b:?}");
     let f = brands(&m["fullVersionList"]);
-    assert!(
-        f.contains(&"Microsoft Edge=142.0.3595.53".to_string()),
-        "{f:?}"
-    );
-    assert!(
-        f.iter()
-            .any(|x| x.starts_with("Not") && x.ends_with(".0.0.0")),
-        "{f:?}"
-    );
+    assert!(f.contains(&"Microsoft Edge=142.0.3595.53".to_string()), "{f:?}");
+    assert!(f.iter().any(|x| x.starts_with("Not") && x.ends_with(".0.0.0")), "{f:?}");
     assert_eq!(m["fullVersion"], "142.0.3595.53");
     assert_eq!(m["platform"], "Windows");
     assert_eq!(m["platformVersion"], "15.0.0");
@@ -158,25 +91,11 @@ fn client_hints_as_chromium() {
 
 #[test]
 fn os_hints() {
-    assert_eq!(
-        Os::new(19045, "AMD64"),
-        Os {
-            platform_version: "10.0.0".into(),
-            architecture: "x86".into(),
-            bitness: "64".into()
-        }
-    );
+    assert_eq!(Os::new(19045, "AMD64"), Os { platform_version: "10.0.0".into(), architecture: "x86".into(), bitness: "64".into() });
     assert_eq!(Os::new(22000, "ARM64").platform_version, "14.0.0");
     assert_eq!(Os::new(22000, "ARM64").architecture, "arm");
     assert_eq!(Os::new(26100, "AMD64").platform_version, "19.0.0");
-    assert_eq!(
-        Os::new(9600, "x86"),
-        Os {
-            platform_version: "0.0.0".into(),
-            architecture: "x86".into(),
-            bitness: "32".into()
-        }
-    );
+    assert_eq!(Os::new(9600, "x86"), Os { platform_version: "0.0.0".into(), architecture: "x86".into(), bitness: "32".into() });
 }
 
 #[test]

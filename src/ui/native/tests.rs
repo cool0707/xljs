@@ -17,29 +17,14 @@ fn setup() -> Arc<dyn Ui> {
 fn dialogs_open_and_close() {
     let _l = crate::testutil::lock_lang("ja");
     let u = setup();
-    assert_eq!(
-        u.prompt("xljs テスト", "名前を入力してください\n2 行目", "既定値"),
-        Some("既定値".to_string())
-    );
+    assert_eq!(u.prompt("xljs テスト", "名前を入力してください\n2 行目", "既定値"), Some("既定値".to_string()));
     u.show_error("xljs テスト", "エラーの例\n\tat main.js:1:1");
     let choices = vec![
-        Choice {
-            label: "実行".into(),
-            note: "スクリプトを実行します".into(),
-            icon: include_bytes!("../../cli/icons/run.ico").to_vec(),
-        },
-        Choice {
-            label: "終了".into(),
-            ..Default::default()
-        },
+        Choice { label: "実行".into(), note: "スクリプトを実行します".into(), icon: include_bytes!("../../cli/icons/run.ico").to_vec() },
+        Choice { label: "終了".into(), ..Default::default() },
     ];
     assert_eq!(u.choose("xljs", "どうしますか？", &choices), Some(0));
-    let p = u.progress(&ProgressOptions {
-        title: "進捗".into(),
-        total: 3,
-        message: "処理中".into(),
-        cancellable: true,
-    });
+    let p = u.progress(&ProgressOptions { title: "進捗".into(), total: 3, message: "処理中".into(), cancellable: true });
     p.update(1, 3, "1 件目");
     assert!(!p.cancelled());
     p.close();
@@ -64,10 +49,7 @@ fn with_page(mut o: WindowOptions, mut handle: impl FnMut(&str, &Pager) -> bool)
     o.on_message = Some(Arc::new(move |m, _| i2.lock().unwrap().push(m)));
     o.on_closed = Some(Arc::new(move || c2.store(true, Ordering::SeqCst)));
     let w = u.open_window(o).unwrap();
-    let pager = Pager {
-        w: w.clone(),
-        later: RefCell::new(Vec::new()),
-    };
+    let pager = Pager { w: w.clone(), later: RefCell::new(Vec::new()) };
     let mut got = Vec::new();
     let start = Instant::now();
     'outer: while start.elapsed() < Duration::from_secs(30) {
@@ -80,8 +62,7 @@ fn with_page(mut o: WindowOptions, mut handle: impl FnMut(&str, &Pager) -> bool)
         }
         let due: Vec<String> = {
             let mut later = pager.later.borrow_mut();
-            let (due, rest): (Vec<_>, Vec<_>) =
-                later.drain(..).partition(|(t, _)| *t <= Instant::now());
+            let (due, rest): (Vec<_>, Vec<_>) = later.drain(..).partition(|(t, _)| *t <= Instant::now());
             *later = rest;
             due.into_iter().map(|(_, m)| m).collect()
         };
@@ -115,9 +96,7 @@ impl Pager {
     }
     /// Posts m after d, pumping messages meanwhile.
     fn post_after(&self, d: Duration, m: &str) {
-        self.later
-            .borrow_mut()
-            .push((Instant::now() + d, m.to_string()));
+        self.later.borrow_mut().push((Instant::now() + d, m.to_string()));
     }
 }
 
@@ -130,23 +109,13 @@ fn skipped(got: &[String]) -> bool {
 #[test]
 fn webview_window() {
     let mut assets = crate::meta::MemAssets::new();
-    assets.insert(
-        "ui/index.html",
-        r#"<!doctype html><meta charset="utf-8"><title>t</title><script src="app.js"></script>"#,
-    );
+    assets.insert("ui/index.html", r#"<!doctype html><meta charset="utf-8"><title>t</title><script src="app.js"></script>"#);
     assets.insert(
         "ui/app.js",
         r#"chrome.webview.addEventListener("message", (e) => { if (e.data === "\u0002ping") chrome.webview.postMessage("pong"); });
 chrome.webview.postMessage("ready " + location.href + " " + document.title + " " + typeof xljs);"#,
     );
-    let o = WindowOptions {
-        title: "テスト".into(),
-        width: 400,
-        height: 300,
-        url: format!("{ASSET_ORIGIN}ui/index.html"),
-        assets: Some(Arc::new(assets)),
-        ..Default::default()
-    };
+    let o = WindowOptions { title: "テスト".into(), width: 400, height: 300, url: format!("{ASSET_ORIGIN}ui/index.html"), assets: Some(Arc::new(assets)), ..Default::default() };
     let got = with_page(o, |m, p| {
         if m.starts_with("ready ") {
             p.post("ping");
@@ -156,14 +125,8 @@ chrome.webview.postMessage("ready " + location.href + " " + document.title + " "
     if skipped(&got) {
         return;
     }
-    let got: Vec<&String> = got
-        .iter()
-        .filter(|m| !m.starts_with(r#"{"xljs""#))
-        .collect();
-    assert_eq!(
-        got,
-        ["ready https://app.xljs/ui/index.html t object", "pong"]
-    );
+    let got: Vec<&String> = got.iter().filter(|m| !m.starts_with(r#"{"xljs""#)).collect();
+    assert_eq!(got, ["ready https://app.xljs/ui/index.html t object", "pong"]);
 }
 
 /// What the debugger window relies on: with isolated the page is
@@ -197,24 +160,13 @@ try {
 }
 </script>"#,
     );
-    let o = WindowOptions {
-        title: "isolated".into(),
-        width: 400,
-        height: 300,
-        url: format!("{ASSET_ORIGIN}index.html"),
-        assets: Some(Arc::new(assets)),
-        isolated: true,
-        ..Default::default()
-    };
+    let o = WindowOptions { title: "isolated".into(), width: 400, height: 300, url: format!("{ASSET_ORIGIN}index.html"), assets: Some(Arc::new(assets)), isolated: true, ..Default::default() };
     // The page runtime says {"xljs":"ready"} too, before or after the worker.
     let got = with_page(o, |m, _| !m.starts_with(r#"{"xljs""#));
     if skipped(&got) {
         return;
     }
-    let got: Vec<&String> = got
-        .iter()
-        .filter(|m| !m.starts_with(r#"{"xljs""#))
-        .collect();
+    let got: Vec<&String> = got.iter().filter(|m| !m.starts_with(r#"{"xljs""#)).collect();
     assert_eq!(got, ["true 16 woke 42"]);
 }
 
@@ -227,27 +179,16 @@ fn builtin_pages() {
             "form.html",
             r#"{"type":"init","texts":{"ok":"OK"},"fields":[{"name":"a","label":"A","type":"text","value":"x","options":[],"accept":[]},{"name":"b","label":"B","type":"files","value":[],"options":[],"accept":[".xlsx"]}]}"#,
         ),
-        (
-            "table.html",
-            r#"{"type":"init","total":1,"select":"single","texts":{},"columns":[{"label":"A","width":0}]}"#,
-        ),
+        ("table.html", r#"{"type":"init","total":1,"select":"single","texts":{},"columns":[{"label":"A","width":0}]}"#),
         // AG Charts and Frappe Gantt (the page reports an error with "shown").
-        (
-            "chart.html",
-            r#"{"type":"init","lang":"ja","texts":{},"spec":{"type":"column","data":[{"a":"x","b":1},{"a":"y","b":2}]}}"#,
-        ),
+        ("chart.html", r#"{"type":"init","lang":"ja","texts":{},"spec":{"type":"column","data":[{"a":"x","b":1},{"a":"y","b":2}]}}"#),
         (
             "chart.html",
             r#"{"type":"init","lang":"ja","texts":{},"spec":{"type":"gantt","data":[{"name":"x","start":"2026-11-02","end":"2026-11-04"}]}}"#,
         ),
     ];
     for (page, init) in inits {
-        let o = WindowOptions {
-            title: page.into(),
-            url: format!("{ASSET_ORIGIN}{BUILTIN_PREFIX}{page}"),
-            assets: Some(Arc::new(BuiltinOnly)),
-            ..Default::default()
-        };
+        let o = WindowOptions { title: page.into(), url: format!("{ASSET_ORIGIN}{BUILTIN_PREFIX}{page}"), assets: Some(Arc::new(BuiltinOnly)), ..Default::default() };
         let got = with_page(o, |m, p| {
             if m.contains(r#""ready""#) {
                 p.post(init);
@@ -257,11 +198,7 @@ fn builtin_pages() {
         if skipped(&got) {
             return;
         }
-        assert_eq!(
-            got.join(","),
-            r#"{"type":"ready"},{"type":"shown"}"#,
-            "{page}"
-        );
+        assert_eq!(got.join(","), r#"{"type":"ready"},{"type":"shown"}"#, "{page}");
     }
 }
 
@@ -272,13 +209,7 @@ fn print_page_draws_charts_hidden() {
     let html = r#"<!doctype html><html><head><style>@page{size:A4;margin:10mm}</style></head><body><p>グラフ</p><div class="xljs-print-chart" data-chart="0" style="position:relative;width:300pt;height:200pt"></div><div class="xljs-print-chart" data-chart="1" style="position:relative;width:300pt;height:150pt"></div></body></html>"#;
     let charts = r#"[{"spec":{"type":"column","data":[{"a":"x","b":1},{"a":"y","b":2}]}},{"spec":{"type":"gantt","data":[{"name":"x","start":"2026-11-02","end":"2026-11-04"}]}}]"#;
     let init = serde_json::json!({ "type": "init", "html": html, "charts": serde_json::from_str::<serde_json::Value>(charts).unwrap(), "texts": {}, "lang": "ja" }).to_string();
-    let o = WindowOptions {
-        title: "print".into(),
-        url: format!("{ASSET_ORIGIN}{BUILTIN_PREFIX}print.html"),
-        assets: Some(Arc::new(BuiltinOnly)),
-        hidden: true,
-        ..Default::default()
-    };
+    let o = WindowOptions { title: "print".into(), url: format!("{ASSET_ORIGIN}{BUILTIN_PREFIX}print.html"), assets: Some(Arc::new(BuiltinOnly)), hidden: true, ..Default::default() };
     let got = with_page(o, |m, p| {
         if m.contains(r#""ready""#) {
             p.post(&init);
@@ -288,10 +219,7 @@ fn print_page_draws_charts_hidden() {
     if skipped(&got) {
         return;
     }
-    assert_eq!(
-        got.join(","),
-        r#"{"type":"ready"},{"type":"rendered","charts":2,"drawn":2}"#
-    );
+    assert_eq!(got.join(","), r#"{"type":"ready"},{"type":"rendered","charts":2,"drawn":2}"#);
 }
 
 /// Ui::print_pdf writes a PDF (Page.printToPDF through the DevTools protocol).
@@ -304,11 +232,7 @@ fn print_pdf_writes_a_file() {
     }
     let dir = crate::testutil::tempdir();
     unsafe { std::env::set_var(crate::ui::WEBVIEW2_DATA_ENV, dir.join("wv2")) };
-    let data = std::fs::read(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/testdata/xlsx/print.xlsx"
-    ))
-    .unwrap();
+    let data = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/testdata/xlsx/print.xlsx")).unwrap();
     let html = crate::api::print_html_of(&data).unwrap();
     let path = dir.join("印刷.pdf");
     let u = setup();
@@ -317,8 +241,7 @@ fn print_pdf_writes_a_file() {
     u.print_pdf(
         PdfJob {
             html,
-            charts: r#"[{"spec":{"type":"column","data":[{"a":"x","b":1},{"a":"y","b":2}]}}]"#
-                .into(),
+            charts: r#"[{"spec":{"type":"column","data":[{"a":"x","b":1},{"a":"y","b":2}]}}]"#.into(),
             texts: "{}".into(),
             path: path.to_string_lossy().into_owned(),
         },
@@ -335,11 +258,7 @@ fn print_pdf_writes_a_file() {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    let r = result
-        .lock()
-        .unwrap()
-        .take()
-        .expect("print_pdf did not finish");
+    let r = result.lock().unwrap().take().expect("print_pdf did not finish");
     r.unwrap();
     let pdf = std::fs::read(&path).unwrap();
     assert!(pdf.starts_with(b"%PDF-"), "not a PDF");
@@ -353,10 +272,7 @@ impl crate::meta::AssetFs for BuiltinOnly {
     fn read(&self, name: &str) -> std::io::Result<Vec<u8>> {
         match name.strip_prefix(BUILTIN_PREFIX) {
             Some(rest) => BuiltinAssets.read(rest),
-            None => Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                name.to_string(),
-            )),
+            None => Err(std::io::Error::new(std::io::ErrorKind::NotFound, name.to_string())),
         }
     }
     fn files(&self, _: &str) -> std::io::Result<Vec<String>> {
@@ -376,12 +292,7 @@ fn page_runtime() {
         r#"{"xljs":"eval","id":2,"code":"() => { window.open('about:blank'); location.href = 'file:///C:/'; return 1; }","fn":true,"args":[]}"#,
         r#"{"xljs":"eval","id":3,"code":"location.href","fn":false,"args":[]}"#,
     ];
-    let o = WindowOptions {
-        title: "runtime".into(),
-        url: format!("{ASSET_ORIGIN}index.html"),
-        assets: Some(Arc::new(assets)),
-        ..Default::default()
-    };
+    let o = WindowOptions { title: "runtime".into(), url: format!("{ASSET_ORIGIN}index.html"), assets: Some(Arc::new(assets)), ..Default::default() };
     let mut results = Vec::new();
     let got = with_page(o, |m, p| {
         if m == r#"{"xljs":"ready"}"# {
@@ -451,13 +362,7 @@ exit(4);"#,
             "",
             4,
         ),
-        (
-            "error",
-            "function f() { throw new RangeError(\"だめ\"); }\nsetTimeout(f, 1);",
-            "",
-            "RangeError: だめ",
-            1,
-        ),
+        ("error", "function f() { throw new RangeError(\"だめ\"); }\nsetTimeout(f, 1);", "", "RangeError: だめ", 1),
     ];
     let u = setup();
     for &(name, src, stdout, want_err, want_code) in cases {
@@ -478,21 +383,13 @@ exit(4);"#,
                     }
                     std::thread::sleep(Duration::from_millis(100));
                 }
-                eprintln!(
-                    "debugger_window/{name} hangs; trace:\n{}",
-                    trace.lock().unwrap().join("\n")
-                );
+                eprintln!("debugger_window/{name} hangs; trace:\n{}", trace.lock().unwrap().join("\n"));
                 std::process::exit(1);
             });
         }
         let note = {
             let trace = trace.clone();
-            Arc::new(move |s: String| {
-                trace
-                    .lock()
-                    .unwrap()
-                    .push(format!("{:5}ms {s}", start.elapsed().as_millis()))
-            })
+            Arc::new(move |s: String| trace.lock().unwrap().push(format!("{:5}ms {s}", start.elapsed().as_millis())))
         };
         let (out, err_out) = (SharedBuf::default(), SharedBuf::default());
         let o = Options {
@@ -512,25 +409,11 @@ exit(4);"#,
             Ok(c) => (c, String::new()),
             Err(e) => (1, e.to_string()),
         };
-        let ctx = || {
-            format!(
-                "{name}: stderr:\n{}\ntrace:\n{}",
-                err_out.text(),
-                trace.lock().unwrap().join("\n")
-            )
-        };
+        let ctx = || format!("{name}: stderr:\n{}\ntrace:\n{}", err_out.text(), trace.lock().unwrap().join("\n"));
         assert_eq!(code, want_code, "exit code (error {msg:?}); {}", ctx());
-        assert!(
-            want_err.is_empty() == msg.is_empty() && msg.contains(want_err),
-            "error {msg:?}, want {want_err:?}; {}",
-            ctx()
-        );
+        assert!(want_err.is_empty() == msg.is_empty() && msg.contains(want_err), "error {msg:?}, want {want_err:?}; {}", ctx());
         if !want_err.is_empty() {
-            assert!(
-                msg.contains("main.js:1:"),
-                "error {msg:?} does not point to main.js; {}",
-                ctx()
-            );
+            assert!(msg.contains("main.js:1:"), "error {msg:?} does not point to main.js; {}", ctx());
         }
         assert_eq!(out.text(), stdout, "stdout; {}", ctx());
         let _ = std::fs::remove_dir_all(&dir);

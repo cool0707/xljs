@@ -63,18 +63,10 @@ fn op_name(op: &str) -> String {
 /// The user-facing message for err in the active language.
 pub fn error(err: &Error) -> String {
     match err {
-        Error::Path { op, path, source } => {
-            t("os.error", &[path.clone(), op_name(op), reason(source)])
+        Error::Path { op, path, source } => t("os.error", &[path.clone(), op_name(op), reason(source)]),
+        Error::Link { op, old, new, source } => {
+            t("os.error", &[format!("{old} → {new}"), op_name(op), reason(source)])
         }
-        Error::Link {
-            op,
-            old,
-            new,
-            source,
-        } => t(
-            "os.error",
-            &[format!("{old} → {new}"), op_name(op), reason(source)],
-        ),
         Error::Context { prefix, inner } => format!("{}: {}", text(prefix), error(inner)),
         other => text(&other.to_string()),
     }

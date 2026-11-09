@@ -31,30 +31,17 @@ fn handle_id(v: &Value) -> Option<u64> {
 
 /// The databases, unless a function of the script (db.function) running
 /// inside a call of a database wants them.
-fn dbs<'a>(
-    h: &'a Host,
-    a: &A,
-) -> rquickjs::Result<std::cell::RefMut<'a, std::collections::HashMap<u64, Db>>> {
-    h.dbs
-        .try_borrow_mut()
-        .map_err(|_| a.throw(&err!("sqlite.functionReentrant")))
+fn dbs<'a>(h: &'a Host, a: &A) -> rquickjs::Result<std::cell::RefMut<'a, std::collections::HashMap<u64, Db>>> {
+    h.dbs.try_borrow_mut().map_err(|_| a.throw(&err!("sqlite.functionReentrant")))
 }
 
 /// Runs f with the open database of the handle (argument 0). The SQL
 /// functions of the script are called meanwhile; when one throws, the
 /// call throws what it threw.
-fn with_db<'js, T>(
-    h: &Host,
-    a: &A<'js>,
-    f: impl FnOnce(&mut Db) -> crate::Result<T>,
-) -> rquickjs::Result<T> {
-    let Some(id) = handle_id(&a.arg(0)) else {
-        return Err(a.throw(&err!("sqlite.invalidHandle")));
-    };
+fn with_db<'js, T>(h: &Host, a: &A<'js>, f: impl FnOnce(&mut Db) -> crate::Result<T>) -> rquickjs::Result<T> {
+    let Some(id) = handle_id(&a.arg(0)) else { return Err(a.throw(&err!("sqlite.invalidHandle"))) };
     let mut dbs = dbs(h, a)?;
-    let Some(d) = dbs.get_mut(&id) else {
-        return Err(a.throw(&err!("sqlite.invalidHandle")));
-    };
+    let Some(d) = dbs.get_mut(&id) else { return Err(a.throw(&err!("sqlite.invalidHandle"))) };
     let mut thrown: Option<Value<'js>> = None;
     let r = {
         let mut call = |fid: u64, args: Vec<Sql>| call_fn(h, a, fid, args, &mut thrown);
@@ -71,21 +58,10 @@ fn with_db<'js, T>(
 
 /// Calls the function of the script with the id for SQL: the value, or the
 /// message of what it threw (kept in thrown).
-fn call_fn<'js>(
-    h: &Host,
-    a: &A<'js>,
-    id: u64,
-    args: Vec<Sql>,
-    thrown: &mut Option<Value<'js>>,
-) -> Result<Sql, String> {
+fn call_fn<'js>(h: &Host, a: &A<'js>, id: u64, args: Vec<Sql>, thrown: &mut Option<Value<'js>>) -> Result<Sql, String> {
     let r = (|| -> rquickjs::Result<Sql> {
-        let Some(f) = h.kept_fn(&a.ctx, id) else {
-            return Ok(Sql::Null);
-        };
-        let vals = args
-            .into_iter()
-            .map(|v| to_js(&a.ctx, v, None))
-            .collect::<rquickjs::Result<Vec<_>>>()?;
+        let Some(f) = h.kept_fn(&a.ctx, id) else { return Ok(Sql::Null) };
+        let vals = args.into_iter().map(|v| to_js(&a.ctx, v, None)).collect::<rquickjs::Result<Vec<_>>>()?;
         let v: Value = f.call((Rest(vals),))?;
         if let Some(o) = v.as_object()
             && o.get::<_, Value>("then").is_ok_and(|t| t.is_function())
@@ -96,11 +72,7 @@ fn call_fn<'js>(
     })();
     r.map_err(|_| {
         let e = a.ctx.catch();
-        let msg = match e
-            .as_object()
-            .and_then(|o| o.get::<_, Value>("message").ok())
-            .filter(|m| !nullish(m))
-        {
+        let msg = match e.as_object().and_then(|o| o.get::<_, Value>("message").ok()).filter(|m| !nullish(m)) {
             Some(m) => js::to_str(&m),
             None => js::to_str(&e),
         };
@@ -154,11 +126,7 @@ fn to_sql<'js>(a: &A<'js>, v: &Value<'js>) -> rquickjs::Result<Sql> {
     }
     if let Some(b) = v.as_big_int() {
         let s = js::to_str(v);
-        return b
-            .clone()
-            .to_i64()
-            .map(Sql::Integer)
-            .map_err(|_| a.throw_t("sqlite.bigint", &[s]));
+        return b.clone().to_i64().map(Sql::Integer).map_err(|_| a.throw_t("sqlite.bigint", &[s]));
     }
     if js::is_date(v) {
         return match js::date_fields(v) {
@@ -167,8 +135,7 @@ fn to_sql<'js>(a: &A<'js>, v: &Value<'js>) -> rquickjs::Result<Sql> {
         };
     }
     if let Some(o) = v.as_object() {
-        let bytesish = o.as_array_buffer().is_some()
-            || (js::has(v, "buffer") && js::has(v, "byteLength") && !v.is_array());
+        let bytesish = o.as_array_buffer().is_some() || (js::has(v, "buffer") && js::has(v, "byteLength") && !v.is_array());
         if bytesish {
             return Ok(Sql::Blob(a_bytes(a, v)?));
         }
@@ -192,15 +159,9 @@ fn params<'js>(a: &A<'js>, i: usize) -> rquickjs::Result<Params> {
         return Ok(Params::Pos(Vec::new()));
     }
     if v.is_array() {
-        return elems(&v)
-            .iter()
-            .map(|e| to_sql(a, e))
-            .collect::<rquickjs::Result<_>>()
-            .map(Params::Pos);
+        return elems(&v).iter().map(|e| to_sql(a, e)).collect::<rquickjs::Result<_>>().map(Params::Pos);
     }
-    let Some(o) = v.as_object() else {
-        return Ok(Params::Pos(vec![to_sql(a, &v)?]));
-    };
+    let Some(o) = v.as_object() else { return Ok(Params::Pos(vec![to_sql(a, &v)?])) };
     let mut out = Vec::new();
     for k in o.keys::<String>() {
         let k = k?;
@@ -217,19 +178,8 @@ static DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
 /// Text of a date column as a Date (None when it is not a date).
 fn parse_date<'js>(ctx: &Ctx<'js>, s: &str) -> Option<Value<'js>> {
     let c = DATE_RE.captures(s.trim())?;
-    let n = |i: usize| {
-        c.get(i)
-            .map(|m| m.as_str().parse::<u32>().unwrap_or(0))
-            .unwrap_or(0)
-    };
-    let ms = c
-        .get(7)
-        .map(|m| {
-            format!("{:0<3}", &m.as_str()[..m.as_str().len().min(3)])
-                .parse::<u32>()
-                .unwrap_or(0)
-        })
-        .unwrap_or(0);
+    let n = |i: usize| c.get(i).map(|m| m.as_str().parse::<u32>().unwrap_or(0)).unwrap_or(0);
+    let ms = c.get(7).map(|m| format!("{:0<3}", &m.as_str()[..m.as_str().len().min(3)]).parse::<u32>().unwrap_or(0)).unwrap_or(0);
     let date = NaiveDate::from_ymd_opt(n(1) as i32, n(2), n(3))?;
     let dt: NaiveDateTime = date.and_hms_milli_opt(n(4), n(5), n(6), ms)?;
     match c.get(8).map(|m| m.as_str()) {
@@ -240,10 +190,7 @@ fn parse_date<'js>(ctx: &Ctx<'js>, s: &str) -> Option<Value<'js>> {
             } else {
                 let sign = if z.starts_with('-') { -1 } else { 1 };
                 let digits: String = z[1..].chars().filter(char::is_ascii_digit).collect();
-                let (hh, mm) = (
-                    digits[..2].parse::<i64>().ok()?,
-                    digits[2..].parse::<i64>().ok()?,
-                );
+                let (hh, mm) = (digits[..2].parse::<i64>().ok()?, digits[2..].parse::<i64>().ok()?);
                 sign * (hh * 60 + mm)
             };
             let utc_ms = dt.and_utc().timestamp_millis() - off * 60_000;
@@ -259,9 +206,7 @@ fn to_js<'js>(ctx: &Ctx<'js>, v: Sql, decl: Option<&str>) -> R<'js> {
     let decl = decl.map(|d| d.to_ascii_uppercase()).unwrap_or_default();
     Ok(match v {
         Sql::Null => Value::new_null(ctx.clone()),
-        Sql::Integer(i) if decl.contains("BOOL") && (i == 0 || i == 1) => {
-            Value::new_bool(ctx.clone(), i == 1)
-        }
+        Sql::Integer(i) if decl.contains("BOOL") && (i == 0 || i == 1) => Value::new_bool(ctx.clone(), i == 1),
         Sql::Integer(i) if i.abs() <= MAX_SAFE => Value::new_number(ctx.clone(), i as f64),
         Sql::Integer(i) => BigInt::from_i64(ctx.clone(), i)?.into_value(),
         Sql::Real(f) => Value::new_number(ctx.clone(), f),
@@ -335,11 +280,7 @@ pub(super) fn install(n: &N) {
         let names = unique_names(&rows.columns);
         let mut out = Vec::with_capacity(rows.rows.len());
         for r in rows.rows {
-            let vals = r
-                .into_iter()
-                .enumerate()
-                .map(|(i, v)| to_js(&a.ctx, v, rows.decl[i].as_deref()))
-                .collect::<rquickjs::Result<Vec<_>>>()?;
+            let vals = r.into_iter().enumerate().map(|(i, v)| to_js(&a.ctx, v, rows.decl[i].as_deref())).collect::<rquickjs::Result<Vec<_>>>()?;
             if mode == 2 {
                 out.push(js::array(&a.ctx, vals)?);
             } else {
@@ -351,10 +292,7 @@ pub(super) fn install(n: &N) {
             }
         }
         if mode == 1 {
-            return Ok(out
-                .into_iter()
-                .next()
-                .unwrap_or_else(|| Value::new_null(a.ctx.clone())));
+            return Ok(out.into_iter().next().unwrap_or_else(|| Value::new_null(a.ctx.clone())));
         }
         js::array(&a.ctx, out)
     });
@@ -362,18 +300,8 @@ pub(super) fn install(n: &N) {
         let sql = a.str(1);
         let p = params(a, 2)?;
         let (changes, id) = with_db(h, a, |d| d.run(&sql, &p))?;
-        let rowid = if id.abs() <= MAX_SAFE {
-            Value::new_number(a.ctx.clone(), id as f64)
-        } else {
-            BigInt::from_i64(a.ctx.clone(), id)?.into_value()
-        };
-        js::object(
-            &a.ctx,
-            vec![
-                ("changes", js::v(&a.ctx, changes as f64)),
-                ("lastInsertRowid", rowid),
-            ],
-        )
+        let rowid = if id.abs() <= MAX_SAFE { Value::new_number(a.ctx.clone(), id as f64) } else { BigInt::from_i64(a.ctx.clone(), id)?.into_value() };
+        js::object(&a.ctx, vec![("changes", js::v(&a.ctx, changes as f64)), ("lastInsertRowid", rowid)])
     });
     n.set("sqliteExec", |h, a| {
         let sql = a.str(1);
@@ -386,12 +314,7 @@ pub(super) fn install(n: &N) {
         let cols = a.strings(2);
         let rows = elems(&a.arg(3))
             .iter()
-            .map(|r| {
-                elems(r)
-                    .iter()
-                    .map(|v| to_sql(a, v))
-                    .collect::<rquickjs::Result<Vec<_>>>()
-            })
+            .map(|r| elems(r).iter().map(|v| to_sql(a, v)).collect::<rquickjs::Result<Vec<_>>>())
             .collect::<rquickjs::Result<Vec<_>>>()?;
         let verb = match a.str(4).as_str() {
             v @ ("INSERT OR REPLACE" | "INSERT OR IGNORE") => v.to_string(),
@@ -413,16 +336,8 @@ pub(super) fn install(n: &N) {
         a.undefined()
     });
     n.set("sqliteInfo", |h, a| {
-        let (path, shared, readonly, txn, corrupt, closed) = with_db(h, a, |d| {
-            Ok((
-                d.path.to_string_lossy().into_owned(),
-                d.shared(),
-                d.opts.readonly,
-                d.in_transaction(),
-                d.corrupt,
-                d.closed,
-            ))
-        })?;
+        let (path, shared, readonly, txn, corrupt, closed) =
+            with_db(h, a, |d| Ok((d.path.to_string_lossy().into_owned(), d.shared(), d.opts.readonly, d.in_transaction(), d.corrupt, d.closed)))?;
         let c = &a.ctx;
         js::object(
             c,
@@ -470,18 +385,10 @@ pub(super) fn install(n: &N) {
             return Err(a.throw(&err!("sqlite.functionInDebugger")));
         }
         let name = a.str(1);
-        let Some(f) = a.arg(2).into_function() else {
-            return Err(a.throw_t("engine.callbackNotFunction", &[]));
-        };
+        let Some(f) = a.arg(2).into_function() else { return Err(a.throw_t("engine.callbackNotFunction", &[])) };
         let id = h.keep_fn(&a.ctx, f);
         let det = a.bool(3);
-        match with_db(h, a, |d| {
-            d.add_function(db::ScriptFn {
-                name,
-                id,
-                deterministic: det,
-            })
-        }) {
+        match with_db(h, a, |d| d.add_function(db::ScriptFn { name, id, deterministic: det })) {
             Ok(old) => {
                 if let Some(old) = old {
                     h.drop_fn(old);
@@ -498,23 +405,14 @@ pub(super) fn install(n: &N) {
     n.set("sqliteRepair", |_, a| {
         let path = a.str(0);
         let abs = std::path::absolute(&path).unwrap_or_else(|_| path.clone().into());
-        let opts = db::Options {
-            timeout: Duration::from_millis(int_opt(a, 2, 30_000).max(0) as u64),
-            keep: int_opt(a, 3, 10).max(0) as usize,
-            ..Default::default()
-        };
-        let r =
-            db::repair(&abs, a.bool(1), &opts).map_err(|e| super::throw_path(&a.ctx, &path, e))?;
+        let opts = db::Options { timeout: Duration::from_millis(int_opt(a, 2, 30_000).max(0) as u64), keep: int_opt(a, 3, 10).max(0) as usize, ..Default::default() };
+        let r = db::repair(&abs, a.bool(1), &opts).map_err(|e| super::throw_path(&a.ctx, &path, e))?;
         a.ret(report_json(&r))
     });
     n.set("sqliteCheckFile", |_, a| {
         let path = a.str(0);
         if !std::path::Path::new(&path).exists() {
-            return Err(a.throw(&crate::Error::path(
-                "open",
-                path,
-                std::io::Error::from(std::io::ErrorKind::NotFound),
-            )));
+            return Err(a.throw(&crate::Error::path("open", path, std::io::Error::from(std::io::ErrorKind::NotFound))));
         }
         let r = match db::check_file(std::path::Path::new(&path)) {
             Ok(v) => v,
@@ -543,15 +441,9 @@ mod tests {
     fn dates_as_text() {
         assert_eq!(date_text((2026, 4, 1, 0, 0, 0, 0)), "2026-04-01");
         assert_eq!(date_text((2026, 4, 1, 9, 30, 0, 0)), "2026-04-01 09:30:00");
-        assert_eq!(
-            date_text((2026, 4, 1, 9, 30, 5, 7)),
-            "2026-04-01 09:30:05.007"
-        );
+        assert_eq!(date_text((2026, 4, 1, 9, 30, 5, 7)), "2026-04-01 09:30:05.007");
         assert!(DATE_RE.is_match("2026-04-01T09:30:00.123+09:00"));
         assert!(!DATE_RE.is_match("09:30"));
-        assert_eq!(
-            unique_names(&["id".into(), "id".into(), "id".into()]),
-            ["id", "id_2", "id_3"]
-        );
+        assert_eq!(unique_names(&["id".into(), "id".into(), "id".into()]), ["id", "id_2", "id_3"]);
     }
 }

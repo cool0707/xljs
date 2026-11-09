@@ -24,13 +24,7 @@ pub struct File {
 
 impl File {
     const fn new(name: &'static str, data: &'static [u8], size: usize, deflated: bool) -> File {
-        File {
-            name,
-            data,
-            size,
-            deflated,
-            cache: OnceLock::new(),
-        }
+        File { name, data, size, deflated, cache: OnceLock::new() }
     }
 
     /// The file's contents.
@@ -49,8 +43,7 @@ impl File {
 
     /// The file's contents as text (all embedded texts are UTF-8).
     pub fn text(&'static self) -> &'static str {
-        std::str::from_utf8(self.bytes())
-            .unwrap_or_else(|e| panic!("embedded file {}: {e}", self.name))
+        std::str::from_utf8(self.bytes()).unwrap_or_else(|e| panic!("embedded file {}: {e}", self.name))
     }
 }
 
@@ -67,11 +60,8 @@ mod tests {
     #[test]
     fn embedded_files_match_sources() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let dirs: [(&'static [File], &str); 3] = [
-            (&WEB_FILES, "src/ui/web"),
-            (&DAYJS_FILES, "src/api/dayjs"),
-            (&LOCALE_FILES, "src/i18n/locales"),
-        ];
+        let dirs: [(&'static [File], &str); 3] =
+            [(&WEB_FILES, "src/ui/web"), (&DAYJS_FILES, "src/api/dayjs"), (&LOCALE_FILES, "src/i18n/locales")];
         let mut compressed = 0;
         for (files, dir) in dirs {
             assert!(!files.is_empty(), "{dir}");
@@ -88,11 +78,7 @@ mod tests {
             (&DTS, "types/xljs.d.ts"),
             (&AI_PROMPT, "docs/ai/prompt.md"),
         ] {
-            assert_eq!(
-                f.text(),
-                std::fs::read_to_string(root.join(path)).unwrap(),
-                "{path}"
-            );
+            assert_eq!(f.text(), std::fs::read_to_string(root.join(path)).unwrap(), "{path}");
             assert!(f.deflated, "{path}");
         }
         assert!(compressed > 0);

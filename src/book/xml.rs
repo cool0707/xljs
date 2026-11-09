@@ -17,10 +17,7 @@ pub(crate) struct Node {
 
 impl Node {
     pub fn attr(&self, name: &str) -> Option<&str> {
-        self.attrs
-            .iter()
-            .find(|(k, _)| k == name)
-            .map(|(_, v)| v.as_str())
+        self.attrs.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
     }
 
     /// The attribute as a flag (1 / true), with its default.
@@ -71,20 +68,9 @@ pub(crate) fn element(e: &BytesStart) -> Node {
     let attrs = e
         .attributes()
         .flatten()
-        .map(|a| {
-            (
-                local(a.key.as_ref()),
-                a.unescape_value()
-                    .map(|v| v.into_owned())
-                    .unwrap_or_default(),
-            )
-        })
+        .map(|a| (local(a.key.as_ref()), a.unescape_value().map(|v| v.into_owned()).unwrap_or_default()))
         .collect();
-    Node {
-        name: local(e.name().as_ref()),
-        attrs,
-        ..Default::default()
-    }
+    Node { name: local(e.name().as_ref()), attrs, ..Default::default() }
 }
 
 /// The text of a text-like event (text, CDATA, entity reference).

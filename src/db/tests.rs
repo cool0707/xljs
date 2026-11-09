@@ -6,11 +6,7 @@ use super::*;
 use crate::testutil::{lock_lang, tempdir};
 
 fn opts(shared: bool) -> Options {
-    Options {
-        shared: Some(shared),
-        timeout: Duration::from_millis(200),
-        ..Default::default()
-    }
+    Options { shared: Some(shared), timeout: Duration::from_millis(200), ..Default::default() }
 }
 
 fn p(v: Vec<Value>) -> Params {
@@ -22,9 +18,7 @@ fn text(s: &str) -> Value {
 }
 
 fn count(db: &mut Db, table: &str) -> i64 {
-    let r = db
-        .query(&format!("SELECT count(*) FROM {table}"), &p(vec![]), None)
-        .unwrap();
+    let r = db.query(&format!("SELECT count(*) FROM {table}"), &p(vec![]), None).unwrap();
     match r.rows[0][0] {
         Value::Integer(n) => n,
         _ => panic!(),
@@ -33,24 +27,9 @@ fn count(db: &mut Db, table: &str) -> i64 {
 
 /// Fills table t with n rows of some size (several pages).
 fn fill(db: &mut Db, n: usize) {
-    db.exec("CREATE TABLE IF NOT EXISTS t(id INTEGER PRIMARY KEY, name TEXT, note TEXT)")
-        .unwrap();
-    let rows = (0..n)
-        .map(|i| {
-            vec![
-                Value::Integer(i as i64 + 1),
-                text(&format!("name{i}")),
-                text(&"x".repeat(200)),
-            ]
-        })
-        .collect();
-    db.insert(
-        "t",
-        &["id".into(), "name".into(), "note".into()],
-        rows,
-        "INSERT",
-    )
-    .unwrap();
+    db.exec("CREATE TABLE IF NOT EXISTS t(id INTEGER PRIMARY KEY, name TEXT, note TEXT)").unwrap();
+    let rows = (0..n).map(|i| vec![Value::Integer(i as i64 + 1), text(&format!("name{i}")), text(&"x".repeat(200))]).collect();
+    db.insert("t", &["id".into(), "name".into(), "note".into()], rows, "INSERT").unwrap();
 }
 
 /// Overwrites the pages from..to (1-based) of the file with garbage.
@@ -77,40 +56,19 @@ fn local_queries_and_parameters() {
     let path = dir.join("a.db");
     let mut db = Db::open(path.to_str().unwrap(), opts(false)).unwrap();
     assert!(!db.shared());
-    db.exec("CREATE TABLE t(a INTEGER, b TEXT, d DATE)")
-        .unwrap();
-    let (changes, id) = db
-        .run(
-            "INSERT INTO t VALUES(?, ?, ?)",
-            &p(vec![Value::Integer(1), text("x"), text("2026-04-01")]),
-        )
-        .unwrap();
+    db.exec("CREATE TABLE t(a INTEGER, b TEXT, d DATE)").unwrap();
+    let (changes, id) = db.run("INSERT INTO t VALUES(?, ?, ?)", &p(vec![Value::Integer(1), text("x"), text("2026-04-01")])).unwrap();
     assert_eq!((changes, id), (1, 1));
-    db.run(
-        "INSERT INTO t(a, b) VALUES(:a, @b)",
-        &Params::Named(vec![
-            ("a".into(), Value::Integer(2)),
-            ("@b".into(), text("y")),
-        ]),
-    )
-    .unwrap();
-    let r = db
-        .query("SELECT * FROM t ORDER BY a", &p(vec![]), None)
-        .unwrap();
+    db.run("INSERT INTO t(a, b) VALUES(:a, @b)", &Params::Named(vec![("a".into(), Value::Integer(2)), ("@b".into(), text("y"))])).unwrap();
+    let r = db.query("SELECT * FROM t ORDER BY a", &p(vec![]), None).unwrap();
     assert_eq!(r.columns, ["a", "b", "d"]);
     assert_eq!(r.decl[2].as_deref(), Some("DATE"));
     assert_eq!(r.rows.len(), 2);
-    let one = db
-        .query("SELECT b FROM t ORDER BY a", &p(vec![]), Some(1))
-        .unwrap();
+    let one = db.query("SELECT b FROM t ORDER BY a", &p(vec![]), Some(1)).unwrap();
     assert_eq!(one.rows, vec![vec![text("x")]]);
-    let e = db
-        .run("INSERT INTO t VALUES(?, ?, ?)", &p(vec![Value::Integer(1)]))
-        .unwrap_err();
+    let e = db.run("INSERT INTO t VALUES(?, ?, ?)", &p(vec![Value::Integer(1)])).unwrap_err();
     assert!(e.to_string().contains("3"), "{e}");
-    let e = db
-        .run("INSERT INTO t(a) VALUES(:zz)", &Params::Named(vec![]))
-        .unwrap_err();
+    let e = db.run("INSERT INTO t(a) VALUES(:zz)", &Params::Named(vec![])).unwrap_err();
     assert!(e.to_string().contains(":zz"), "{e}");
     // Nested transactions are savepoints.
     db.begin().unwrap();
@@ -137,11 +95,7 @@ fn shared_mode_backs_up_logs_and_locks() {
     let side = Sidecar::find(&path).unwrap();
     assert!(side.dir.join("README.txt").exists());
     fill(&mut a, 10);
-    a.run(
-        "UPDATE t SET name = ? WHERE id = ?",
-        &p(vec![text("changed"), Value::Integer(3)]),
-    )
-    .unwrap();
+    a.run("UPDATE t SET name = ? WHERE id = ?", &p(vec![text("changed"), Value::Integer(3)])).unwrap();
     // A read does not log.
     a.query("SELECT * FROM t", &p(vec![]), None).unwrap();
     assert_eq!(side.snapshots().len(), 1);
@@ -152,19 +106,10 @@ fn shared_mode_backs_up_logs_and_locks() {
 
     // Another user opening the database is shared too, and waits for the
     // writer.
-    let mut b = Db::open(
-        ps,
-        Options {
-            shared: None,
-            ..opts(false)
-        },
-    )
-    .unwrap();
+    let mut b = Db::open(ps, Options { shared: None, ..opts(false) }).unwrap();
     assert!(b.shared());
     a.begin().unwrap();
-    let e = b
-        .query("SELECT count(*) FROM t", &p(vec![]), None)
-        .unwrap_err();
+    let e = b.query("SELECT count(*) FROM t", &p(vec![]), None).unwrap_err();
     assert_eq!(e.key(), Some("sqlite.busy"), "{e}");
     a.commit().unwrap();
     assert_eq!(count(&mut b, "t"), 10);
@@ -173,10 +118,7 @@ fn shared_mode_backs_up_logs_and_locks() {
     a.begin().unwrap();
     a.run("DELETE FROM t", &p(vec![])).unwrap();
     a.rollback().unwrap();
-    assert_eq!(
-        std::fs::read_to_string(&logs[0].1).unwrap().lines().count(),
-        3
-    );
+    assert_eq!(std::fs::read_to_string(&logs[0].1).unwrap().lines().count(), 3);
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -188,8 +130,7 @@ fn shared_repair_restores_backup_and_replays_the_log() {
     let ps = path.to_str().unwrap();
     let mut db = Db::open(ps, opts(true)).unwrap();
     fill(&mut db, 300);
-    db.run("UPDATE t SET name = 'last' WHERE id = 300", &p(vec![]))
-        .unwrap();
+    db.run("UPDATE t SET name = 'last' WHERE id = 300", &p(vec![])).unwrap();
     db.close();
     damage(&path, 2, 200);
     let mut db = Db::open(ps, opts(true)).unwrap();
@@ -201,9 +142,7 @@ fn shared_repair_restores_backup_and_replays_the_log() {
     assert_eq!(r.replayed, 3);
     assert_eq!(r.tables, vec![("t".to_string(), 300)]);
     assert!(std::path::Path::new(r.broken.as_deref().unwrap()).exists());
-    let last = db
-        .query("SELECT name FROM t WHERE id = 300", &p(vec![]), None)
-        .unwrap();
+    let last = db.query("SELECT name FROM t WHERE id = 300", &p(vec![]), None).unwrap();
     assert_eq!(last.rows[0][0], text("last"));
     // A fresh backup of the repaired database.
     assert_eq!(Sidecar::find(&path).unwrap().snapshots().len(), 2);
@@ -235,13 +174,7 @@ fn local_repair_salvages_readable_rows() {
     let mut db = Db::open(ps, opts(false)).unwrap();
     assert!(is_ok(&db.check().unwrap()));
     // The index came back too.
-    let idx = db
-        .query(
-            "SELECT name FROM sqlite_schema WHERE type = 'index'",
-            &p(vec![]),
-            None,
-        )
-        .unwrap();
+    let idx = db.query("SELECT name FROM sqlite_schema WHERE type = 'index'", &p(vec![]), None).unwrap();
     assert_eq!(idx.rows.len(), 1);
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -255,15 +188,7 @@ fn damaged_index_is_rebuilt_without_loss() {
     let mut db = Db::open(ps, opts(false)).unwrap();
     fill(&mut db, 200);
     db.exec("CREATE INDEX t_name ON t(name)").unwrap();
-    let root: i64 = match db
-        .query(
-            "SELECT rootpage FROM sqlite_schema WHERE name = 't_name'",
-            &p(vec![]),
-            None,
-        )
-        .unwrap()
-        .rows[0][0]
-    {
+    let root: i64 = match db.query("SELECT rootpage FROM sqlite_schema WHERE name = 't_name'", &p(vec![]), None).unwrap().rows[0][0] {
         Value::Integer(n) => n,
         _ => panic!(),
     };
@@ -290,35 +215,17 @@ fn excel_functions_in_the_schema_survive_repair() {
          CREATE INDEX p_month ON p(MONTH(sold))",
     )
     .unwrap();
-    db.run(
-        "INSERT INTO p(price, sold) VALUES(?, ?)",
-        &p(vec![Value::Real(1980.0), text("2026-04-15")]),
-    )
-    .unwrap();
+    db.run("INSERT INTO p(price, sold) VALUES(?, ?)", &p(vec![Value::Real(1980.0), text("2026-04-15")])).unwrap();
     // A change that uses them goes into the change log, and is replayed.
-    db.run("UPDATE p SET price = ROUNDUP(price * 1.05, -1)", &p(vec![]))
-        .unwrap();
+    db.run("UPDATE p SET price = ROUNDUP(price * 1.05, -1)", &p(vec![])).unwrap();
     db.close();
     assert!(is_ok(&check_file(&path).unwrap()));
     damage(&path, 2, 200);
     let mut db = Db::open(ps, opts(true)).unwrap();
     let r = db.repair(false).unwrap();
     assert_eq!((r.method.as_str(), r.skipped), ("backup", 0), "{r:?}");
-    let row = db
-        .query(
-            "SELECT price, tax, due FROM p WHERE MONTH(sold) = 4",
-            &p(vec![]),
-            None,
-        )
-        .unwrap();
-    assert_eq!(
-        row.rows,
-        vec![vec![
-            Value::Real(2080.0),
-            Value::Integer(208),
-            text("2026-05-31")
-        ]]
-    );
+    let row = db.query("SELECT price, tax, due FROM p WHERE MONTH(sold) = 4", &p(vec![]), None).unwrap();
+    assert_eq!(row.rows, vec![vec![Value::Real(2080.0), Value::Integer(208), text("2026-05-31")]]);
     assert!(is_ok(&db.check().unwrap()));
     let _ = std::fs::remove_dir_all(&dir);
 }

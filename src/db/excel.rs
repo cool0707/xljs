@@ -38,20 +38,12 @@ const FUNCTIONS: &[(&str, i32, i32, Func)] = &[
     ("LEFT", 1, 2, left),
     ("RIGHT", 1, 2, right),
     ("MID", 3, 3, mid),
-    ("LEN", 1, 1, |a| {
-        Some(Value::Integer(text(a[0])?.chars().count() as i64))
-    }),
+    ("LEN", 1, 1, |a| Some(Value::Integer(text(a[0])?.chars().count() as i64))),
     ("FIND", 2, 3, find),
     ("TEXT", 2, 2, text_fn),
-    ("YEAR", 1, 1, |a| {
-        Some(Value::Integer(date(a[0])?.year() as i64))
-    }),
-    ("MONTH", 1, 1, |a| {
-        Some(Value::Integer(date(a[0])?.month() as i64))
-    }),
-    ("DAY", 1, 1, |a| {
-        Some(Value::Integer(date(a[0])?.day() as i64))
-    }),
+    ("YEAR", 1, 1, |a| Some(Value::Integer(date(a[0])?.year() as i64))),
+    ("MONTH", 1, 1, |a| Some(Value::Integer(date(a[0])?.month() as i64))),
+    ("DAY", 1, 1, |a| Some(Value::Integer(date(a[0])?.day() as i64))),
     ("WEEKDAY", 1, 2, weekday),
     ("EDATE", 2, 2, edate),
     ("EOMONTH", 2, 2, eomonth),
@@ -65,9 +57,7 @@ pub fn names() -> impl Iterator<Item = &'static str> {
 
 /// Registers the functions on a connection.
 pub(crate) fn register(conn: &Connection) -> rusqlite::Result<()> {
-    let flags = FunctionFlags::SQLITE_UTF8
-        | FunctionFlags::SQLITE_DETERMINISTIC
-        | FunctionFlags::SQLITE_INNOCUOUS;
+    let flags = FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC | FunctionFlags::SQLITE_INNOCUOUS;
     for &(name, min, max, f) in FUNCTIONS {
         for n in min..=max {
             conn.create_scalar_function(name, n, flags, move |ctx| {
@@ -86,12 +76,7 @@ fn num(v: ValueRef) -> Option<f64> {
     match v {
         ValueRef::Integer(i) => Some(i as f64),
         ValueRef::Real(f) => Some(f),
-        ValueRef::Text(t) => std::str::from_utf8(t)
-            .ok()?
-            .trim()
-            .parse::<f64>()
-            .ok()
-            .filter(|f| f.is_finite()),
+        ValueRef::Text(t) => std::str::from_utf8(t).ok()?.trim().parse::<f64>().ok().filter(|f| f.is_finite()),
         _ => None,
     }
 }
@@ -114,34 +99,17 @@ fn text(v: ValueRef) -> Option<String> {
     }
 }
 
-static DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?)?$").unwrap()
-});
+static DATE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?)?$").unwrap());
 
 /// A date and time: text, or an Excel serial number (also as text).
 fn date(v: ValueRef) -> Option<NaiveDateTime> {
     if let ValueRef::Text(t) = v {
         let s = std::str::from_utf8(t).ok()?.trim();
         if let Some(c) = DATE_RE.captures(s) {
-            let n = |i: usize| {
-                c.get(i)
-                    .map(|m| m.as_str().parse::<u32>().unwrap_or(0))
-                    .unwrap_or(0)
-            };
-            let ms = c
-                .get(7)
-                .map(|m| {
-                    format!("{:0<3}", &m.as_str()[..m.as_str().len().min(3)])
-                        .parse::<u32>()
-                        .unwrap_or(0)
-                })
-                .unwrap_or(0);
-            return NaiveDate::from_ymd_opt(n(1) as i32, n(2), n(3))?.and_hms_milli_opt(
-                n(4),
-                n(5),
-                n(6),
-                ms,
-            );
+            let n = |i: usize| c.get(i).map(|m| m.as_str().parse::<u32>().unwrap_or(0)).unwrap_or(0);
+            let ms = c.get(7).map(|m| format!("{:0<3}", &m.as_str()[..m.as_str().len().min(3)]).parse::<u32>().unwrap_or(0)).unwrap_or(0);
+            return NaiveDate::from_ymd_opt(n(1) as i32, n(2), n(3))?.and_hms_milli_opt(n(4), n(5), n(6), ms);
         }
     }
     let f = num(v)?;
@@ -169,11 +137,7 @@ fn sig15(x: f64) -> f64 {
 
 /// An integer when it is one (and exact), a real otherwise.
 fn int_value(f: f64) -> Value {
-    if f.fract() == 0.0 && f.abs() < 9_007_199_254_740_992.0 {
-        Value::Integer(f as i64)
-    } else {
-        Value::Real(f)
-    }
+    if f.fract() == 0.0 && f.abs() < 9_007_199_254_740_992.0 { Value::Integer(f as i64) } else { Value::Real(f) }
 }
 
 #[derive(Clone, Copy)]
@@ -232,9 +196,7 @@ fn right(a: &[ValueRef]) -> Option<Value> {
     if n < 0 {
         return None;
     }
-    Some(Value::Text(
-        s[s.len().saturating_sub(n as usize)..].iter().collect(),
-    ))
+    Some(Value::Text(s[s.len().saturating_sub(n as usize)..].iter().collect()))
 }
 
 fn mid(a: &[ValueRef]) -> Option<Value> {
@@ -243,12 +205,7 @@ fn mid(a: &[ValueRef]) -> Option<Value> {
     if start < 1 || n < 0 {
         return None;
     }
-    Some(Value::Text(
-        s.chars()
-            .skip(start as usize - 1)
-            .take(n as usize)
-            .collect(),
-    ))
+    Some(Value::Text(s.chars().skip(start as usize - 1).take(n as usize).collect()))
 }
 
 /// FIND(find, within, start): the position (from 1) of find in within, case
@@ -264,9 +221,7 @@ fn find(a: &[ValueRef]) -> Option<Value> {
     if needle.is_empty() {
         return Some(Value::Integer(start));
     }
-    (from..=hay.len().saturating_sub(needle.len()))
-        .find(|&i| hay[i..].starts_with(&needle))
-        .map(|i| Value::Integer(i as i64 + 1))
+    (from..=hay.len().saturating_sub(needle.len())).find(|&i| hay[i..].starts_with(&needle)).map(|i| Value::Integer(i as i64 + 1))
 }
 
 /// TEXT(value, format): the value formatted like a cell with the number
@@ -284,34 +239,11 @@ fn text_fn(a: &[ValueRef]) -> Option<Value> {
     let out = if date_format_code(&code) {
         let d = as_date.or_else(|| date(a[0]));
         match d {
-            Some(d) => numfmt::format_date(
-                (
-                    d.year(),
-                    d.month(),
-                    d.day(),
-                    d.hour(),
-                    d.minute(),
-                    d.second(),
-                    d.nanosecond() / 1_000_000,
-                ),
-                &code,
-            ),
+            Some(d) => numfmt::format_date((d.year(), d.month(), d.day(), d.hour(), d.minute(), d.second(), d.nanosecond() / 1_000_000), &code),
             None => text(a[0])?,
         }
     } else if let Some(d) = as_date {
-        numfmt::format_number(
-            to_serial(
-                d.year(),
-                d.month(),
-                d.day(),
-                d.hour(),
-                d.minute(),
-                d.second(),
-                d.nanosecond() / 1_000_000,
-                false,
-            ),
-            &code,
-        )
+        numfmt::format_number(to_serial(d.year(), d.month(), d.day(), d.hour(), d.minute(), d.second(), d.nanosecond() / 1_000_000, false), &code)
     } else {
         match num(a[0]) {
             Some(f) => numfmt::format_number(f, &code),
@@ -340,11 +272,7 @@ fn weekday(a: &[ValueRef]) -> Option<Value> {
 }
 
 fn add_months(d: NaiveDate, months: i64) -> Option<NaiveDate> {
-    if months >= 0 {
-        d.checked_add_months(Months::new(months.try_into().ok()?))
-    } else {
-        d.checked_sub_months(Months::new((-months).try_into().ok()?))
-    }
+    if months >= 0 { d.checked_add_months(Months::new(months.try_into().ok()?)) } else { d.checked_sub_months(Months::new((-months).try_into().ok()?)) }
 }
 
 /// The last day of the month of d.
@@ -359,10 +287,7 @@ fn edate(a: &[ValueRef]) -> Option<Value> {
 
 fn eomonth(a: &[ValueRef]) -> Option<Value> {
     let d = date(a[0])?.date();
-    Some(date_text(month_end(add_months(
-        d.with_day(1)?,
-        count(a.get(1), 0)?,
-    )?)?))
+    Some(date_text(month_end(add_months(d.with_day(1)?, count(a.get(1), 0)?)?)?))
 }
 
 /// DATE(y, m, d) of Excel: months and days beyond the end carry over.
@@ -378,9 +303,7 @@ fn datedif(a: &[ValueRef]) -> Option<Value> {
     if s > e {
         return None;
     }
-    let months = (e.year() - s.year()) as i64 * 12 + e.month() as i64
-        - s.month() as i64
-        - (e.day() < s.day()) as i64;
+    let months = (e.year() - s.year()) as i64 * 12 + e.month() as i64 - s.month() as i64 - (e.day() < s.day()) as i64;
     let r = match unit.as_str() {
         "Y" => months / 12,
         "M" => months,
@@ -416,8 +339,7 @@ mod tests {
     }
 
     fn q(c: &Connection, expr: &str) -> Value {
-        c.query_row(&format!("SELECT {expr}"), [], |r| r.get::<_, Value>(0))
-            .unwrap()
+        c.query_row(&format!("SELECT {expr}"), [], |r| r.get::<_, Value>(0)).unwrap()
     }
 
     fn t(s: &str) -> Value {
@@ -470,10 +392,7 @@ mod tests {
             ("FIND('', 'abc')", Value::Integer(1)),
             ("TEXT(1234567.891, '#,##0')", t("1,234,568")),
             ("TEXT(0.256, '0.0%')", t("25.6%")),
-            (
-                "TEXT('2026-04-01', 'yyyy\"年\"m\"月\"d\"日\"(aaa)')",
-                t("2026年4月1日(水)"),
-            ),
+            ("TEXT('2026-04-01', 'yyyy\"年\"m\"月\"d\"日\"(aaa)')", t("2026年4月1日(水)")),
             ("TEXT('2026/4/1 9:05', 'm/d h:mm')", t("4/1 9:05")),
             ("TEXT(46113, 'yyyy/mm/dd')", t("2026/04/01")),
             ("TEXT('2026-04-01', '0')", t("46113")),
@@ -505,34 +424,13 @@ mod tests {
             ("EOMONTH('2026-04-15', 0)", t("2026-04-30")),
             ("EOMONTH('2026-04-15', -2)", t("2026-02-28")),
             ("EOMONTH('2024-01-31', 1)", t("2024-02-29")),
-            (
-                "DATEDIF('2000-04-02', '2026-04-01', 'Y')",
-                Value::Integer(25),
-            ),
-            (
-                "DATEDIF('2000-04-01', '2026-04-01', 'Y')",
-                Value::Integer(26),
-            ),
-            (
-                "DATEDIF('2026-01-31', '2026-03-30', 'M')",
-                Value::Integer(1),
-            ),
-            (
-                "DATEDIF('2026-01-01', '2026-03-01', 'D')",
-                Value::Integer(59),
-            ),
-            (
-                "DATEDIF('2020-05-10', '2026-04-01', 'ym')",
-                Value::Integer(10),
-            ),
-            (
-                "DATEDIF('2020-05-10', '2026-04-01', 'YD')",
-                Value::Integer(326),
-            ),
-            (
-                "DATEDIF('2026-01-10', '2026-04-05', 'MD')",
-                Value::Integer(26),
-            ),
+            ("DATEDIF('2000-04-02', '2026-04-01', 'Y')", Value::Integer(25)),
+            ("DATEDIF('2000-04-01', '2026-04-01', 'Y')", Value::Integer(26)),
+            ("DATEDIF('2026-01-31', '2026-03-30', 'M')", Value::Integer(1)),
+            ("DATEDIF('2026-01-01', '2026-03-01', 'D')", Value::Integer(59)),
+            ("DATEDIF('2020-05-10', '2026-04-01', 'ym')", Value::Integer(10)),
+            ("DATEDIF('2020-05-10', '2026-04-01', 'YD')", Value::Integer(326)),
+            ("DATEDIF('2026-01-10', '2026-04-05', 'MD')", Value::Integer(26)),
             ("DATEDIF('2026-04-02', '2026-04-01', 'D')", Value::Null),
             ("DATEDIF('2026-01-01', '2026-04-01', 'X')", Value::Null),
         ];
@@ -546,13 +444,7 @@ mod tests {
         // None of the names may shadow a function of SQLite.
         let c = Connection::open_in_memory().unwrap();
         for n in names() {
-            let used: bool = c
-                .query_row(
-                    "SELECT count(*) > 0 FROM pragma_function_list WHERE name = lower(?)",
-                    [n],
-                    |r| r.get(0),
-                )
-                .unwrap();
+            let used: bool = c.query_row("SELECT count(*) > 0 FROM pragma_function_list WHERE name = lower(?)", [n], |r| r.get(0)).unwrap();
             assert!(!used, "{n} is a function of SQLite");
         }
     }
@@ -570,11 +462,7 @@ mod tests {
              INSERT INTO t(price, sold) VALUES(1980, '2026-04-15');",
         )
         .unwrap();
-        let r: (i64, String, String) = c
-            .query_row("SELECT tax, due, (SELECT d FROM v) FROM t", [], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-            })
-            .unwrap();
+        let r: (i64, String, String) = c.query_row("SELECT tax, due, (SELECT d FROM v) FROM t", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
         assert_eq!(r, (198, "2026-05-31".into(), "4/15".into()));
     }
 }
