@@ -962,9 +962,18 @@
     syncBrowser();
   }
 
+  // The logo of an AI chat: a bundled SVG (vendor/lobe-icons) or a Font
+  // Awesome brand icon in the text color.
+  const SERVICE_SVGS = { copilot: "copilot-color", m365: "copilot-color", gemini: "gemini-color", claude: "claude-color" };
+  const SERVICE_FA = { openai: "fa-openai" };
+  function serviceIcon(name) {
+    if (SERVICE_SVGS[name]) return el("img", { className: "service-icon", src: `vendor/lobe-icons/${SERVICE_SVGS[name]}.svg`, alt: "" });
+    return icon(SERVICE_FA[name] ? `fa-brands ${SERVICE_FA[name]} service-icon` : "fa-regular fa-comments");
+  }
+
   function initChat(services) {
     $("services").replaceChildren(...services.map((s) => el("button", { type: "button", className: "big", onclick: () => openChat(s.url) },
-      icon("fa-regular fa-comments"), el("span", {}, s.name))));
+      serviceIcon(s.icon), el("span", {}, s.name))));
     $("chat-url-form").onsubmit = (e) => { e.preventDefault(); openChat($("chat-url-start").value); };
     $("chat-url").addEventListener("keydown", (e) => { if (e.key === "Enter") openChat($("chat-url").value); });
     $("chat-home").onclick = () => { st.chat = ""; send({ op: "chat", url: "" }); syncBrowser(); };

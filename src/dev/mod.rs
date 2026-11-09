@@ -47,13 +47,15 @@ pub const DEV_PAGE: &str = "dev.html";
 /// preview.
 const PROJECT_PREFIX: &str = "_project/";
 
-/// The AI chats offered on the start of the chat pane: (name, URL).
-pub const SERVICES: &[(&str, &str)] = &[
-    ("Microsoft Copilot", "https://copilot.microsoft.com/"),
-    ("Microsoft 365 Copilot", "https://m365.cloud.microsoft/chat"),
-    ("Gemini", "https://gemini.google.com/app"),
-    ("ChatGPT", "https://chatgpt.com/"),
-    ("Claude", "https://claude.ai/new"),
+/// The AI chats offered on the start of the chat pane: (name, URL, icon).
+/// The icon is a class of the bundled Font Awesome brands (dev.css colors
+/// it per service).
+pub const SERVICES: &[(&str, &str, &str)] = &[
+    ("Microsoft Copilot", "https://copilot.microsoft.com/", "copilot"),
+    ("Microsoft 365 Copilot", "https://m365.cloud.microsoft/chat", "m365"),
+    ("Gemini", "https://gemini.google.com/app", "gemini"),
+    ("ChatGPT", "https://chatgpt.com/", "openai"),
+    ("Claude", "https://claude.ai/new", "claude"),
 ];
 
 /// How the development mode starts.
@@ -462,7 +464,7 @@ impl Session {
             "texts": texts(),
             // For the wizard's preview of the look (form.html).
             "formTexts": texts_under("form."),
-            "services": SERVICES.iter().map(|(n, u)| json!({"name": n, "url": u})).collect::<Vec<_>>(),
+            "services": SERVICES.iter().map(|(n, u, i)| json!({"name": n, "url": u, "icon": i})).collect::<Vec<_>>(),
             "recent": recent,
             "home": default_dir(&gs),
             // For the editor's completion (dev-types.js).

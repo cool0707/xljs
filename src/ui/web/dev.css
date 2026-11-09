@@ -118,6 +118,10 @@ body.tab-dragging iframe { pointer-events: none; }
 .start h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }
 .start h3 { margin: 20px 0 6px; font-size: 14px; font-weight: 600; }
 .services { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+/* The logos of the AI chats (in their own colors; ChatGPT's in the text color). */
+.services .service-icon { width: 18px; height: 18px; flex-shrink: 0; color: var(--fg); }
+.services i.service-icon { font-size: 17px; line-height: 18px; }
+.services img.service-icon + span { margin-left: 6px; }
 .url-row { display: flex; gap: 6px; max-width: 560px; margin-bottom: 16px; }
 .steps { padding-left: 20px; color: var(--muted); max-width: 640px; }
 .steps li { margin: 4px 0; }
