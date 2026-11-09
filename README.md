@@ -40,7 +40,7 @@ xljs [オプション] <script.js|script.ts> [引数...]
 xljs pack <script> [-o 出力.exe]   スクリプトを埋め込んだ exe を作成
 xljs check <script>                構文と import を検査（実行しない）
 xljs init [フォルダ]               型定義 (xljs.d.ts) と jsconfig.json を作成
-xljs vba [--include=...|--all] <ブック>... [-o 出力.txt]  VBA コード（と数式・入力規則など）を 1 つのテキストにまとめる
+xljs vba [--include=...|--all] <ブック>... [-o 出力.txt]  VBA コード（と数式・入力規則・グラフなど）を 1 つのテキストにまとめる
 xljs dev [script|フォルダ]         開発モード（AI チャットと並べて作る・直す）
 xljs version
 ```
@@ -78,23 +78,25 @@ Excel ブック（.xlsm / .xlsx / .xlsb / .xlam / .xltm など）を `xljs.exe` 
 | 入力規則 | リスト・整数・ユーザー設定などの条件、入力時メッセージ、エラーの種類、日本語入力の指定 |
 | 名前の定義 | 名前と参照範囲（シート単位の名前・印刷範囲も） |
 | 条件付き書式 | 条件と書式（太字・文字色・塗りつぶしなど）、カラースケール・データバー・アイコンセット。優先順位の順 |
+| グラフ | シートごと（グラフシートも）のグラフの位置・種類・タイトル、系列ごとの名前とデータの範囲（`=売上!$B$2:$B$13`）、軸（タイトル・最小値・最大値・第 2 軸）、凡例、データラベル、近似曲線。ウォーターフォールなどの新しい種類は種類と系列だけ |
 
 保存先を聞いたうえで 1 つのテキストファイル（既定は `<ブック名>_VBA.txt`、VBA コードを選ばなければ `<ブック名>_数式.txt`）にまとめます。保存後に「今すぐ開きますか？」で開けば、そのまま AI チャットに貼り付けられます。複数のブックをまとめてドロップすると 1 つのファイルに続けて書きます。引数なしで起動した画面の「VBA・数式の抽出」からも選べます。
 
 ```
 xljs vba 売上集計.xlsm              → 売上集計_VBA.txt（ブックと同じフォルダ。VBA コードだけ）
-xljs vba --all 売上集計.xlsm        → VBA コード・数式・入力規則・名前の定義・条件付き書式
+xljs vba --all 売上集計.xlsm        → VBA コード・数式・入力規則・名前の定義・条件付き書式・グラフ
 xljs vba --include=formulas,validation 台帳.xlsx → 台帳_数式.txt（数式と入力規則）
 xljs vba a.xlsm b.xlsm -o マクロ.txt → 2 冊分を マクロ.txt に
 xljsc vba 売上集計.xlsm -o -        → 標準出力へ
 ```
 
-`--include` には `vba`・`formulas`（数式）・`validation`（入力規則）・`names`（名前の定義）・`conditional`（条件付き書式）をカンマ区切りで指定します（`--all` はすべて）。
+`--include` には `vba`・`formulas`（数式）・`validation`（入力規則）・`names`（名前の定義）・`conditional`（条件付き書式）・`charts`（グラフ）をカンマ区切りで指定します（`--all` はすべて）。
 
 - 中身は Markdown です。モジュールごとに見出し（種類と、シートのモジュールならシート名）と `vba` のコードブロックを書きます。モジュール先頭の `Attribute VB_...` 行と、`Option Explicit` しかないモジュールは省きます。
 - Excel がなくても読めます。VBA プロジェクトにパスワード（表示ロック）がかかっていても、コードは暗号化されていないので読めます。読み取りパスワードで保護されたブックは読めません。
 - ユーザーフォームはコードだけで、コントロールの配置は含みません。コンパイル済みのコードだけを残してソースを消したブック（VBA stomping）からは取り出せません。
 - 数式・入力規則・条件付き書式は、範囲と 1 つの式でまとめて書きます。式は最初の範囲の左上のセルのもので、ほかのセルでは相対参照がそのセルの位置までずれます（Excel でコピーした場合と同じ）。セルのコピーで細かく分かれた入力規則・条件付き書式も、同じ条件ならまとめます。シートに書き戻すための形式ではなく、AI と人が読んで仕組みが分かるための形式です。
+- グラフは値ではなく、データの範囲（セルの参照）を書きます。値は数式などと同じテキストに書かれないので、必要ならシートの内容を別に伝えてください。
 - 数式などは .xlsx / .xlsm 形式（Office Open XML）のブックから読みます。.xls と .xlsb からは VBA コードだけを読めます。
 - スクリプトからは `workbooks.readVBA(パス)` で VBA コードを読めます（下記「Excel」）。
 - 移植を頼むときは、[`docs/ai/`](docs/ai/README.md) のプロンプトと一緒に貼ってください。
@@ -715,7 +717,7 @@ cargo check --target x86_64-pc-windows-gnu --all-targets   # Windows 専用コ�
 | `src/pack` | exe へのスクリプト・アセット埋め込み（zip） |
 | `src/meta` | スクリプト先頭のメタデータの読み取りとアセットの範囲 |
 | `src/vba` | マクロブックの VBA コードの読み取り |
-| `src/book` | ブックの数式・入力規則・名前の定義・条件付き書式をテキストに（`xljs vba`） |
+| `src/book` | ブックの数式・入力規則・名前の定義・条件付き書式・グラフをテキストに（`xljs vba`） |
 | `types/xljs.d.ts` | 型定義（`xljs init` で出力） |
 
 スクリプトは [oxc](https://oxc.rs/) で TypeScript を変換し、ES モジュールを async 関数に変えて（oxc の module runner 変換）1 ファイルにまとめ、[QuickJS](https://github.com/quickjs-ng/quickjs)（[rquickjs](https://github.com/DelSkayn/rquickjs)）で実行します。インラインのソースマップでエラーの行番号は元のファイルの位置になります。`--debug` のときだけはデバッグウィンドウ（WebView2）のワーカーで実行し、ネイティブ関数を Rust 側からメッセージで提供します（`src/api/remote.rs`、`src/engine/debug.rs`、`src/ui/web/debug*.js`）。

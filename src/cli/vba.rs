@@ -98,7 +98,7 @@ fn split_include(args: &[String]) -> Result<(Include, Vec<String>)> {
     Ok((inc, rest))
 }
 
-/// xljs vba [--include=vba,formulas,validation,names,conditional | --all]
+/// xljs vba [--include=vba,formulas,validation,names,conditional,charts | --all]
 /// <book>... [-o out.txt]: the VBA code (and what else is asked for) of
 /// the workbooks in one text file (next to the first workbook by default,
 /// - for stdout).
@@ -135,7 +135,7 @@ const FORM_SIZE: (i64, i64) = (520, 300);
 /// is checked when one of them has macros.
 fn ask_include(u: &Arc<dyn Ui>, books: &[String]) -> Option<Include> {
     let has_vba = books.iter().any(|b| matches!(vba::read_file(b), Ok(Some(_))));
-    let labels = ["cli.bookVBA", "cli.bookFormulas", "cli.bookValidation", "cli.bookNames", "cli.bookConditional"];
+    let labels = ["cli.bookVBA", "cli.bookFormulas", "cli.bookValidation", "cli.bookNames", "cli.bookConditional", "cli.bookCharts"];
     // The workbooks' names (three of them and how many more).
     let mut names = books.iter().take(3).map(|b| base(b)).collect::<Vec<_>>().join(&t!("vba.separator"));
     if books.len() > 3 {

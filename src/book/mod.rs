@@ -1,13 +1,14 @@
 //! What a workbook holds besides its values, as text for an AI chat (with
 //! the VBA code, `xljs vba`): the formulas, the input rules (data
-//! validation), the defined names and the conditional formats of an
-//! Office Open XML workbook (.xlsx/.xlsm/.xltx/.xltm/.xlam).
+//! validation), the defined names, the conditional formats and the charts
+//! of an Office Open XML workbook (.xlsx/.xlsm/.xltx/.xltm/.xlam).
 //!
 //! Formulas filled down or across (the same in R1C1 form) are written once
 //! with the ranges they cover, and so are rules with the same condition
 //! and format over neighbouring ranges (Excel splits them when cells are
 //! copied).
 
+mod chart;
 mod formula;
 mod rules;
 mod xml;
@@ -30,18 +31,19 @@ pub struct Include {
     pub validation: bool,
     pub names: bool,
     pub conditional: bool,
+    pub charts: bool,
 }
 
 impl Include {
     /// The names of the parts (the CLI's --include, the form's values).
-    pub const KEYS: [&str; 5] = ["vba", "formulas", "validation", "names", "conditional"];
+    pub const KEYS: [&str; 6] = ["vba", "formulas", "validation", "names", "conditional", "charts"];
 
-    pub const VBA: Include = Include { vba: true, formulas: false, validation: false, names: false, conditional: false };
-    pub const ALL: Include = Include { vba: true, formulas: true, validation: true, names: true, conditional: true };
+    pub const VBA: Include = Include { vba: true, formulas: false, validation: false, names: false, conditional: false, charts: false };
+    pub const ALL: Include = Include { vba: true, formulas: true, validation: true, names: true, conditional: true, charts: true };
 
     /// The parts named (Include::KEYS); an unknown name is an error.
     pub fn parse<S: AsRef<str>>(keys: &[S]) -> Result<Include> {
-        let mut i = Include { vba: false, formulas: false, validation: false, names: false, conditional: false };
+        let mut i = Include { vba: false, formulas: false, validation: false, names: false, conditional: false, charts: false };
         for k in keys {
             match k.as_ref().trim() {
                 "vba" => i.vba = true,
@@ -49,6 +51,7 @@ impl Include {
                 "validation" => i.validation = true,
                 "names" => i.names = true,
                 "conditional" => i.conditional = true,
+                "charts" => i.charts = true,
                 "all" => i = Include::ALL,
                 "" => {}
                 other => return Err(err!("book.badInclude", other, Include::KEYS.join(", "))),
@@ -58,13 +61,13 @@ impl Include {
     }
 
     pub fn keys(&self) -> Vec<&'static str> {
-        let on = [self.vba, self.formulas, self.validation, self.names, self.conditional];
+        let on = [self.vba, self.formulas, self.validation, self.names, self.conditional, self.charts];
         Include::KEYS.iter().zip(on).filter(|(_, on)| *on).map(|(k, _)| *k).collect()
     }
 
     /// Whether anything but the VBA code is asked for.
     pub fn sheets(&self) -> bool {
-        self.formulas || self.validation || self.names || self.conditional
+        self.formulas || self.validation || self.names || self.conditional || self.charts
     }
 
     pub fn is_empty(&self) -> bool {
@@ -97,6 +100,7 @@ struct Sheet {
     formulas: Vec<FormulaGroup>,
     validations: Vec<Rule>,
     conditional: Vec<Rule>,
+    charts: Vec<chart::Chart>,
 }
 
 #[derive(Debug)]
@@ -131,44 +135,25 @@ pub fn read(data: &[u8]) -> Result<Workbook> {
     if data.starts_with(&[0xD0, 0xCF, 0x11, 0xE0]) {
         return Err(err!("book.oldFormat"));
     }
-    let mut zr = zip::ZipArchive::new(Cursor::new(data)).map_err(|_| err!("book.notWorkbook"))?;
-    let names: HashMap<String, String> = zr.file_names().map(|n| (n.to_lowercase(), n.to_string())).collect();
-    let mut open = |name: &str| -> Option<Vec<u8>> {
-        let real = names.get(&name.to_lowercase())?;
-        let mut f = zr.by_name(real).ok()?;
-        let mut b = Vec::new();
-        f.read_to_end(&mut b).ok()?;
-        Some(b)
-    };
-    let Some(wb) = open("xl/workbook.xml").and_then(|x| xml::parse(&x)) else {
-        if open("xl/workbook.bin").is_some() {
+    let zr = zip::ZipArchive::new(Cursor::new(data)).map_err(|_| err!("book.notWorkbook"))?;
+    let mut pkg = Package { names: zr.file_names().map(|n| (n.to_lowercase(), n.to_string())).collect(), zr };
+    let Some(wb) = pkg.xml("xl/workbook.xml") else {
+        if pkg.open("xl/workbook.bin").is_some() {
             return Err(err!("book.binary"));
         }
         return Err(err!("book.notWorkbook"));
     };
-    let rels = open("xl/_rels/workbook.xml.rels").and_then(|x| xml::parse(&x)).unwrap_or_default();
-    let target = |id: &str| -> Option<String> {
-        let r = rels.children("Relationship").find(|r| r.attr("Id") == Some(id))?;
-        let t = r.attr("Target")?;
-        Some(match t.strip_prefix('/') {
-            Some(t) => t.to_string(),
-            None => crate::meta::clean_path(&format!("xl/{t}")),
-        })
-    };
+    let rels = pkg.rels("xl/workbook.xml");
+    let target = |id: &str| rels.iter().find(|r| r.0 == id).map(|r| r.2.clone());
     let mut out = Workbook {
         date1904: wb.child("workbookPr").is_some_and(|p| p.flag("date1904", false)),
         ..Default::default()
     };
-    if let Some(s) = open("xl/styles.xml").and_then(|x| xml::parse(&x)) {
+    if let Some(s) = pkg.xml("xl/styles.xml") {
         out.dxfs = s.child("dxfs").map(|d| d.children("dxf").cloned().collect()).unwrap_or_default();
     }
-    let theme_path = rels
-        .children("Relationship")
-        .find(|r| r.attr("Type").is_some_and(|t| t.ends_with("/theme")))
-        .and_then(|r| r.attr("Id"))
-        .and_then(target)
-        .unwrap_or_else(|| "xl/theme/theme1.xml".into());
-    if let Some(th) = open(&theme_path).and_then(|x| xml::parse(&x)) {
+    let theme_path = rels.iter().find(|r| r.1.ends_with("/theme")).map(|r| r.2.clone()).unwrap_or_else(|| "xl/theme/theme1.xml".into());
+    if let Some(th) = pkg.xml(&theme_path) {
         out.theme = rules::theme(&th);
     }
     if let Some(sheets) = wb.child("sheets") {
@@ -178,8 +163,11 @@ pub fn read(data: &[u8]) -> Result<Workbook> {
                 hidden: matches!(s.attr("state"), Some("hidden" | "veryHidden")),
                 ..Default::default()
             };
-            if let Some(data) = s.attr("id").and_then(target).and_then(|p| open(&p)) {
-                read_sheet(&data, &mut sh);
+            if let Some(part) = s.attr("id").and_then(target) {
+                if let Some(data) = pkg.open(&part) {
+                    read_sheet(&data, &mut sh);
+                }
+                sh.charts = pkg.charts(&part);
             }
             out.sheets.push(sh);
         }
@@ -196,6 +184,94 @@ pub fn read(data: &[u8]) -> Result<Workbook> {
         }
     }
     Ok(out)
+}
+
+/// The parts of the workbook's zip file.
+struct Package<'a> {
+    zr: zip::ZipArchive<Cursor<&'a [u8]>>,
+    /// The names of the parts by their lower case (Excel matches them so).
+    names: HashMap<String, String>,
+}
+
+impl Package<'_> {
+    fn open(&mut self, name: &str) -> Option<Vec<u8>> {
+        let real = self.names.get(&name.to_lowercase())?;
+        let mut f = self.zr.by_name(real).ok()?;
+        let mut b = Vec::new();
+        f.read_to_end(&mut b).ok()?;
+        Some(b)
+    }
+
+    fn xml(&mut self, name: &str) -> Option<Node> {
+        self.open(name).and_then(|x| xml::parse(&x))
+    }
+
+    /// The relationships of a part (internal ones): (id, type, part).
+    fn rels(&mut self, part: &str) -> Vec<(String, String, String)> {
+        let (dir, file) = part.rsplit_once('/').unwrap_or(("", part));
+        let Some(root) = self.xml(&format!("{dir}/_rels/{file}.rels")) else { return Vec::new() };
+        root.children("Relationship")
+            .filter(|r| r.attr("TargetMode") != Some("External"))
+            .filter_map(|r| {
+                let t = r.attr("Target")?;
+                let path = match t.strip_prefix('/') {
+                    Some(t) => t.to_string(),
+                    None => crate::meta::clean_path(&format!("{dir}/{t}")),
+                };
+                Some((r.attr("Id")?.to_string(), r.attr("Type").unwrap_or("").to_string(), path))
+            })
+            .collect()
+    }
+
+    /// The charts in the drawings of a worksheet or a chart sheet, in their
+    /// order.
+    fn charts(&mut self, sheet: &str) -> Vec<chart::Chart> {
+        let mut out = Vec::new();
+        for (_, kind, drawing) in self.rels(sheet) {
+            if !kind.ends_with("/drawing") {
+                continue;
+            }
+            let Some(d) = self.xml(&drawing) else { continue };
+            let rels = self.rels(&drawing);
+            for anchor in d.children.iter().filter(|c| c.name.ends_with("Anchor")) {
+                let mut frames = Vec::new();
+                anchor.find("graphicFrame", &mut frames);
+                for frame in frames {
+                    let mut refs = Vec::new();
+                    frame.find("chart", &mut refs);
+                    let Some(id) = refs.first().and_then(|c| c.attr("id")) else { continue };
+                    let Some((_, kind, part)) = rels.iter().find(|r| r.0 == id) else { continue };
+                    let Some(root) = self.xml(part) else { continue };
+                    let mut names = Vec::new();
+                    frame.find("cNvPr", &mut names);
+                    let (range, sized) = anchor_range(anchor);
+                    out.push(chart::Chart {
+                        name: names.first().and_then(|n| n.attr("name")).unwrap_or("").to_string(),
+                        range,
+                        sized,
+                        root,
+                        ex: kind.ends_with("/chartEx"),
+                    });
+                }
+            }
+        }
+        out
+    }
+}
+
+/// The cells a drawing's anchor covers ("L2:S16"), or where it starts
+/// ("L2", false) without its end; "" for an absolute anchor.
+fn anchor_range(a: &Node) -> (String, bool) {
+    let at = |n: &str| -> Option<(u32, u32)> {
+        let m = a.child(n)?;
+        let num = |k: &str| m.child(k).and_then(|c| c.all_text().trim().parse::<u32>().ok());
+        Some((num("col")? + 1, num("row")? + 1))
+    };
+    match (at("from"), at("to")) {
+        (Some((c1, r1)), Some((c2, r2))) => (Rect { r1, c1, r2, c2 }.display(), true),
+        (Some((c, r)), None) => (Rect::cell(c, r).display(), false),
+        _ => (String::new(), false),
+    }
 }
 
 /// A cell's formula element as read.
@@ -414,7 +490,7 @@ fn ranges(rects: &[Rect]) -> String {
 
 /// Inline code (with more backticks around text that has some), on one
 /// line.
-fn code(s: &str) -> String {
+pub(crate) fn code(s: &str) -> String {
     let s = s.replace("\r\n", " ").replace(['\r', '\n'], " ");
     let (mut best, mut n) = (0, 0);
     for ch in s.chars() {
@@ -525,6 +601,27 @@ pub fn text(file: &str, wb: &Workbook, inc: &Include) -> String {
         });
         part(t!("book.conditionalTitle", file), Some(format!("{}{}", t!("book.rulesIntro"), t!("book.conditionalOrder"))), body, t!("book.conditionalNone"));
     }
+    if inc.charts {
+        let mut body = String::new();
+        for s in wb.sheets.iter().filter(|s| !s.charts.is_empty()) {
+            body.push_str(&sheet_heading(s));
+            for (i, c) in s.charts.iter().enumerate() {
+                let name = if c.name.is_empty() { t!("book.chart.unnamed", i + 1) } else { c.name.clone() };
+                let at = match (c.range.as_str(), c.sized) {
+                    ("", _) => String::new(),
+                    (r, true) => format!("（{r}）"),
+                    (r, false) => format!("（{}）", t!("book.chart.from", r)),
+                };
+                body.push_str(&format!("### {name}{at}\n\n"));
+                for l in chart::describe(c) {
+                    body.push_str(&format!("- {l}\n"));
+                }
+                body.push('\n');
+            }
+        }
+        let body = (!body.is_empty()).then_some(body);
+        part(t!("book.chartsTitle", file), None, body, t!("book.chartsNone"));
+    }
     b
 }
 
@@ -538,6 +635,7 @@ pub fn error_text(file: &str, inc: &Include, e: &Error) -> String {
         (inc.validation, "book.validationTitle"),
         (inc.names, "book.namesTitle"),
         (inc.conditional, "book.conditionalTitle"),
+        (inc.charts, "book.chartsTitle"),
     ] {
         if on {
             b.push_str(&format!("# {}\n\n{msg}\n\n", t!(key, file)));
