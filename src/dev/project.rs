@@ -167,18 +167,15 @@ impl Project {
     }
 }
 
-/// Reads a text file: UTF-8 (without its BOM), else Shift_JIS.
+/// Reads a text file: UTF-8 (without its BOM), UTF-16 with a BOM, else
+/// Shift_JIS.
 pub fn read_text(p: &Path) -> Result<String> {
     let b = std::fs::read(p).map_err(|e| Error::path("open", p.display().to_string(), e))?;
     Ok(decode(&b))
 }
 
 pub fn decode(b: &[u8]) -> String {
-    let b = b.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(b);
-    match std::str::from_utf8(b) {
-        Ok(s) => s.to_string(),
-        Err(_) => encoding_rs::SHIFT_JIS.decode(b).0.into_owned(),
-    }
+    crate::process::decode_output(b, "auto")
 }
 
 /// Writes a text file as UTF-8, creating its folder.

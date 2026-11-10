@@ -11,7 +11,7 @@ AI チャットと並べてスクリプトを作る・直すための画面。�
 | `src/dev/versions.rs` | 簡易バージョニング。置き換える前の内容を `<フォルダ>/.xljs/versions/<相対パス>/NNNN.<拡張子>` に、メモを同じフォルダの `log.json` に |
 | `src/dev/notify.rs` | 自分で直したところを AI に伝える（後述）。AI が最後に見た内容の記録と、行の差分（Myers）・依頼文 |
 | `src/dev/report.rs` | 失敗した実行の stderr から、エラーの部分（`last_error`）と場所（`find_location`）を取り出し、AI への依頼文（`prompt`）を作る。`intro` は `docs/ai/prompt.md` と今のスクリプト（どちらか片方も） |
-| `src/dev/runner.rs` | スクリプトを別プロセス（この exe 自身）で実行し、stdout/stderr と終了をイベントで返す |
+| `src/dev/runner.rs` | スクリプトを別プロセス（この exe 自身）で実行し、stdout/stderr と終了をイベントで返す（`crate::process` 経由。Windows はジョブオブジェクトで、停止するとスクリプトが起動したプログラムも終わる） |
 | `src/ui/web/dev.html` `dev.js` `dev.css` `dev-diff.js` | ページ。キャンバス（タブ）、差分表示（Myers の行差分）、エディタ、プレビュー |
 | `src/ui/web/dev-editor.js` `dev-types.js` | エディタ（後述）。`vendor/codemirror/codemirror.js` は `tools/codemirror` で作る CodeMirror 6 のバンドル |
 | `src/ui/native/browser.rs` | AI チャットの枠: 同じウィンドウの 2 つ目の WebView2（`WindowOptions::browser` / `Window::browser`） |
