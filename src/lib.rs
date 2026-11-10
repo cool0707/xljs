@@ -20,6 +20,7 @@ pub mod process;
 pub mod shortcut;
 pub mod ui;
 pub mod vba;
+pub(crate) mod xml;
 
 pub use error::{Error, Result};
 
