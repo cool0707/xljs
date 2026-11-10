@@ -148,8 +148,10 @@ pub type OnBrowser = Arc<dyn Fn(BrowserEvent) + Send + Sync>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum BrowserCommand {
     /// Shows the pane over a rectangle of the page, in CSS pixels; scale
-    /// is the page's devicePixelRatio.
-    Show { x: f64, y: f64, width: f64, height: f64, scale: f64 },
+    /// is the page's devicePixelRatio. holes are rectangles of the pane
+    /// ([x, y, width, height] from its top left, CSS pixels) where the page
+    /// shows through instead (a menu of the page over the pane).
+    Show { x: f64, y: f64, width: f64, height: f64, scale: f64, holes: Vec<[f64; 4]> },
     Hide,
     Navigate(String),
     Back,

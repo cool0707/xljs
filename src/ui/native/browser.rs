@@ -4,7 +4,7 @@
 //! (Window::browser); downloads are saved to the pane's folder without
 //! asking and reported when they are done.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::Path;
 use std::sync::OnceLock;
 use std::sync::mpsc;
@@ -12,6 +12,7 @@ use std::sync::mpsc;
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use webview2_com::*;
 use windows::Win32::Foundation::*;
+use windows::Win32::Graphics::Gdi::{CombineRgn, CreateRectRgn, DeleteObject, RGN_DIFF, SetWindowRgn};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::*;
 use windows::core::{Interface, PWSTR, w};
@@ -25,6 +26,9 @@ pub(super) struct Browser {
     controller: ICoreWebView2Controller,
     core: ICoreWebView2,
     visible: Cell<bool>,
+    /// The region of the host window set last (its size and holes in
+    /// pixels); empty when it has none.
+    region: RefCell<Vec<[i32; 4]>>,
 }
 
 static CLASS: OnceLock<bool> = OnceLock::new();
@@ -196,7 +200,7 @@ pub(super) fn create(parent: HWND, env: &ICoreWebView2Environment, o: &BrowserOp
                 &mut token,
             );
         }
-        Ok(Browser { host, controller, core, visible: Cell::new(false) })
+        Ok(Browser { host, controller, core, visible: Cell::new(false), region: RefCell::new(Vec::new()) })
     }
 }
 
@@ -204,9 +208,10 @@ impl Browser {
     pub(super) fn command(&self, cmd: BrowserCommand) {
         unsafe {
             match cmd {
-                BrowserCommand::Show { x, y, width, height, scale } => {
+                BrowserCommand::Show { x, y, width, height, scale, holes } => {
                     let px = |v: f64| (v * scale).round() as i32;
                     let (w, h) = (px(width).max(0), px(height).max(0));
+                    self.cut(w, h, &holes, scale);
                     let _ = SetWindowPos(self.host, Some(HWND_TOP), px(x), px(y), w, h, SWP_SHOWWINDOW | SWP_NOACTIVATE);
                     let _ = self.controller.SetBounds(RECT { left: 0, top: 0, right: w, bottom: h });
                     if !self.visible.replace(true) {
@@ -234,6 +239,37 @@ impl Browser {
                 BrowserCommand::DragFiles(files) => drag_files(self.host, &files),
             }
         }
+    }
+
+    /// Cuts the holes (CSS pixels) out of the host window with a window
+    /// region, so that the page's menu under them shows (a child window is
+    /// always over the page); the pane stays as it is around them.
+    fn cut(&self, w: i32, h: i32, holes: &[[f64; 4]], scale: f64) {
+        let px = |v: f64| (v * scale).round() as i32;
+        let mut want: Vec<[i32; 4]> = holes.iter().map(|r| [px(r[0]), px(r[1]), px(r[0] + r[2]), px(r[1] + r[3])]).filter(|r| r[2] > r[0] && r[3] > r[1]).collect();
+        if !want.is_empty() {
+            want.insert(0, [0, 0, w, h]);
+        }
+        if *self.region.borrow() == want {
+            return;
+        }
+        unsafe {
+            if want.is_empty() {
+                let _ = SetWindowRgn(self.host, None, true);
+            } else {
+                let rgn = CreateRectRgn(0, 0, w, h);
+                for r in &want[1..] {
+                    let hole = CreateRectRgn(r[0], r[1], r[2], r[3]);
+                    CombineRgn(Some(rgn), Some(rgn), Some(hole), RGN_DIFF);
+                    let _ = DeleteObject(hole.into());
+                }
+                // The system owns the region from here.
+                if SetWindowRgn(self.host, Some(rgn), true) == 0 {
+                    let _ = DeleteObject(rgn.into());
+                }
+            }
+        }
+        *self.region.borrow_mut() = want;
     }
 
     pub(super) fn moved(&self) {

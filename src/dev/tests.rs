@@ -184,6 +184,9 @@ fn session_flow() {
     page(&mut s, json!({"op": "open", "path": main}));
     assert_eq!(w.take("project")[0]["chat"], "https://chat.example/c/1");
     assert_eq!(w.cmds.lock().unwrap().last(), Some(&BrowserCommand::Navigate("https://chat.example/c/1".into())));
+    // The pane is placed by the page, with the part under its menu left out.
+    page(&mut s, json!({"op": "browser", "path": "show", "x": 10, "y": 20, "width": 300, "height": 200, "scale": 1.5, "holes": [[100, -6, 120, 80]]}));
+    assert_eq!(w.cmds.lock().unwrap().last(), Some(&BrowserCommand::Show { x: 10.0, y: 20.0, width: 300.0, height: 200.0, scale: 1.5, holes: vec![[100.0, -6.0, 120.0, 80.0]] }));
     // ...and in the recent scripts.
     page(&mut s, json!({"op": "ready"}));
     assert_eq!(w.take("init")[0]["recent"][0]["name"], "main.js");

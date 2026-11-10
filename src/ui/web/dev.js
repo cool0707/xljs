@@ -371,7 +371,7 @@
 
   // A small menu at (x, y): items {label (an element), action, disabled}.
   // It closes on a choice, a press elsewhere, Esc or when the window loses
-  // the focus. The browser pane hides while the menu is over it.
+  // the focus. The browser pane leaves out the part under the menu.
   function closeMenu() {
     if (!st.menu) return;
     st.menu.remove();
@@ -415,17 +415,25 @@
     if (first) first.focus();
     syncBrowser();
   }
-  // Whether the open menu is over an element.
+  // The part of the open menu over an element ([x, y, width, height] from
+  // the element's top left), or null. The browser pane leaves it out so
+  // that the menu shows (the pane is a window over the page).
   function menuOver(e) {
-    if (!st.menu) return false;
+    if (!st.menu) return null;
     const a = st.menu.getBoundingClientRect();
     const b = e.getBoundingClientRect();
-    return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+    const l = Math.max(a.left, b.left), t = Math.max(a.top, b.top);
+    const r = Math.min(a.right, b.right), btm = Math.min(a.bottom, b.bottom);
+    if (l >= r || t >= btm) return null;
+    // A little more for the menu's shadow.
+    const m = 6;
+    return [l - b.left - m, t - b.top - m, r - l + 2 * m, btm - t + 2 * m];
   }
 
   // The native browser pane follows #chat-view; it is hidden while the
   // start of the chat pane shows, the chat is not on screen or a tab is
-  // dragged (the pane would hide the drop places and take the mouse).
+  // dragged (the pane would hide the drop places and take the mouse). A
+  // menu over it is cut out of it.
   let syncQueued = false;
   function syncBrowser() {
     if (syncQueued) return;
@@ -433,13 +441,14 @@
     requestAnimationFrame(() => {
       syncQueued = false;
       const view = $("chat-view");
-      const show = st.chat && shown("chat") && !st.tabDrag && !document.hidden && !menuOver(view);
+      const show = st.chat && shown("chat") && !st.tabDrag && !document.hidden;
       $("chat-start").hidden = !!st.chat;
       view.hidden = !st.chat;
       if (!show) { send({ op: "browser", path: "hide" }); return; }
       const r = view.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) { send({ op: "browser", path: "hide" }); return; }
-      send({ op: "browser", path: "show", x: r.left, y: r.top, width: r.width, height: r.height, scale: window.devicePixelRatio || 1 });
+      const hole = menuOver(view);
+      send({ op: "browser", path: "show", x: r.left, y: r.top, width: r.width, height: r.height, scale: window.devicePixelRatio || 1, holes: hole ? [hole] : [] });
     });
   }
 
