@@ -25,8 +25,9 @@ AI チャットと並べてスクリプトを作る・直すための画面。�
 - `wizardBooks`: ブックを選ばせ、マクロのモジュール数を返す（`wizard::books`）。
 - `wizardPrompt`: 依頼文（`wizard::prompt`）。先頭に `docs/ai/prompt.md`（選んだとき）、条件（形式＝フォームアプリ・カスタムアプリ（`@mode app`）・フォームなしのスクリプト、デザイン、ファイル名・ブック・入出力ファイル）、やりたいこと、移植ならマクロ（`vba::text`）とシートの構成（`api::workbook_outline`: シートごとの大きさ、先頭 n 行の表、数式。参照を相対化した形が同じ数式は 1 行にまとめる。共有数式もまとめる。.xls はシートを読めない旨だけ）、回答のしかた（移植ならまず説明、仮定を書く、ファイル名を指定してファイルで出力、アプリなら画面も）。
 - 見た目（`titleBar` `accent` `background` `radius`。フォームを使わないスクリプトでは隠す）: 既定以外を選ぶと条件に「見た目」を足す。スクリプトなら `ui.form` のオプション、アプリならメタデータの `@titlebar custom` と画面の CSS（色・角丸の px）で依頼する（おまかせは両方）。「プレビュー」は Rust を通さずページだけで、見本のフォーム（項目 3 つ＋実行ボタン）の `formInit` を組み立てて `form.html?preview` の iframe に渡す（色・角丸は form.js の `applyColors` がそのまま効く。フォームの文言は `init` の `formTexts`）。タイトルバーは iframe の上に dev.css で描いた似姿（システム標準か titlebar.js と同じ形。自前のバーは背景色とアクセントを反映）。アプリでは画面が AI の HTML なので、完全に同じにはならない旨を出す。色の入力の初期値は組み込みページの既定（アクセント `#1261d1`、背景 `#ffffff`）。プレビューはボタンをもう一度押す・見本のキャンセル／閉じる（Esc も）・描いたタイトルバーの × で閉じる。
-- `wizardSave`: マクロとシートの構成だけをテキスト（.md）に保存（長さに上限のあるチャットで添付するため）。
-- `wizardCreate`: フォルダに仮のスクリプト（アプリなら雛形と `ui/index.html`）を作って開き、依頼文をコピーさせる。名前が「おまかせ」なら `.xljs/dev.json` の `unnamed` に入れる。
+- 移植のマクロとシートの構成は、既定では依頼文に入れず添付ファイル `<最初のブック名>_xljs.md`（`wizard::attachment_name`）にし、依頼文にはその名前と「添付を読む」ことだけを書く（たいていチャットのメッセージの長さに収まらないため）。「プロンプトに直接含める」（`inlineWorkbook`）を選んだときは依頼文に入れる。
+- `wizardSave`: マクロとシートの構成だけをテキスト（.md）に、選んだ場所へ保存。
+- `wizardCreate`: フォルダに仮のスクリプト（アプリなら雛形と `ui/index.html`）を作って開き、依頼文をコピーさせる。名前が「おまかせ」なら `.xljs/dev.json` の `unnamed` に入れる。添付ファイルがあれば同じフォルダに書き（同じ名前は上書き。依頼文の名前と合わせるため）、`wizardAttach` でページに知らせる。ページはコードの上に添付ファイルのバー（`#attach-bar`）を出し、そのハンドルからチャットへドラッグできる（`dragFile`。スクリプトを開き直すと消える）。
 - `unnamed` の入口のスクリプトに AI のスクリプトのファイルが来たら、`download` に `rename`（ブラウザの ` (1)` を除いた名前）を付ける。ページで「名前を変える」がオンのまま承認すると、置き換えたあと名前を変え、履歴のフォルダとチャットの紐付けも移す（`Session::rename_entry`）。
 
 ## 画面の配置（`dev.js` の layout）
@@ -116,7 +117,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `runStarted` `output` `runEnded` | 実行。`runEnded` は失敗時に `message` `location` `prompt` |
 | `previewForm` `previewFailed` `previewSkipped` | フォームのプレビュー（`previewSkipped` は自動表示をしなかったとき） |
 | `url` `copy` `error` `info` `browserFailed` | チャットの URL、クリップボードへのコピー、エラー・お知らせ |
-| `wizardBooks` `wizardFolder` `wizardPrompt` | ウィザードの答え |
+| `wizardBooks` `wizardFolder` `wizardPrompt` `wizardAttach` | ウィザードの答え（`wizardPrompt` の `attachment`、`wizardAttach` の `file` は添付ファイルの名前） |
 
 ページの配置（グループとタブの並び、閉じたタブ、境目の位置）はページの `localStorage` に保存する。最近使ったスクリプトはユーザーの設定（`%APPDATA%\xljs\dev.json`）。
 

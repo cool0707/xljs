@@ -2,7 +2,9 @@
 //! (port an Excel macro or start afresh, form or not, app or not, the
 //! name, what it should do, the input and output files) become the first
 //! message for the AI chat. For a port, the macros (VBA) and an outline of
-//! the workbook (sheets, first rows, formulas) go with it.
+//! the workbook (sheets, first rows, formulas) go with it: by default as a
+//! Markdown file to attach (they rarely fit in a chat's message), or in
+//! the message itself.
 
 use std::path::{Path, PathBuf};
 
@@ -20,6 +22,9 @@ pub struct Answers {
     pub books: Vec<String>,
     pub include_vba: bool,
     pub include_sheets: bool,
+    /// Puts the macros and the outline in the message itself rather than
+    /// in a file to attach (attachment_name).
+    pub inline_workbook: bool,
     /// The first rows of each sheet put in the outline (0 = none).
     pub sample_rows: u32,
     /// "yes", "no" or "auto" (up to the AI), with a description.
@@ -132,6 +137,31 @@ pub fn workbook_text(a: &Answers) -> String {
     s
 }
 
+/// The file the macros and the outlines of a port go to for the chat
+/// (None = they go in the message, or there is nothing to put).
+pub fn attachment_name(a: &Answers) -> Option<String> {
+    if a.kind != "port" || a.inline_workbook || !(a.include_vba || a.include_sheets) {
+        return None;
+    }
+    let first = a.books.first()?;
+    let stem = Path::new(first).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    Some(format!("{stem}_xljs.md"))
+}
+
+/// Writes the attachment of a port in dir and gives its path (None =
+/// nothing to attach). The name is the one the message gives, so a file
+/// of an earlier answer is replaced (it holds the same).
+pub fn write_attachment(a: &Answers, dir: &Path) -> Result<Option<PathBuf>> {
+    let Some(name) = attachment_name(a) else { return Ok(None) };
+    let text = workbook_text(a);
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    let path = dir.join(name);
+    super::project::write_text(&path, &text)?;
+    Ok(Some(path))
+}
+
 fn choice(v: &str, yes: &str, no: &str, auto: &str) -> String {
     match v {
         "yes" | "name" => t!(yes),
@@ -206,8 +236,20 @@ pub fn prompt(a: &Answers) -> String {
     if port {
         let w = workbook_text(a);
         if !w.trim().is_empty() {
-            s.push_str(&w);
-            s.push('\n');
+            match attachment_name(a) {
+                Some(name) => {
+                    let what = match (a.include_vba, a.include_sheets) {
+                        (true, true) => t!("wizard.attachBoth"),
+                        (true, false) => t!("wizard.attachVba"),
+                        _ => t!("wizard.attachSheets"),
+                    };
+                    s.push_str(&format!("## {}\n\n{}\n\n", t!("wizard.attachTitle"), t!("wizard.attachText", name, what)));
+                }
+                None => {
+                    s.push_str(&w);
+                    s.push('\n');
+                }
+            }
         }
     }
 

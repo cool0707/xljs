@@ -22,6 +22,7 @@
   const st = {
     project: null, // { path, dir, entry, app, html, title, files }
     file: "", // the file in the editor
+    attach: "", // the wizard's attachment offered over the code (a file of the project)
     saved: "", // its text as saved
     dirty: false,
     chat: "", // the URL of the chat pane ("" = the start)
@@ -65,9 +66,22 @@
   // starts a drag as from Explorer): dropped on the chat, it is attached.
   // Its own drop on this page is not one to open.
   function initFileDrag() {
-    const h = $("file-drag");
+    dragHandle($("file-drag"), () => (st.project && st.file) || "");
+    // The attachment of the wizard (the macros and sheets of a port).
+    dragHandle($("attach-drag"), () => (st.project && st.attach) || "");
+    $("attach-close").onclick = () => showAttach("");
+    // The drag has ended once the mouse moves with no button down.
+    const end = (e) => { if (st.fileDrag && !(e.buttons & 1)) st.fileDrag = false; };
+    document.addEventListener("pointermove", end, true);
+    document.addEventListener("pointerdown", () => { st.fileDrag = false; }, true);
+    document.addEventListener("drop", () => { st.fileDrag = false; });
+  }
+
+  // A handle that drags a file of the project (file() gives its name, ""
+  // for none) out of the window.
+  function dragHandle(h, file) {
     h.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0 || !st.project || !st.file) return;
+      if (e.button !== 0 || !file()) return;
       const x0 = e.clientX;
       const y0 = e.clientY;
       const move = (ev) => {
@@ -75,7 +89,7 @@
         done();
         save();
         st.fileDrag = true;
-        send({ op: "dragFile", file: st.file });
+        send({ op: "dragFile", file: file() });
       };
       const done = () => {
         h.removeEventListener("pointermove", move);
@@ -87,11 +101,13 @@
       h.addEventListener("pointerup", done);
       h.addEventListener("pointercancel", done);
     });
-    // The drag has ended once the mouse moves with no button down.
-    const end = (e) => { if (st.fileDrag && !(e.buttons & 1)) st.fileDrag = false; };
-    document.addEventListener("pointermove", end, true);
-    document.addEventListener("pointerdown", () => { st.fileDrag = false; }, true);
-    document.addEventListener("drop", () => { st.fileDrag = false; });
+  }
+
+  // The bar over the code offering the wizard's attachment ("" hides it).
+  function showAttach(file) {
+    st.attach = file || "";
+    $("attach-bar").hidden = !st.attach;
+    $("attach-name").textContent = st.attach;
   }
 
   // ------------------------------------------------------------ layout
@@ -1273,6 +1289,7 @@
     st.showWelcome = false;
     st.wizard = false;
     st.project = { path: m.path, dir: m.dir, entry: m.entry, app: m.app, html: m.html, title: m.title, files: m.files };
+    showAttach("");
     st.pending = null;
     st.versionView = null;
     st.failure = null;
@@ -1346,6 +1363,7 @@
     $("wz-output-note").disabled = radio("wz-output") === "no";
     $("wz-name").disabled = radio("wz-name-mode") !== "name";
     $("wz-rows").disabled = !$("wz-sheets").checked;
+    $("wz-inline").disabled = !$("wz-vba").checked && !$("wz-sheets").checked;
   }
 
   function answers() {
@@ -1355,6 +1373,7 @@
       books: port ? wz.books.filter((b) => !b.error).map((b) => b.path) : [],
       includeVba: $("wz-vba").checked,
       includeSheets: $("wz-sheets").checked,
+      inlineWorkbook: $("wz-inline").checked,
       sampleRows: Number($("wz-rows").value) || 0,
       input: radio("wz-input"), inputNote: $("wz-input-note").value,
       output: radio("wz-output"), outputNote: $("wz-output-note").value,
@@ -1447,7 +1466,7 @@
     $("wz-result").hidden = false;
     $("wz-text").value = m.text;
     const n = m.text.length;
-    $("wz-count").textContent = fmt(L.wzCount, n, m.file) + (n > 15000 ? " " + L.wzLong : "");
+    $("wz-count").textContent = fmt(L.wzCount, n, m.file) + (m.attachment ? " " + fmt(L.wzAttachCount, m.attachment) : "") + (n > 15000 ? " " + L.wzLong : "");
     $("wz-result").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
@@ -1576,7 +1595,7 @@
         }
         break;
       case "copy":
-        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "script" ? L.copiedScript : m.what === "wizard" ? L.wzCopied : m.what === "notify" ? L.copiedNotify : m.what === "pick" ? L.copiedPick : L.copied);
+        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "script" ? L.copiedScript : m.what === "wizard" ? L.wzCopied : m.what === "wizardAttach" ? L.wzCopiedAttach : m.what === "notify" ? L.copiedNotify : m.what === "pick" ? L.copiedPick : L.copied);
         break;
       case "runStarted": runStarted(m); break;
       case "output": appendOutput(m.text, m.stream === "stderr" ? "err" : ""); break;
@@ -1620,6 +1639,7 @@
       case "wizardBooks": wizardBooks(m); break;
       case "wizardFolder": $("wz-folder").value = m.path; break;
       case "wizardPrompt": wizardPrompt(m); break;
+      case "wizardAttach": showAttach(m.file); setTab("code"); break;
     }
   }
 

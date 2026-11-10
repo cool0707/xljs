@@ -370,9 +370,27 @@ fn wizard_prompts() {
     assert!(o.contains("E2: `=C2*D2` （E2〜E6 に同じ形の数式が 5 セル）") && o.contains("E7: `=SUM(E2:E6)`"), "{o}");
     assert!(!crate::api::workbook_outline(&book.to_string_lossy(), 0).unwrap().contains("先頭"));
 
-    // A port: the macro, the sheets and the conditions.
+    // A port: the macro and the sheets go to an attachment by default.
     let macro_book = crate::testutil::repo_path("testdata/scripts/macro.xlsm").to_string_lossy().into_owned();
     let a = port_answers(&macro_book);
+    assert_eq!(wizard::attachment_name(&a).as_deref(), Some("macro_xljs.md"));
+    let p = wizard::prompt(&a);
+    assert!(p.contains("## ブックのマクロとシート構成\n\nマクロ（VBA）とシートの構成（大きさ・先頭の行・数式）は添付ファイル「macro_xljs.md」にあります。"), "{p}");
+    assert!(!p.contains("Sub 売上集計()") && !p.contains("## ブックのシート構成"), "{p}");
+    let out = tempdir();
+    let f = wizard::write_attachment(&a, &out).unwrap().unwrap();
+    assert_eq!(f, out.join("macro_xljs.md"));
+    let t = read_text(&f).unwrap();
+    assert!(t.contains("Sub 売上集計()") && t.contains("## ブックのシート構成"), "{t}");
+    let vba_only = wizard::Answers { include_sheets: false, ..a.clone() };
+    assert!(wizard::prompt(&vba_only).contains("マクロ（VBA）は添付ファイル「macro_xljs.md」"));
+    let none = wizard::Answers { include_vba: false, include_sheets: false, ..a.clone() };
+    assert_eq!(wizard::attachment_name(&none), None);
+    assert_eq!(wizard::write_attachment(&none, &out).unwrap(), None);
+
+    // In the message itself: the macro, the sheets and the conditions.
+    let a = wizard::Answers { inline_workbook: true, ..a };
+    assert_eq!(wizard::attachment_name(&a), None);
     let p = wizard::prompt(&a);
     assert!(p.starts_with("# 依頼: Excel のマクロ（VBA）を xljs に移植する"), "{p}");
     assert!(p.contains("Sub 売上集計()") && p.contains("## ブックのシート構成"), "{p}");
@@ -449,6 +467,17 @@ fn wizard_creates_and_ai_names() {
     write(&dl, "売上集計_v2.js", "alert(2);\n");
     s.event(Event::Browser(BrowserEvent::Downloaded { path: dl.join("売上集計_v2.js").to_string_lossy().into(), name: "売上集計_v2.js".into() }));
     assert_eq!(w.take("download")[0]["rename"], Value::Null);
+
+    // A port: the attachment next to the script, offered to drag to the chat.
+    let book = crate::testutil::repo_path("testdata/scripts/macro.xlsm").to_string_lossy().into_owned();
+    let port = json!({"kind": "port", "books": [book], "includeVba": true, "includeSheets": true, "mode": "auto", "nameMode": "name", "name": "移植"});
+    page(&mut s, json!({"op": "wizardPrompt", "answers": port}));
+    assert_eq!(w.take("wizardPrompt")[0]["attachment"], "macro_xljs.md");
+    page(&mut s, json!({"op": "wizardCreate", "answers": port, "path": dir.to_string_lossy(), "text": "P"}));
+    let posts = w.posts.lock().unwrap().clone();
+    assert!(posts.iter().any(|v| v["type"] == "wizardAttach" && v["file"] == "macro_xljs.md"));
+    assert!(posts.iter().any(|v| v["type"] == "copy" && v["what"] == "wizardAttach" && v["text"] == "P"));
+    assert!(read_text(&dir.join("macro_xljs.md")).unwrap().contains("Sub 売上集計()"));
 }
 
 #[test]

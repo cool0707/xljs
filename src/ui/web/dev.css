@@ -66,6 +66,10 @@ i + span { margin-left: 6px; }
 button.tool { min-width: 0; padding: 0 10px; white-space: nowrap; }
 #file-drag { padding: 0 6px; cursor: grab; touch-action: none; }
 #file-drag .ic-grip-vertical { opacity: 0.6; margin-right: -2px; }
+.attach-bar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--border); background: var(--panel); }
+.attach-bar[hidden] { display: none; }
+#attach-drag { cursor: grab; touch-action: none; font-weight: 600; }
+#attach-drag .ic-grip-vertical { opacity: 0.6; margin-right: -2px; }
 button.tool.icon { padding: 0 8px; }
 button .ic.drop { margin-left: 4px; width: 12px; height: 12px; opacity: .7; }
 button.tool.on { background: var(--sel); color: var(--sel-fg); border-color: var(--accent); }
