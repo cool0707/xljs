@@ -50,7 +50,8 @@ fn download_matching() {
     assert_eq!(p.match_download("other.html", ""), None);
 
     assert!(p.path("../x.js").is_err() && p.path("C:/x.js").is_err() && p.path("/x").is_err() && p.path("").is_err());
-    assert!(p.path("ui/index.html").is_ok());
+    assert!(p.path("ui/index.html").is_ok() && p.path("ui\\index.html").is_ok());
+    assert!(p.path(".").is_err() && p.path("C:x.js").is_err() && p.path("ui\\..\\..\\x").is_err());
 }
 
 #[test]

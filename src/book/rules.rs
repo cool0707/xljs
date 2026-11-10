@@ -1,7 +1,7 @@
 //! Descriptions of the input rules (data validation) and the conditional
 //! formats of a sheet, and of the formats (dxf) and colors they use.
 
-use super::xml::Node;
+use crate::xml::Node;
 use crate::t;
 
 /// The colors of the workbook's theme (lt1, dk1, lt2, dk2, accent1-6,
@@ -11,7 +11,7 @@ pub(crate) type Theme = Vec<String>;
 /// Reads the color scheme of theme1.xml.
 pub(crate) fn theme(n: &Node) -> Theme {
     let mut found = Vec::new();
-    n.find("clrScheme", &mut found);
+    n.find_all("clrScheme", &mut found);
     let Some(s) = found.first() else { return Vec::new() };
     let rgb = |name: &str| -> String {
         let Some(e) = s.child(name).and_then(|e| e.children.first()) else { return String::new() };

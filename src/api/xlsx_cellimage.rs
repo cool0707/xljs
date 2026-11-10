@@ -8,7 +8,7 @@
 //! too; Excel saves them with a `vm` of their own.
 
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use super::xlsx_chart::{Node, parse, resolve};
 
@@ -43,15 +43,7 @@ impl CellImages {
         if !zr.file_names().any(|n| n.starts_with("xl/richData/")) {
             return out;
         }
-        let names: Vec<String> = zr.file_names().map(String::from).collect();
-        let mut read = |name: &str| -> Option<Vec<u8>> {
-            // Part names are case-insensitive (Excel writes rdrichvalue.xml, others rdRichValue.xml).
-            let real = names.iter().find(|n| n.eq_ignore_ascii_case(name))?;
-            let mut f = zr.by_name(real).ok()?;
-            let mut b = Vec::new();
-            f.read_to_end(&mut b).ok()?;
-            Some(b)
-        };
+        let mut read = |name: &str| crate::zippart::read_any_case(&mut zr, name);
         let xml = |b: Option<Vec<u8>>| b.and_then(|b| parse(&b));
         // The parts by the type of their relationship from the workbook.
         let wb_rels = rels(xml(read("xl/_rels/workbook.xml.rels")).as_ref(), "xl");
@@ -95,7 +87,7 @@ impl CellImages {
                         Some(&k) => Some(k),
                         None => {
                             let data = read(&p).unwrap_or_default();
-                            let mime = if data.is_empty() { None } else { mime_of(&p) };
+                            let mime = if data.is_empty() { None } else { image_mime(&p) };
                             out.images.push(CellImage { mime, data, alt });
                             by_part.insert(p, out.images.len() - 1);
                             Some(out.images.len() - 1)
@@ -162,7 +154,9 @@ fn rels(root: Option<&Node>, dir: &str) -> HashMap<String, (String, String)> {
     out
 }
 
-fn mime_of(part: &str) -> Option<&'static str> {
+/// The type of a picture by the extension of its name; None for those
+/// browsers cannot show (EMF, WMF).
+pub(super) fn image_mime(part: &str) -> Option<&'static str> {
     Some(match part.rsplit('.').next().unwrap_or("").to_lowercase().as_str() {
         "png" => "image/png",
         "gif" => "image/gif",

@@ -20,7 +20,7 @@ use windows::Win32::UI::HiDpi::GetDpiForSystem;
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::{ExtractIconExW, SHCreateMemStream};
 use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::core::{BOOL, Interface, PCWSTR, PWSTR, w};
+use windows::core::{BOOL, Interface, PWSTR, w};
 
 use super::{WINDOWS, hstr, loader};
 use crate::ui::{
@@ -377,8 +377,7 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
             // A page that never answers (it cannot load, a chart hangs)
             // must not keep the script waiting.
             let id = h.0 as isize;
-            std::thread::spawn(move || {
-                std::thread::sleep(PRINT_TIMEOUT);
+            after(PRINT_TIMEOUT, move || {
                 // Only while the job is open: the handle may name another window later.
                 if finish(Err(err!("pdf.failed", "timeout"))) {
                     unsafe {
@@ -390,6 +389,29 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
         Err(e) => {
             finish(Err(e));
         }
+    }
+}
+
+thread_local! {
+    /// The callbacks of after(), by timer.
+    static LATER: RefCell<HashMap<usize, Box<dyn FnOnce()>>> = RefCell::new(HashMap::new());
+}
+
+/// Calls f on this (the UI) thread once d has passed (a thread timer of
+/// the message loop).
+fn after(d: std::time::Duration, f: impl FnOnce() + 'static) {
+    unsafe extern "system" fn fire(_: HWND, _: u32, id: usize, _: u32) {
+        unsafe {
+            let _ = KillTimer(None, id);
+        }
+        if let Some(f) = LATER.with(|l| l.borrow_mut().remove(&id)) {
+            f();
+        }
+    }
+    let ms = d.as_millis().min(u32::MAX as u128) as u32;
+    let id = unsafe { SetTimer(None, 0, ms, Some(fire)) };
+    if id != 0 {
+        LATER.with(|l| l.borrow_mut().insert(id, Box::new(f)));
     }
 }
 
@@ -506,6 +528,11 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
         core.add_WebMessageReceived(
             &WebMessageReceivedEventHandler::create(Box::new(move |_, args: Option<ICoreWebView2WebMessageReceivedEventArgs>| {
                 let Some(args) = args else { return Ok(()) };
+                // Only the app's own pages talk to the host.
+                let mut p = PWSTR::null();
+                if args.Source(&mut p).is_err() || !take_pwstr(p).starts_with(ASSET_ORIGIN) {
+                    return Ok(());
+                }
                 let mut p = PWSTR::null();
                 if args.TryGetWebMessageAsString(&mut p).is_err() {
                     return Ok(());
@@ -742,7 +769,7 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'%'
-            && i + 2 < b.len() + 0
+            && i + 2 < b.len()
             && let Ok(v) = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""), 16)
         {
             out.push(v);
@@ -790,7 +817,7 @@ fn serve(env: &ICoreWebView2Environment, args: &ICoreWebView2WebResourceRequeste
 }
 
 fn inside(uri: &str) -> bool {
-    uri.starts_with(ASSET_ORIGIN) || uri.starts_with("about:") || uri.starts_with("data:")
+    uri.starts_with(ASSET_ORIGIN) || uri.starts_with("about:")
 }
 
 fn external(uri: &str) -> bool {
@@ -956,9 +983,4 @@ fn destroyed(hwnd: HWND, st: &Rc<WinState>) {
     if let Some(f) = &st.o.on_closed {
         f();
     }
-}
-
-#[allow(dead_code)]
-fn unused() -> (PCWSTR, String) {
-    (PCWSTR::null(), i18n::lang())
 }

@@ -10,9 +10,8 @@
 //! keeps one chart group of each kind.
 
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
-use quick_xml::events::{BytesStart, Event};
 use serde_json::{Map, Value as J, json};
 use umya_spreadsheet::CellRawValue;
 
@@ -34,7 +33,7 @@ impl ChartParts {
             return ChartParts { files };
         }
         for i in 0..zr.len() {
-            let Ok(mut f) = zr.by_index(i) else { continue };
+            let Ok(f) = zr.by_index(i) else { continue };
             let name = f.name().to_string();
             let keep = name == "xl/workbook.xml"
                 || name == "xl/_rels/workbook.xml.rels"
@@ -43,8 +42,7 @@ impl ChartParts {
                 || name.starts_with("xl/charts/")
                 || name.starts_with("xl/media/")
                 || name.starts_with("xl/theme/");
-            let mut b = Vec::new();
-            if keep && f.read_to_end(&mut b).is_ok() {
+            if keep && let Some(b) = crate::zippart::read_file(f) {
                 files.insert(name, b);
             }
         }
@@ -112,132 +110,7 @@ pub(super) fn resolve(dir: &str, target: &str) -> String {
     parts.join("/")
 }
 
-// ---- a small XML tree (local names only) ----
-
-#[derive(Default, Debug)]
-pub(super) struct Node {
-    pub name: String,
-    pub attrs: Vec<(String, String)>,
-    pub children: Vec<Node>,
-    pub text: String,
-}
-
-impl Node {
-    pub fn child(&self, name: &str) -> Option<&Node> {
-        self.children.iter().find(|c| c.name == name)
-    }
-    pub fn all<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a Node> + 'a {
-        self.children.iter().filter(move |c| c.name == name)
-    }
-    pub fn attr(&self, name: &str) -> Option<&str> {
-        self.attrs.iter().find(|(k, _)| k == name).map(|(_, v)| v.as_str())
-    }
-    /// The val attribute of the child named name.
-    fn val(&self, name: &str) -> Option<&str> {
-        self.child(name).and_then(|c| c.attr("val"))
-    }
-    /// A boolean child (<c:smooth val="1"/>; no val means true).
-    fn flag(&self, name: &str) -> Option<bool> {
-        self.child(name).map(|c| !matches!(c.attr("val"), Some("0" | "false")))
-    }
-    pub fn path(&self, names: &[&str]) -> Option<&Node> {
-        names.iter().try_fold(self, |n, name| n.child(name))
-    }
-    /// The first descendant (or self) named name.
-    pub fn find(&self, name: &str) -> Option<&Node> {
-        if self.name == name {
-            return Some(self);
-        }
-        self.children.iter().find_map(|c| c.find(name))
-    }
-    /// The text of the a:t runs, paragraphs joined by a line break.
-    fn rich_text(&self) -> String {
-        fn runs(n: &Node, out: &mut String) {
-            if n.name == "t" {
-                out.push_str(&n.text);
-            }
-            for c in &n.children {
-                runs(c, out);
-            }
-        }
-        let ps: Vec<String> = self
-            .find("rich")
-            .map(|r| {
-                r.all("p")
-                    .map(|p| {
-                        let mut s = String::new();
-                        runs(p, &mut s);
-                        s
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-        ps.join("\n").trim().to_string()
-    }
-}
-
-fn local(b: &[u8]) -> String {
-    let s = String::from_utf8_lossy(b);
-    s.rsplit(':').next().unwrap_or("").to_string()
-}
-
-fn element(e: &BytesStart) -> Node {
-    #[allow(deprecated)]
-    let attrs = e
-        .attributes()
-        .flatten()
-        .map(|a| (local(a.key.as_ref()), a.unescape_value().map(|v| v.into_owned()).unwrap_or_default()))
-        .collect();
-    Node { name: local(e.name().as_ref()), attrs, ..Default::default() }
-}
-
-pub(super) fn parse(xml: &[u8]) -> Option<Node> {
-    let mut r = quick_xml::Reader::from_reader(xml);
-    let mut stack = vec![Node::default()];
-    let mut buf = Vec::new();
-    loop {
-        match r.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) => stack.push(element(&e)),
-            Ok(Event::Empty(e)) => {
-                let n = element(&e);
-                stack.last_mut()?.children.push(n);
-            }
-            Ok(Event::End(_)) => {
-                let n = stack.pop()?;
-                stack.last_mut()?.children.push(n);
-            }
-            Ok(Event::Text(t)) => {
-                if let Ok(s) = t.xml10_content() {
-                    stack.last_mut()?.text.push_str(&s);
-                }
-            }
-            Ok(Event::CData(t)) => {
-                if let Ok(s) = t.decode() {
-                    stack.last_mut()?.text.push_str(&s);
-                }
-            }
-            Ok(Event::GeneralRef(g)) => {
-                let s = match g.resolve_char_ref() {
-                    Ok(Some(c)) => c.to_string(),
-                    _ => match g.decode().as_deref() {
-                        Ok("amp") => "&".into(),
-                        Ok("lt") => "<".into(),
-                        Ok("gt") => ">".into(),
-                        Ok("quot") => "\"".into(),
-                        Ok("apos") => "'".into(),
-                        _ => String::new(),
-                    },
-                };
-                stack.last_mut()?.text.push_str(&s);
-            }
-            Ok(Event::Eof) => break,
-            Err(_) => return None,
-            _ => {}
-        }
-        buf.clear();
-    }
-    stack.pop()?.children.into_iter().next()
-}
+pub(super) use crate::xml::{Node, parse};
 
 // ---- values ----
 
@@ -645,7 +518,7 @@ fn chart_json(b: &Book, root: &Node, theme: &HashMap<String, String>, auto: &Aut
         let text = t.child("tx").and_then(|tx| text_of(b, tx));
         out.insert("title".into(), text.map(J::String).unwrap_or(J::Bool(true)));
     }
-    out.insert("autoTitleDeleted".into(), J::Bool(chart.flag("autoTitleDeleted").unwrap_or(false)));
+    out.insert("autoTitleDeleted".into(), J::Bool(chart.val_flag("autoTitleDeleted").unwrap_or(false)));
     out.insert("legend".into(), chart.child("legend").map(|l| J::String(l.val("legendPos").unwrap_or("r").to_string())).unwrap_or(J::Null));
     let Some(plot) = chart.child("plotArea") else { return out };
     out.insert("dataTable".into(), J::Bool(plot.child("dTable").is_some()));
@@ -673,7 +546,7 @@ fn chart_json(b: &Book, root: &Node, theme: &HashMap<String, String>, auto: &Aut
             }
             o.insert("noFill".into(), J::Bool(no_fill));
             o.insert("marker".into(), J::Bool(!marker_none));
-            o.insert("smooth".into(), J::Bool(s.flag("smooth").unwrap_or(false)));
+            o.insert("smooth".into(), J::Bool(s.val_flag("smooth").unwrap_or(false)));
             o.insert("trendline".into(), J::Bool(s.child("trendline").is_some()));
             o.insert("errBars".into(), J::Bool(s.child("errBars").is_some()));
             // Colors of single points (pies).
@@ -702,8 +575,8 @@ fn chart_json(b: &Book, root: &Node, theme: &HashMap<String, String>, auto: &Aut
                 o.insert(k.into(), J::String(v.to_string()));
             }
         }
-        o.insert("varyColors".into(), J::Bool(g.flag("varyColors").unwrap_or(false)));
-        let marker = g.flag("marker");
+        o.insert("varyColors".into(), J::Bool(g.val_flag("varyColors").unwrap_or(false)));
+        let marker = g.val_flag("marker");
         if let Some(m) = marker {
             o.insert("marker".into(), J::Bool(m));
         }
@@ -720,7 +593,7 @@ fn chart_json(b: &Book, root: &Node, theme: &HashMap<String, String>, auto: &Aut
         o.insert("kind".into(), J::String(a.name.clone()));
         o.insert("id".into(), J::String(a.val("axId").unwrap_or("").into()));
         o.insert("pos".into(), J::String(a.val("axPos").unwrap_or("").into()));
-        o.insert("deleted".into(), J::Bool(a.flag("delete").unwrap_or(false)));
+        o.insert("deleted".into(), J::Bool(a.val_flag("delete").unwrap_or(false)));
         if let Some(t) = a.child("title") {
             o.insert("title".into(), t.child("tx").and_then(|tx| text_of(b, tx)).map(J::String).unwrap_or(J::Null));
         }
@@ -749,16 +622,10 @@ fn chart_ex_kind(root: &Node) -> String {
 
 /// "E2:L18" for the cells an anchor covers.
 fn anchor_range(a: &Node) -> J {
-    let at = |n: &str| -> Option<(u32, u32)> {
-        let m = a.child(n)?;
-        let col = m.child("col")?.text.trim().parse::<u32>().ok()?;
-        let row = m.child("row")?.text.trim().parse::<u32>().ok()?;
-        Some((col + 1, row + 1))
-    };
-    match (at("from"), at("to")) {
-        (Some(f), Some(t)) => J::String(format!("{}:{}", super::xlsx::cell(f.0, f.1), super::xlsx::cell(t.0, t.1))),
-        (Some(f), None) => J::String(super::xlsx::cell(f.0, f.1)),
-        _ => J::Null,
+    match crate::xml::anchor_cells(a) {
+        Some((f, Some(t))) => J::String(format!("{}:{}", super::xlsx::cell(f.0, f.1), super::xlsx::cell(t.0, t.1))),
+        Some((f, None)) => J::String(super::xlsx::cell(f.0, f.1)),
+        None => J::Null,
     }
 }
 

@@ -14,15 +14,14 @@ mod chart;
 mod columns;
 mod formula;
 mod rules;
-mod xml;
 
 use std::collections::{HashMap, HashSet};
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use formula::Rect;
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use xml::Node;
+use crate::xml::{self, Node};
 
 use crate::{Error, Result, err, t};
 
@@ -230,14 +229,11 @@ struct Package<'a> {
 impl Package<'_> {
     fn open(&mut self, name: &str) -> Option<Vec<u8>> {
         let real = self.names.get(&name.to_lowercase())?;
-        let mut f = self.zr.by_name(real).ok()?;
-        let mut b = Vec::new();
-        f.read_to_end(&mut b).ok()?;
-        Some(b)
+        crate::zippart::read_file(self.zr.by_name(real).ok()?)
     }
 
     fn xml(&mut self, name: &str) -> Option<Node> {
-        self.open(name).and_then(|x| xml::parse(&x))
+        self.open(name).and_then(|x| xml::parse_partial(&x))
     }
 
     /// The relationships of a part (internal ones): (id, type, part).
@@ -282,15 +278,15 @@ impl Package<'_> {
             let rels = self.rels(&drawing);
             for anchor in d.children.iter().filter(|c| c.name.ends_with("Anchor")) {
                 let mut frames = Vec::new();
-                anchor.find("graphicFrame", &mut frames);
+                anchor.find_all("graphicFrame", &mut frames);
                 for frame in frames {
                     let mut refs = Vec::new();
-                    frame.find("chart", &mut refs);
+                    frame.find_all("chart", &mut refs);
                     let Some(id) = refs.first().and_then(|c| c.attr("id")) else { continue };
                     let Some((_, kind, part)) = rels.iter().find(|r| r.0 == id) else { continue };
                     let Some(root) = self.xml(part) else { continue };
                     let mut names = Vec::new();
-                    frame.find("cNvPr", &mut names);
+                    frame.find_all("cNvPr", &mut names);
                     let (range, sized) = anchor_range(anchor);
                     out.push(chart::Chart {
                         name: names.first().and_then(|n| n.attr("name")).unwrap_or("").to_string(),
@@ -325,15 +321,10 @@ fn number_formats(styles: &Node) -> Vec<(u32, String)> {
 /// The cells a drawing's anchor covers ("L2:S16"), or where it starts
 /// ("L2", false) without its end; "" for an absolute anchor.
 fn anchor_range(a: &Node) -> (String, bool) {
-    let at = |n: &str| -> Option<(u32, u32)> {
-        let m = a.child(n)?;
-        let num = |k: &str| m.child(k).and_then(|c| c.all_text().trim().parse::<u32>().ok());
-        Some((num("col")? + 1, num("row")? + 1))
-    };
-    match (at("from"), at("to")) {
-        (Some((c1, r1)), Some((c2, r2))) => (Rect { r1, c1, r2, c2 }.display(), true),
-        (Some((c, r)), None) => (Rect::cell(c, r).display(), false),
-        _ => (String::new(), false),
+    match xml::anchor_cells(a) {
+        Some(((c1, r1), Some((c2, r2)))) => (Rect { r1, c1, r2, c2 }.display(), true),
+        Some(((c, r), None)) => (Rect::cell(c, r).display(), false),
+        None => (String::new(), false),
     }
 }
 
@@ -417,7 +408,7 @@ fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
     let mut found = Vec::new();
     for p in &parts {
         if p.name != "extLst" {
-            p.find("id", &mut found);
+            p.find_all("id", &mut found);
         }
     }
     for n in found {
@@ -434,8 +425,8 @@ fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
         if p.name == "conditionalFormatting" {
             cfs.push(p);
         } else {
-            p.find("dataValidation", &mut dvs);
-            p.find("conditionalFormatting", &mut cfs);
+            p.find_all("dataValidation", &mut dvs);
+            p.find_all("conditionalFormatting", &mut cfs);
         }
         for d in dvs {
             sh.validations.push(Rule { rects: sqref(d), node: d.clone() });

@@ -3,7 +3,7 @@
 //! chart parts (c:chartSpace, and cx:chartSpace of the newer kinds).
 
 use super::code;
-use super::xml::Node;
+use crate::xml::Node;
 use crate::t;
 
 /// A chart as read: where it is and its part.
@@ -24,15 +24,15 @@ pub(crate) struct Chart {
 /// or the reference it is taken from (after a space).
 fn tx_text(tx: &Node) -> String {
     let mut rich = Vec::new();
-    tx.find("rich", &mut rich);
+    tx.find_all("rich", &mut rich);
     if let Some(r) = rich.first() {
         let mut ps = Vec::new();
-        r.find("p", &mut ps);
+        r.find_all("p", &mut ps);
         let lines: Vec<String> = ps
             .iter()
             .map(|p| {
                 let mut ts = Vec::new();
-                p.find("t", &mut ts);
+                p.find_all("t", &mut ts);
                 ts.iter().map(|t| t.all_text()).collect::<String>()
             })
             .filter(|s| !s.is_empty())
@@ -40,9 +40,9 @@ fn tx_text(tx: &Node) -> String {
         return t!("book.quote", lines.join(" "));
     }
     let mut fs = Vec::new();
-    tx.find("f", &mut fs);
+    tx.find_all("f", &mut fs);
     let mut vs = Vec::new();
-    tx.find("v", &mut vs);
+    tx.find_all("v", &mut vs);
     let cached = vs.first().map(|v| v.all_text()).filter(|s| !s.is_empty());
     match (fs.first().map(|f| f.all_text()), cached) {
         (Some(f), Some(v)) => format!("{}（{}）", t!("book.quote", v), code(&format!("={f}"))),
@@ -56,12 +56,12 @@ fn tx_text(tx: &Node) -> String {
 /// written in the chart.
 fn data(n: &Node) -> String {
     let mut fs = Vec::new();
-    n.find("f", &mut fs);
+    n.find_all("f", &mut fs);
     if let Some(f) = fs.first() {
         return code(&format!("={}", f.all_text().trim()));
     }
     let mut vs = Vec::new();
-    n.find("v", &mut vs);
+    n.find_all("v", &mut vs);
     let vals: Vec<String> = vs.iter().map(|v| v.all_text()).collect();
     format!("{{{}}}", vals.join(", "))
 }
@@ -288,7 +288,7 @@ fn describe_ex(root: &Node) -> Vec<String> {
     let sep = t!("vba.separator");
     let mut out = Vec::new();
     let mut series = Vec::new();
-    root.find("series", &mut series);
+    root.find_all("series", &mut series);
     let mut kinds: Vec<String> = Vec::new();
     for s in &series {
         let k = ex_kind(s.attr("layoutId").unwrap_or(""));
@@ -299,14 +299,14 @@ fn describe_ex(root: &Node) -> Vec<String> {
     out.push(t!("book.chart.kind", kinds.join(&sep)));
     let mut titles = Vec::new();
     if let Some(chart) = root.child("chart") {
-        chart.find("title", &mut titles);
+        chart.find_all("title", &mut titles);
     }
     if let Some(title) = titles.first() {
         let text = title.child("tx").map(tx_text).unwrap_or_default();
         out.push(t!("book.chart.title", if text.is_empty() { t!("book.chart.autoTitle") } else { text }));
     }
     let mut datas = Vec::new();
-    root.find("data", &mut datas);
+    root.find_all("data", &mut datas);
     for s in &series {
         let name = s.child("tx").map(tx_text).filter(|n| !n.is_empty()).unwrap_or_else(|| t!("book.chart.noName"));
         let id = s.child("dataId").and_then(|d| d.attr("val")).unwrap_or("0");

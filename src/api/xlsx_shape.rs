@@ -187,15 +187,7 @@ fn picture_html(ctx: &Ctx, pic: &Node, x: &Xfrm) -> String {
         Some((part, ctx.parts.files.get(part)?))
     };
     let Some((part, data)) = found(blip.and_then(|b| b.find("svgBlip"))).or_else(|| found(blip)) else { return String::new() };
-    let lower = part.to_lowercase();
-    let mime = match lower.rsplit('.').next().unwrap_or("") {
-        "png" => "image/png",
-        "gif" => "image/gif",
-        "bmp" => "image/bmp",
-        "svg" => "image/svg+xml",
-        "jpg" | "jpeg" => "image/jpeg",
-        _ => return String::new(), // EMF/WMF: browsers cannot show them
-    };
+    let Some(mime) = super::xlsx_cellimage::image_mime(part) else { return String::new() };
     let svg;
     let data = if mime == "image/svg+xml" {
         svg = svg_stretched(data);

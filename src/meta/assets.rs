@@ -21,12 +21,14 @@ fn not_found(name: &str) -> io::Error {
 
 /// Reports whether name is a valid path for an [`AssetFs`]: unrooted,
 /// slash-separated, without empty, "." or ".." elements ("." alone is the
-/// root).
+/// root), and without backslashes or colons (which Windows reads as
+/// separators, drives and alternate data streams: joined to a folder, the
+/// path must stay in it).
 pub fn valid_path(name: &str) -> bool {
     if name == "." {
         return true;
     }
-    !name.is_empty() && name.split('/').all(|e| !e.is_empty() && e != "." && e != ".." && !e.contains('\\'))
+    !name.is_empty() && name.split('/').all(|e| !e.is_empty() && e != "." && e != ".." && !e.contains(['\\', ':']))
 }
 
 /// Whether name is one of roots or inside one of them.

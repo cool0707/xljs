@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -55,12 +55,7 @@ pub fn collect_raw(data: &[u8]) -> HashMap<String, RawPrint> {
 /// of every worksheet of an xlsx file.
 pub(super) fn for_each_sheet(data: &[u8], mut f: impl FnMut(&super::xlsx_chart::Node, &str, &[u8])) {
     let Ok(mut zr) = zip::ZipArchive::new(Cursor::new(data)) else { return };
-    let mut read = |name: &str| -> Option<Vec<u8>> {
-        let mut f = zr.by_name(name).ok()?;
-        let mut b = Vec::new();
-        f.read_to_end(&mut b).ok()?;
-        Some(b)
-    };
+    let mut read = |name: &str| crate::zippart::read(&mut zr, name);
     let Some(wb) = read("xl/workbook.xml").and_then(|b| parse(&b)) else { return };
     let rels: HashMap<String, String> = read("xl/_rels/workbook.xml.rels")
         .and_then(|b| parse(&b))
@@ -250,6 +245,24 @@ pub(super) fn esc(s: &str) -> String {
     o
 }
 
+/// A quoted CSS string. Besides the quote and the backslash, < > and
+/// control characters are escaped, so that the string cannot end a <style>
+/// element (or the attribute it is in).
+pub(super) fn css_string(s: &str) -> String {
+    let mut o = String::with_capacity(s.len() + 2);
+    o.push('"');
+    for c in s.chars() {
+        match c {
+            '"' | '\\' | '<' | '>' | '\0'..='\u{1f}' | '\u{7f}' => {
+                let _ = write!(o, "\\{:X} ", c as u32);
+            }
+            c => o.push(c),
+        }
+    }
+    o.push('"');
+    o
+}
+
 /// A number for CSS (at most 3 decimals).
 pub(super) fn n(v: f64) -> String {
     let s = format!("{:.3}", v);
@@ -264,7 +277,7 @@ fn css_color(c: &Color, theme: &Theme) -> Option<String> {
         return None;
     }
     let s = c.argb_with_theme(theme);
-    if s.is_empty() || s == "00000000" || s.len() < 6 {
+    if s.is_empty() || s == "00000000" || s.len() < 6 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     Some(format!("#{}", &s[s.len() - 6..]))
@@ -289,11 +302,10 @@ pub(super) fn font_family(name: &str) -> String {
         "BIZ UD明朝" => "BIZ UDMincho",
         _ => "",
     };
-    let q = |s: &str| format!("\"{}\"", s.replace(['\\', '"'], ""));
-    let mut out = q(name);
+    let mut out = css_string(name);
     if !alias.is_empty() {
         out.push(',');
-        out.push_str(&q(alias));
+        out.push_str(&css_string(alias));
     }
     if name.contains("明朝") || name.contains("Mincho") {
         out.push_str(",\"Yu Mincho\",serif");
@@ -964,8 +976,7 @@ fn hf_content(text: &str, sheet: &str, file: &str, dir: &str, now: &(String, Str
     let mut css = String::new();
     let flush = |lit: &mut String, parts: &mut Vec<String>| {
         if !lit.is_empty() {
-            let s = lit.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\A ").replace('\r', "");
-            parts.push(format!("\"{s}\""));
+            parts.push(css_string(&lit.replace('\r', "")));
             lit.clear();
         }
     };
@@ -1195,18 +1206,7 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
                     } else if let Some(one) = img.one_cell_anchor() {
                         an.ext = Some((one.extent().cx(), one.extent().cy()));
                     }
-                    let lower = img.image_name().to_lowercase();
-                    let mime = if lower.ends_with(".png") {
-                        "image/png"
-                    } else if lower.ends_with(".gif") {
-                        "image/gif"
-                    } else if lower.ends_with(".bmp") {
-                        "image/bmp"
-                    } else if lower.ends_with(".svg") {
-                        "image/svg+xml"
-                    } else {
-                        "image/jpeg"
-                    };
+                    let mime = super::xlsx_cellimage::image_mime(img.image_name()).unwrap_or("image/jpeg");
                     let data = base64::engine::general_purpose::STANDARD.encode(img.image_data());
                     objects.push((an, format!("<img alt=\"\" src=\"data:{mime};base64,{data}\""), String::new()));
                 }
@@ -2199,6 +2199,11 @@ mod tests {
         assert_eq!(c, "counter(page) \" / \" counter(pages) \" ページ\"");
         assert_eq!(hf_content(&s[2], "S", "", "", &now).0, "\"2026/10/31\"");
         assert_eq!(hf_content("&A &F &&", "集計", "a.xlsx", "", &now).0, "\"集計 a.xlsx &\"");
+        // Nothing of the book can end the <style> element.
+        let (c, css) = hf_content("&\"x</style>,Bold\"a</style><img src=x onerror=alert(1)>\\\"", "S", "", "", &now);
+        assert!(!c.contains('<') && !css.contains('<'), "{c} {css}");
+        assert_eq!(c, "\"a\\3C /style\\3E \\3C img src=x onerror=alert(1)\\3E \\5C \\22 \"");
+        assert_eq!(font_family("a\"b<"), "\"a\\22 b\\3C \",\"Yu Gothic\",Meiryo,sans-serif");
     }
 
     #[test]

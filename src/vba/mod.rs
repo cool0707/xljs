@@ -74,11 +74,8 @@ fn read_zip(data: &[u8]) -> Result<Option<Project>> {
     let Some(bin) = bin else {
         return Ok(None);
     };
-    let mut b = Vec::new();
-    zr.by_name(&bin)
-        .map_err(|e| Error::msg(e.to_string()))?
-        .read_to_end(&mut b)
-        .map_err(|e| Error::msg(e.to_string()))?;
+    let f = zr.by_name(&bin).map_err(|e| Error::msg(e.to_string()))?;
+    let b = crate::zippart::read_file(f).ok_or_else(|| corrupt("vbaProject.bin"))?;
     let sheets = sheets::sheet_code_names(&mut zr);
     read_cfb(&b, &sheets)
 }

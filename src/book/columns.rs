@@ -11,7 +11,7 @@
 use std::collections::{HashMap, HashSet};
 
 use super::formula::{self, Rect};
-use super::xml::Node;
+use crate::xml::Node;
 use super::{Sheet, Workbook, code};
 use crate::api::xlsx::{builtin_date_fmt, date_format_code, from_serial};
 use crate::t;

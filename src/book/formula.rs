@@ -34,15 +34,9 @@ impl Rect {
     }
 }
 
-pub fn col_name(mut n: u32) -> String {
-    let mut s = Vec::new();
-    while n > 0 {
-        n -= 1;
-        s.push(b'A' + (n % 26) as u8);
-        n /= 26;
-    }
-    s.reverse();
-    String::from_utf8(s).unwrap_or_default()
+/// "A" for 1 ("" outside A–XFD).
+pub fn col_name(n: u32) -> String {
+    crate::api::xlsx::column_name(n as i64).unwrap_or_default()
 }
 
 /// The column of A–XFD (upper case only).

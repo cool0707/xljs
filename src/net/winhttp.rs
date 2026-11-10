@@ -48,6 +48,24 @@ fn session(agent: &str, proxy: Option<&str>) -> Option<*mut c_void> {
     (h != 0).then_some(h as *mut c_void)
 }
 
+/// Whether the user's Internet settings name a proxy, a PAC script or
+/// automatic detection.
+pub(super) fn ie_proxy_configured() -> bool {
+    use windows::Win32::Foundation::GlobalFree;
+    use windows::Win32::Foundation::HGLOBAL;
+    let mut c = WINHTTP_CURRENT_USER_IE_PROXY_CONFIG::default();
+    if unsafe { WinHttpGetIEProxyConfigForCurrentUser(&mut c) }.is_err() {
+        return false;
+    }
+    let on = c.fAutoDetect.as_bool() || !c.lpszAutoConfigUrl.is_null() || !c.lpszProxy.is_null();
+    for p in [c.lpszAutoConfigUrl, c.lpszProxy, c.lpszProxyBypass] {
+        if !p.is_null() {
+            let _ = unsafe { GlobalFree(Some(HGLOBAL(p.0 as *mut c_void))) };
+        }
+    }
+    on
+}
+
 /// The WinHTTP error code (12xxx) of an error.
 fn code(e: &windows::core::Error) -> u32 {
     let h = e.code().0 as u32;
@@ -261,11 +279,19 @@ fn send_on(req: &Request, t: &Target, cancel: &Cancel, conn: *mut c_void, proxy:
         if status != 407
             && let Some((realm, l)) = basic.take()
         {
-            auth::confirm(&realm, &l);
+            auth::confirm(&auth::Key::proxy(&realm), &l);
         }
         if status == 407 {
             let (mut supported, mut first, mut target) = (0u32, 0u32, 0u32);
-            let _ = unsafe { WinHttpQueryAuthSchemes(h, &mut supported, &mut first, &mut target) };
+            // Only a proxy asks with 407: without one in the settings, the
+            // server that does gets neither the signed-in user nor a login.
+            let via_proxy = !proxy.is_empty() || ie_proxy_configured();
+            if !via_proxy
+                || unsafe { WinHttpQueryAuthSchemes(h, &mut supported, &mut first, &mut target) }.is_err()
+                || target != WINHTTP_AUTH_TARGET_PROXY
+            {
+                break (status, status_text, headers);
+            }
             let integrated = [WINHTTP_AUTH_SCHEME_NEGOTIATE.0, WINHTTP_AUTH_SCHEME_NTLM.0].into_iter().find(|s| supported & s != 0);
             if let Some(scheme) = integrated
                 && proxy_tries < 2
@@ -300,7 +326,7 @@ fn send_on(req: &Request, t: &Target, cancel: &Cancel, conn: *mut c_void, proxy:
                         if failed.is_some() {
                             st.prompts += 1;
                         }
-                        let l = auth::login(&realm, prompt, failed.as_ref(), ask);
+                        let l = auth::login(&auth::Key::proxy(&realm), prompt, failed.as_ref(), ask);
                         if failed.is_some()
                             && let Some(l) = l
                         {

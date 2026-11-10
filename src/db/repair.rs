@@ -246,6 +246,7 @@ fn restore_backup(s: &Sidecar, tmp: &Path, opts: &Options, rep: &mut Report) -> 
         remove_files(tmp);
         std::fs::copy(&snap.path, tmp).map_err(|e| Error::path("copy", snap.path.to_string_lossy(), e))?;
         let conn = open_rw(tmp, opts)?;
+        no_attach(&conn)?;
         for (generation, p) in &logs {
             if *generation >= snap.generation {
                 replay(&conn, p, rep);
@@ -296,8 +297,21 @@ fn replay_entry(conn: &Connection, e: &LogEntry) -> rusqlite::Result<()> {
     conn.execute_batch("COMMIT")
 }
 
-fn quote(s: &str) -> String {
-    format!("\"{}\"", s.replace('"', "\"\""))
+use super::quote_ident as quote;
+
+/// Keeps the SQL of a damaged database or of a change log (which anyone who
+/// can write the shared folder can change) to that database: no ATTACH, and
+/// so no VACUUM INTO, which would write other files.
+fn no_attach(conn: &Connection) -> Result<()> {
+    conn.set_limit(rusqlite::limits::Limit::SQLITE_LIMIT_ATTACHED, 0).map_err(sql_error)?;
+    Ok(())
+}
+
+/// Runs one statement of the schema of a damaged database. The schema
+/// holds one statement per object (SQLite refuses a schema with more), so
+/// more after it are refused here too rather than run.
+fn schema_statement(conn: &Connection, sql: &str) -> rusqlite::Result<()> {
+    conn.execute(sql, []).map(|_| ())
 }
 
 /// Copies the schema and every readable row of the damaged database src
@@ -306,6 +320,7 @@ fn salvage(src: &Path, dst: &Path, opts: &Options, rep: &mut Report) -> Result<(
     let from = open_rw(src, opts)?;
     remove_files(dst);
     let to = connect(dst, false, true, false, opts.timeout)?;
+    no_attach(&to)?;
     to.execute_batch("PRAGMA foreign_keys=OFF").map_err(sql_error)?;
     let schema: Vec<(String, String, String)> = {
         let mut st = from
@@ -323,7 +338,7 @@ fn salvage(src: &Path, dst: &Path, opts: &Options, rep: &mut Report) -> Result<(
         if name.starts_with("sqlite_") {
             continue;
         }
-        match to.execute_batch(sql) {
+        match schema_statement(&to, sql) {
             Ok(()) => tables.push(name.clone()),
             Err(e) => rep.notes.push(format!("{name}: {}", crate::i18n::error(&sql_error(e)))),
         }
@@ -342,7 +357,7 @@ fn salvage(src: &Path, dst: &Path, opts: &Options, rep: &mut Report) -> Result<(
         if ty == "table" {
             continue;
         }
-        if let Err(e) = to.execute_batch(sql) {
+        if let Err(e) = schema_statement(&to, sql) {
             rep.notes.push(format!("{name}: {}", crate::i18n::error(&sql_error(e))));
         }
     }
@@ -460,4 +475,28 @@ fn table_counts(conn: &Connection) -> Vec<(String, i64)> {
             (n, c)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn replay_cannot_attach() {
+        let dir = crate::testutil::tempdir();
+        let (db, log, out) = (dir.join("a.db"), dir.join("log.jsonl"), dir.join("x.db"));
+        let c = Connection::open(&db).unwrap();
+        c.execute_batch("CREATE TABLE t(a)").unwrap();
+        let line = |sql: &str| serde_json::json!({"time": "", "stmts": [{"sql": sql, "params": [], "batch": true}]}).to_string();
+        let attach = format!("ATTACH DATABASE '{}' AS z; CREATE TABLE z.p(c)", out.display());
+        let vacuum = format!("VACUUM INTO '{}'", out.display());
+        std::fs::write(&log, [line("INSERT INTO t VALUES(1)"), line(&attach), line(&vacuum)].join("\n")).unwrap();
+        no_attach(&c).unwrap();
+        let mut rep = Report::default();
+        replay(&c, &log, &mut rep);
+        assert_eq!((rep.replayed, rep.skipped), (1, 2));
+        assert!(!out.exists());
+        drop(c);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

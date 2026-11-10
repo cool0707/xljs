@@ -2,14 +2,12 @@
 //! that a crash, exit() or an endless loop cannot take the development
 //! window with it. Its output and its end come back as events.
 
-use std::io::Read;
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-use crate::{Error, Result};
+use crate::process::{Io, Running, Spec, Stream, Window};
+use crate::Result;
 
 /// What a run reports to the session.
 #[derive(Debug)]
@@ -21,7 +19,7 @@ pub enum RunEvent {
 /// A running script.
 pub struct Run {
     pub id: u64,
-    child: Arc<Mutex<Option<Child>>>,
+    proc: Arc<Running>,
 }
 
 /// The environment variable that tells a run it was started by the
@@ -31,7 +29,10 @@ pub const DEV_ENV: &str = "XLJS_DEV";
 pub const PREVIEW_ENV: &str = "XLJS_DEV_PREVIEW";
 
 impl Run {
-    /// Starts exe with args in dir; events go to tx (wrapped by wrap).
+    /// Starts exe with args in dir; events go to tx (wrapped by wrap). The
+    /// process runs in a job (crate::process): kill() also ends what the
+    /// script started, and a program left holding its output does not
+    /// keep the end from being reported.
     pub fn start<E: Send + 'static>(
         exe: &Path,
         args: &[String],
@@ -41,82 +42,102 @@ impl Run {
         tx: Sender<E>,
         wrap: fn(RunEvent) -> E,
     ) -> Result<Run> {
-        let mut cmd = Command::new(exe);
-        cmd.args(args).current_dir(dir).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        for (k, v) in env {
-            cmd.env(k, v);
-        }
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
-        let mut child = cmd.spawn().map_err(|e| Error::path("exec", exe.display().to_string(), e))?;
-        let mut readers = Vec::new();
-        let out: Option<Box<dyn Read + Send>> = child.stdout.take().map(|s| Box::new(s) as Box<dyn Read + Send>);
-        let err: Option<Box<dyn Read + Send>> = child.stderr.take().map(|s| Box::new(s) as Box<dyn Read + Send>);
-        for (stream, is_err) in [(out, false), (err, true)] {
-            let Some(mut stream) = stream else { continue };
-            let tx = tx.clone();
-            readers.push(std::thread::spawn(move || {
-                let mut buf = [0u8; 8192];
-                let mut pending: Vec<u8> = Vec::new();
-                loop {
-                    let n = match stream.read(&mut buf) {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => n,
-                    };
-                    pending.extend_from_slice(&buf[..n]);
-                    // Whole UTF-8 characters only.
-                    let cut = match std::str::from_utf8(&pending) {
-                        Ok(_) => pending.len(),
-                        Err(e) if e.error_len().is_none() => e.valid_up_to(),
-                        Err(_) => pending.len(),
-                    };
-                    if cut == 0 {
-                        continue;
-                    }
-                    let text = super::project::decode(&pending[..cut]);
-                    pending.drain(..cut);
-                    let _ = tx.send(wrap(RunEvent::Output { id, stderr: is_err, text }));
+        let spec = Spec {
+            command: exe.to_string_lossy().into_owned(),
+            args: args.to_vec(),
+            cwd: Some(dir.to_string_lossy().into_owned()),
+            env: env.iter().map(|(k, v)| (k.clone(), Some(v.clone()))).collect(),
+            window: Window::Hidden,
+            stdin: Io::Ignore,
+            discard_output: true,
+            ..Default::default()
+        };
+        let tx = Arc::new(Mutex::new(tx));
+        let text = Arc::new(Mutex::new(Decoders::default()));
+        let (t1, x1) = (tx.clone(), text.clone());
+        let proc = Running::start_chunks(
+            &spec,
+            Arc::new(move |which, b: &[u8]| {
+                let stderr = which == Stream::Stderr;
+                let s = x1.lock().unwrap().push(stderr, b);
+                if !s.is_empty() {
+                    let _ = t1.lock().unwrap().send(wrap(RunEvent::Output { id, stderr, text: s }));
                 }
-                if !pending.is_empty() {
-                    let _ = tx.send(wrap(RunEvent::Output { id, stderr: is_err, text: super::project::decode(&pending) }));
+            }),
+        )?;
+        proc.when_done(move |d| {
+            let tx = tx.lock().unwrap();
+            for stderr in [false, true] {
+                let s = text.lock().unwrap().finish(stderr);
+                if !s.is_empty() {
+                    let _ = tx.send(wrap(RunEvent::Output { id, stderr, text: s }));
                 }
-            }));
-        }
-        let child = Arc::new(Mutex::new(Some(child)));
-        let c2 = child.clone();
-        std::thread::spawn(move || {
-            let code = loop {
-                {
-                    let mut g = c2.lock().unwrap();
-                    match g.as_mut().map(|c| c.try_wait()) {
-                        Some(Ok(Some(st))) => break st.code(),
-                        Some(Ok(None)) => {}
-                        _ => break None,
-                    }
-                }
-                std::thread::sleep(Duration::from_millis(50));
-            };
-            for r in readers {
-                let _ = r.join();
             }
-            c2.lock().unwrap().take();
-            let _ = tx.send(wrap(RunEvent::Exited { id, code }));
+            let _ = tx.send(wrap(RunEvent::Exited { id, code: d.code }));
         });
-        Ok(Run { id, child })
+        Ok(Run { id, proc })
     }
 
-    /// Ends the process (the Exited event follows).
+    /// Ends the process and what it started (the Exited event follows).
     pub fn kill(&self) {
-        if let Some(c) = self.child.lock().unwrap().as_mut() {
-            let _ = c.kill();
-        }
+        self.proc.kill();
     }
 
     pub fn running(&self) -> bool {
-        self.child.lock().unwrap().is_some()
+        self.proc.running()
+    }
+}
+
+/// Turns the output of both streams into text as it arrives. UTF-8 is
+/// given as soon as its characters are whole; other text (CP932 from the
+/// programs a script runs) by whole lines, so that no character is cut.
+#[derive(Default)]
+struct Decoders {
+    pending: [Vec<u8>; 2],
+}
+
+/// How much text that is not UTF-8 waits for the end of its line.
+const MAX_LINE: usize = 4096;
+
+impl Decoders {
+    fn push(&mut self, stderr: bool, b: &[u8]) -> String {
+        let p = &mut self.pending[stderr as usize];
+        p.extend_from_slice(b);
+        let cut = match std::str::from_utf8(p) {
+            Ok(_) => p.len(),
+            Err(e) if e.error_len().is_none() => e.valid_up_to(),
+            Err(_) => match p.iter().rposition(|&c| c == b'\n') {
+                Some(i) => i + 1,
+                None if p.len() > MAX_LINE => p.len(),
+                None => 0,
+            },
+        };
+        let text = super::project::decode(&p[..cut]);
+        p.drain(..cut);
+        text
+    }
+
+    fn finish(&mut self, stderr: bool) -> String {
+        let p = std::mem::take(&mut self.pending[stderr as usize]);
+        super::project::decode(&p)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decoding_keeps_characters_whole() {
+        let mut d = Decoders::default();
+        let utf8 = "あい".as_bytes();
+        assert_eq!(d.push(false, &utf8[..4]), "あ");
+        assert_eq!(d.push(false, &utf8[4..]), "い");
+        // CP932 cut inside a character: given by line.
+        let (sjis, _, _) = encoding_rs::SHIFT_JIS.encode("表示\n次");
+        assert_eq!(d.push(true, &sjis[..3]), "");
+        assert_eq!(d.push(true, &sjis[3..]), "表示\n");
+        assert_eq!(d.finish(true), "次");
+        assert_eq!(d.finish(false), "");
     }
 }
