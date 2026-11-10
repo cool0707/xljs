@@ -8,7 +8,7 @@
 //! too; Excel saves them with a `vm` of their own.
 
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use super::xlsx_chart::{Node, parse, resolve};
 
@@ -43,15 +43,7 @@ impl CellImages {
         if !zr.file_names().any(|n| n.starts_with("xl/richData/")) {
             return out;
         }
-        let names: Vec<String> = zr.file_names().map(String::from).collect();
-        let mut read = |name: &str| -> Option<Vec<u8>> {
-            // Part names are case-insensitive (Excel writes rdrichvalue.xml, others rdRichValue.xml).
-            let real = names.iter().find(|n| n.eq_ignore_ascii_case(name))?;
-            let mut f = zr.by_name(real).ok()?;
-            let mut b = Vec::new();
-            f.read_to_end(&mut b).ok()?;
-            Some(b)
-        };
+        let mut read = |name: &str| crate::zippart::read_any_case(&mut zr, name);
         let xml = |b: Option<Vec<u8>>| b.and_then(|b| parse(&b));
         // The parts by the type of their relationship from the workbook.
         let wb_rels = rels(xml(read("xl/_rels/workbook.xml.rels")).as_ref(), "xl");

@@ -16,7 +16,7 @@ mod formula;
 mod rules;
 
 use std::collections::{HashMap, HashSet};
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use formula::Rect;
 use quick_xml::Reader;
@@ -229,10 +229,7 @@ struct Package<'a> {
 impl Package<'_> {
     fn open(&mut self, name: &str) -> Option<Vec<u8>> {
         let real = self.names.get(&name.to_lowercase())?;
-        let mut f = self.zr.by_name(real).ok()?;
-        let mut b = Vec::new();
-        f.read_to_end(&mut b).ok()?;
-        Some(b)
+        crate::zippart::read_file(self.zr.by_name(real).ok()?)
     }
 
     fn xml(&mut self, name: &str) -> Option<Node> {

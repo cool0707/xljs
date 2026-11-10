@@ -21,6 +21,7 @@ pub mod shortcut;
 pub mod ui;
 pub mod vba;
 pub(crate) mod xml;
+pub(crate) mod zippart;
 
 pub use error::{Error, Result};
 

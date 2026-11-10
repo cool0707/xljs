@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -55,12 +55,7 @@ pub fn collect_raw(data: &[u8]) -> HashMap<String, RawPrint> {
 /// of every worksheet of an xlsx file.
 pub(super) fn for_each_sheet(data: &[u8], mut f: impl FnMut(&super::xlsx_chart::Node, &str, &[u8])) {
     let Ok(mut zr) = zip::ZipArchive::new(Cursor::new(data)) else { return };
-    let mut read = |name: &str| -> Option<Vec<u8>> {
-        let mut f = zr.by_name(name).ok()?;
-        let mut b = Vec::new();
-        f.read_to_end(&mut b).ok()?;
-        Some(b)
-    };
+    let mut read = |name: &str| crate::zippart::read(&mut zr, name);
     let Some(wb) = read("xl/workbook.xml").and_then(|b| parse(&b)) else { return };
     let rels: HashMap<String, String> = read("xl/_rels/workbook.xml.rels")
         .and_then(|b| parse(&b))

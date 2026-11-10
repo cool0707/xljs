@@ -12,10 +12,7 @@ pub fn sheet_code_names<R: Read + Seek>(zr: &mut zip::ZipArchive<R>) -> HashMap<
     let names: HashMap<String, String> = zr.file_names().map(|n| (n.to_lowercase(), n.to_string())).collect();
     let mut open = |name: &str| -> Option<Vec<u8>> {
         let real = names.get(&name.to_lowercase())?;
-        let mut f = zr.by_name(real).ok()?;
-        let mut b = Vec::new();
-        f.read_to_end(&mut b).ok()?;
-        Some(b)
+        crate::zippart::read_file(zr.by_name(real).ok()?)
     };
     const WB_PATH: &str = "xl/workbook.xml";
     let (Some(wb), Some(rels)) = (open(WB_PATH), open("xl/_rels/workbook.xml.rels")) else {

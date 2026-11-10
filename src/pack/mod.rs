@@ -81,10 +81,7 @@ pub fn read(file: &Path) -> Result<Option<Payload>> {
     }
     let mut zr = zip::ZipArchive::new(io::Cursor::new(buf)).map_err(|_| corrupt())?;
     let read_entry = |zr: &mut zip::ZipArchive<io::Cursor<Vec<u8>>>, name: &str| -> Result<Vec<u8>> {
-        let mut e = zr.by_name(name).map_err(|_| corrupt())?;
-        let mut data = Vec::new();
-        e.read_to_end(&mut data).map_err(|_| corrupt())?;
-        Ok(data)
+        crate::zippart::read(zr, name).ok_or_else(corrupt)
     };
     let manifest: Manifest = serde_json::from_slice(&read_entry(&mut zr, MANIFEST_NAME)?).map_err(|_| corrupt())?;
     let code = read_entry(&mut zr, CODE_NAME)?;

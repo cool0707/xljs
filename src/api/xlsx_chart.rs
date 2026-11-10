@@ -10,7 +10,7 @@
 //! keeps one chart group of each kind.
 
 use std::collections::HashMap;
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 
 use serde_json::{Map, Value as J, json};
 use umya_spreadsheet::CellRawValue;
@@ -33,7 +33,7 @@ impl ChartParts {
             return ChartParts { files };
         }
         for i in 0..zr.len() {
-            let Ok(mut f) = zr.by_index(i) else { continue };
+            let Ok(f) = zr.by_index(i) else { continue };
             let name = f.name().to_string();
             let keep = name == "xl/workbook.xml"
                 || name == "xl/_rels/workbook.xml.rels"
@@ -42,8 +42,7 @@ impl ChartParts {
                 || name.starts_with("xl/charts/")
                 || name.starts_with("xl/media/")
                 || name.starts_with("xl/theme/");
-            let mut b = Vec::new();
-            if keep && f.read_to_end(&mut b).is_ok() {
+            if keep && let Some(b) = crate::zippart::read_file(f) {
                 files.insert(name, b);
             }
         }
