@@ -91,7 +91,7 @@ struct Txn {
     conn: Option<Connection>,
     _lock: Option<lock::Lock>,
     /// The statements that changed something, for the change log.
-    log: Vec<LogStmt>,
+    log: std::cell::RefCell<Vec<LogStmt>>,
     /// The length of log at each savepoint.
     marks: Vec<usize>,
 }
@@ -106,7 +106,7 @@ pub struct Db {
     /// The SQL functions of the script (registered on every connection).
     fns: Vec<ScriptFn>,
     /// Whether the last failure was a damaged database.
-    pub corrupt: bool,
+    pub corrupt: std::cell::Cell<bool>,
     pub closed: bool,
 }
 
@@ -226,7 +226,7 @@ impl Db {
                 Err(e) => return Err(e),
             }
         }
-        let mut db = Db { path, opts, side, conn: None, txn: None, fns: Vec::new(), corrupt: false, closed: false };
+        let mut db = Db { path, opts, side, conn: None, txn: None, fns: Vec::new(), corrupt: Default::default(), closed: false };
         if let Some(side) = &db.side {
             let _lock = side.lock(&db.path, !db.opts.readonly, db.opts.timeout)?;
             let conn = db.connect()?;
@@ -242,7 +242,7 @@ impl Db {
                     let e = db.fail(e);
                     // A damaged database opens; the first call reports it
                     // (and offers to repair it).
-                    if !db.corrupt {
+                    if !db.corrupt.get() {
                         return Err(e);
                     }
                 }
@@ -314,17 +314,13 @@ impl Db {
         self.txn.as_ref().map(|t| t.marks.len() + 1).unwrap_or(0)
     }
 
-    fn fail(&mut self, e: rusqlite::Error) -> Error {
-        let e = sql_error(e);
-        if is_corrupt(&e) {
-            self.corrupt = true;
-        }
-        e
+    fn fail(&self, e: rusqlite::Error) -> Error {
+        self.note(sql_error(e))
     }
 
-    fn note(&mut self, e: Error) -> Error {
+    fn note(&self, e: Error) -> Error {
         if is_corrupt(&e) {
-            self.corrupt = true;
+            self.corrupt.set(true);
         }
         e
     }
@@ -342,10 +338,10 @@ impl Db {
     /// Begins a transaction (a savepoint when one is open).
     pub fn begin(&mut self) -> Result<()> {
         self.check_open()?;
-        self.corrupt = false;
+        self.corrupt.set(false);
         if let Some(t) = &mut self.txn {
             let n = t.marks.len() + 1;
-            t.marks.push(t.log.len());
+            t.marks.push(t.log.borrow().len());
             let conn = t.conn.as_ref().or(self.conn.as_ref()).expect("no connection");
             if let Err(e) = conn.execute_batch(&format!("SAVEPOINT xljs_{n}")) {
                 self.txn.as_mut().unwrap().marks.pop();
@@ -356,7 +352,7 @@ impl Db {
         let begin = if self.opts.readonly { "BEGIN" } else { "BEGIN IMMEDIATE" };
         let Some(side) = &self.side else {
             self.conn.as_ref().expect("no connection").execute_batch(begin).map_err(|e| self.fail(e))?;
-            self.txn = Some(Txn { conn: None, _lock: None, log: Vec::new(), marks: Vec::new() });
+            self.txn = Some(Txn { conn: None, _lock: None, log: Default::default(), marks: Vec::new() });
             return Ok(());
         };
         let lock = side.lock(&self.path, !self.opts.readonly, self.opts.timeout)?;
@@ -368,7 +364,7 @@ impl Db {
             }
         }
         conn.execute_batch(begin).map_err(|e| self.fail(e))?;
-        self.txn = Some(Txn { conn: Some(conn), _lock: Some(lock), log: Vec::new(), marks: Vec::new() });
+        self.txn = Some(Txn { conn: Some(conn), _lock: Some(lock), log: Default::default(), marks: Vec::new() });
         Ok(())
     }
 
@@ -388,11 +384,11 @@ impl Db {
         let t = self.txn.take().unwrap();
         if let Some(side) = &self.side
             && self.opts.keep > 0
-            && !t.log.is_empty()
+            && !t.log.borrow().is_empty()
         {
             // The data is committed; a log that cannot be written only
             // means a bigger loss should the database ever be repaired.
-            let _ = side.append_log(t.log);
+            let _ = side.append_log(t.log.into_inner());
         }
         Ok(())
     }
@@ -403,7 +399,7 @@ impl Db {
         let Some(t) = &mut self.txn else { return Ok(()) };
         if let Some(mark) = t.marks.pop() {
             let n = t.marks.len() + 1;
-            t.log.truncate(mark);
+            t.log.borrow_mut().truncate(mark);
             let conn = t.conn.as_ref().or(self.conn.as_ref()).expect("no connection");
             conn.execute_batch(&format!("ROLLBACK TO xljs_{n}; RELEASE xljs_{n}")).map_err(|e| self.fail(e))?;
             return Ok(());
@@ -416,7 +412,7 @@ impl Db {
     }
 
     /// Runs f in a transaction of its own unless one is open.
-    fn write<T>(&mut self, f: impl FnOnce(&mut Db) -> Result<T>) -> Result<T> {
+    fn write<T>(&mut self, f: impl FnOnce(&Db) -> Result<T>) -> Result<T> {
         if self.txn.is_some() {
             return f(self);
         }
@@ -437,13 +433,11 @@ impl Db {
     }
 
     /// Runs f with a connection for reading.
-    fn read<T>(&mut self, f: impl FnOnce(&mut Db, &Connection) -> Result<T>) -> Result<T> {
+    fn read<T>(&mut self, f: impl FnOnce(&Db, &Connection) -> Result<T>) -> Result<T> {
         self.check_open()?;
-        self.corrupt = false;
+        self.corrupt.set(false);
         if self.txn.is_some() || self.side.is_none() {
-            // f only uses the connection through the argument.
-            let conn: *const Connection = self.cur();
-            return f(self, unsafe { &*conn });
+            return f(self, self.cur());
         }
         let side = self.side.as_ref().unwrap();
         let _lock = side.lock(&self.path, false, self.opts.timeout)?;
@@ -468,8 +462,7 @@ impl Db {
             return Ok(r.0);
         }
         self.write(|db| {
-            let conn: *const Connection = db.cur();
-            let mut st = unsafe { &*conn }.prepare(sql).map_err(|e| db.fail(e))?;
+            let mut st = db.cur().prepare(sql).map_err(|e| db.fail(e))?;
             let _logged = script::Logged::set(db.logged());
             let (rows, bound) = run_query(&mut st, params, limit).map_err(|e| db.note(e))?;
             db.log(sql, bound, false);
@@ -482,8 +475,7 @@ impl Db {
         self.check_open()?;
         script::check_schema_sql(sql, &self.fns)?;
         self.write(|db| {
-            let conn: *const Connection = db.cur();
-            let conn = unsafe { &*conn };
+            let conn = db.cur();
             let mut st = conn.prepare(sql).map_err(|e| db.fail(e))?;
             let ro = st.readonly();
             let bound = bind(&mut st, params)?;
@@ -509,9 +501,8 @@ impl Db {
         self.check_open()?;
         script::check_schema_sql(sql, &self.fns)?;
         self.write(|db| {
-            let conn: *const Connection = db.cur();
             let _logged = script::Logged::set(db.logged());
-            unsafe { &*conn }.execute_batch(sql).map_err(|e| db.fail(e))?;
+            db.cur().execute_batch(sql).map_err(|e| db.fail(e))?;
             db.log(sql, Vec::new(), true);
             Ok(())
         })
@@ -530,8 +521,7 @@ impl Db {
         );
         let n = rows.len();
         self.write(|db| {
-            let conn: *const Connection = db.cur();
-            let mut st = unsafe { &*conn }.prepare(&sql).map_err(|e| db.fail(e))?;
+            let mut st = db.cur().prepare(&sql).map_err(|e| db.fail(e))?;
             let _logged = script::Logged::set(db.logged());
             for row in rows {
                 let p = Params::Pos(row);
@@ -543,12 +533,12 @@ impl Db {
         })
     }
 
-    fn log(&mut self, sql: &str, bound: Vec<Value>, batch: bool) {
+    fn log(&self, sql: &str, bound: Vec<Value>, batch: bool) {
         if self.side.is_none() || self.opts.keep == 0 {
             return;
         }
-        if let Some(t) = &mut self.txn {
-            t.log.push(LogStmt { sql: sql.to_string(), params: bound.iter().map(share::value_to_json).collect(), batch });
+        if let Some(t) = &self.txn {
+            t.log.borrow_mut().push(LogStmt { sql: sql.to_string(), params: bound.iter().map(share::value_to_json).collect(), batch });
         }
     }
 
@@ -570,7 +560,7 @@ impl Db {
         }
         self.conn = None;
         let r = repair(&self.path, force, &self.opts);
-        self.corrupt = false;
+        self.corrupt.set(false);
         if self.side.is_none() {
             self.side = Sidecar::find(&self.path);
         }

@@ -135,7 +135,7 @@ fn shared_repair_restores_backup_and_replays_the_log() {
     damage(&path, 2, 200);
     let mut db = Db::open(ps, opts(true)).unwrap();
     let e = db.query("SELECT * FROM t", &p(vec![]), None).unwrap_err();
-    assert!(is_corrupt(&e) && db.corrupt, "{e}");
+    assert!(is_corrupt(&e) && db.corrupt.get(), "{e}");
     let r = db.repair(false).unwrap();
     assert_eq!(r.status, "repaired");
     assert_eq!(r.method, "backup", "{r:?}");

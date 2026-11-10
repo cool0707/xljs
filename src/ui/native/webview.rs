@@ -377,8 +377,7 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
             // A page that never answers (it cannot load, a chart hangs)
             // must not keep the script waiting.
             let id = h.0 as isize;
-            std::thread::spawn(move || {
-                std::thread::sleep(PRINT_TIMEOUT);
+            after(PRINT_TIMEOUT, move || {
                 // Only while the job is open: the handle may name another window later.
                 if finish(Err(err!("pdf.failed", "timeout"))) {
                     unsafe {
@@ -390,6 +389,29 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
         Err(e) => {
             finish(Err(e));
         }
+    }
+}
+
+thread_local! {
+    /// The callbacks of after(), by timer.
+    static LATER: RefCell<HashMap<usize, Box<dyn FnOnce()>>> = RefCell::new(HashMap::new());
+}
+
+/// Calls f on this (the UI) thread once d has passed (a thread timer of
+/// the message loop).
+fn after(d: std::time::Duration, f: impl FnOnce() + 'static) {
+    unsafe extern "system" fn fire(_: HWND, _: u32, id: usize, _: u32) {
+        unsafe {
+            let _ = KillTimer(None, id);
+        }
+        if let Some(f) = LATER.with(|l| l.borrow_mut().remove(&id)) {
+            f();
+        }
+    }
+    let ms = d.as_millis().min(u32::MAX as u128) as u32;
+    let id = unsafe { SetTimer(None, 0, ms, Some(fire)) };
+    if id != 0 {
+        LATER.with(|l| l.borrow_mut().insert(id, Box::new(f)));
     }
 }
 

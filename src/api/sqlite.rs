@@ -337,7 +337,7 @@ pub(super) fn install(n: &N) {
     });
     n.set("sqliteInfo", |h, a| {
         let (path, shared, readonly, txn, corrupt, closed) =
-            with_db(h, a, |d| Ok((d.path.to_string_lossy().into_owned(), d.shared(), d.opts.readonly, d.in_transaction(), d.corrupt, d.closed)))?;
+            with_db(h, a, |d| Ok((d.path.to_string_lossy().into_owned(), d.shared(), d.opts.readonly, d.in_transaction(), d.corrupt.get(), d.closed)))?;
         let c = &a.ctx;
         js::object(
             c,
