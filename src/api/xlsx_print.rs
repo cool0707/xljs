@@ -314,20 +314,48 @@ fn japanese_font(name: &str) -> bool {
         || name.contains("CJK")
 }
 
-/// The CSS of a border side (Excel draws thin as one pixel).
-fn border_css(style: &str, color: &str) -> Option<String> {
-    let (w, s) = match style {
-        "thin" => (0.75, "solid"),
-        "hair" => (0.5, "solid"),
-        "dotted" => (0.75, "dotted"),
-        "dashed" | "dashDot" | "dashDotDot" => (0.75, "dashed"),
-        "medium" => (1.5, "solid"),
-        "mediumDashed" | "mediumDashDot" | "mediumDashDotDot" | "slantDashDot" => (1.5, "dashed"),
-        "thick" => (2.25, "solid"),
-        "double" => (2.25, "double"),
+/// How a border style is drawn: (width pt, dashes pt, double). The widths
+/// are Excel's on screen at 96 dpi (thin = 1 px), but hair, which Excel
+/// shows as a dotted 1 px line, is a real thin line on paper (0.25pt). A
+/// double line is two thin lines with a thin gap (2.25pt in all).
+fn line_kind(style: &str) -> Option<(f64, &'static [f64], bool)> {
+    Some(match style {
+        "thin" => (0.75, &[], false),
+        "hair" => (0.25, &[], false),
+        "dotted" => (0.75, &[0.75, 0.75], false),
+        "dashed" => (0.75, &[3.0, 1.5], false),
+        "dashDot" => (0.75, &[3.0, 1.5, 0.75, 1.5], false),
+        "dashDotDot" => (0.75, &[3.0, 1.5, 0.75, 1.5, 0.75, 1.5], false),
+        "medium" => (1.5, &[], false),
+        "mediumDashed" => (1.5, &[6.0, 3.0], false),
+        "mediumDashDot" | "slantDashDot" => (1.5, &[6.0, 3.0, 1.5, 3.0], false),
+        "mediumDashDotDot" => (1.5, &[6.0, 3.0, 1.5, 3.0, 1.5, 3.0], false),
+        "thick" => (2.25, &[], false),
+        "double" => (0.75, &[], true),
         _ => return None,
-    };
-    Some(format!("{}pt {s} {color}", n(w)))
+    })
+}
+
+/// The weight of a border style when two cells give the same edge different
+/// borders (the heavier one is drawn).
+fn line_rank(style: &str) -> usize {
+    const ORDER: [&str; 13] =
+        ["hair", "dotted", "dashDotDot", "dashDot", "dashed", "thin", "mediumDashDotDot", "slantDashDot", "mediumDashDot", "mediumDashed", "medium", "thick", "double"];
+    ORDER.iter().position(|x| *x == style).map(|i| i + 1).unwrap_or(0)
+}
+
+/// A border of a cell side: its style (a known one, not "none") and color.
+#[derive(Clone, PartialEq, Debug)]
+struct Line {
+    style: String,
+    color: String,
+}
+
+impl Line {
+    fn new(style: &str, color: String) -> Option<Line> {
+        line_kind(style)?;
+        Some(Line { style: style.to_string(), color })
+    }
 }
 
 /// The diagonal borders of a cell as an SVG over the cell, so that the lines
@@ -336,21 +364,8 @@ fn border_css(style: &str, color: &str) -> Option<String> {
 /// dashes keep their sizes whatever the cell's shape. `bg` is the cell's
 /// fill, for the gap of a double line.
 fn diagonal_svg(style: &str, color: &str, up: bool, down: bool, bg: &str) -> String {
-    // (width pt, dashes pt)
-    let (w, dash): (f64, &[f64]) = match style {
-        "thin" => (0.75, &[]),
-        "hair" => (0.5, &[]),
-        "dotted" => (0.75, &[0.75, 0.75]),
-        "dashed" => (0.75, &[3.0, 1.5]),
-        "dashDot" => (0.75, &[3.0, 1.5, 0.75, 1.5]),
-        "dashDotDot" => (0.75, &[3.0, 1.5, 0.75, 1.5, 0.75, 1.5]),
-        "medium" => (1.5, &[]),
-        "mediumDashed" => (1.5, &[6.0, 3.0]),
-        "mediumDashDot" | "slantDashDot" => (1.5, &[6.0, 3.0, 1.5, 3.0]),
-        "mediumDashDotDot" => (1.5, &[6.0, 3.0, 1.5, 3.0, 1.5, 3.0]),
-        "thick" | "double" => (2.25, &[]),
-        _ => return String::new(),
-    };
+    let Some((w, dash, double)) = line_kind(style) else { return String::new() };
+    let w = if double { 2.25 } else { w };
     let dash = if dash.is_empty() { String::new() } else { format!(";stroke-dasharray:{}", dash.iter().map(|d| format!("{}pt", n(*d))).collect::<Vec<_>>().join(" ")) };
     let mut lines = Vec::new();
     if up {
@@ -1094,14 +1109,14 @@ impl Classes {
 
 const BASE_CSS: &str = r#"html,body{margin:0;padding:0;background:#fff;color:#000}
 body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.xljs-page{position:relative;overflow:hidden;break-after:page;display:flex;flex-direction:column;box-sizing:border-box;width:var(--w);height:var(--h)}
+.xljs-page{position:relative;overflow:clip;overflow-clip-margin:3pt;break-after:page;display:flex;flex-direction:column;box-sizing:border-box;width:var(--w);height:var(--h)}
 .xljs-page:last-child{break-after:auto}
 .xljs-sheet{position:relative;flex:none}
 .xljs-sheet table{border-collapse:collapse;table-layout:fixed}
 .xljs-sheet td{padding:0;position:relative;overflow:visible}
 .xljs-sheet td>div{position:absolute;top:0;display:flex;flex-direction:column;justify-content:flex-end;overflow:hidden;box-sizing:border-box;padding:0 1.5pt;white-space:pre;line-height:normal}
 .xljs-sheet td>div>img.xljs-cell-image{flex:1 1 0;min-height:0;width:100%;object-fit:contain;padding:1.5pt 0;box-sizing:border-box}
-.xljs-sheet.grid td{border:0.5pt solid #c8c8c8}
+.xljs-sheet>svg.xljs-lines{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;fill:none}
 .xljs-sheet td>.xljs-bar,.xljs-sheet td>.xljs-icon{position:absolute;box-sizing:border-box}
 .xljs-sheet td>.xljs-icon>svg{display:block}
 .xljs-sheet td>svg.xljs-diag{position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none}
@@ -1419,8 +1434,8 @@ fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, St
             body_y = tr_h;
         }
         rows.extend((rs.0..=rs.1).filter(|r| sh.h(*r) > 0.0));
-        let _ = write!(out, "<section class=\"xljs-page\" style=\"{style}\">\n<div class=\"xljs-sheet{}\" style=\"zoom:{}\">", if s.grid { " grid" } else { "" }, n(scale));
-        page_table(sh, &cols, &rows, classes, out);
+        let _ = write!(out, "<section class=\"xljs-page\" style=\"{style}\">\n<div class=\"xljs-sheet\" style=\"zoom:{}\">", n(scale));
+        page_table(sh, &cols, &rows, s.grid, classes, out);
         // Pictures, shapes and charts, cut to the body of the page.
         let (bx0, by0) = (sh.x0(cs.0 - 1), sh.y0(rs.0 - 1));
         let (bw, bh) = (sh.x0(cs.1) - bx0, sh.y0(rs.1) - by0);
@@ -1506,7 +1521,8 @@ fn blank_page(sh: &Sheet, cs: Seg, rs: Seg, objects: &[(Anchor, String, String)]
     true
 }
 
-/// The CSS of a cell: (td: fill and borders, div: font and alignment).
+/// The CSS of a cell: (td: fill, div: font and alignment). The borders are
+/// drawn over the table (page_lines).
 struct CellCss {
     td: String,
     div: String,
@@ -1517,7 +1533,7 @@ struct CellCss {
     halign: String,
 }
 
-fn side_css(sh: &Sheet, st: &Style, side: &str) -> Option<String> {
+fn side_line(sh: &Sheet, st: &Style, side: &str) -> Option<Line> {
     let b = st.borders()?;
     let bd = match side {
         "left" => b.left(),
@@ -1526,17 +1542,19 @@ fn side_css(sh: &Sheet, st: &Style, side: &str) -> Option<String> {
         _ => b.bottom(),
     };
     let style = bd.border_style();
+    line_kind(style)?;
     let color = bd.color().as_ref().and_then(|c| sh.color(c)).unwrap_or_else(|| "#000".into());
-    border_css(style, &color)
+    Line::new(style, color)
 }
 
-/// The CSS of a border side of a table style.
-fn table_side_css(sh: &Sheet, s: &Side) -> Option<String> {
+/// A border side of a table style or a conditional format.
+fn table_side_line(sh: &Sheet, s: &Side) -> Option<Line> {
+    line_kind(&s.style)?;
     let color = s.color.as_ref().and_then(|c| sh.color(c)).unwrap_or_else(|| "#000".into());
-    border_css(&s.style, &color)
+    Line::new(&s.style, color)
 }
 
-fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table: Option<&Overlay>, cf: Option<&super::xlsx_cond::Fx>) -> CellCss {
+fn cell_css(sh: &Sheet, st: &Style, val: &Val, table: Option<&Overlay>, cf: Option<&super::xlsx_cond::Fx>) -> CellCss {
     let mut td = String::new();
     let mut div = String::new();
     let cf_fill = if sh.mono { None } else { cf.and_then(|x| x.fill.clone()) };
@@ -1550,11 +1568,6 @@ fn cell_css(sh: &Sheet, st: &Style, val: &Val, sides: [Option<String>; 4], table
     }
     if let Some(f) = &fill {
         let _ = write!(td, "background-color:{f};");
-    }
-    for (i, side) in ["top", "right", "bottom", "left"].into_iter().enumerate() {
-        if let Some(v) = &sides[i] {
-            let _ = write!(td, "border-{side}:{v};");
-        }
     }
     let (mut bold, mut italic, mut color) = (false, false, None);
     let (mut underline, mut strike) = (String::new(), false);
@@ -1870,7 +1883,7 @@ fn text_width(sh: &Sheet, col: u32, row: u32, val: &Val, st: &Style) -> f64 {
 }
 
 /// Writes the table of the cells cols × rows (sheet numbers, in order).
-fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out: &mut String) {
+fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], grid: bool, classes: &mut Classes, out: &mut String) {
     let total: f64 = cols.iter().map(|c| sh.w(*c)).sum();
     let _ = write!(out, "<table style=\"width:{}pt;font-family:{};font-size:{}pt\"><colgroup>", n(total), esc(&font_family(&sh.font.0)), n(sh.font.1));
     for c in cols {
@@ -1879,6 +1892,8 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
     out.push_str("</colgroup>\n");
     let mut covered: HashSet<(usize, usize)> = HashSet::new();
     let empty = |c: u32, r: u32| sh.val(c, r) == Val::Empty && !sh.merge_at.contains_key(&(c, r));
+    let st_of = |c: u32, r: u32| sh.cells.get(&(c, r)).map(|x| x.style());
+    let default_style = Style::default();
     for (ri, &r) in rows.iter().enumerate() {
         let _ = write!(out, "<tr style=\"height:{}pt\">", n(sh.h(r)));
         for (ci, &c) in cols.iter().enumerate() {
@@ -1905,27 +1920,10 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
                 }
                 None => (c, r, 1, 1),
             };
-            let st_of = |c: u32, r: u32| sh.cells.get(&(c, r)).map(|x| x.style());
-            let default_style = Style::default();
             let st = st_of(vc, vr).or_else(|| sh.ws.row_dimension(r).map(|x| x.style())).unwrap_or(&default_style);
-            let side = |cc: u32, rr: u32, s: &str| {
-                // A conditional format's border (left, right, top, bottom) wins.
-                let ci = ["left", "right", "top", "bottom"].iter().position(|x| *x == s)?;
-                if let Some(t) = sh.cond.get(&(cc, rr)).and_then(|x| x.sides[ci].as_ref()) {
-                    return table_side_css(sh, t);
-                }
-                st_of(cc, rr).and_then(|x| side_css(sh, x, s)).or_else(|| {
-                    let i = ["top", "right", "bottom", "left"].iter().position(|x| *x == s)?;
-                    sh.table.get(&(cc, rr))?.sides[i].as_ref().and_then(|t| table_side_css(sh, t))
-                })
-            };
-            let sides = match merge {
-                Some(m) => [side(m.0, m.1, "top"), side(m.2, m.1, "right"), side(m.0, m.3, "bottom"), side(m.0, m.1, "left")],
-                None => [side(c, r, "top"), side(c, r, "right"), side(c, r, "bottom"), side(c, r, "left")],
-            };
             let val = sh.val(vc, vr);
             let cf = sh.cond.get(&(vc, vr));
-            let css = cell_css(sh, st, &val, sides, sh.table.get(&(vc, vr)), cf);
+            let css = cell_css(sh, st, &val, sh.table.get(&(vc, vr)), cf);
             // Shrink to fit (Excel leaves it out for wrapped and rotated text).
             let shrink = st.alignment().is_some_and(|a| a.shrink_to_fit()) && !css.wrap && !css.rotated;
             let class = classes.class(&css.td, &css.div);
@@ -2004,6 +2002,159 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], classes: &mut Classes, out
         out.push_str("</tr>\n");
     }
     out.push_str("</table>");
+    page_lines(sh, cols, rows, grid, out);
+}
+
+/// The border of a side ("top", "right", "bottom", "left") of the cell
+/// (c, r): a conditional format's, the cell's own, or its table style's.
+fn cell_side(sh: &Sheet, c: u32, r: u32, s: &str) -> Option<Line> {
+    // A conditional format's border (left, right, top, bottom) wins.
+    let ci = ["left", "right", "top", "bottom"].iter().position(|x| *x == s)?;
+    if let Some(t) = sh.cond.get(&(c, r)).and_then(|x| x.sides[ci].as_ref()) {
+        return table_side_line(sh, t);
+    }
+    sh.cells.get(&(c, r)).and_then(|x| side_line(sh, x.style(), s)).or_else(|| {
+        let i = ["top", "right", "bottom", "left"].iter().position(|x| *x == s)?;
+        sh.table.get(&(c, r))?.sides[i].as_ref().and_then(|t| table_side_line(sh, t))
+    })
+}
+
+/// The heavier of the borders that two cells give their common edge (the
+/// first one, the cell above or on the left, if they weigh the same).
+fn heavier(a: Option<Line>, b: Option<Line>) -> Option<Line> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(if line_rank(&b.style) > line_rank(&a.style) { b } else { a }),
+        (a, b) => a.or(b),
+    }
+}
+
+/// The cell borders (and the grid lines) of a page: one SVG over the table
+/// whose user unit is the pt, with the lines along the edges between the
+/// cells. Chromium paints CSS borders as filled rectangles snapped to whole
+/// CSS pixels (0.75pt), so a hair line came out as thick as a thin one, a
+/// scaled page lost its medium lines (1.92px → 1px) and PDF viewers drop
+/// such slivers at some zooms. SVG lines become stroked paths of the exact
+/// width, and viewers draw a stroke at least one screen pixel wide, as they
+/// do Excel's own PDFs. An edge inside a merged cell has no line; runs of
+/// the same line along a row or column are one path, so dashes go on.
+fn page_lines(sh: &Sheet, cols: &[u32], rows: &[u32], grid_on: bool, out: &mut String) {
+    let (nc, nr) = (cols.len(), rows.len());
+    if nc == 0 || nr == 0 {
+        return;
+    }
+    let mut xs = vec![0.0];
+    for c in cols {
+        xs.push(xs.last().unwrap() + sh.w(*c));
+    }
+    let mut ys = vec![0.0];
+    for r in rows {
+        ys.push(ys.last().unwrap() + sh.h(*r));
+    }
+    let merged = |a: (usize, usize), b: (usize, usize)| {
+        let m = |(ci, ri): (usize, usize)| sh.merge_at.get(&(cols[ci], rows[ri]));
+        m(a).is_some() && m(a) == m(b)
+    };
+    // Grid lines go first (under the borders), then the borders from the lightest.
+    let grid = Line { style: String::new(), color: "#c8c8c8".into() };
+    let mut groups: Vec<(Line, String)> = Vec::new();
+    let mut seg = |line: &Line, d: std::fmt::Arguments| {
+        let i = match groups.iter().position(|g| g.0 == *line) {
+            Some(i) => i,
+            None => {
+                groups.push((line.clone(), String::new()));
+                groups.len() - 1
+            }
+        };
+        let _ = groups[i].1.write_fmt(d);
+    };
+    // An edge's line: the cells' border, else a grid line (not inside merged cells).
+    let edge = |a: Option<(usize, usize)>, b: Option<(usize, usize)>, sa: &str, sb: &str| -> Option<Line> {
+        if let (Some(a), Some(b)) = (a, b)
+            && merged(a, b)
+        {
+            return None;
+        }
+        let side = |p: Option<(usize, usize)>, s: &str| p.and_then(|(ci, ri)| cell_side(sh, cols[ci], rows[ri], s));
+        heavier(side(a, sa), side(b, sb)).or_else(|| grid_on.then(|| grid.clone()))
+    };
+    // Horizontal edges (above row ri), run by run along the row.
+    for (ri, &y) in ys.iter().enumerate() {
+        let mut run: Option<(Line, usize)> = None;
+        for ci in 0..=nc {
+            let line = if ci < nc { edge(ri.checked_sub(1).map(|r| (ci, r)), (ri < nr).then_some((ci, ri)), "bottom", "top") } else { None };
+            if run.as_ref().map(|r| &r.0) == line.as_ref() {
+                continue;
+            }
+            if let Some((l, start)) = run.take() {
+                edge_line(&l, true, y, xs[start], xs[ci], &mut seg);
+            }
+            run = line.map(|l| (l, ci));
+        }
+    }
+    // Vertical edges (left of column ci), run by run down the column.
+    for (ci, &x) in xs.iter().enumerate() {
+        let mut run: Option<(Line, usize)> = None;
+        for ri in 0..=nr {
+            let line = if ri < nr { edge(ci.checked_sub(1).map(|c| (c, ri)), (ci < nc).then_some((ci, ri)), "right", "left") } else { None };
+            if run.as_ref().map(|r| &r.0) == line.as_ref() {
+                continue;
+            }
+            if let Some((l, start)) = run.take() {
+                edge_line(&l, false, x, ys[start], ys[ri], &mut seg);
+            }
+            run = line.map(|l| (l, ri));
+        }
+    }
+    if groups.is_empty() {
+        return;
+    }
+    groups.sort_by_key(|g| if g.0.style.is_empty() { 0 } else { line_rank(&g.0.style) });
+    let (w, h) = (n(xs[nc]), n(ys[nr]));
+    let _ = write!(out, "<svg class=\"xljs-lines\" viewBox=\"0 0 {w} {h}\" style=\"width:{w}pt;height:{h}pt\">");
+    for (line, d) in &groups {
+        let (lw, dash, _) = line_kind(&line.style).unwrap_or((0.5, &[], false));
+        // Square ends close the corners where two lines meet; dashes keep their lengths.
+        let cap = if dash.is_empty() { "square" } else { "butt" };
+        let _ = write!(out, "<path d=\"{d}\" style=\"stroke:{};stroke-width:{};stroke-linecap:{cap}\"/>", line.color, n(lw));
+    }
+    out.push_str("</svg>");
+}
+
+/// A line along an edge: horizontal at `at` from a to b, or vertical. A
+/// double line is two lines 0.75pt to either side. Dashes are separate
+/// short lines: Chromium turns a dashed stroke into filled shapes in the
+/// PDF, which are the slivers that viewers drop.
+fn edge_line(l: &Line, horizontal: bool, at: f64, a: f64, b: f64, seg: &mut impl FnMut(&Line, std::fmt::Arguments)) {
+    if b <= a {
+        return;
+    }
+    // The grid lines (no style) are plain.
+    let (_, dash, double) = line_kind(&l.style).unwrap_or((0.5, &[], false));
+    let offsets: &[f64] = if double { &[-0.75, 0.75] } else { &[0.0] };
+    let mut pieces = Vec::new();
+    if dash.is_empty() {
+        pieces.push((a, b));
+    } else {
+        let (mut p, mut i) = (a, 0);
+        while p < b {
+            let q = (p + dash[i % dash.len()]).min(b);
+            if i % 2 == 0 {
+                pieces.push((p, q));
+            }
+            p = q;
+            i += 1;
+        }
+    }
+    for off in offsets {
+        let at = at + off;
+        for (p, q) in &pieces {
+            if horizontal {
+                seg(l, format_args!("M{} {}H{}", n(*p), n(at), n(*q)));
+            } else {
+                seg(l, format_args!("M{} {}V{}", n(at), n(*p), n(*q)));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2048,6 +2199,33 @@ mod tests {
         assert_eq!(c, "counter(page) \" / \" counter(pages) \" ページ\"");
         assert_eq!(hf_content(&s[2], "S", "", "", &now).0, "\"2026/10/31\"");
         assert_eq!(hf_content("&A &F &&", "集計", "a.xlsx", "", &now).0, "\"集計 a.xlsx &\"");
+    }
+
+    #[test]
+    fn border_lines() {
+        let line = |s: &str| Line::new(s, "#000".into());
+        assert_eq!(line("none"), None);
+        // The heavier border of an edge wins; the first (above, left) on a tie.
+        assert_eq!(heavier(line("thin"), line("medium")).unwrap().style, "medium");
+        assert_eq!(heavier(line("hair"), line("dotted")).unwrap().style, "dotted");
+        let red = Line::new("thin", "#F00".into());
+        assert_eq!(heavier(red.clone(), line("thin")), red);
+        assert_eq!(heavier(None, line("hair")).unwrap().style, "hair");
+        let draw = |l: Option<Line>, horizontal: bool, a: f64, b: f64| {
+            let mut d = String::new();
+            edge_line(&l.unwrap(), horizontal, 10.0, a, b, &mut |_, x| {
+                let _ = d.write_fmt(x);
+            });
+            d
+        };
+        assert_eq!(draw(line("hair"), true, 0.0, 48.0), "M0 10H48");
+        assert_eq!(draw(line("thin"), false, 0.0, 13.5), "M10 0V13.5");
+        // Two lines for a double one; dashes are short lines of their own, cut at the end.
+        assert_eq!(draw(line("double"), true, 0.0, 5.0), "M0 9.25H5M0 10.75H5");
+        assert_eq!(draw(line("dashed"), true, 0.0, 10.0), "M0 10H3M4.5 10H7.5M9 10H10");
+        assert_eq!(draw(line("dotted"), false, 0.0, 3.0), "M10 0V0.75M10 1.5V2.25");
+        // An empty edge (a hidden row) draws nothing.
+        assert_eq!(draw(line("thin"), true, 5.0, 5.0), "");
     }
 
     #[test]

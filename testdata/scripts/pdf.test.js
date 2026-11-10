@@ -21,7 +21,11 @@ ok(html.includes(">りんご<"), "values");
 ok(html.includes(">360<"), "numbers");
 ok(html.includes('colspan="3"'), "merged cells");
 ok(/color:#FF0000/.test(html), "negative numbers in red");
-ok(/border-top:1\.5pt solid/.test(html), "borders");
+// Borders are SVG lines over the table (stroked paths in the PDF, of the exact width), not CSS borders.
+ok(/<svg class="xljs-lines" viewBox="0 0 [\d.]+ [\d.]+"/.test(html), "the lines of the borders");
+ok(/<path d="[^"]*" style="stroke:#000000;stroke-width:1\.5;stroke-linecap:square"\/>/.test(html), "medium borders");
+ok(/<path d="[^"]*" style="stroke:#000000;stroke-width:0\.75;stroke-linecap:square"\/>/.test(html), "thin borders");
+ok(!/border-top:/.test(html), "no CSS borders");
 ok(/background-color:#DDEBF7/i.test(html), "fill");
 ok(html.includes("font-family:&quot;游ゴシック&quot;,&quot;Yu Gothic&quot;"), "the default font");
 
@@ -38,7 +42,7 @@ wb.removeSheet("斜め");
 
 // Options: paper, orientation, scale, fit, margins, grid lines.
 ok(ws.toHtml({ paper: "A3", landscape: true }).includes("size:1190.551pt 841.89pt"), "A3 landscape");
-ok(ws.toHtml({ gridLines: true }).includes('class="xljs-sheet grid"'), "grid lines");
+ok(ws.toHtml({ gridLines: true }).includes('style="stroke:#c8c8c8;stroke-width:0.5;stroke-linecap:square"') && !ws.toHtml().includes("#c8c8c8"), "grid lines");
 ok(ws.toHtml({ margin: 10 }).includes("margin:28.346pt 28.346pt 28.346pt 28.346pt"), "margins in mm");
 ok(ws.toHtml({ scale: 50 }).includes("zoom:0.5"), "scale");
 ok(ws.toHtml({ scale: 50, zoom: 90 }).includes("zoom:0.45"), "zoom: on top of the scale");
@@ -136,7 +140,7 @@ await pb.toPdf("print.pdf");
 const tb = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "tables.xlsx"));
 const th = tb.sheet("テーブル").toHtml();
 ok(th.includes("background-color:#DDEBF7"), "header fill of the custom table style");
-ok(th.includes("0.75pt solid #808080") && th.includes("0.5pt solid #808080"), "borders of the custom table style (thin, hair inside)");
+ok(th.includes("stroke:#808080;stroke-width:0.75;") && th.includes("stroke:#808080;stroke-width:0.25;"), "borders of the custom table style (thin, hair inside)");
 ok(/font-weight:bold[^}]*color:#FFFFFF|color:#FFFFFF[^}]*font-weight:bold/.test(th) || th.includes("font-weight:bold;color:#FFFFFF"), "TableStyleMedium2: white bold header");
 const mono = tb.sheet("白黒").toHtml();
 ok(mono.includes(">塗り<") && !mono.includes("#FFC000"), "black and white: no fills");
