@@ -1,6 +1,6 @@
 "use strict";
 // The start screen (launch.html; the other side is src/cli/launch.rs).
-// Rust answers {op: "ready"} with {message, version, choices: [{label,
+// Rust answers {op: "ready"} with {message, choices: [{label,
 // note, icon}]} prefixed by \x02; the page sends {op: "choose", index}.
 (() => {
   const wv = window.chrome && window.chrome.webview;
@@ -15,7 +15,6 @@
 
   function show(m) {
     $("message").textContent = m.message || "";
-    $("version").textContent = m.version || "";
     const list = $("choices");
     list.textContent = "";
     m.choices.forEach((c, i) => {

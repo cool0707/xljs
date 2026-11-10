@@ -82,7 +82,6 @@ fn ask(u: &Arc<dyn Ui>, choices: &[Choice]) -> Option<i64> {
     if u.supports_windows() {
         let data = serde_json::json!({
             "message": t!("cli.launchMessage"),
-            "version": super::version(),
             "choices": choices.iter().zip(PAGE_ICONS).map(|(c, icon)| serde_json::json!({
                 "label": c.label, "note": c.note, "icon": icon,
             })).collect::<Vec<_>>(),
