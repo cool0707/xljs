@@ -125,6 +125,8 @@ main { padding: var(--sp-xxl) var(--sp-xxl) var(--sp-xxl); }
 .err { color: var(--error); }
 .invalid :is(input, select, textarea):not([type=checkbox]):not([type=radio]) { border-color: var(--error); }
 .invalid :is(input, select, textarea):focus-visible { box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 25%, transparent); }
+/* A select as wide as its longest option, but not wider than the form. */
+.ctl select.fit { width: auto; max-width: 100%; }
 select.empty { color: var(--muted); }
 select.empty option:not(.placeholder) { color: var(--fg); }
 .choices { display: flex; flex-wrap: wrap; gap: var(--sp-s) var(--sp-xxl); padding-top: calc((var(--control-h) - 20px) / 2); }
@@ -278,6 +280,9 @@ input[type=checkbox].switch:hover:not(:disabled):not(:checked) { border-color: t
 }
 .affix:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
 .ctl .affix > input { flex: 1; min-width: 0; border: 0; box-shadow: none; background: transparent; }
+/* Narrowed to its maxLength or digits (fit in form.js): the box hugs the input. */
+.affix.fit { display: inline-flex; max-width: 100%; }
+.ctl .affix.fit > input { flex: 0 1 auto; }
 .ctl .affix > input:focus-visible { box-shadow: none; }
 .affix-text { flex: none; padding: 0 calc(8px + min(var(--radius), 16px) / 4); color: var(--muted); white-space: nowrap; }
 .affix-text:first-child { padding-right: 0; }
@@ -348,6 +353,8 @@ input[type=checkbox].switch:hover:not(:disabled):not(:checked) { border-color: t
 .meta .help { flex: 1; }
 .counter { margin-top: var(--sp-xs); color: var(--muted); font-size: 12px; line-height: 16px; font-variant-numeric: tabular-nums; }
 .counter.over { color: var(--error); }
+.fit-box { display: inline-flex; flex-direction: column; max-width: 100%; vertical-align: top; }
+.fit-box > .counter { align-self: flex-end; }
 
 /* ---- groups that open and close */
 .group-head.toggle { cursor: default; border-radius: var(--radius-check); }

@@ -116,7 +116,9 @@ function init(m) {
     const ctl = el("div", { className: "ctl" + wide }, c.node);
     const counter = f.maxLength && c.text ? el("div", { className: "counter" }) : null;
     const help = f.help ? el("div", { className: "help", textContent: f.help }) : null;
-    if (counter) ctl.append(el("div", { className: "meta" }, help || el("div", { className: "help" }), counter));
+    // Under a narrowed input (fit) without help the count sits at the input's right edge.
+    if (counter && !help && c.text.style.width) ctl.replaceChildren(el("div", { className: "fit-box" }, c.node, counter));
+    else if (counter) ctl.append(el("div", { className: "meta" }, help || el("div", { className: "help" }), counter));
     else if (help) ctl.append(help);
     c.err = ctl.appendChild(el("div", { className: "err", hidden: true }));
     c.field = f;
@@ -267,6 +269,45 @@ function input(type, f, id) {
   return i;
 }
 
+// The padding and border of an input (base.css), around its text.
+const inputPad = "(2 * (8px + min(var(--radius), 16px) / 4) + 2px)";
+
+/** The width for an input's text: maxLength characters (full width) for text, the digits of min/max/step (10 without them) for a number; "" keeps the full width. */
+function fitWidth(f, type) {
+  if (type === "number") {
+    const digits = (v) => (typeof v === "number" && isFinite(v) ? String(Math.trunc(v)).length : 0);
+    const decimals = (v) => (typeof v === "number" && isFinite(v) && !Number.isInteger(v) ? String(v).split(".")[1]?.length || 0 : 0);
+    let n = Math.max(digits(f.min), digits(f.max));
+    if (!n) n = 10;
+    const d = Math.max(decimals(f.step), decimals(f.min), decimals(f.max));
+    if (d) n += d + 1;
+    // The spin buttons take about 20px.
+    return `calc(${Math.max(n, 3)}ch + ${inputPad} + 20px)`;
+  }
+  if ((type === "text" || type === "password") && f.maxLength > 0) {
+    const ph = f.placeholder ? textWidth(f.placeholder) : 0;
+    return `calc(max(${f.maxLength}em, ${Math.ceil(ph)}px) + ${inputPad})`;
+  }
+  return "";
+}
+
+/** The width of s in the page's font, in pixels. */
+function textWidth(s) {
+  const ctx = (textWidth.ctx ||= document.createElement("canvas").getContext("2d"));
+  ctx.font = getComputedStyle(document.body).font;
+  return ctx.measureText(String(s)).width;
+}
+
+/** Narrows an input (and its prefix and suffix box) to fitWidth; never wider than the form. */
+function fit(node, i, f, type) {
+  const w = fitWidth(f, type);
+  if (!w) return node;
+  i.style.width = w;
+  i.style.maxWidth = "100%";
+  if (node !== i) node.classList.add("fit");
+  return node;
+}
+
 /** An input with its prefix and suffix ("¥", "件") inside its box. */
 function affix(f, i) {
   if (!f.prefix && !f.suffix) return i;
@@ -350,7 +391,8 @@ function buildControl(f, id) {
     }
     case "select": {
       // With a placeholder the select starts on an empty option that shows it.
-      const s = el("select", { id, name: f.name },
+      // As wide as its longest option (select.fit in form.css).
+      const s = el("select", { id, name: f.name, className: "fit" },
         ...(f.placeholder ? [el("option", { value: "", textContent: f.placeholder, className: "placeholder" })] : []),
         ...(f.options || []).map((o) => el("option", { value: o.value, textContent: o.label })));
       const empty = () => s.classList.toggle("empty", !!f.placeholder && s.value === "");
@@ -403,7 +445,7 @@ function buildControl(f, id) {
     case "number": case "date": case "month": case "time": case "password": {
       const i = input(f.type, f, id);
       const text = f.type === "password" ? i : undefined;
-      return { node: affix(f, i), inputs: [i], text, get: () => i.value, set: (v) => { i.value = v ?? ""; }, focus: () => i.focus() };
+      return { node: fit(affix(f, i), i, f, f.type), inputs: [i], text, get: () => i.value, set: (v) => { i.value = v ?? ""; }, focus: () => i.focus() };
     }
     case "table":
       return tableControl(f, id);
@@ -411,7 +453,7 @@ function buildControl(f, id) {
       return chartControl(f, id);
     default: {
       const i = input("text", f, id);
-      return { node: affix(f, i), inputs: [i], text: i, get: () => i.value, set: (v) => { i.value = v ?? ""; }, focus: () => i.focus() };
+      return { node: fit(affix(f, i), i, f, "text"), inputs: [i], text: i, get: () => i.value, set: (v) => { i.value = v ?? ""; }, focus: () => i.focus() };
     }
   }
 }
@@ -533,8 +575,15 @@ function comboControl(f, id) {
       close();
     }
   });
+  // As wide as the longest option (or the placeholder), with the arrow; never wider than the form.
+  const widest = Math.max(0, ...opts.slice(0, 2000).map((o) => textWidth(o.label)), f.placeholder ? textWidth(f.placeholder) : 0);
+  const node = el("div", { className: "combo" }, i, list);
+  if (widest) {
+    node.style.width = `calc(${Math.ceil(widest) + 4}px + ${inputPad} / 2 + 30px + 1px)`;
+    node.style.maxWidth = "100%";
+  }
   return {
-    node: el("div", { className: "combo" }, i, list), inputs: [i],
+    node, inputs: [i],
     get: () => valueOf(i.value), set: (v) => { i.value = labelOf(String(v ?? "")); close(); }, focus: () => i.focus(),
   };
 }
