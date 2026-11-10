@@ -75,3 +75,14 @@ fn asset_fs() {
 fn tempdir() -> std::path::PathBuf {
     crate::testutil::tempdir()
 }
+
+#[test]
+fn asset_paths_stay_in_their_folder() {
+    use super::assets_valid_path as ok;
+    for good in [".", "ui/index.html", "a.b/c"] {
+        assert!(ok(good), "{good}");
+    }
+    for bad in ["", "/a", "../a", "a/../b", "a//b", "./a", "a\\b", "C:/x", "C:x", "a/b:stream", "ui/"] {
+        assert!(!ok(bad), "{bad}");
+    }
+}

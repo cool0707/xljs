@@ -78,11 +78,7 @@ impl Project {
     /// The absolute path of a file given relative to the folder (slashes);
     /// an error for paths outside it.
     pub fn path(&self, rel: &str) -> Result<PathBuf> {
-        let bad = rel.is_empty()
-            || Path::new(rel).is_absolute()
-            || rel.contains(':')
-            || rel.split(['/', '\\']).any(|p| p == ".." || p.is_empty());
-        if bad {
+        if rel == "." || !crate::meta::assets_valid_path(&rel.replace('\\', "/")) {
             return Err(crate::err!("dev.badFile", rel));
         }
         Ok(self.dir.join(rel))

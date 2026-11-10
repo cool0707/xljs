@@ -203,7 +203,8 @@ impl AssetFs for DevAssets {
         }
         if let Some(rest) = name.strip_prefix(PROJECT_PREFIX)
             && let Some(dir) = self.dir.lock().unwrap().clone()
-            && !rest.split('/').any(|p| p == ".." || p.starts_with('.'))
+            && crate::meta::assets_valid_path(rest)
+            && !rest.split('/').any(|p| p.starts_with('.'))
         {
             return std::fs::read(dir.join(rest));
         }
@@ -544,12 +545,15 @@ impl Session {
                 self.u.show_in_folder(&[p.entry.to_string_lossy().into_owned()])?;
             }
             "openUrl" => {
-                if r.url.starts_with("https://") || r.url.starts_with("http://") {
+                if is_web(&r.url) {
                     self.u.open_path(&r.url)?;
                 }
             }
             "chat" => {
                 // The page chose a chat (or none: back to the start).
+                if !r.url.is_empty() && !is_web(&r.url) {
+                    return Ok(());
+                }
                 if let Some(p) = &self.project {
                     let f = p.dir.join(project::DATA_DIR).join("dev.json");
                     let mut ps: ProjectSettings = load(&f);
@@ -699,7 +703,8 @@ impl Session {
         let text = read_text(&p.entry)?;
         let settings = p.dir.join(project::DATA_DIR).join("dev.json");
         let mut ps: ProjectSettings = load(&settings);
-        let mut chat = ps.chat.get(&p.entry_name()).cloned().unwrap_or_default();
+        // The folder's settings may come with the script: only web pages.
+        let mut chat = ps.chat.get(&p.entry_name()).filter(|u| is_web(u)).cloned().unwrap_or_default();
         // A script without a chat of its own takes the one open now, else
         // the default chat (remembered once the chat shows it).
         let keep_chat = chat.is_empty() && !self.chat_url.is_empty();
@@ -942,10 +947,10 @@ impl Session {
     fn browser_event(&mut self, b: BrowserEvent) {
         match b {
             BrowserEvent::Url(url) => {
-                let web = url.starts_with("https://") || url.starts_with("http://");
+                let web = is_web(&url);
                 self.chat_url = if web { url.clone() } else { String::new() };
                 if let Some(p) = &self.project
-                    && (url.starts_with("https://") || url.starts_with("http://"))
+                    && web
                 {
                     let f = p.dir.join(project::DATA_DIR).join("dev.json");
                     let mut ps: ProjectSettings = load(&f);
@@ -969,12 +974,16 @@ impl Session {
     /// A file from the chat: which file it replaces, and both texts.
     pub fn downloaded(&mut self, path: &str, name: &str) -> Result<()> {
         let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-        let text = read_text(Path::new(path))?;
+        let text = if size > 4 << 20 { None } else { Some(read_text(Path::new(path))) };
+        let _ = std::fs::remove_file(path);
+        let text = match text {
+            Some(t) => t?,
+            None => String::new(),
+        };
         if size > 4 << 20 || text.contains('\0') {
             self.post(json!({"type": "error", "message": t!("dev.downloadNotText", name)}));
             return Ok(());
         }
-        let _ = std::fs::remove_file(path);
         let Some(p) = &self.project else {
             self.post(json!({"type": "error", "message": t!("dev.downloadNoScript", name)}));
             return Ok(());

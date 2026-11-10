@@ -20,7 +20,7 @@ use windows::Win32::UI::HiDpi::GetDpiForSystem;
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::{ExtractIconExW, SHCreateMemStream};
 use windows::Win32::UI::WindowsAndMessaging::*;
-use windows::core::{BOOL, Interface, PCWSTR, PWSTR, w};
+use windows::core::{BOOL, Interface, PWSTR, w};
 
 use super::{WINDOWS, hstr, loader};
 use crate::ui::{
@@ -506,6 +506,11 @@ fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
         core.add_WebMessageReceived(
             &WebMessageReceivedEventHandler::create(Box::new(move |_, args: Option<ICoreWebView2WebMessageReceivedEventArgs>| {
                 let Some(args) = args else { return Ok(()) };
+                // Only the app's own pages talk to the host.
+                let mut p = PWSTR::null();
+                if args.Source(&mut p).is_err() || !take_pwstr(p).starts_with(ASSET_ORIGIN) {
+                    return Ok(());
+                }
                 let mut p = PWSTR::null();
                 if args.TryGetWebMessageAsString(&mut p).is_err() {
                     return Ok(());
@@ -742,7 +747,7 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < b.len() {
         if b[i] == b'%'
-            && i + 2 < b.len() + 0
+            && i + 2 < b.len()
             && let Ok(v) = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or(""), 16)
         {
             out.push(v);
@@ -790,7 +795,7 @@ fn serve(env: &ICoreWebView2Environment, args: &ICoreWebView2WebResourceRequeste
 }
 
 fn inside(uri: &str) -> bool {
-    uri.starts_with(ASSET_ORIGIN) || uri.starts_with("about:") || uri.starts_with("data:")
+    uri.starts_with(ASSET_ORIGIN) || uri.starts_with("about:")
 }
 
 fn external(uri: &str) -> bool {
@@ -956,9 +961,4 @@ fn destroyed(hwnd: HWND, st: &Rc<WinState>) {
     if let Some(f) = &st.o.on_closed {
         f();
     }
-}
-
-#[allow(dead_code)]
-fn unused() -> (PCWSTR, String) {
-    (PCWSTR::null(), i18n::lang())
 }
