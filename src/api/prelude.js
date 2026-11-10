@@ -2680,8 +2680,37 @@
       remember: f.remember !== false && !["password", "table", "chart", "note"].includes(type),
       validate: typeof f.validate === "function" ? f.validate : null,
       onChange: typeof f.onChange === "function" ? f.onChange : null,
+      // disabled / hidden: true, or a function of the values (checked again as they change); ctx.setDisabled / setHidden replace it.
+      disabled: typeof f.disabled === "function" ? f.disabled : !!f.disabled,
+      hidden: typeof f.hidden === "function" ? f.hidden : !!f.hidden,
       default: f.default,
     };
+  }
+
+  /**
+   * The disabled and hidden state of a field for the values entered
+   * (values: rawValues, computed only when a function needs them).
+   */
+  function fieldState(fields, f, wire, cache = {}) {
+    const of = (x) => {
+      if (typeof x !== "function") return x;
+      if (!cache.values) cache.values = rawValues(fields, wire);
+      return !!x(cache.values);
+    };
+    return { disabled: of(f.disabled), hidden: of(f.hidden) };
+  }
+
+  /** The state of every field: { name: { disabled, hidden } }. */
+  function fieldStates(fields, wire) {
+    const cache = {}, r = {};
+    for (const f of fields) r[f.name] = fieldState(fields, f, wire, cache);
+    return r;
+  }
+
+  /** Whether a field is disabled or hidden: then it is not checked, and the console does not ask it. */
+  function inactive(fields, f, wire) {
+    const s = fieldState(fields, f, wire);
+    return s.disabled || s.hidden;
   }
 
   const ymd = (d) => `${String(d.getFullYear()).padStart(4, "0")}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -2840,11 +2869,13 @@
    */
   async function checkForm(fields, wire, validate) {
     const errors = {}, values = {}, cells = {};
+    const states = fieldStates(fields, wire);
+    const off = (f) => states[f.name].disabled || states[f.name].hidden;
     for (const f of fields) {
       const w = wire[f.name];
       if (noValue(f)) continue; // shown only
       values[f.name] = fromWire(f, w);
-      if (f.type === "chart") continue;
+      if (f.type === "chart" || off(f)) continue; // disabled or hidden fields are not checked
       if (f.type === "table" && f.table.edit) {
         cells[f.name] = await tableErrors(f.table);
         if (cells[f.name].length) {
@@ -2858,7 +2889,7 @@
     }
     // The fields' own validate, with all the values.
     for (const f of fields) {
-      if (f.validate && f.name in values && !errors[f.name]) {
+      if (f.validate && f.name in values && !errors[f.name] && !off(f)) {
         const e = await f.validate(values[f.name], values);
         if (e) errors[f.name] = String(e);
       }
@@ -2884,6 +2915,7 @@
    */
   async function checkField(fields, f, wire) {
     if ((f.type === "table" && !f.table.select) || f.type === "chart" || f.type === "note") return ""; // cells are checked on their own
+    if (inactive(fields, f, wire)) return "";
     const w = wire[f.name], v = fromWire(f, w);
     const e = checkValue(f, w, v) || (f.validate ? await f.validate(v, rawValues(fields, wire)) : "");
     return e ? String(e) : "";
@@ -2962,6 +2994,24 @@
       if (!f) throw new TypeError(T("form.noField", name));
       this._i.setValue(f, toWire(f, value));
     }
+    /** Disables (grays out) a field, or enables it with false; replaces its disabled option. */
+    setDisabled(name, disabled = true) {
+      const f = this._i.fields.find((x) => x.name === String(name));
+      if (!f) throw new TypeError(T("form.noField", name));
+      f.disabled = !!disabled;
+      this._i.state();
+    }
+    /** Enables a field, or disables it with false. */
+    setEnabled(name, enabled = true) { this.setDisabled(name, !enabled); }
+    /** Hides a field, or shows it with false; replaces its hidden option. */
+    setHidden(name, hidden = true) {
+      const f = this._i.fields.find((x) => x.name === String(name));
+      if (!f) throw new TypeError(T("form.noField", name));
+      f.hidden = !!hidden;
+      this._i.state();
+    }
+    /** Shows a field, or hides it with false. */
+    setVisible(name, visible = true) { this.setHidden(name, !visible); }
     /**
      * Like ui.withProgress, shown in the form. Cancelling ends onSubmit
      * (the form shows that it was aborted) unless onCancel: "break".
@@ -3097,7 +3147,7 @@
       const spec = {
         title: o.title, description: o.description, error,
         submit: o.noSubmit ? "" : o.submit || T("form.ok"), buttons: o.actions.map((b) => b.path || b.label),
-        fields: fields.filter((f) => !f.chart).map((f) => Object.assign({
+        fields: fields.filter((f) => !f.chart && !inactive(fields, f, wire)).map((f) => Object.assign({
           name: f.name, label: promptLabel(f), type: promptType(f), options: f.options, required: f.required, custom: f.custom,
           placeholder: f.placeholder, help: f.help, accept: f.accept, value: wire[f.name], error: errors[f.name] || "",
           tab: f.tab >= 0 ? o.tabs[f.tab] : "",
@@ -3139,8 +3189,10 @@
       // shown is a change by the user and runs the field's onChange (once
       // it passes its checks), whose setValue may fill later fields.
       const shown = Object.assign({}, wire);
+      // Fields disabled or hidden (by then: an earlier onChange may change it) keep their values.
       for (const f of fields) {
         if (!(f.name in answer) || JSON.stringify(answer[f.name]) === JSON.stringify(shown[f.name])) continue;
+        if (inactive(fields, f, wire)) continue;
         wire[f.name] = answer[f.name];
         if (f.onChange && !(await checkField(fields, f, wire))) {
           const ctx = promptContext(o, fields, wire);
@@ -3208,6 +3260,7 @@
         native.uiTable(JSON.stringify(Object.assign({ title: f.label, select: "" }, tableText(f.table))));
       },
       setValue(f, w) { wire[f.name] = w; },
+      state() {}, // asked again with the fields as they are
       progress(done, total, message) {
         if (!p) p = new Progress({ title: o.title, total: total || 0 });
         else if (total !== undefined) p.total = total;
@@ -3258,6 +3311,7 @@
 
   /** The form page's first message: the form and its fields. */
   function formInit(o, fields, wire) {
+    const states = fieldStates(fields, wire);
     return {
       type: "init", description: o.description, texts: formTexts(),
       submit: o.submit, submitIcon: o.submitIcon, accent: o.accent, background: o.background, radius: o.radius, tabs: o.tabs, tabIcons: o.tabIcons,
@@ -3281,6 +3335,7 @@
         prefix: f.prefix || undefined, suffix: f.suffix || undefined, maxLength: f.maxLength || undefined,
         table: f.table ? Object.assign({ select: f.table.select, editable: editWire(f.table) || undefined }, tableWire(f.table)) : undefined,
         chart: f.chart ? Object.assign({ height: chartHeight(f) }, chartInit(f.chart)) : undefined,
+        disabled: states[f.name].disabled || undefined, hidden: states[f.name].hidden || undefined,
       })),
       lang: native.lang, chartTexts: fields.some((f) => f.chart) ? chartTexts() : undefined,
     };
@@ -3303,6 +3358,8 @@
       const sets = { n: 0, at: new Map() };
       // Cell edits and field checks are handled in order, and before a press of a button.
       let editQueue = Promise.resolve();
+      // The disabled and hidden state the page shows (see refresh).
+      let shownStates = null;
       const page = openPage("form.html", Object.assign({ title: o.title, titleBar: o.titleBar, icon: o.icon }, formSize(o, fields, hasRun, options)),
         (m, files) => { handle(m, files).catch(fail); });
       const finish = () => (failed ? reject(failed) : resolve(result));
@@ -3316,6 +3373,7 @@
         switch (m.type) {
           case "ready":
             page.send(formInit(o, fields, wire));
+            shownStates = fieldStates(fields, wire);
             for (const f of fields) {
               if (f.table && f.table.edit) page.send({ type: "cellErrors", field: f.name, errors: await tableErrors(f.table) });
             }
@@ -3327,6 +3385,7 @@
             if (!f || running) return;
             editQueue = editQueue.then(async () => {
               takeValues(m);
+              refresh();
               const error = await checkField(fields, f, wire);
               if (page.n.isClosed() || running) return;
               page.send({ type: "fieldError", field: f.name, error });
@@ -3379,6 +3438,7 @@
             if (b === undefined || (b && !b.onClick) || (!b && o.noSubmit) || running) return;
             await editQueue;
             takeValues(m);
+            refresh();
             const c = await pressValues(o, b, fields, wire, options);
             if (page.n.isClosed()) return;
             if (!c.values) {
@@ -3418,9 +3478,24 @@
         for (const f of fields) if (f.name in m.values && !stale(f)) wire[f.name] = m.values[f.name];
       }
 
+      /**
+       * Sends the fields whose disabled or hidden state changed (with the
+       * values as they are now, or by ctx.setDisabled / setHidden).
+       */
+      function refresh() {
+        if (!shownStates || page.n.isClosed()) return;
+        const now = fieldStates(fields, wire), changes = {};
+        for (const f of fields) {
+          const a = shownStates[f.name], b = now[f.name];
+          if (a.disabled !== b.disabled || a.hidden !== b.hidden) changes[f.name] = b;
+        }
+        shownStates = now;
+        if (Object.keys(changes).length) page.send({ type: "fieldState", fields: changes });
+      }
+
       /** Runs a field's onChange; an error it throws is shown as the field's error. */
       async function changed(f) {
-        const ctx = windowContext(page, fields, wire, sets);
+        const ctx = windowContext(page, fields, wire, sets, refresh);
         try {
           await f.onChange(fromWire(f, wire[f.name]), rawValues(fields, wire), ctx);
         } catch (e) {
@@ -3436,7 +3511,7 @@
         running = true;
         page.n.clearCancel();
         page.send({ type: "running" });
-        const ctx = windowContext(page, fields, wire, sets);
+        const ctx = windowContext(page, fields, wire, sets, refresh);
         let done;
         try {
           outputs = outputsOf(await handler(values, ctx));
@@ -3458,7 +3533,7 @@
    * onSubmit's (and onChange's) ctx for a form window: updates are sent at
    * most every 50 ms. sets counts the setValue calls (see takeValues).
    */
-  function windowContext(page, fields, wire, sets) {
+  function windowContext(page, fields, wire, sets, refresh) {
     const state = { done: 0, total: 0, message: "" };
     let progressDirty = false, lines = [], level = "info", last = 0, timer = 0;
     const flush = () => {
@@ -3493,6 +3568,11 @@
         sets.at.set(f.name, ++sets.n);
         // quiet: checked on the page, but not a change by the user (no onChange).
         page.send({ type: "picked", field: f.name, value: w, append: false, quiet: true, seq: sets.n });
+        refresh();
+      },
+      state() {
+        flush();
+        refresh();
       },
       progress(done, total, message) {
         state.done = done;

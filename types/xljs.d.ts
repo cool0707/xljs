@@ -346,6 +346,19 @@ declare global {
      * （コンソールでは呼び出し元に伝わる）。コンソール・mock では回答で変わった項目について項目の順に呼ばれる
      */
     onChange?(value: any, values: FormValues, ctx: FormChangeContext): unknown;
+    /**
+     * 項目を無効にする（グレーで表示し、入力できない）。関数ならほかの項目の値から決める
+     * （例: `disabled: (v) => !v.useMail` でチェックボックスが外れている間は無効）。関数は表示時と値が変わるたびに呼ばれる。
+     * 無効の項目は required などの検証も validate もされない（値はそのまま values に入る）。
+     * ctx.setDisabled / setEnabled で変えられる。コンソール・mock では無効の項目は尋ねない
+     */
+    disabled?: boolean | ((values: FormValues) => boolean);
+    /**
+     * 項目を隠す。関数ならほかの項目の値から決める（例: `hidden: (v) => v.kind !== "その他"`）。
+     * 隠した項目は検証されない（値はそのまま values に入る）。ctx.setHidden / setVisible で変えられる。
+     * コンソール・mock では隠した項目は尋ねない
+     */
+    hidden?: boolean | ((values: FormValues) => boolean);
     /** remember: true のフォームで、この項目を保存しない場合は false（password は保存しない） */
     remember?: boolean;
   }
@@ -391,6 +404,14 @@ declare global {
     table(name: string, rows: readonly unknown[], columns?: (string | FormTableColumn)[]): void;
     /** 項目の値を変える（default と同じ形で指定。table は選択する行） */
     setValue(name: string, value: unknown): void;
+    /** 項目を無効にする（グレーで表示。false で有効に戻す）。項目の disabled を置き換える */
+    setDisabled(name: string, disabled?: boolean): void;
+    /** 項目を有効にする（false で無効に） */
+    setEnabled(name: string, enabled?: boolean): void;
+    /** 項目を隠す（false で表示に戻す）。項目の hidden を置き換える */
+    setHidden(name: string, hidden?: boolean): void;
+    /** 項目を表示する（false で隠す） */
+    setVisible(name: string, visible?: boolean): void;
     /**
      * chart の項目のグラフを変える。指定したキーだけが置き換わる（{ data: rows } で行だけ差し替え）。ExcelChart なら丸ごと置き換え。
      * コンソール・mock では表を出力する
@@ -405,6 +426,14 @@ declare global {
   interface FormChangeContext {
     /** 項目の値を変える（default と同じ形で指定。table は選択する行）。変えた項目は検証される */
     setValue(name: string, value: unknown): void;
+    /** 項目を無効にする（グレーで表示。false で有効に戻す）。項目の disabled を置き換える */
+    setDisabled(name: string, disabled?: boolean): void;
+    /** 項目を有効にする（false で無効に） */
+    setEnabled(name: string, enabled?: boolean): void;
+    /** 項目を隠す（false で表示に戻す）。項目の hidden を置き換える */
+    setHidden(name: string, hidden?: boolean): void;
+    /** 項目を表示する（false で隠す） */
+    setVisible(name: string, visible?: boolean): void;
     /** table の項目の行（と列）を入れ替える（選択は解除） */
     table(name: string, rows: readonly unknown[], columns?: (string | FormTableColumn)[]): void;
   }

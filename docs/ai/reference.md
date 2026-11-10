@@ -446,6 +446,22 @@ await ui.form({
   ],
 });
 ```
+- 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`）。onChange・onSubmit・ボタンの `ctx.setDisabled(name, bool)` / `ctx.setEnabled(name)` / `ctx.setHidden(name, bool)` / `ctx.setVisible(name)` でも切り替えられる（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
+
+```js
+// チェックを外している間は宛先をグレーにし、「その他」を選んだときだけ詳細を出す
+await ui.form({
+  title: "送付",
+  fields: [
+    { name: "useMail", label: "メールで送る", type: "checkbox", default: true },
+    { name: "to", label: "宛先", required: true, disabled: (v) => !v.useMail },
+    { name: "kind", label: "種類", type: "select", options: ["請求書", "見積書", "その他"] },
+    { name: "detail", label: "詳細", required: true, hidden: (v) => v.kind !== "その他" },
+    { name: "lock", label: "宛先を固定", type: "switch",
+      onChange(on, v, ctx) { ctx.setDisabled("kind", on); } },
+  ],
+});
+```
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
 - `fields` に `{ group: "出力", icon: "file-export", help: "説明", fields: [...] }` を項目と並べて書くと見出し付きのグループになる（タブの中でも可。値は項目と同じく 1 つのオブジェクト）。`collapsed: true` で閉じた状態の「詳細設定」にできる（見出しのクリックで開閉。エラーが出ると開く）。`collapsible: true` は開いた状態で開閉可能。
 - アイコン（Font Awesome Free の名前。`"folder-open"` など）: 項目・タブ・ボタンの `icon`、送信ボタンは `submitIcon`。フォームの `icon` は `titleBar: "custom"` のときだけタイトルバーに出る（それ以外は無視）。
