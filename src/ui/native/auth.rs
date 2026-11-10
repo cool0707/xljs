@@ -4,7 +4,9 @@
 //! for its realm; without one (or when it was refused) the user is asked
 //! and the answer saved. WebView2 does not tell a proxy from a site, nor
 //! whether the login worked: a second challenge for the realm soon after
-//! means it was refused.
+//! means it was refused. Without a proxy in the settings of Windows the
+//! challenge is the site's, and its login is kept for its host only; with
+//! one, a login saved for the host comes first, then the proxy's.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -17,14 +19,14 @@ use webview2_com::*;
 use windows::core::{Interface, PWSTR};
 
 use super::hstr;
-use crate::net::auth::{self, Ask, Login, LoginPrompt};
+use crate::net::auth::{self, Ask, Key, Login, LoginPrompt};
 
 thread_local! {
     /// The challenges being answered (the arguments and their deferral).
     static PENDING: RefCell<HashMap<u64, (ICoreWebView2BasicAuthenticationRequestedEventArgs, ICoreWebView2Deferral)>> =
         RefCell::new(HashMap::new());
-    /// The login last given for each realm, and when.
-    static GIVEN: RefCell<HashMap<String, (Login, Instant)>> = RefCell::new(HashMap::new());
+    /// The login last given for each key, and when.
+    static GIVEN: RefCell<HashMap<Key, (Login, Instant)>> = RefCell::new(HashMap::new());
 }
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -64,7 +66,9 @@ fn requested(args: ICoreWebView2BasicAuthenticationRequestedEventArgs) {
     let mut p = PWSTR::null();
     let uri = if unsafe { args.Uri(&mut p) }.is_ok() { take(p) } else { String::new() };
     let host = uri.split("://").nth(1).and_then(|r| r.split(['/', '?', '#']).next()).unwrap_or("").to_string();
-    let failed = GIVEN.with(|g| g.borrow().get(&realm).filter(|(_, at)| at.elapsed() < REFUSED_WITHIN).map(|(l, _)| l.clone()));
+    let site = Key::site(&host, &realm);
+    let key = if !host.is_empty() && (site.saved() || !crate::net::system_proxy()) { site } else { Key::proxy(&realm) };
+    let failed = GIVEN.with(|g| g.borrow().get(&key).filter(|(_, at)| at.elapsed() < REFUSED_WITHIN).map(|(l, _)| l.clone()));
     let Ok(deferral) = (unsafe { args.GetDeferral() }) else { return };
     let id = NEXT.fetch_add(1, Ordering::SeqCst);
     PENDING.with(|m| m.borrow_mut().insert(id, (args, deferral)));
@@ -79,15 +83,15 @@ fn requested(args: ICoreWebView2BasicAuthenticationRequestedEventArgs) {
             })
         });
         let prompt = LoginPrompt { proxy: false, host, ..Default::default() };
-        let l = auth::login(&realm, prompt, failed.as_ref(), &ask);
+        let l = auth::login(&key, prompt, failed.as_ref(), &ask);
         if let Some(l) = &l {
-            auth::confirm(&realm, l);
+            auth::confirm(&key, l);
         }
-        super::thread::post_ui(Box::new(move || complete(id, &realm, l)));
+        super::thread::post_ui(Box::new(move || complete(id, key, l)));
     });
 }
 
-fn complete(id: u64, realm: &str, l: Option<Login>) {
+fn complete(id: u64, key: Key, l: Option<Login>) {
     let Some((args, deferral)) = PENDING.with(|m| m.borrow_mut().remove(&id)) else { return };
     match l {
         Some(l) => {
@@ -95,7 +99,7 @@ fn complete(id: u64, realm: &str, l: Option<Login>) {
                 let _ = unsafe { r.SetUserName(&hstr(&l.user)) };
                 let _ = unsafe { r.SetPassword(&hstr(&l.password)) };
             }
-            GIVEN.with(|g| g.borrow_mut().insert(realm.to_string(), (l, Instant::now())));
+            GIVEN.with(|g| g.borrow_mut().insert(key, (l, Instant::now())));
         }
         None => {
             let _ = unsafe { args.SetCancel(true) };

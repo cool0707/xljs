@@ -78,6 +78,18 @@ pub(crate) fn proxy_override() -> Option<String> {
     (!v.is_empty()).then(|| v.to_string())
 }
 
+/// Whether the settings of Windows name a proxy (or a way to find one:
+/// automatic detection, a PAC script) for the browsers (WebView2).
+#[cfg(windows)]
+pub fn system_proxy() -> bool {
+    winhttp::ie_proxy_configured()
+}
+
+#[cfg(not(windows))]
+pub fn system_proxy() -> bool {
+    false
+}
+
 /// The time a connection may take.
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// The default time a send or a receive may take.

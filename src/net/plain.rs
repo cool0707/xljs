@@ -25,7 +25,7 @@ pub(super) fn send(req: &Request, t: &Target, cancel: &Cancel) -> Result<Respons
         let res = send_once(req, t, cancel, proxy.as_deref(), login.as_ref().map(|x| &x.1))?;
         if res.status != 407 {
             if let Some((realm, l)) = &login {
-                auth::confirm(realm, l);
+                auth::confirm(&auth::Key::proxy(realm), l);
             }
             return Ok(res);
         }
@@ -39,7 +39,7 @@ pub(super) fn send(req: &Request, t: &Target, cancel: &Cancel) -> Result<Respons
             }
         }
         let prompt = LoginPrompt { proxy: true, host: proxy.clone().unwrap_or_default(), ..Default::default() };
-        match auth::login(&realm, prompt, failed.as_ref(), ask) {
+        match auth::login(&auth::Key::proxy(&realm), prompt, failed.as_ref(), ask) {
             Some(l) => login = Some((realm, l)),
             None => return Ok(res),
         }
