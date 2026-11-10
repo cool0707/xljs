@@ -36,6 +36,11 @@ host.on((m) => {
       break;
     }
     case "fieldError": { const c = controls.get(m.field); if (c) { setError(c, m.error || ""); markTabs(); } break; }
+    case "fieldState": {
+      for (const [name, st] of Object.entries(m.fields || {})) { const c = controls.get(name); if (c) setFieldState(c, st); }
+      markTabs();
+      break;
+    }
     case "table": { const c = controls.get(m.field); if (c && c.setTable) c.setTable(m); break; }
     case "chart": { const c = controls.get(m.field); if (c && c.setChart) c.setChart(m); break; }
     case "cellErrors": { const c = controls.get(m.field); if (c && c.setCellErrors) c.setCellErrors(m.errors || [], m.row); break; }
@@ -116,18 +121,20 @@ function init(m) {
     c.err = ctl.appendChild(el("div", { className: "err", hidden: true }));
     c.field = f;
     c.ctl = ctl;
+    c.label = label;
     c.group = f.group >= 0 ? groupBoxes[f.group] : null;
     (c.group || parent(f.tab)).append(...(label ? [label, ctl] : [ctl]));
     controls.set(f.name, c);
     if (counter) countChars(c, counter);
     watch(c);
     c.set(f.value);
+    setFieldState(c, { disabled: !!f.disabled, hidden: !!f.hidden });
   });
   startGroups(fields.length);
   setState("input");
   if (tabButtons.length) showTab(0, false);
   const typing = ["text", "password", "number", "date", "month", "time", "select", "textarea", "file", "files", "folder", "saveFile", "combobox", "tags", "dateRange"];
-  const hidden = (f) => f.tab > 0 || !!controls.get(f.name).group?.classList.contains("collapsed");
+  const hidden = (f) => f.tab > 0 || !!controls.get(f.name).group?.classList.contains("collapsed") || controls.get(f.name).off || controls.get(f.name).hid;
   const first = fields.find((f) => typing.includes(f.type) && !hidden(f));
   if (first) controls.get(first.name).focus();
   host.send({ type: "shown" });
@@ -645,6 +652,8 @@ function cellInput(e, v) {
 function tableControl(f, id) {
   let cols = f.table.columns, rows = f.table.rows, select = f.table.select, edit = f.table.editable || null;
   let order = [], sortCol = -1, sortDir = 1, boxes = [], cellInputs = [];
+  let off = false; // disabled by the script
+  const locked = () => state !== "input" || off;
   const selected = new Set();
   const errors = new Map(); // "row:col" -> message (col -1: the row)
   const head = el("thead");
@@ -711,7 +720,7 @@ function tableControl(f, id) {
       tr.dataset.i = i;
       if (select) {
         const box = el("input", { type: select === "multiple" ? "checkbox" : "radio", name: id + "-sel", tabIndex: -1 });
-        box.disabled = state !== "input";
+        box.disabled = locked();
         boxes.push(box);
         tr.append(el("td", { className: "sel" }, box));
       }
@@ -719,7 +728,7 @@ function tableControl(f, id) {
         const v = rows[i][k] === undefined ? null : rows[i][k];
         if (edit && edit[k]) {
           const input = cellInput(edit[k], v);
-          input.disabled = state !== "input";
+          input.disabled = locked();
           input.dataset.c = k;
           const text = input.tagName === "INPUT" && input.type !== "checkbox";
           input.addEventListener(text ? "input" : "change", () => changed(i, k, input, !text));
@@ -782,7 +791,7 @@ function tableControl(f, id) {
 
   body.addEventListener("click", (e) => {
     const tr = e.target.closest("tr[data-i]");
-    if (!tr || !select || state !== "input" || e.target.closest("td.edit")) return;
+    if (!tr || !select || locked() || e.target.closest("td.edit")) return;
     const i = Number(tr.dataset.i);
     if (select === "single") {
       selected.clear();
@@ -805,7 +814,7 @@ function tableControl(f, id) {
   });
   all.onclick = (e) => {
     e.stopPropagation();
-    if (state !== "input") { e.preventDefault(); return; }
+    if (locked()) { e.preventDefault(); return; }
     if (selected.size === rows.length) selected.clear();
     else rows.forEach((_, i) => selected.add(i));
     mark();
@@ -840,6 +849,7 @@ function tableControl(f, id) {
       for (const e of list) errors.set(e.row + ":" + e.col, e.message);
       markErrors();
     },
+    setOff: (v) => { off = v; },
     focus: () => wrap.focus(),
   };
   return control;
@@ -891,7 +901,7 @@ function chartControl(f, id) {
 }
 
 function pick(f, current) {
-  if (state !== "input") return;
+  if (state !== "input" || controls.get(f.name)?.off) return;
   host.send({ type: "pick", field: f.name, value: current });
 }
 
@@ -902,13 +912,14 @@ function dropTarget(node, f, current) {
   let depth = 0;
   node.addEventListener("dragenter", (e) => { e.preventDefault(); depth++; node.classList.add("over"); });
   node.addEventListener("dragleave", () => { if (--depth <= 0) { depth = 0; node.classList.remove("over"); } });
-  node.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = state === "input" ? "copy" : "none"; });
+  const can = () => state === "input" && !controls.get(f.name)?.off;
+  node.addEventListener("dragover", (e) => { e.preventDefault(); e.dataTransfer.dropEffect = can() ? "copy" : "none"; });
   node.addEventListener("drop", (e) => {
     e.preventDefault();
     depth = 0;
     node.classList.remove("over");
     const files = e.dataTransfer && e.dataTransfer.files;
-    if (state === "input" && files && files.length) host.send({ type: "drop", field: f.name, value: current ? current() : "" }, files);
+    if (can() && files && files.length) host.send({ type: "drop", field: f.name, value: current ? current() : "" }, files);
   });
 }
 
@@ -954,6 +965,28 @@ function watch(c) {
   c.ctl.addEventListener("input", () => { if (!c.err.hidden) liveCheck(name, false); });
 }
 
+/**
+ * Disables (grays out) or hides a field, as the script says (its disabled
+ * and hidden options, ctx.setDisabled / setHidden). Its error is cleared:
+ * the script does not check it then.
+ */
+function setFieldState(c, st) {
+  c.off = !!st.disabled;
+  c.hid = !!st.hidden;
+  for (const n of [c.label, c.ctl]) {
+    if (!n) continue;
+    n.classList.toggle("off", c.off);
+    n.hidden = c.hid;
+  }
+  if (c.off || c.hid) {
+    clearTimeout(checkTimers.get(c.field.name));
+    checkTimers.delete(c.field.name);
+    setError(c, "");
+  }
+  if (c.setOff) c.setOff(c.off);
+  for (const i of c.inputs) i.disabled = state !== "input" || c.off;
+}
+
 function setError(c, msg) {
   if (msg && c.group && c.group.open) c.group.open(); // a closed group opens to show it
   c.err.textContent = msg;
@@ -988,7 +1021,7 @@ function showErrors(errors, general) {
 function setState(s) {
   state = s;
   const editing = s === "input";
-  for (const c of controls.values()) for (const i of c.inputs) i.disabled = !editing;
+  for (const c of controls.values()) for (const i of c.inputs) i.disabled = !editing || !!c.off;
   $("submit").disabled = !editing;
   for (const b of extraButtons) b.disabled = !editing;
   if (!editing) closeMenus();

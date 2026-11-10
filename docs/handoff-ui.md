@@ -57,6 +57,11 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
   - `onSubmit` 中のエラーはウィンドウのログに表示（コンソール/mock では呼び出し元へ）。戻り値の既存パスで「フォルダを開く」。
   - `buttons: [{ label, onClick, validate?, close? }]`: ページは `{"type":"submit","button":k}`（k は番号。なしは送信ボタン）。
     `validate: false` は `rawValues`（検証なし）。`close: true` は正常終了で閉じる。`submit: false` で送信ボタンを隠す（Enter も無効）。
+    項目の `disabled` / `hidden`（真偽値か values の関数）と `ctx.setDisabled` / `setHidden`: init の項目に `disabled` / `hidden`、
+    以後は値が変わるたび（`check`・`submit` の値を取り込んだとき、`setValue`、`setDisabled` / `setHidden`）に見直して、
+    変わった項目だけページへ `{"type":"fieldState","fields":{name:{disabled,hidden}}}`。ページは `.off`（半透明）と入力の disabled、
+    `hidden` で隠し、エラー表示を消す。無効・非表示の項目は `checkField` / `checkForm` で検証しない（値は values に入る）。
+    コンソール/mock では尋ねる項目から外し、応答にあっても取り込まない。
     `ctx.setValue(name, value)` はページへ `picked`。コンソール/mock は `uiForm` の応答の `"$button"`（番号かラベル、null は送信）で、
     close なしのボタンのあとはフォームを再度尋ねる（mock の応答が尽きたら最後に検証を通った値を返す）。
   - ボタンの見た目と動き（shadcn/ui に寄せたもの）: 押したボタンは状態が `input` に戻るまでスピナー（`button.loading`。

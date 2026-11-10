@@ -114,6 +114,9 @@ main { padding: var(--sp-xxl) var(--sp-xxl) var(--sp-xxl); }
 .lbl .req { color: var(--error); margin-left: var(--sp-xxs); }
 .lbl.wide, .ctl.wide { grid-column: 1 / -1; }
 .lbl.wide { padding-top: 0; margin-bottom: calc(var(--sp-s) - var(--sp-l)); max-width: none; }
+/* Disabled by the script (disabled, ctx.setDisabled): grayed out. */
+.lbl.off, .ctl.off { opacity: .5; }
+.ctl.off :is(.ftable, .fchart) { pointer-events: none; }
 .ctl { min-width: 0; }
 .row { display: flex; gap: var(--sp-s); align-items: flex-start; }
 .row > input, .row > textarea { flex: 1; min-width: 0; }

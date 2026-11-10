@@ -722,6 +722,50 @@ console.log(changes, v.purchase.name, v.kind);
 }
 
 #[test]
+fn form_window_disabled_hidden() {
+    let pages: Vec<PageFn> = vec![Box::new(|p| {
+        let init = p.expect("init");
+        let fs = &init["fields"];
+        check!(
+            p,
+            fs[1]["disabled"] == true && fs[1].get("hidden").is_none() && fs[2]["hidden"] == true && fs[0].get("disabled").is_none(),
+            "fields = {}",
+            as_json(fs)
+        );
+        // Checking the box enables "to" (a function of the values).
+        p.send(json!({"type": "check", "field": "use", "change": true, "values": {"use": true, "to": "", "memo": "", "lock": false}}), &[]);
+        let st = as_json(&p.expect("fieldState"));
+        check!(p, st == r#"{"fields":{"to":{"disabled":false,"hidden":false}},"type":"fieldState"}"#, "fieldState = {st}");
+        p.expect("fieldError");
+        // onChange: ctx.setVisible / setDisabled.
+        p.send(json!({"type": "check", "field": "lock", "change": true, "values": {"use": true, "to": "", "memo": "", "lock": true}}), &[]);
+        p.expect("fieldError");
+        let st = as_json(&p.expect("fieldState"));
+        check!(p, st == r#"{"fields":{"memo":{"disabled":false,"hidden":false}},"type":"fieldState"}"#, "fieldState = {st}");
+        let st = as_json(&p.expect("fieldState"));
+        check!(p, st == r#"{"fields":{"use":{"disabled":true,"hidden":false}},"type":"fieldState"}"#, "fieldState = {st}");
+        // "to" is required again; "memo" now shown and required.
+        p.send(json!({"type": "submit", "values": {"use": true, "to": "", "memo": "", "lock": true}}), &[]);
+        let e = as_json(&p.expect("errors"));
+        check!(p, e.contains(r#""to":"入力してください""#) && e.contains(r#""memo":"入力してください""#), "errors = {e}");
+        p.send(json!({"type": "submit", "values": {"use": true, "to": "x", "memo": "m", "lock": true}}), &[]);
+        p.wait_closed();
+    })];
+    let src = r#"
+const v = await ui.form({
+  fields: [
+    { name: "use", type: "checkbox" },
+    { name: "to", required: true, disabled: (v) => !v.use },
+    { name: "memo", required: true, hidden: true },
+    { name: "lock", type: "switch", onChange(on, v, ctx) { ctx.setVisible("memo", on); ctx.setDisabled("use", on); } },
+  ],
+});
+console.log(v.to, v.memo);
+"#;
+    form_case("state.js", src, "x m\n", pages);
+}
+
+#[test]
 fn chart_window() {
     let pages: Vec<PageFn> = vec![Box::new(|p| {
         let init = p.expect("init");
