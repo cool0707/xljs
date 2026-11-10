@@ -182,20 +182,28 @@ function countChars(c, counter) {
 // (or a light one in the dark theme) takes the other theme's text, input and
 // border colors so the page stays readable. An unknown color keeps the default.
 function applyColors(accent, background, radius) {
-  const luminance = (c) => {
-    const probe = document.body.appendChild(el("span", { hidden: true }));
-    probe.style.color = c;
-    const [r, g, b] = (getComputedStyle(probe).color.match(/[\d.]+/g) || [0, 0, 0]).map(Number);
-    probe.remove();
-    const lin = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
-    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  // Black or white text on a color: by the OKLab lightness (L <= 0.65 takes
+  // white), not the WCAG luminance, whose small weights for red and green put
+  // black text on red, teal or mid blue. White there still keeps 3:1 (WCAG's
+  // large text / UI components). The color is drawn on a canvas so any CSS
+  // color syntax (names, hsl(), oklch(), color-mix()) gives its sRGB value.
+  const lightness = (c) => {
+    const ctx = Object.assign(document.createElement("canvas"), { width: 1, height: 1 }).getContext("2d");
+    ctx.fillStyle = c;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = [...ctx.getImageData(0, 0, 1, 1).data].map((v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
   };
+  const isDark = (c) => lightness(c) <= 0.65;
   const valid = (c) => !!c && CSS.supports("color", c);
   const accentVars = (c, dark) => {
     if (!valid(c)) return "";
     const mix = dark ? "black" : "white";
     return `--accent: ${c}; --accent-hover: color-mix(in srgb, ${c} 88%, ${mix});` +
-      ` --accent-fg: ${luminance(c) > 0.18 ? "#000000" : "#ffffff"}; --xljs-titlebar-accent: ${c};` +
+      ` --accent-fg: ${isDark(c) ? "#ffffff" : "#000000"}; --xljs-titlebar-accent: ${c};` +
       ` --sel: color-mix(in srgb, ${c} ${dark ? "45%" : "22%"}, ${dark ? "#18181b" : "white"});`;
   };
   // The text and control colors of base.css for a light and a dark background.
@@ -205,7 +213,7 @@ function applyColors(accent, background, radius) {
   };
   const backgroundVars = (c, dark) => {
     if (!valid(c)) return "";
-    const darkBg = luminance(c) <= 0.18;
+    const darkBg = isDark(c);
     const p = palettes[darkBg ? "dark" : "light"];
     // The footer, table heads, striped rows and the tab bar: tints of the background.
     const tint = (k) => `color-mix(in srgb, ${c} ${k}, ${p.fg})`;

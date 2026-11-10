@@ -1407,7 +1407,7 @@
     const bar = win.querySelector(".wz-custombar");
     bar.style.setProperty("--wz-bar-accent", a.accent || "");
     bar.style.setProperty("--wz-bar-bg", a.background || "");
-    bar.style.setProperty("--wz-bar-fg", a.background ? (luminance(a.background) <= 0.18 ? "#fafafa" : "#18181b") : "");
+    bar.style.setProperty("--wz-bar-fg", a.background ? (isDark(a.background) ? "#fafafa" : "#18181b") : "");
     const color = (c) => ({ light: c, dark: c });
     lookForm = {
       type: "init", texts: st.formTexts || {}, lang: st.lang || "ja",
@@ -1431,13 +1431,16 @@
     lookForm = null;
   }
 
-  function luminance(c) {
-    const probe = document.body.appendChild(el("span", { hidden: true }));
-    probe.style.color = c;
-    const [r, g, b] = (getComputedStyle(probe).color.match(/[\d.]+/g) || [0, 0, 0]).map(Number);
-    probe.remove();
-    const lin = (v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
-    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+  // Whether a color takes white text: the same OKLab lightness rule as form.js's isDark.
+  function isDark(c) {
+    const ctx = Object.assign(document.createElement("canvas"), { width: 1, height: 1 }).getContext("2d");
+    ctx.fillStyle = c;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = [...ctx.getImageData(0, 0, 1, 1).data].map((v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s <= 0.65;
   }
 
   function wizardError(text) {
