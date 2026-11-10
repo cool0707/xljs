@@ -1206,18 +1206,7 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
                     } else if let Some(one) = img.one_cell_anchor() {
                         an.ext = Some((one.extent().cx(), one.extent().cy()));
                     }
-                    let lower = img.image_name().to_lowercase();
-                    let mime = if lower.ends_with(".png") {
-                        "image/png"
-                    } else if lower.ends_with(".gif") {
-                        "image/gif"
-                    } else if lower.ends_with(".bmp") {
-                        "image/bmp"
-                    } else if lower.ends_with(".svg") {
-                        "image/svg+xml"
-                    } else {
-                        "image/jpeg"
-                    };
+                    let mime = super::xlsx_cellimage::image_mime(img.image_name()).unwrap_or("image/jpeg");
                     let data = base64::engine::general_purpose::STANDARD.encode(img.image_data());
                     objects.push((an, format!("<img alt=\"\" src=\"data:{mime};base64,{data}\""), String::new()));
                 }

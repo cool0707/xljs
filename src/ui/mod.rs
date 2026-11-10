@@ -31,6 +31,21 @@ pub use mock_app::AppStep;
 pub use shell::{shell_open, shell_show_in_folder};
 pub use thread::run;
 
+/// A path for name in dir that is not taken yet: name itself, else the
+/// first of numbered(stem, n, ".ext") for n = first, first + 1, ...
+pub fn free_path(dir: &std::path::Path, name: &str, first: u32, numbered: fn(&str, u32, &str) -> String) -> std::path::PathBuf {
+    let p = std::path::Path::new(name);
+    let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    let mut path = dir.join(name);
+    let mut i = first;
+    while path.exists() {
+        path = dir.join(numbered(&stem, i, &ext));
+        i += 1;
+    }
+    path
+}
+
 /// One entry of a file type filter in a picker.
 #[derive(Debug, Clone, Default)]
 pub struct FileFilter {

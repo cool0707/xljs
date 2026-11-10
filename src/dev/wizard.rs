@@ -84,17 +84,9 @@ pub fn file_name(a: &Answers) -> String {
 }
 
 /// A path for name in dir that is not taken yet.
+/// ("name2.ext", "name3.ext", ...).
 pub fn free_path(dir: &Path, name: &str) -> PathBuf {
-    let p = Path::new(name);
-    let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
-    let mut path = dir.join(name);
-    let mut i = 2;
-    while path.exists() {
-        path = dir.join(format!("{stem}{i}{ext}"));
-        i += 1;
-    }
-    path
+    crate::ui::free_path(dir, name, 2, |stem, i, ext| format!("{stem}{i}{ext}"))
 }
 
 /// Reads what the workbooks hold.

@@ -87,7 +87,7 @@ impl CellImages {
                         Some(&k) => Some(k),
                         None => {
                             let data = read(&p).unwrap_or_default();
-                            let mime = if data.is_empty() { None } else { mime_of(&p) };
+                            let mime = if data.is_empty() { None } else { image_mime(&p) };
                             out.images.push(CellImage { mime, data, alt });
                             by_part.insert(p, out.images.len() - 1);
                             Some(out.images.len() - 1)
@@ -154,7 +154,9 @@ fn rels(root: Option<&Node>, dir: &str) -> HashMap<String, (String, String)> {
     out
 }
 
-fn mime_of(part: &str) -> Option<&'static str> {
+/// The type of a picture by the extension of its name; None for those
+/// browsers cannot show (EMF, WMF).
+pub(super) fn image_mime(part: &str) -> Option<&'static str> {
     Some(match part.rsplit('.').next().unwrap_or("").to_lowercase().as_str() {
         "png" => "image/png",
         "gif" => "image/gif",

@@ -555,7 +555,7 @@ impl Session {
                     return Ok(());
                 }
                 if let Some(p) = &self.project {
-                    let f = p.dir.join(project::DATA_DIR).join("dev.json");
+                    let f = settings_path(p);
                     let mut ps: ProjectSettings = load(&f);
                     if r.url.is_empty() {
                         ps.chat.remove(&p.entry_name());
@@ -701,7 +701,7 @@ impl Session {
     pub fn open(&mut self, path: &str) -> Result<()> {
         let p = Project::open(path)?;
         let text = read_text(&p.entry)?;
-        let settings = p.dir.join(project::DATA_DIR).join("dev.json");
+        let settings = settings_path(&p);
         let mut ps: ProjectSettings = load(&settings);
         // The folder's settings may come with the script: only web pages.
         let mut chat = ps.chat.get(&p.entry_name()).filter(|u| is_web(u)).cloned().unwrap_or_default();
@@ -952,7 +952,7 @@ impl Session {
                 if let Some(p) = &self.project
                     && web
                 {
-                    let f = p.dir.join(project::DATA_DIR).join("dev.json");
+                    let f = settings_path(p);
                     let mut ps: ProjectSettings = load(&f);
                     if ps.chat.get(&p.entry_name()) != Some(&url) {
                         ps.chat.insert(p.entry_name(), url.clone());
@@ -1124,11 +1124,7 @@ fn settings_path(p: &Project) -> PathBuf {
     p.dir.join(project::DATA_DIR).join("dev.json")
 }
 
-/// Whether a path names a script that can be opened (.js, .mjs, .ts).
-fn is_script(path: &str) -> bool {
-    let ext = Path::new(path).extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
-    matches!(ext.as_str(), "js" | "mjs" | "ts")
-}
+use project::is_script;
 
 /// The texts of the page (the keys under "devPage." without the prefix).
 fn texts() -> Value {

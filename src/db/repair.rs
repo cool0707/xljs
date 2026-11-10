@@ -297,9 +297,7 @@ fn replay_entry(conn: &Connection, e: &LogEntry) -> rusqlite::Result<()> {
     conn.execute_batch("COMMIT")
 }
 
-fn quote(s: &str) -> String {
-    format!("\"{}\"", s.replace('"', "\"\""))
-}
+use super::quote_ident as quote;
 
 /// Keeps the SQL of a damaged database or of a change log (which anyone who
 /// can write the shared folder can change) to that database: no ATTACH, and

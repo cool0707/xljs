@@ -281,10 +281,20 @@ fn use_script_dir(con: &ConsoleState, o: &mut Options) {
 /// Applies the --debug (XLJS_DEBUG) value: "script" (also true, 1, on)
 /// runs the script in the debugger window, which needs the native UI;
 /// "window" only enables the developer tools of the script's windows.
+/// A word that turns a setting on or off (on/true/yes, off/false/no).
+fn switch(v: &str) -> Option<bool> {
+    match v {
+        "on" | "true" | "yes" => Some(true),
+        "off" | "false" | "no" => Some(false),
+        _ => None,
+    }
+}
+
 fn set_debug(o: &mut Options, value: &str, u: &dyn Ui) -> Result<()> {
-    match value.trim().to_lowercase().as_str() {
-        "" | "0" | "false" | "no" | "off" => {}
-        "1" | "true" | "yes" | "on" | "script" => {
+    let v = value.trim().to_lowercase();
+    match (v.as_str(), switch(&v)) {
+        ("" | "0", _) | (_, Some(false)) => {}
+        ("1" | "script", _) | (_, Some(true)) => {
             o.debug = true;
             if u.name() == "native" {
                 o.debug_script = true;
@@ -292,7 +302,7 @@ fn set_debug(o: &mut Options, value: &str, u: &dyn Ui) -> Result<()> {
                 eprintln!("{}", t!("cli.debugNeedsWindows"));
             }
         }
-        "window" => o.debug = true,
+        ("window", _) => o.debug = true,
         _ => return Err(err!("cli.unknownDebug", value)),
     }
     Ok(())
@@ -304,10 +314,10 @@ fn set_debug(o: &mut Options, value: &str, u: &dyn Ui) -> Result<()> {
 /// Ctrl+C is not available); on/off; a number of seconds (0 = off).
 fn parse_watchdog(value: &str, native: bool) -> Result<Option<Duration>> {
     let v = value.trim().to_lowercase();
-    match v.as_str() {
-        "" => Ok(native.then_some(watchdog::DEFAULT_LIMIT)),
-        "on" | "true" | "yes" => Ok(Some(watchdog::DEFAULT_LIMIT)),
-        "off" | "false" | "no" => Ok(None),
+    match (v.as_str(), switch(&v)) {
+        ("", _) => Ok(native.then_some(watchdog::DEFAULT_LIMIT)),
+        (_, Some(true)) => Ok(Some(watchdog::DEFAULT_LIMIT)),
+        (_, Some(false)) => Ok(None),
         _ => match v.parse::<f64>() {
             Ok(0.0) => Ok(None),
             Ok(s) if s > 0.0 && s.is_finite() => Ok(Some(Duration::from_secs_f64(s))),
@@ -322,11 +332,11 @@ fn parse_watchdog(value: &str, native: bool) -> Result<Option<Duration>> {
 /// "ctrl+shift+q".
 fn parse_stop_key(value: &str, native: bool) -> Result<Option<watchdog::StopKey>> {
     let v = value.trim().to_lowercase();
-    let key = match v.as_str() {
-        "" if native => watchdog::DEFAULT_KEY,
-        "" | "off" | "false" | "no" | "none" => return Ok(None),
-        "on" | "true" | "yes" => watchdog::DEFAULT_KEY,
-        k => k,
+    let key = match (v.as_str(), switch(&v)) {
+        ("", _) if native => watchdog::DEFAULT_KEY,
+        ("" | "none", _) | (_, Some(false)) => return Ok(None),
+        (_, Some(true)) => watchdog::DEFAULT_KEY,
+        (k, None) => k,
     };
     watchdog::StopKey::parse(key).map(Some).ok_or_else(|| err!("cli.unknownStopKey", value))
 }
@@ -336,9 +346,9 @@ fn parse_stop_key(value: &str, native: bool) -> Result<Option<watchdog::StopKey>
 /// off or 0 = off.
 fn parse_memory_floor(value: &str) -> Result<Option<u64>> {
     let v = value.trim().to_lowercase();
-    match v.as_str() {
-        "" | "on" | "true" | "yes" => Ok(Some(crate::engine::memory::DEFAULT_FLOOR)),
-        "off" | "false" | "no" | "0" => Ok(None),
+    match (v.as_str(), switch(&v)) {
+        ("", _) | (_, Some(true)) => Ok(Some(crate::engine::memory::DEFAULT_FLOOR)),
+        ("0", _) | (_, Some(false)) => Ok(None),
         _ => match v.parse::<u64>() {
             Ok(mb) => Ok(Some(mb << 20)),
             _ => Err(err!("cli.unknownMemoryFloor", value)),

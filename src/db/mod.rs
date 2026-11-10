@@ -184,6 +184,11 @@ pub fn is_network(_path: &Path) -> bool {
     false
 }
 
+/// An SQL name in double quotes.
+pub(crate) fn quote_ident(s: &str) -> String {
+    format!("\"{}\"", s.replace('"', "\"\""))
+}
+
 /// Opens a connection to path with the settings xljs uses.
 pub(crate) fn connect(path: &Path, readonly: bool, create: bool, shared: bool, timeout: Duration) -> Result<Connection> {
     let mut flags = OpenFlags::SQLITE_OPEN_NO_MUTEX;
@@ -512,7 +517,7 @@ impl Db {
     /// the number of rows.
     pub fn insert(&mut self, table: &str, columns: &[String], rows: Vec<Vec<Value>>, verb: &str) -> Result<usize> {
         self.check_open()?;
-        let q = |s: &str| format!("\"{}\"", s.replace('"', "\"\""));
+        let q = quote_ident;
         let sql = format!(
             "{verb} INTO {}({}) VALUES({})",
             q(table),

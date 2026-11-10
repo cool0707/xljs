@@ -56,18 +56,10 @@ fn take_pwstr(p: PWSTR) -> String {
 }
 
 /// A path in dir for a download named name that is not taken yet.
+/// (as browsers name them: "name (1).ext").
 fn free_path(dir: &Path, name: &str) -> std::path::PathBuf {
     let name = if name.is_empty() { "download" } else { name };
-    let p = Path::new(name);
-    let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "download".into());
-    let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
-    let mut path = dir.join(name);
-    let mut i = 1;
-    while path.exists() {
-        path = dir.join(format!("{stem} ({i}){ext}"));
-        i += 1;
-    }
-    path
+    crate::ui::free_path(dir, name, 1, |stem, i, ext| format!("{stem} ({i}){ext}"))
 }
 
 /// Creates the pane (hidden) in the window parent with the environment of
