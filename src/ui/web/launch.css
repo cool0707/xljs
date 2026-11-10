@@ -3,7 +3,6 @@ body { background: var(--bg); }
 #titlebar { --xljs-titlebar-bg: var(--bg); --xljs-titlebar-fg: var(--fg); }
 #titlebar .xljs-tb-title { font-size: 12px; gap: 8px; }
 #titlebar .xljs-tb-title img { flex: none; width: 16px; height: 16px; }
-#version { color: var(--muted); }
 
 main {
   flex: 1; min-height: 0; overflow: auto;
