@@ -117,6 +117,7 @@
         <label class="opt indent"><span data-t="wzSampleRows"></span>
           <select id="wz-rows"><option value="0"></option><option value="3">3</option><option value="5">5</option><option value="10">10</option></select>
         </label>
+        <label class="opt"><input type="checkbox" id="wz-inline"> <span data-t="wzInline"></span></label>
         <p class="muted indent" data-t="wzPrivacy"></p>
         <button type="button" id="wz-save-text"><i class="ic ic-save"></i> <span data-t="wzSaveText"></span></button>
       </section>
@@ -228,6 +229,12 @@
         <button type="button" id="btn-format" class="tool" data-tip="formatTip"><i class="ic ic-text-align-start"></i><span data-t="format"></span></button>
         <button type="button" id="btn-notify" class="tool" data-tip="notifyTip"><i class="ic ic-message-square-diff"></i><span data-t="notify"></span></button>
         <button type="button" id="btn-save" class="tool"><i class="ic ic-save"></i><span data-t="save"></span></button>
+      </div>
+      <div id="attach-bar" class="attach-bar" hidden>
+        <span class="muted" data-t="wzAttachLead"></span>
+        <button type="button" id="attach-drag" class="tool" data-tip="wzAttachTip"><i class="ic ic-grip-vertical"></i><i class="ic ic-file"></i><span id="attach-name"></span></button>
+        <span class="spacer"></span>
+        <button type="button" id="attach-close" class="tool" data-tip="wzAttachClose"><i class="ic ic-x"></i></button>
       </div>
       <div class="editor">
         <div id="code"></div>

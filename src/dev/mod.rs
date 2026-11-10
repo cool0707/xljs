@@ -590,7 +590,7 @@ impl Session {
             }
             "wizardPrompt" => {
                 let text = wizard::prompt(&r.answers);
-                self.post(json!({"type": "wizardPrompt", "text": text, "file": wizard::file_name(&r.answers)}));
+                self.post(json!({"type": "wizardPrompt", "text": text, "file": wizard::file_name(&r.answers), "attachment": wizard::attachment_name(&r.answers)}));
             }
             "wizardSave" => {
                 let first = r.answers.books.first().cloned().unwrap_or_default();
@@ -784,7 +784,9 @@ impl Session {
     }
 
     /// Creates the script the wizard was answered for in folder, opens it
-    /// and copies the first message for the chat.
+    /// and copies the first message for the chat. The macros and outlines
+    /// of a port go to a file next to it, for the page to offer to drag
+    /// to the chat.
     fn wizard_create(&mut self, a: &wizard::Answers, folder: &str, text: &str) -> Result<()> {
         let dir = Path::new(folder);
         if folder.is_empty() || !dir.is_dir() {
@@ -803,8 +805,15 @@ impl Session {
             ps.unnamed.push(entry);
             store(&f, &ps);
         }
+        let attachment = wizard::write_attachment(a, dir)?;
         self.open(&path.to_string_lossy())?;
-        self.post(json!({"type": "copy", "what": "wizard", "text": text}));
+        match attachment.as_deref().and_then(|p| p.file_name()) {
+            Some(name) => {
+                self.post(json!({"type": "wizardAttach", "file": name.to_string_lossy()}));
+                self.post(json!({"type": "copy", "what": "wizardAttach", "text": text}));
+            }
+            None => self.post(json!({"type": "copy", "what": "wizard", "text": text})),
+        }
         Ok(())
     }
 
