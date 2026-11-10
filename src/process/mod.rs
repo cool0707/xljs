@@ -74,6 +74,10 @@ pub struct Spec {
     /// The encoding of the output for the line callbacks ("auto" detects
     /// UTF-8 or CP932 by line).
     pub encoding: String,
+    /// The output is only given to the callbacks, not kept for Done (a
+    /// long run that writes much: the development mode).
+    #[serde(skip)]
+    pub discard_output: bool,
 }
 
 impl Spec {
@@ -106,6 +110,17 @@ pub enum Stream {
 
 /// Receives the lines of the output as they arrive (on a reader thread).
 pub type OnLines = Arc<dyn Fn(Stream, Vec<String>) + Send + Sync>;
+
+/// Receives the output as it arrives, as read (on a reader thread).
+pub type OnChunks = Arc<dyn Fn(Stream, &[u8]) + Send + Sync>;
+
+/// Where the output goes besides Done.
+#[derive(Clone)]
+enum Sink {
+    None,
+    Lines(OnLines),
+    Chunks(OnChunks),
+}
 
 /// The end of a process: its exit code (None when it was ended by a
 /// signal) and everything it wrote.
@@ -147,6 +162,15 @@ impl Running {
     /// input, which is then closed; otherwise with spec.stdin = Pipe the
     /// caller writes with write() and closes with end().
     pub fn start(spec: &Spec, input: Option<Vec<u8>>, on_lines: Option<OnLines>) -> Result<Arc<Running>> {
+        Self::spawn(spec, input, on_lines.map_or(Sink::None, Sink::Lines))
+    }
+
+    /// Starts the program; its output goes to on_chunks as it is read.
+    pub fn start_chunks(spec: &Spec, on_chunks: OnChunks) -> Result<Arc<Running>> {
+        Self::spawn(spec, None, Sink::Chunks(on_chunks))
+    }
+
+    fn spawn(spec: &Spec, input: Option<Vec<u8>>, sink: Sink) -> Result<Arc<Running>> {
         if spec.command.trim().is_empty() {
             return Err(err!("process.noCommand"));
         }
@@ -182,15 +206,15 @@ impl Running {
         for (f, which) in [(s.stdout, Stream::Stdout), (s.stderr, Stream::Stderr)] {
             let Some(f) = f else { continue };
             r.st.lock().unwrap().readers += 1;
-            let (r1, cb, enc) = (r.clone(), on_lines.clone(), enc.clone());
-            std::thread::spawn(move || r1.read(f, which, cb, &enc));
+            let (r1, sink, enc, keep) = (r.clone(), sink.clone(), enc.clone(), !spec.discard_output);
+            std::thread::spawn(move || r1.read(f, which, sink, &enc, keep));
         }
         let (r1, timeout) = (r.clone(), spec.timeout());
         std::thread::spawn(move || r1.watch(timeout));
         Ok(r)
     }
 
-    fn read(&self, mut f: File, which: Stream, on_lines: Option<OnLines>, enc: &str) {
+    fn read(&self, mut f: File, which: Stream, sink: Sink, enc: &str, keep: bool) {
         let mut buf = vec![0u8; 16 * 1024];
         let mut lines = LineSplitter::default();
         loop {
@@ -198,26 +222,30 @@ impl Running {
                 Ok(0) | Err(_) => break,
                 Ok(n) => n,
             };
-            {
+            if keep {
                 let mut st = self.st.lock().unwrap();
                 match which {
                     Stream::Stdout => st.stdout.extend_from_slice(&buf[..n]),
                     Stream::Stderr => st.stderr.extend_from_slice(&buf[..n]),
                 }
             }
-            if let Some(cb) = &on_lines {
-                let ls = lines.push(&buf[..n]);
-                if !ls.is_empty() {
-                    cb(which, ls.iter().map(|l| decode_line(l, enc)).collect());
+            match &sink {
+                Sink::None => {}
+                Sink::Lines(cb) => {
+                    let ls = lines.push(&buf[..n]);
+                    if !ls.is_empty() {
+                        cb(which, ls.iter().map(|l| decode_line(l, enc)).collect());
+                    }
                 }
+                Sink::Chunks(cb) => cb(which, &buf[..n]),
             }
         }
-        if let Some(cb) = &on_lines
+        if let Sink::Lines(cb) = &sink
             && let Some(l) = lines.finish()
         {
             cb(which, vec![decode_line(&l, enc)]);
         }
-        drop(on_lines);
+        drop(sink);
         let mut st = self.st.lock().unwrap();
         st.readers -= 1;
         self.cv.notify_all();
