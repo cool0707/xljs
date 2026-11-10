@@ -294,6 +294,8 @@ struct Request {
     width: f64,
     height: f64,
     scale: f64,
+    /// The parts of the browser pane under a menu of the page (show).
+    holes: Vec<[f64; 4]>,
     /// The new name of the file (apply).
     rename: String,
     /// What to copy (intro): "prompt" (the instructions alone), "script"
@@ -608,7 +610,7 @@ impl Session {
             "wizardCreate" => self.wizard_create(&r.answers, &r.path, &r.text)?,
             "browser" => {
                 let cmd = match r.path.as_str() {
-                    "show" => BrowserCommand::Show { x: r.x, y: r.y, width: r.width, height: r.height, scale: if r.scale > 0.0 { r.scale } else { 1.0 } },
+                    "show" => BrowserCommand::Show { x: r.x, y: r.y, width: r.width, height: r.height, scale: if r.scale > 0.0 { r.scale } else { 1.0 }, holes: r.holes.clone() },
                     "hide" => BrowserCommand::Hide,
                     "back" => BrowserCommand::Back,
                     "forward" => BrowserCommand::Forward,
