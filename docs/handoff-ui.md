@@ -77,6 +77,7 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
     `dateRange`（`["YYYY-MM-DD","YYYY-MM-DD"]`。値は `{ from, to }` か null。ページは両方入力するか欄を離れるまで検査しない）、
     `tags`（文字列配列。コンソールは `;` 区切り）、`note`（値なし。wire は本文で、`ctx.setValue` で書き換えられる。remember しない）。
     `prefix` / `suffix` は入力欄の枠の中（`.affix`。コンソールはラベルに「(¥ … 円)」）、`maxLength` は文字数の表示と検査（tags は 1 つずつ）。
+    入力欄の幅（form.js の `fit`）: 文字入力は `maxLength` があればその文字数（全角）分、数値は `min` / `max` / `step` の桁数分（なければ 10 桁）、select は一番長い選択肢、combobox は一番長い選択肢（canvas で測る）＋矢印。どれもフォームの幅を超えない（`max-width: 100%`）。指定のない文字入力・日付などは右端まで。
     グループの `collapsible` / `collapsed` は見出しで開閉し、中の項目にエラーが出ると開く（`formSize` は閉じたグループの項目を数えない）。
     init の項目には、使ったときだけ `multiple` `custom` `variant` `prefix` `suffix` `maxLength` を入れる。
   - 編集できる表（`editable` / 列の `editable`）: `formTable` が列ごとのセル用フィールド（`normField` を流用、`t.edit`）を作る。
