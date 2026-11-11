@@ -17,7 +17,7 @@
 //!   appended to the backup's change log, so that repair() can rebuild the
 //!   database from the newest good backup with little or no loss.
 //!
-//! See docs/sqlite-design.md.
+//! See docs/design/sqlite-design.md.
 
 pub mod excel;
 pub mod lock;

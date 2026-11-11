@@ -1,5 +1,5 @@
 # xljs の GUI を実機の Windows で自動操作・撮影するためのヘルパー（pwsh 7）。
-# 使い方は docs/gui-testing.md を参照。
+# 使い方は docs/design/gui-testing.md を参照。
 #   Import-Module ./tools/gui/XljsGui.psm1
 #
 # マウスやキーボードの入力（SendInput）は使わない。入力があると消した画面が

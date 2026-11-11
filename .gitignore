@@ -2,3 +2,4 @@
 *.exe
 !testdata/**/*.exe
 /target/
+/_site/

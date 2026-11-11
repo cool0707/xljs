@@ -1,0 +1,15 @@
+{
+  "name": "xljs-docs",
+  "private": true,
+  "type": "module",
+  "description": "Builds the reference site (GitHub Pages) from docs/site and types/xljs.d.ts",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "node build.mjs --serve"
+  },
+  "dependencies": {
+    "highlight.js": "11.11.1",
+    "marked": "18.1.2",
+    "typescript": "6.0.2"
+  }
+}

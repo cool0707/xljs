@@ -2,7 +2,7 @@
 #   cargo build
 #   pwsh -File tools/gui/smoke.ps1 [-Exe target/debug/xljs.exe] [-OutDir $env:TEMP\xljs-gui-smoke] [-MonitorOff]
 # 各ケースの PASS/FAIL を出し、スクリーンショットを <OutDir>/shots に保存する。失敗があれば終了コード 1。
-# 詳しくは docs/gui-testing.md。
+# 詳しくは docs/design/gui-testing.md。
 param(
     [string]$Exe = (Join-Path $PSScriptRoot '../../target/debug/xljs.exe'),
     [string]$OutDir = (Join-Path $env:TEMP 'xljs-gui-smoke'),

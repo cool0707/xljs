@@ -1,0 +1,66 @@
+{
+  "nav": [
+    {
+      "title": "はじめに",
+      "pages": [
+        "index",
+        "guide/run",
+        "guide/examples",
+        "guide/ai-chat"
+      ]
+    },
+    {
+      "title": "ガイド",
+      "pages": [
+        "guide/metadata",
+        "guide/pack",
+        "guide/dev-mode",
+        "guide/debug",
+        "guide/editor",
+        "guide/vba"
+      ]
+    },
+    {
+      "title": "API",
+      "pages": [
+        "api/globals",
+        "api/dialogs",
+        "api/progress",
+        "api/form",
+        "api/table",
+        "api/chart",
+        "api/app",
+        "api/files",
+        "api/csv",
+        "api/json",
+        "api/excel",
+        "api/style",
+        "api/pdf-output",
+        "api/pdf",
+        "api/sqlite",
+        "api/fetch",
+        "api/shell",
+        "api/ad",
+        "api/dayjs"
+      ]
+    }
+  ],
+  "aliases": {
+    "book": "Workbook",
+    "sheet": "Worksheet",
+    "cell": "Cell",
+    "range": "Range",
+    "db": "Database",
+    "win": "AppWindow",
+    "ctx": "FormContext",
+    "view": "TableView",
+    "doc": "PdfDocument",
+    "proc": "ChildProcess",
+    "child": "ChildProcess",
+    "h": "FileSystemFileHandle",
+    "dir": "FileSystemDirectoryHandle",
+    "file": "File",
+    "res": "Response",
+    "p": "Progress"
+  }
+}
