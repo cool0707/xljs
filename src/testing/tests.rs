@@ -253,3 +253,213 @@ fn errors_and_new_cases() {
     assert!(new_case(&root.to_string_lossy(), "x", "2026-04-10").is_err());
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// The files a user would pick, outside the script folder.
+fn outside() -> PathBuf {
+    let d = tempdir();
+    std::fs::write(d.join("a.txt"), "A\n").unwrap();
+    std::fs::create_dir_all(d.join("dir")).unwrap();
+    std::fs::write(d.join("dir/b.txt"), "B\n").unwrap();
+    d
+}
+
+fn case_json(root: &Path, name: &str) -> Value {
+    serde_json::from_str(&std::fs::read_to_string(root.join(TESTS_DIR).join(name).join("case.json")).unwrap()).unwrap()
+}
+
+const RECORDED: &str = r#"
+if (!confirm("始めますか？")) exit();
+const name = prompt("名前", "x");
+const [f] = await showOpenFilePicker();
+const dir = await showDirectoryPicker();
+const dest = await showSaveFilePicker({ suggestedName: "out.txt" });
+const picked = await ui.table([{ a: 1 }, { a: 2 }], { selectable: true });
+await ui.form({
+  title: "t",
+  fields: [{ name: "src", label: "入力", type: "file" }, { name: "memo", label: "メモ" }, { name: "pw", label: "pw", type: "password" }],
+  async onSubmit(v, ctx) { ctx.log(fs.readText(v.src).trim() + ":" + v.memo); },
+});
+const second = await ui.form({ title: "second", fields: [{ name: "x", label: "x" }] });
+fs.writeText(dest, [name, fs.readText(f).trim(), dir.walk("*.txt").toArray().length, picked.length, second.x, xljs.args.length].join(",") + "\n");
+fs.writeText(path.join(dir.path, "made.txt"), "x");
+"#;
+
+#[test]
+fn record_then_replay() {
+    let _g = lock_lang("ja");
+    let root = tempdir();
+    let script = root.join("main.js");
+    std::fs::write(&script, RECORDED).unwrap();
+    let out = outside();
+    let p = |rel: &str| out.join(rel).to_string_lossy().into_owned();
+    let answers = serde_json::json!({
+        "confirm": [true],
+        "prompt": ["山田"],
+        "showOpenFilePicker": [[p("a.txt")]],
+        "showDirectoryPicker": [p("dir")],
+        "showSaveFilePicker": [p("dir/out.txt")],
+        "table": [[1]],
+        "form": [{ "src": p("a.txt"), "memo": "m", "pw": "secret" }, { "x": "y" }],
+    });
+    let u = std::sync::Arc::new(crate::ui::Mock::from_json(&answers.to_string(), None).unwrap());
+    let quiet = || -> crate::engine::Out { std::sync::Arc::new(std::sync::Mutex::new(std::io::sink())) };
+    let o = crate::engine::Options { stdout: Some(quiet()), stderr: Some(quiet()), ..Default::default() };
+    let args = vec![p("a.txt"), "--flag".to_string()];
+    let r = record(u, &script.to_string_lossy(), "記録", &args, "2026-04-10T09:00:00", o).unwrap();
+    assert!(matches!(r.result, Ok(0)) && r.failed.is_empty(), "{:?} {:?}", r.result.as_ref().map_err(|e| e.to_string()), r.failed);
+
+    // The paths name the copies; the password is not written; the form
+    // with onSubmit is closed (null) before the second one.
+    assert_eq!(case_json(&root, "記録"), serde_json::json!({
+        "script": "main.js",
+        "now": "2026-04-10T09:00:00",
+        "args": ["input/a.txt", "--flag"],
+        "answers": {
+            "confirm": [true],
+            "form": [{ "src": "input/a.txt", "memo": "m" }, null, { "x": "y" }],
+            "prompt": ["山田"],
+            "showDirectoryPicker": ["input/dir"],
+            "showOpenFilePicker": [["input/a.txt"]],
+            "showSaveFilePicker": ["input/dir/out.txt"],
+            "table": [[1]],
+        },
+        "variants": {},
+    }));
+    // Copied when picked: without what the script wrote afterwards.
+    let input = root.join(TESTS_DIR).join("記録/input");
+    assert!(input.join("a.txt").is_file() && input.join("dir/b.txt").is_file());
+    assert!(!input.join("dir/made.txt").exists() && !input.join("dir/out.txt").exists());
+    assert!(out.join("dir/made.txt").is_file());
+    // The same name again is refused.
+    let u = std::sync::Arc::new(crate::ui::Mock::from_json("", None).unwrap());
+    assert!(record(u, &script.to_string_lossy(), "記録", &[], "2026-04-10T09:00:00", Default::default()).is_err());
+
+    // The password is not recorded, so the run of the case has none: the rest is the same.
+    let r = run_dir(&root, false);
+    assert_eq!((r[0].status, &r[0].problems), (Status::New, &Vec::new()));
+    let text = described(&r[0]);
+    for want in ["out: A:m", "form \"second\"", "  input/dir/out.txt: 山田,A,1,1,y,2", "file input/dir/made.txt (text)", "end 0"] {
+        assert!(text.contains(want), "missing {want:?} in:\n{text}");
+    }
+    assert!(!text.contains("unused"), "{text}");
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(&out);
+}
+
+/// A UI with windows whose pages are played: every window sends the next
+/// list of messages (as the page would), then is closed by the user.
+struct Pages {
+    m: crate::ui::Mock,
+    pages: std::sync::Mutex<std::collections::VecDeque<Vec<Value>>>,
+}
+
+struct Page {
+    o: crate::ui::WindowOptions,
+    closed: std::sync::atomic::AtomicBool,
+}
+
+impl crate::ui::Window for Page {
+    fn post(&self, _: String) {}
+    fn close(&self) {
+        if !self.closed.swap(true, std::sync::atomic::Ordering::SeqCst)
+            && let Some(f) = &self.o.on_closed
+        {
+            f();
+        }
+    }
+}
+
+impl crate::ui::Ui for Pages {
+    fn name(&self) -> String { "native".into() }
+    fn alert(&self, a: &str, b: &str) { self.m.alert(a, b) }
+    fn confirm(&self, a: &str, b: &str) -> bool { self.m.confirm(a, b) }
+    fn prompt(&self, a: &str, b: &str, c: &str) -> Option<String> { self.m.prompt(a, b, c) }
+    fn open_files(&self, o: &crate::ui::PickerOptions) -> Vec<String> { self.m.open_files(o) }
+    fn save_file(&self, o: &crate::ui::PickerOptions) -> Option<String> { self.m.save_file(o) }
+    fn pick_directory(&self, o: &crate::ui::PickerOptions) -> Option<String> { self.m.pick_directory(o) }
+    fn progress(&self, o: &crate::ui::ProgressOptions) -> std::sync::Arc<dyn crate::ui::Progress> { self.m.progress(o) }
+    fn show_error(&self, a: &str, b: &str) { self.m.show_error(a, b) }
+    fn show_in_folder(&self, p: &[String]) -> crate::Result<()> { self.m.show_in_folder(p) }
+    fn open_path(&self, t: &str) -> crate::Result<()> { self.m.open_path(t) }
+    fn supports_windows(&self) -> bool { true }
+    fn form(&self, o: &crate::ui::FormOptions) -> Option<Map<String, Value>> { self.m.form(o) }
+    fn table(&self, o: &crate::ui::TableOptions) -> Option<Vec<i64>> { self.m.table(o) }
+    fn open_window(&self, o: crate::ui::WindowOptions) -> crate::Result<std::sync::Arc<dyn crate::ui::Window>> {
+        let messages = self.pages.lock().unwrap().pop_front().unwrap_or_default();
+        let w = std::sync::Arc::new(Page { o, closed: Default::default() });
+        let w2 = w.clone();
+        std::thread::spawn(move || {
+            use crate::ui::Window;
+            for m in messages {
+                std::thread::sleep(Duration::from_millis(150));
+                if w2.closed.load(std::sync::atomic::Ordering::SeqCst) {
+                    return;
+                }
+                if let Some(f) = &w2.o.on_message {
+                    f(m.to_string(), Vec::new());
+                }
+            }
+            std::thread::sleep(Duration::from_millis(150));
+            w2.close();
+        });
+        Ok(w)
+    }
+}
+
+#[test]
+fn record_form_windows() {
+    let _g = lock_lang("ja");
+    let root = tempdir();
+    let script = root.join("main.js");
+    std::fs::write(
+        &script,
+        r#"
+await ui.form({
+  title: "w",
+  fields: [{ name: "n", label: "数", type: "number", min: 1, default: 1 }, { name: "f", label: "ファイル", type: "file" }],
+  buttons: [{ label: "確認", onClick(v, ctx) { ctx.log("確認 " + v.n); } }],
+  async onSubmit(v, ctx) { ctx.log("実行 " + v.n + " " + fs.readText(v.f).trim()); },
+});
+const picked = await ui.table([{ a: 1 }, { a: 2 }, { a: 3 }], { selectable: true });
+const v = await ui.form({ title: "second", fields: [{ name: "x", label: "x" }] });
+console.log("終わり", v.x, picked.map((r) => r.a).join("+"));
+"#,
+    )
+    .unwrap();
+    let out = outside();
+    let file = out.join("a.txt").to_string_lossy().into_owned();
+    let ready = serde_json::json!({ "type": "ready" });
+    let pages = vec![
+        vec![
+            ready.clone(),
+            // Opening the picker of the field is not a question of its own.
+            serde_json::json!({ "type": "pick", "field": "f", "value": "" }),
+            serde_json::json!({ "type": "submit", "values": { "n": "0", "f": file } }),
+            serde_json::json!({ "type": "submit", "values": { "n": "5", "f": file }, "button": 0 }),
+            serde_json::json!({ "type": "submit", "values": { "n": "5", "f": file } }),
+        ],
+        vec![ready.clone(), serde_json::json!({ "type": "ok", "indices": [0, 2] })],
+        vec![ready, serde_json::json!({ "type": "submit", "values": { "x": "y" } })],
+    ];
+    let answers = serde_json::json!({ "showOpenFilePicker": [[file]] });
+    let u = std::sync::Arc::new(Pages { m: crate::ui::Mock::from_json(&answers.to_string(), None).unwrap(), pages: std::sync::Mutex::new(pages.into()) });
+    let quiet = || -> crate::engine::Out { std::sync::Arc::new(std::sync::Mutex::new(std::io::sink())) };
+    let o = crate::engine::Options { stdout: Some(quiet()), stderr: Some(quiet()), ..Default::default() };
+    let r = record(u, &script.to_string_lossy(), "窓", &[], "2026-04-10T09:00:00", o).unwrap();
+    assert!(matches!(r.result, Ok(0)), "{:?}", r.result.as_ref().map_err(|e| e.to_string()));
+    assert_eq!(case_json(&root, "窓")["answers"], serde_json::json!({
+        "form": [{ "n": "0", "f": "input/a.txt" }, { "n": "5", "$button": "確認" }, {}, null, { "x": "y" }],
+        "table": [[0, 2]],
+    }));
+
+    // The run of the case does what the user did in the windows.
+    let r = run_dir(&root, false);
+    assert_eq!((r[0].status, &r[0].problems), (Status::New, &Vec::new()));
+    let text = described(&r[0]);
+    for want in ["form error: n:", "out: 確認 5", "out: 実行 5 A", "  select [0,2]", "form \"second\"", "out: 終わり y 1+3", "end 0"] {
+        assert!(text.contains(want), "missing {want:?} in:\n{text}");
+    }
+    assert!(!text.contains("unused"), "{text}");
+    let _ = std::fs::remove_dir_all(&root);
+    let _ = std::fs::remove_dir_all(&out);
+}

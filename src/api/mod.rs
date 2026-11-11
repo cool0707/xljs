@@ -73,8 +73,9 @@ pub struct Env {
     pub dev_guard: bool,
     pub preview: String,
     pub removed: std::sync::atomic::AtomicU32,
-    /// See engine::Options::test.
+    /// See engine::Options::test and record.
     pub test: Option<crate::engine::TestRun>,
+    pub record: Option<Arc<crate::testing::Recorder>>,
 }
 
 impl Env {
@@ -428,6 +429,10 @@ fn install_core(n: &N) {
     n.val("script", env.script.clone());
     n.val("version", env.version.clone());
     n.val("platform", platform());
+    // A test run plays the form window with the prompts of the mock UI;
+    // while a case is recorded the prelude tells the answers to forms.
+    n.val("testMode", env.test.is_some());
+    n.val("recording", env.record.is_some());
     match &env.test {
         Some(t) => {
             n.val("computerName", t.computer_name.clone());

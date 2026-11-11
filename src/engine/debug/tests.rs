@@ -134,6 +134,7 @@ impl Page {
             preview: String::new(),
             removed: Default::default(),
             test: None,
+            record: None,
         };
         let host = Rc::new(Host::new(env, None));
         *self.shared.lock().unwrap() = Some(host.lp.shared.clone());

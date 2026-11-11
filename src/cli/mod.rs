@@ -160,7 +160,11 @@ fn run(con: &ConsoleState, args: Vec<String>) -> i32 {
             }
             "pack" => return cmd_pack(con, &rest[1..]),
             "check" => return cmd_check(con, &rest[1..]),
-            "test" => return test::cmd_test(con, &rest[1..]),
+            "test" => {
+                let ui_mode = flags.ui.clone().unwrap_or_else(|| env("XLJS_UI"));
+                let answers = flags.answers.clone().unwrap_or_else(|| env("XLJS_UI_ANSWERS"));
+                return test::cmd_test(con, &rest[1..], &ui_mode, &answers);
+            }
             "init" => return cmd_init(con, &rest[1..]),
             "vba" => return vba::cmd_vba(con, &rest[1..]),
             "repair" => return db::cmd_repair(con, &rest[1..]),

@@ -30,7 +30,7 @@ fn temp(what: &str) -> Result<PathBuf> {
 }
 
 /// Copies the files of src into dst (see dump::skipped; no exe files).
-fn copy_tree(src: &Path, dst: &Path, budget: &mut u64) -> Result<()> {
+pub(super) fn copy_tree(src: &Path, dst: &Path, budget: &mut u64) -> Result<()> {
     let entries = std::fs::read_dir(src).map_err(|e| Error::path("open", src.display().to_string(), e))?;
     for e in entries.flatten() {
         let name = e.file_name();

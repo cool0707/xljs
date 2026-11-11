@@ -90,6 +90,9 @@ pub struct Options {
     pub preview: String,
     /// A run of `xljs test` (see TestRun).
     pub test: Option<TestRun>,
+    /// Records the answers the user gives as a test case (`xljs test
+    /// --record`).
+    pub record: Option<Arc<crate::testing::Recorder>>,
 }
 
 /// What a run of a test case (testing::run) asks of the engine, so that the
@@ -242,6 +245,7 @@ pub fn run(mut o: Options) -> Result<i32> {
         preview: o.preview.clone(),
         removed: Default::default(),
         test: o.test.clone(),
+        record: o.record.clone(),
     };
     if o.debug_script {
         return debug::run(&o, env, code);

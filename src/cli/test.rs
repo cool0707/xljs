@@ -14,6 +14,8 @@ struct Args {
     only: String,
     limit: Option<Duration>,
     new: Option<String>,
+    /// --record: the name of the case; the paths after the script are its arguments.
+    record: Option<String>,
     paths: Vec<String>,
 }
 
@@ -22,6 +24,11 @@ fn parse(args: &[String]) -> Result<Args> {
     let mut i = 0;
     while i < args.len() {
         let arg = &args[i];
+        if a.record.is_some() && !a.paths.is_empty() {
+            // The arguments of the script.
+            a.paths.extend_from_slice(&args[i..]);
+            break;
+        }
         let (name, inline) = match arg.strip_prefix("--").or_else(|| arg.strip_prefix('-')).filter(|_| arg.len() > 1) {
             Some(f) => match f.split_once('=') {
                 Some((n, v)) => (n, Some(v.to_string())),
@@ -45,6 +52,7 @@ fn parse(args: &[String]) -> Result<Args> {
             "json" => a.json = true,
             "only" => a.only = value()?,
             "new" => a.new = Some(value()?),
+            "record" => a.record = Some(value()?),
             "timeout" => {
                 let v = value()?;
                 match v.parse::<f64>() {
@@ -83,8 +91,43 @@ fn print(o: &Outcome) {
     }
 }
 
-pub(super) fn cmd_test(con: &ConsoleState, args: &[String]) -> i32 {
+/// Runs the script with the UI and records the answers as a case.
+fn record(con: &ConsoleState, name: &str, a: &Args, ui_mode: &str, answers: &str) -> i32 {
+    let script = &a.paths[0];
+    let made = (|| -> Result<(std::sync::Arc<dyn crate::ui::Ui>, crate::engine::Options)> {
+        let u = super::choose_ui(ui_mode, answers)?;
+        let m = super::read_meta(script)?;
+        super::apply_lang(&m, false);
+        let mut o = crate::engine::Options { meta: Some(m), version: super::version(), ..Default::default() };
+        super::set_stop(&mut o, &super::Stop::from_env(), &*u)?;
+        Ok((u, o))
+    })();
+    let (u, o) = match made {
+        Ok(x) => x,
+        Err(e) => return con.fail(None, &e),
+    };
+    let now = chrono::Local::now().format("%Y-%m-%dT%H:%M:%S").to_string();
+    let r = match testing::record(u.clone(), script, name, &a.paths[1..], &now, o) {
+        Ok(r) => r,
+        Err(e) => return con.fail(Some(&*u), &e),
+    };
+    let code = match &r.result {
+        Ok(c) => *c,
+        Err(e) => con.fail(Some(&*u), e),
+    };
+    for f in &r.failed {
+        eprintln!("{}", t!("test.notCopied", f));
+    }
+    println!("{}", t!("test.recorded", r.path.display()));
+    code
+}
+
+pub(super) fn cmd_test(con: &ConsoleState, args: &[String], ui_mode: &str, answers: &str) -> i32 {
     let a = match parse(args) {
+        Ok(a) if a.record.is_some() && !a.paths.is_empty() => {
+            let name = a.record.clone().unwrap_or_default();
+            return record(con, &name, &a, ui_mode, answers);
+        }
         Ok(a) if a.paths.len() == 1 => a,
         Ok(_) => {
             eprintln!("{}", t!("cli.usageTest"));
@@ -149,6 +192,9 @@ mod tests {
         assert_eq!(a.paths, ["a.js"]);
         let a = parse(&args(&["--new=月次", "a.js"])).unwrap();
         assert_eq!(a.new.as_deref(), Some("月次"));
+        let a = parse(&args(&["--record", "月次", "a.js", "--x", "in.xlsx"])).unwrap();
+        assert_eq!((a.record.as_deref(), a.paths.len()), (Some("月次"), 3));
+        assert_eq!(a.paths[1], "--x");
         assert!(parse(&args(&["--timeout", "0", "a.js"])).is_err());
         assert!(parse(&args(&["--only"])).is_err());
         assert!(parse(&args(&["--nope", "a.js"])).is_err());

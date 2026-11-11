@@ -13,9 +13,11 @@ use serde_json::{Map, Value};
 use crate::{Error, Result, err, t};
 
 mod dump;
+mod record;
 pub mod replay;
 mod run;
 
+pub use record::Recorder;
 pub use run::run;
 
 /// The folder of the cases, in the folder of the script.
@@ -120,9 +122,13 @@ fn parse_answers(file: &str, v: &Value) -> Result<Answers> {
     Ok(a)
 }
 
+/// Whether a case or variant cannot have the name (it names a folder or a file).
+fn bad_name(name: &str) -> bool {
+    name.is_empty() || name.starts_with(['_', '.']) || name.ends_with(['.', ' ']) || name.chars().any(|c| c.is_control() || "\\/:*?\"<>|".contains(c))
+}
+
 fn parse_variant(file: &str, name: &str, v: &Value) -> Result<Variant> {
-    let bad = name.is_empty() || name.starts_with(['_', '.']) || name.ends_with(['.', ' ']) || name.chars().any(|c| c.is_control() || "\\/:*?\"<>|".contains(c));
-    if bad {
+    if bad_name(name) {
         return Err(err!("test.badVariantName", file, name));
     }
     let m = v.as_object().ok_or_else(|| bad_type(file, name, "{...}"))?;
@@ -515,13 +521,12 @@ pub fn run_all(path: &str, o: &RunOptions, mut each: impl FnMut(&Outcome)) -> Re
     Ok(out)
 }
 
-/// Creates a case for script with an empty input folder and a case.json
-/// to fill in. Returns the file.
-pub fn new_case(script: &str, name: &str, today: &str) -> Result<PathBuf> {
-    let (root, file) = target(script)?;
-    let Some(file) = file else { return Err(err!("test.needsScript", script)) };
-    let bad = name.is_empty() || name.starts_with(['_', '.']) || name.ends_with(['.', ' ']) || name.chars().any(|c| c.is_control() || "\\/:*?\"<>|".contains(c));
-    if bad {
+/// The folder and the case.json of a case to create for a script.
+fn new_dir(root: &Path, file: Option<&str>, script: &str, name: &str) -> Result<(PathBuf, PathBuf)> {
+    if file.is_none() {
+        return Err(err!("test.needsScript", script));
+    }
+    if bad_name(name) {
         return Err(err!("test.badCaseName", name));
     }
     let dir = root.join(TESTS_DIR).join(name);
@@ -529,6 +534,45 @@ pub fn new_case(script: &str, name: &str, today: &str) -> Result<PathBuf> {
     if path.exists() {
         return Err(err!("test.caseExists", path.display()));
     }
+    Ok((dir, path))
+}
+
+/// The outcome of record.
+pub struct Recorded {
+    /// The case.json written.
+    pub path: PathBuf,
+    /// How the script ended.
+    pub result: Result<i32>,
+    /// The input files that could not be copied (messages).
+    pub failed: Vec<String>,
+}
+
+/// Runs the script as usual with the UI u (o: how; its script, arguments
+/// and UI are set here) and writes the answers the user gives as the case
+/// name. now: the time of the run ("2026-04-10T09:00:00").
+pub fn record(u: std::sync::Arc<dyn crate::ui::Ui>, script: &str, name: &str, args: &[String], now: &str, mut o: crate::engine::Options) -> Result<Recorded> {
+    let (root, file) = target(script)?;
+    let (dir, path) = new_dir(&root, file.as_deref(), script, name)?;
+    let rec = std::sync::Arc::new(Recorder::new(&dir));
+    // Before the script runs: it may change the files.
+    let case_args = rec.args(args);
+    o.script_path = script.to_string();
+    o.args = args.to_vec();
+    o.record = Some(rec.clone());
+    let result = crate::ui::run(u, move |su| {
+        o.ui = Some(su);
+        crate::engine::run(o)
+    });
+    let failed = rec.save(&file.unwrap_or_default(), now, &case_args)?;
+    Ok(Recorded { path, result, failed })
+}
+
+/// Creates a case for script with an empty input folder and a case.json
+/// to fill in. Returns the file.
+pub fn new_case(script: &str, name: &str, today: &str) -> Result<PathBuf> {
+    let (root, file) = target(script)?;
+    let (dir, path) = new_dir(&root, file.as_deref(), script, name)?;
+    let file = file.unwrap_or_default();
     let input = dir.join("input");
     std::fs::create_dir_all(&input).map_err(|e| Error::path("mkdir", input.display().to_string(), e))?;
     let source = std::fs::read_to_string(root.join(&file)).unwrap_or_default();
