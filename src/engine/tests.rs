@@ -545,7 +545,7 @@ fn form_icon() {
 /// The skills for Copilot agents (docs/ai/copilot/skills/xljs-*): the
 /// reference split by feature, each skill a handwritten header and some
 /// `## ` sections of reference.md.
-const REFERENCE_SKILLS: [&str; 5] = ["xljs-reference", "xljs-pdf", "xljs-sqlite", "xljs-network", "xljs-chart"];
+const REFERENCE_SKILLS: [&str; 6] = ["xljs-reference", "xljs-app-design", "xljs-pdf", "xljs-sqlite", "xljs-network", "xljs-chart"];
 
 /// Splits markdown into the text before the first `## ` heading and the
 /// `## ` sections (heading, text), skipping code blocks.

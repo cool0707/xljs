@@ -1,6 +1,7 @@
 //! The new script wizard of the development mode: the user's answers
-//! (port an Excel macro or start afresh, form or not, app or not, the
-//! name, what it should do, the input and output files) become the first
+//! (port an Excel macro or start afresh, form or not, app or not, who
+//! uses it and what data it keeps, the name, what it should do, the input
+//! and output files) become the first
 //! message for the AI chat. For a port, the macros (VBA) and an outline of
 //! the workbook (sheets, first rows, formulas) go with it: by default as a
 //! Markdown file to attach (they rarely fit in a chat's message), or in
@@ -37,6 +38,14 @@ pub struct Answers {
     pub form: String,
     /// "script", "app" or "auto".
     pub mode: String,
+    /// Who runs it: "self", "shared" (several people from a shared folder)
+    /// or "auto" (not said).
+    pub users: String,
+    /// The name, department and the like of the person running it are
+    /// used (from Active Directory, not asked for).
+    pub use_ad: bool,
+    /// Data between runs: "none", "keep" (a database) or "auto" (not said).
+    pub data: String,
     /// "name" (name), "auto" (the AI chooses) or "later" (a temporary name).
     pub name_mode: String,
     pub name: String,
@@ -211,6 +220,20 @@ pub fn prompt(a: &Answers) -> String {
         }
         items.push(line);
     }
+    // How it is used: who runs it, their own details, the data it keeps.
+    match a.users.as_str() {
+        "self" => items.push(format!("{}: {}", t!("wizard.usersLabel"), t!("wizard.usersSelf"))),
+        "shared" => items.push(format!("{}: {}", t!("wizard.usersLabel"), t!("wizard.usersShared"))),
+        _ => {}
+    }
+    if a.use_ad {
+        items.push(format!("{}: {}", t!("wizard.adLabel"), t!("wizard.adYes")));
+    }
+    match a.data.as_str() {
+        "none" => items.push(format!("{}: {}", t!("wizard.dataLabel"), t!("wizard.dataNone"))),
+        "keep" => items.push(format!("{}: {}", t!("wizard.dataLabel"), t!("wizard.dataKeep"))),
+        _ => {}
+    }
     s.push_str(&format!("## {}\n\n", t!("wizard.conditions")));
     for i in items {
         s.push_str(&format!("- {i}\n"));
@@ -251,6 +274,9 @@ pub fn prompt(a: &Answers) -> String {
         s.push_str(&format!("- {}\n", t!("wizard.askExplain")));
     }
     s.push_str(&format!("- {}\n", t!("wizard.askAssume")));
+    if a.mode == "app" || a.form != "no" {
+        s.push_str(&format!("- {}\n", t!("wizard.askDesign")));
+    }
     let out = if a.name_mode == "auto" || (a.name_mode == "name" && a.name.trim().is_empty()) { t!("wizard.askFileAuto") } else { t!("wizard.askFile", file) };
     s.push_str(&format!("- {out}\n"));
     if a.mode == "app" {
