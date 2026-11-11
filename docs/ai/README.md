@@ -16,7 +16,7 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 | [`copilot/skills/xljs-chart/SKILL.md`](copilot/skills/xljs-chart/SKILL.md) | スキル版のリファレンス: グラフ（ui.chart） | 約 2,900 字 |
 | [`copilot/skills/vba-port/SKILL.md`](copilot/skills/vba-port/SKILL.md) | Excel マクロ（VBA）移植用のスキル。素直な書き方への置き換え、不要なコードの省略、手順の見直しの提案 | 約 4,300 字 |
 
-配布 zip にも `docs/ai/` として同梱しています。
+配布 zip にも `prompt/` として同梱しています（このフォルダの中身がそのまま入ります）。
 
 ## 使い方
 

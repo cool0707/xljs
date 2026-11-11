@@ -69,17 +69,17 @@ jobs:
             cargo build --release --target $t
             cargo build --release --target $t --features console --target-dir target/console
           done
-          mkdir -p dist/x64 dist/arm64 dist/docs
+          mkdir -p dist/x64 dist/arm64
           cp target/x86_64-pc-windows-msvc/release/xljs.exe dist/x64/xljs.exe
           cp target/console/x86_64-pc-windows-msvc/release/xljs.exe dist/x64/xljsc.exe
           cp target/aarch64-pc-windows-msvc/release/xljs.exe dist/arm64/xljs.exe
           cp target/console/aarch64-pc-windows-msvc/release/xljs.exe dist/arm64/xljsc.exe
-          cp -r docs/ai dist/docs/
+          cp -r docs/ai dist/prompt
           cd dist
           for a in x64 arm64; do
             7z a -tzip xljs-windows-$a.zip ./$a/xljs.exe ./$a/xljsc.exe > /dev/null
             7z rn xljs-windows-$a.zip $a/xljs.exe xljs.exe $a/xljsc.exe xljsc.exe > /dev/null
-            7z a -tzip xljs-windows-$a.zip docs > /dev/null
+            7z a -tzip xljs-windows-$a.zip prompt > /dev/null
           done
       - uses: actions/upload-artifact@v4
         with:
