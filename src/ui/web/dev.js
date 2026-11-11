@@ -1378,6 +1378,7 @@
       input: radio("wz-input"), inputNote: $("wz-input-note").value,
       output: radio("wz-output"), outputNote: $("wz-output-note").value,
       ...format(),
+      users: radio("wz-users"), useAd: $("wz-ad").checked, data: radio("wz-data"),
       nameMode: radio("wz-name-mode"), name: $("wz-name").value,
       overview: $("wz-overview").value,
       intro: $("wz-intro").checked,

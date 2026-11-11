@@ -5,15 +5,16 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 
 | ファイル | 内容 | 大きさ |
 |---|---|---|
-| [`prompt.md`](prompt.md) | AI への指示（回答の決まり・よくある間違い）＋要点のリファレンス＋回答例。**これだけで基本的な集計・変換は書ける** | 約 10,000 字 |
-| [`reference.md`](reference.md) | 詳しいリファレンス（全オプション・書式・フォーム・表・アプリモード）とレシピ 6 本 | 約 40,000 字 |
-| [`copilot/instructions.md`](copilot/instructions.md) | Copilot のエージェント用の指示（`prompt.md` を 8,000 字以内に縮めたもの） | 約 4,300 字 |
-| [`copilot/skills/xljs-reference/SKILL.md`](copilot/skills/xljs-reference/SKILL.md) | スキル版のリファレンス（`reference.md` から下の 4 つを除いたもの） | 約 28,000 字 |
+| [`prompt.md`](prompt.md) | AI への指示（回答の決まり・よくある間違い）＋要点のリファレンス＋回答例。**これだけで基本的な集計・変換は書ける** | 約 11,000 字 |
+| [`reference.md`](reference.md) | 詳しいリファレンス（全オプション・書式・フォーム・表・画面の設計の方針・アプリモード）とレシピ 6 本 | 約 52,000 字 |
+| [`copilot/instructions.md`](copilot/instructions.md) | Copilot のエージェント用の指示（`prompt.md` を 8,000 字以内に縮めたもの） | 約 5,600 字 |
+| [`copilot/skills/xljs-reference/SKILL.md`](copilot/skills/xljs-reference/SKILL.md) | スキル版のリファレンス（`reference.md` から下の 5 つを除いたもの） | 約 28,000 字 |
+| [`copilot/skills/xljs-app-design/SKILL.md`](copilot/skills/xljs-app-design/SKILL.md) | スキル版のリファレンス: 画面の設計（フォームアプリ・カスタムアプリの方針、型、アンチパターン）とアプリモード | 約 12,000 字 |
 | [`copilot/skills/xljs-pdf/SKILL.md`](copilot/skills/xljs-pdf/SKILL.md) | スキル版のリファレンス: PDF 出力と PDF の編集 | 約 4,000 字 |
 | [`copilot/skills/xljs-sqlite/SKILL.md`](copilot/skills/xljs-sqlite/SKILL.md) | スキル版のリファレンス: SQLite | 約 3,300 字 |
 | [`copilot/skills/xljs-network/SKILL.md`](copilot/skills/xljs-network/SKILL.md) | スキル版のリファレンス: Web API（fetch）と Active Directory | 約 3,500 字 |
 | [`copilot/skills/xljs-chart/SKILL.md`](copilot/skills/xljs-chart/SKILL.md) | スキル版のリファレンス: グラフ（ui.chart） | 約 2,900 字 |
-| [`copilot/skills/vba-port/SKILL.md`](copilot/skills/vba-port/SKILL.md) | Excel マクロ（VBA）移植用のスキル。素直な書き方への置き換え、不要なコードの省略、手順の見直しの提案 | 約 4,000 字 |
+| [`copilot/skills/vba-port/SKILL.md`](copilot/skills/vba-port/SKILL.md) | Excel マクロ（VBA）移植用のスキル。素直な書き方への置き換え、不要なコードの省略、手順の見直しの提案 | 約 4,300 字 |
 
 配布 zip にも `docs/ai/` として同梱しています。
 
@@ -34,7 +35,7 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 | Claude | プロジェクトを作り、「指示」に `prompt.md`、「ファイル（ナレッジ）」に `reference.md` |
 | Gemini | Gem を作り、「カスタム指示」に `prompt.md`、「知識」に `reference.md` |
 | ChatGPT | GPT（またはプロジェクト）の「指示」に `prompt.md`、ファイルに `reference.md` |
-| Microsoft 365 Copilot | エージェントを作れる場合は「指示」に `copilot/instructions.md`（8,000 字の上限に収まる）、スキルに `copilot/skills/` の 6 つ（スキルは 30,000 字までなので、リファレンスは機能ごとに分けてある。スキルが使えなければ「知識」に `reference.md`） |
+| Microsoft 365 Copilot | エージェントを作れる場合は「指示」に `copilot/instructions.md`（8,000 字の上限に収まる）、スキルに `copilot/skills/` の 7 つ（スキルは 30,000 字までなので、リファレンスは機能ごとに分けてある。スキルが使えなければ「知識」に `reference.md`） |
 | GitHub Copilot（VS Code） | スクリプトのフォルダに `.github/copilot-instructions.md` として `prompt.md` を置く。`xljs init` で型定義も出すと補完が効く |
 
 ## Excel マクロ（VBA）を移植する
@@ -48,6 +49,8 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 
 - **入力ファイルの形を具体的に書く**: シート名、見出しが何行目か、列名（「日付・顧客名・商品・数量・金額」）、1 ファイルか複数か。見出しと数行を（個人情報を消して）貼るのがいちばん確実です。
 - **出力の形を書く**: 「顧客ごとの件数と合計を新しい Excel に」「Shift_JIS の CSV で」「元のファイルと同じフォルダに」など。
+- **誰がどう使うかを書く**: 「自分だけ」か「共有フォルダに置いて何人かで使う」か、実行する人の氏名・所属を使うか（AI は Active Directory から取るコードを書きます）、データを次回に持ち越すか。開発モードの新規作成ウィザードでは「使う人」「データの保存」で選べます。
+- **画面の流れを書く**: 「開いたら自分の担当分の一覧が出て、チェックを付けて登録する」のように、最初に見えるものと操作を書くと、1 つの画面にまとまります。
 - **使い方を書く**: AI は入力をフォーム（1 画面に入力欄と実行ボタン）で受け取るスクリプトを書きます。タスクスケジューラーや他のアプリから自動で実行するなら「画面を出さずに自動実行したい」、一度きりの作業なら「使い捨てでよい」と書くと、フォームなしで書きます。
 - **一度に頼みすぎない**: まず動くものを作ってもらい、「金額の列に 3 桁区切りを付けて」のように足していきます。
 - **エラーが出たら**: エラーダイアログの「コピー」ボタンで全文をコピーし、「このエラーが出ました」と貼って直してもらいます。

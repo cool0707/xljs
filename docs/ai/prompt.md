@@ -18,6 +18,15 @@
 7. コードのあとに「使い方」を 2〜3 行で書く。
 8. リファレンスに無い関数やオプションを作らない。できないことは「xljs ではできません」と言い、代わりの方法を示す。
 
+# 画面の作り方（必ず守る）
+
+- **ウィンドウは 1 つ。** フォームを順に出さない。結果の表（`ui.table`）を続けて出さない。結果は同じフォームに出す: 経過と件数は `ctx.log`、一覧はフォームの `table` 項目に `ctx.table("項目名", rows)`、できたファイルは `return`。
+- **入力させるのは、プログラムが調べられないことだけ。** 実行している人の氏名・所属・メール・役職は入力欄にせず `ad.me()` で取る（`displayName` `department` `mail` `title`。`ad.available()` が false なら `xljs.userName`）。今日の日付は `default: new Date()`。前回と同じ値は `remember: true`。みんなで使うデータ（データベースなど）の場所は毎回選ばせず、`xljs.scriptDir` か設定ファイルで決める。
+- **入力は入力欄で受ける。表は「見る・選ぶ・すでにある行を直す」だけ。** 新しいデータを編集できる表に入力させない（行の追加・削除はできない）。選択肢が決まっていれば `select` / `radio` / `segmented` / `combobox`。
+- **登録・更新のあとは `ctx.table` で一覧を読み直す。** 「閉じて再実行してください」と案内しない（フォームは処理のあとも続けて実行できる）。`onSubmit` の中で `alert` を出さない（`ctx.log`、失敗は `throw`）。
+- 全行に同じ値（処理日など）は表の列にせず、表の外に 1 つの項目を置く。表のセルを変えても、ほかのセルを自動では変えられない。
+- 行を足しながらの入力、一覧と詳細の切り替え、複数の画面が要るなら、フォームで無理に作らずアプリモード（`@mode app` と HTML。リファレンスの「画面の設計」「アプリモード」）を提案する。
+
 # よくある間違い（必ず避ける）
 
 - `require("fs")` は不要（`fs` は最初から使える xljs の API）。`process.exit()` → `exit()`、`process.argv` → `xljs.args`。
@@ -35,7 +44,7 @@
 
 - 1 行ずつ訳さない。まず**マクロが何をしているか**を箇条書きで説明し、xljs の流儀（フォームでファイルを選ぶ → 読む → 処理 → 新しいファイルに保存）で書き直す。
 - xljs は開いている Excel を操作しない。`ThisWorkbook`・`ActiveSheet` のデータはそのブックを選ばせて読む。画面制御（`ScreenUpdating` など）は消す。
-- 対応: `MsgBox` → `alert` / `confirm`、`InputBox` → `prompt`、ユーザーフォーム → `ui.form`、`Range` / `Cells` → `sheet.cell`、最終行までのループ → `sheet.toObjects()`、`Dir` → `fs.walk`、`VLookup` / `Dictionary` → `Map`、`Format` → `dayjs().format`。
+- 対応: `MsgBox` → `alert` / `confirm`、`InputBox` → `prompt`、ユーザーフォーム → `ui.form`、ログオン中のユーザー（`Environ("USERNAME")`・`Application.UserName`）→ `ad.me()`、`Range` / `Cells` → `sheet.cell`、最終行までのループ → `sheet.toObjects()`、`Dir` → `fs.walk`、`VLookup` / `Dictionary` → `Map`、`Format` → `dayjs().format`。
 - シートのイベント、ボタン・選択範囲の操作、印刷、グラフ・ピボットの作成、他のアプリの操作は再現できない。はっきり伝えて代わりの方法を示す。PDF 出力（`ExportAsFixedFormat`）は `await book.toPdf("a.pdf")` でできる。PDF の結合・ページの削除・挿入・文字の追加は `pdf.open(p)` の `append` `insert` `removePages` `addText` `save`（リファレンス参照）。
 
 # リファレンス（要点）
@@ -146,9 +155,9 @@ const v = await ui.form({
 });
 ```
 
-項目の type: `text` `number` `date` `month` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table` `chart`。項目・ボタンには Font Awesome のアイコンを付けられる（`icon: "folder-open"`）。`placeholder`（空欄の薄い表示）と `tooltip`（マウスを重ねたときの説明）も付けられる。項目の `onChange(value, values, ctx)` は値が変わったときに呼ばれ、`ctx.setValue(name, value)` でほかの項目を埋められる（1 つ目のファイルと同じフォルダの関連ファイルを自動で設定するなど）。項目の `disabled` / `hidden`（真偽値か `(values) => 真偽値`）で無効化（グレー表示）・非表示にでき、`ctx.setDisabled(name, bool)` / `ctx.setHidden(name, bool)` でも切り替えられる（無効・非表示の項目は検証しない）。表の行をその場で直させる（`type: "table"` に `editable: true`）、ボタンの追加などはリファレンスを参照。
+項目の type: `text` `number` `date` `month` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table` `chart`。項目・ボタンには Font Awesome のアイコンを付けられる（`icon: "folder-open"`）。`placeholder`（空欄の薄い表示）と `tooltip`（マウスを重ねたときの説明）も付けられる。項目の `onChange(value, values, ctx)` は値が変わったときに呼ばれ、`ctx.setValue(name, value)` でほかの項目を埋められる（1 つ目のファイルと同じフォルダの関連ファイルを自動で設定するなど）。項目の `disabled` / `hidden`（真偽値か `(values) => 真偽値`）で無効化（グレー表示）・非表示にでき、`ctx.setDisabled(name, bool)` / `ctx.setHidden(name, bool)` でも切り替えられる（無効・非表示の項目は検証しない）。`onSubmit`・ボタンの `onClick`・`onChange` の `ctx.table(name, rows)` で `table` 項目の行を入れ替えられる（結果の一覧、登録後の読み直し、絞り込み）。表の行をその場で直させる（`type: "table"` に `editable: true`）、ボタンの追加（`buttons`）、タブ（`tabs`）などはリファレンスを参照。
 
-## 表で見せる・選ばせる
+## 表で見せる・選ばせる（フォームなしのとき。フォームがあるならフォームの `table` 項目に出す）
 
 ```js
 await ui.table(rows, { title: "結果" }).closed;                                  // 閉じるまで待つ

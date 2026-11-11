@@ -1,6 +1,6 @@
 ---
 name: xljs-reference
-description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows 用の実行環境）の詳しい API リファレンスとレシピ。xljs のスクリプトを書く・直すときに、実行環境・ファイル・Excel（読み書き・書式）・CSV・JSON・進捗表示・入力フォーム（ui.form）・表（ui.table）・日付（dayjs）・アプリモードの全オプションを確かめるために使う。PDF・SQLite・fetch と Active Directory・グラフはそれぞれ別のスキル。
+description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows 用の実行環境）の詳しい API リファレンスとレシピ。xljs のスクリプトを書く・直すときに、実行環境・ファイル・Excel（読み書き・書式）・CSV・JSON・進捗表示・入力フォーム（ui.form）・表（ui.table）・日付（dayjs）の全オプションを確かめるために使う。画面の設計とアプリモード・PDF・SQLite・fetch と Active Directory・グラフはそれぞれ別のスキル。
 ---
 
 # xljs API リファレンス（AI チャット向け）
@@ -10,6 +10,7 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 
 | スキル | 内容 |
 |---|---|
+| `xljs-app-design` | 画面の設計（フォームアプリ・カスタムアプリの方針・型・アンチパターン）とアプリモード（`@mode app`） |
 | `xljs-pdf` | PDF 出力（`book.toPdf`・`sheet.toPdf`・`xljs.htmlToPdf`）と PDF の編集（`pdf`） |
 | `xljs-sqlite` | SQLite データベース（`sqlite.open`） |
 | `xljs-network` | Web API（`fetch`）と Active Directory（`ad`） |
@@ -387,6 +388,10 @@ await ui.form({
 });
 ```
 
+- `ctx.table(name, rows, columns?)` で `table` 項目の行（と列）を入れ替えられる（`onSubmit`・ボタンの `onClick`・項目の `onChange` のどれからでも）。結果の一覧を同じウィンドウに出す、登録のあとに一覧を読み直す、条件を変えたら絞り込む、に使う。最初は `rows: []` で空の表を置いておける。
+- 処理が終わるとフォームは入力できる状態に戻り、値を変えて続けて実行できる（閉じるのは利用者）。
+- フォームの表でできないこと: 行の追加・削除、セルを変えたときにほかのセルを変えること（セルの `onChange` はない。検査は `validate` / `validateRow`）。これらが要るならアプリモード。
+
 - `buttons: [{ label, onClick(v, ctx) }]` で送信ボタンの左にボタンを追加できる。押すと onClick が onSubmit と同じように動く（ウィンドウは開いたまま。押したボタンは終わるまでスピナーを表示）。`validate: false` で検証なし、`close: true` で正常終了後に閉じる。`submit: false` で送信ボタンを出さない。`ctx.setValue(name, value)` で項目の値を変えられる。
 - ボタンの `variant`: `"primary"`（塗りつぶし）`"destructive"`（赤。削除など）`"ghost"`（枠なし）。`confirm: "削除しますか？"` で実行前に確認する（検証のあと）。
 - `menu: [{ label, onClick, ... }]` でスプリットボタン（本体と ▼ のメニュー）。`onClick` なしで `menu` だけなら、メニューを開くだけのボタン。
@@ -454,35 +459,6 @@ d.toDate();                                      // Date に戻す
 - dayjs の値はそのまま `cell.value`・`sheet.write`・`csv.write`・`fs.writeJSON`・`ui.table`・フォームの `default` に渡せる（`Date` として扱う）。
 - 和暦（令和など）の解釈・表示はできない。
 - 数値: `(1234567).toLocaleString()` → `"1,234,567"`、`Math.round(x * 100) / 100` で小数第 2 位に丸める。
-
-## アプリモード（HTML の画面）
-
-自由なレイアウトの画面が必要なときだけ使う（たいていは `ui.form` と `ui.table` で足りる）。HTML ファイルを別に用意する。
-
-```js
-// ==xljs==
-// @mode   app
-// @html   ui/index.html
-// @assets ui/
-// ==/xljs==
-const win = app.main;
-export async function run({ month }) {    // 画面から呼べる関数
-  win.state.status = "処理中";            // 画面の data-bind="status" に反映
-  return 10;                              // 画面の data-result に入る
-}
-```
-
-```html
-<!-- ui/index.html -->
-<link rel="stylesheet" href="/_xljs/fontawesome/css/all.min.css">
-<form data-action="run" data-result="count">
-  <input name="month" type="month" required>
-  <button><i class="fa-solid fa-play"></i> 実行</button>
-</form>
-<p>状態: <span data-bind="status"></span> / 件数: <span data-bind="count"></span></p>
-```
-
-- アイコンは同梱の Font Awesome Free 7 が使える（上の `<link>` を書く。CDN は使わない）: `<i class="fa-solid fa-file-excel"></i>`、`fa-regular`、`fa-brands`。
 
 ## レシピ
 

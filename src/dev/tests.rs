@@ -420,6 +420,15 @@ fn wizard_prompts() {
     assert_eq!(wizard::file_name(&wizard::Answers { name_mode: "name".into(), name: "a.ts".into(), ..Default::default() }), "a.ts");
     assert!(!p.contains("見た目"), "{p}");
 
+    assert!(p.contains("- コードの前に、画面の構成") && !p.contains("使う人") && !p.contains("実行している人の情報") && !p.contains("- データ:"), "{p}");
+
+    // How it is used: several people, their own details from Active Directory, data kept in a database.
+    let p = wizard::prompt(&wizard::Answers { users: "shared".into(), use_ad: true, data: "keep".into(), ..a.clone() });
+    assert!(p.contains("- 使う人: 複数の人が共有フォルダに置いて使う") && p.contains("- 実行している人の情報: 氏名・所属・メールなどを使う。入力させず Active Directory から取り（ad.me()"), "{p}");
+    assert!(p.contains("- データ: 続けて使うデータを保存・更新する。SQLite に置き"), "{p}");
+    let p = wizard::prompt(&wizard::Answers { users: "self".into(), data: "none".into(), ..a.clone() });
+    assert!(p.contains("- 使う人: 1 人（自分のパソコンで使う）") && p.contains("- データ: 次回に持ち越さない") && !p.contains("ad.me()"), "{p}");
+
     // The look: the app's metadata and CSS, the form's options, nothing without a window.
     let look = wizard::Answers { title_bar: "custom".into(), accent: "#c42b1c".into(), background: "#fff8e1".into(), radius: "large".into(), ..a };
     let p = wizard::prompt(&look);
@@ -432,6 +441,7 @@ fn wizard_prompts() {
     assert!(p.contains("。アプリにする場合は メタデータに @titlebar custom") && !p.contains("red; x"), "{p}");
     let p = wizard::prompt(&wizard::Answers { mode: "script".into(), form: "no".into(), ..look });
     assert!(!p.contains("- 見た目") && p.contains("- 形式: フォーム（ui.form）を使わず、処理をステップごとに"), "{p}");
+    assert!(!p.contains("画面の構成"), "{p}");
 }
 
 #[test]
