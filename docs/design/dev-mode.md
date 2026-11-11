@@ -126,7 +126,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 
 - `src/dev/tests.rs`: 置き換え先の決定、履歴、エラーの場所と依頼文、セッションの流れ（記録するだけのウィンドウとモック UI）、別プロセスの実行（Linux の `sh`）。
 - `src/engine/tests.rs`: `dev_guard`、フォームのプレビュー、無限ループで中止した場所。
-- ネイティブの枠（2 つ目の WebView2、ダウンロード）は Windows 実機で確認する（`docs/gui-testing.md` の手順）。ページは `XLJS_DEV_DEBUG=1` で開発者ツールが使える。
+- ネイティブの枠（2 つ目の WebView2、ダウンロード）は Windows 実機で確認する（`docs/design/gui-testing.md` の手順）。ページは `XLJS_DEV_DEBUG=1` で開発者ツールが使える。
 
 ## エディタ（`dev-editor.js`・`dev-types.js`）
 
