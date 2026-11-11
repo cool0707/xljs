@@ -56,7 +56,7 @@ const user = {
 // { name: "to", label: "承認者", type: "combobox", options: ad.search({ filter: { department: user.department } }).map((u) => u.displayName) }
 ```
 
-利用者ごとに出すものを変えるとき（自分の担当分だけ、管理者だけの機能）も、名前や役割を入力・選択させず、この `user` と手元のデータ（職員の一覧など）を突き合わせて決める。見つからなければ、何と突き合わせて見つからなかったかをエラーで知らせる。
+利用者ごとに出すものを変えるとき（自分の担当分だけ、管理者だけの機能）も、名前や役割を入力・選択させず、この `user` と手元のデータ（社員名簿など）を突き合わせて決める。見つからなければ、何と突き合わせて見つからなかったかをエラーで知らせる。
 
 ### フォームアプリの型
 
@@ -65,37 +65,37 @@ const user = {
 **一覧を見て、直して、登録する**: 起動時に一覧を読んでフォームの表に出し、登録のあと同じ表を読み直す。
 
 ```js
-// 自分の未確認の一覧を出し、確認したものにチェックを付けて登録する
+// 自分が担当する未出荷の受注を出し、出荷したものにチェックを付けて登録する
 const me = ad.available() ? ad.me() : null;
 const name = me?.displayName ?? xljs.userName;
-const db = sqlite.open(path.join(xljs.scriptDir, "確認.db")); // みんなで使うデータの場所は毎回選ばせない
-const load = () => db.all("SELECT 番号, 件名, 期限 FROM 確認対象 WHERE 担当者 = ? AND 確認日 IS NULL ORDER BY 期限", name)
-  .map((r) => ({ 確認: false, ...r, 修正: "" }));
+const db = sqlite.open(path.join(xljs.scriptDir, "受注.db")); // みんなで使うデータの場所は毎回選ばせない
+const load = () => db.all("SELECT 受注番号, 顧客名, 納期 FROM 受注 WHERE 担当者 = ? AND 出荷日 IS NULL ORDER BY 納期", name)
+  .map((r) => ({ 出荷: false, ...r, 配送: "" }));
 
 await ui.form({
-  title: "確認の登録",
-  description: `${name} さんの未確認の一覧です。確認したものにチェックを付けて「登録」を押してください。`,
+  title: "出荷の登録",
+  description: `${name} さんが担当する未出荷の受注です。出荷したものにチェックを付けて「登録」を押してください。`,
   width: 900,
   fields: [
-    { name: "date", label: "確認日", type: "date", default: new Date(), required: true }, // 今日が初期値。行ごとの列にしない
+    { name: "date", label: "出荷日", type: "date", default: new Date(), required: true }, // 今日が初期値。行ごとの列にしない
     {
-      name: "items", label: "未確認", type: "table", rows: load(), editable: true,
+      name: "items", label: "未出荷", type: "table", rows: load(), editable: true,
       columns: [
-        { key: "確認", type: "checkbox" },
-        { key: "番号", editable: false },
-        { key: "件名", editable: false },
-        { key: "期限", editable: false },
-        { key: "修正", type: "select", options: ["", "無", "有"] },
+        { key: "出荷", type: "checkbox" },
+        { key: "受注番号", editable: false },
+        { key: "顧客名", editable: false },
+        { key: "納期", editable: false },
+        { key: "配送", type: "select", options: ["", "宅配便", "自社便"] },
       ],
-      validateRow: (r) => (r.確認 && !r.修正 ? { 修正: "修正の有無を選んでください" } : ""),
+      validateRow: (r) => (r.出荷 && !r.配送 ? { 配送: "配送の方法を選んでください" } : ""),
     },
   ],
-  validate: (v) => (v.items.some((r) => r.確認) ? null : { items: "確認したものにチェックを付けてください" }),
+  validate: (v) => (v.items.some((r) => r.出荷) ? null : { items: "出荷したものにチェックを付けてください" }),
   submit: "登録",
   onSubmit(v, ctx) {
-    const done = v.items.filter((r) => r.確認);
+    const done = v.items.filter((r) => r.出荷);
     db.transaction(() => {
-      for (const r of done) db.run("UPDATE 確認対象 SET 確認日 = ?, 修正 = ? WHERE 番号 = ?", v.date, r.修正, r.番号);
+      for (const r of done) db.run("UPDATE 受注 SET 出荷日 = ?, 配送 = ? WHERE 受注番号 = ?", v.date, r.配送, r.受注番号);
     });
     ctx.log(`${done.length} 件を登録しました`);
     ctx.table("items", load()); // 同じ画面のまま、残りの一覧に入れ替える
@@ -107,14 +107,14 @@ db.close();
 **条件を変えて一覧を見る**: 条件の項目の `onChange` で `ctx.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`、送信ボタンが要らなければ `submit: false`。
 
 ```js
-const all = workbooks.open(path.join(xljs.scriptDir, "台帳.xlsx")).sheets[0].toObjects();
-const pick = (v) => all.filter((r) => (v.kind === "すべて" || r.区分 === v.kind) && (!v.word || String(r.件名 ?? "").includes(v.word)));
+const all = workbooks.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].toObjects();
+const pick = (v) => all.filter((r) => (v.kind === "すべて" || r.区分 === v.kind) && (!v.word || String(r.品名 ?? "").includes(v.word)));
 await ui.form({
-  title: "台帳の検索",
+  title: "商品の検索",
   fields: [
-    { name: "kind", label: "区分", type: "segmented", options: ["すべて", "建築", "電気", "機械"], default: "すべて",
+    { name: "kind", label: "区分", type: "segmented", options: ["すべて", "製品", "部品", "消耗品"], default: "すべて",
       onChange(_, v, ctx) { ctx.table("list", pick(v)); } },
-    { name: "word", label: "件名に含む文字",
+    { name: "word", label: "品名に含む文字",
       onChange(_, v, ctx) { ctx.table("list", pick(v)); } },
     { name: "list", label: "一覧", type: "table", rows: all, height: 15 },
   ],
