@@ -1,7 +1,7 @@
 # xljs (Rust 版) — 開発メモ（Claude Code 向け）
 
 JavaScript/TypeScript のスクリプトで Excel・CSV・JSON を処理する Windows 用シングルバイナリ。
-Go 版 xljs（github.com/cool0707/xljs）の Rust 移植。開発はこの Rust 版で進め、Go 版は凍結している
+Go 版 xljs（github.com/cool0707/xljs-go。開発凍結、記録として保管）の Rust 移植。開発はこの Rust 版で進め、Go 版は凍結している
 （Go 版に合わせる必要はない。スクリプトの API・メタデータ・pack 形式の互換は保つ）。利用者は「VS Code も入れられないような」一般の業務ユーザー。
 Excel 未インストール環境で動くこと、日本語環境での使い勝手（CP932、游ゴシック、日本語メッセージ）を重視する。
 
