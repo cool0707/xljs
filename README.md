@@ -2,8 +2,6 @@
 
 JavaScript / TypeScript で書いたスクリプトで Excel・CSV の集計やデータ変換を行う、Windows 用のシングルバイナリです。Excel のインストールは不要です。
 
-このリポジトリは Go 版 [xljs](https://github.com/cool0707/xljs) を Rust に移植したものです。スクリプトの API・メタデータ・pack した exe の形式・メッセージは Go 版と同じです（違いは「[Go 版との違い](#go-版との違い)」）。
-
 ```js
 const dir = await showDirectoryPicker();
 if (!dir) exit();
