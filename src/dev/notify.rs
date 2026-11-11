@@ -59,7 +59,7 @@ const MAX_EDITS: isize = 1000;
 /// The edit script of a and b (Myers): for each line, 0 = in both,
 /// -1 = only in a, 1 = only in b, in order. None for more than MAX_EDITS
 /// edits.
-fn edits(a: &[&str], b: &[&str]) -> Option<Vec<(i8, usize)>> {
+pub(crate) fn edits(a: &[&str], b: &[&str]) -> Option<Vec<(i8, usize)>> {
     let (n, m) = (a.len() as isize, b.len() as isize);
     let max = n + m;
     let off = max + 1;

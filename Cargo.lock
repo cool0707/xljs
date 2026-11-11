@@ -2514,6 +2514,7 @@ dependencies = [
  "base64 0.22.1",
  "cfb",
  "chrono",
+ "crc32fast",
  "ctrlc",
  "embed-resource",
  "encoding_rs",

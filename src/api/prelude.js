@@ -3147,6 +3147,7 @@
       const spec = {
         title: o.title, description: o.description, error,
         submit: o.noSubmit ? "" : o.submit || T("form.ok"), buttons: o.actions.map((b) => b.path || b.label),
+        names: fields.map((f) => f.name),
         fields: fields.filter((f) => !f.chart && !inactive(fields, f, wire)).map((f) => Object.assign({
           name: f.name, label: promptLabel(f), type: promptType(f), options: f.options, required: f.required, custom: f.custom,
           placeholder: f.placeholder, help: f.help, accept: f.accept, value: wire[f.name], error: errors[f.name] || "",

@@ -5,6 +5,7 @@ mod console;
 mod launch;
 mod db;
 mod form;
+mod test;
 mod vba;
 
 use std::path::Path;
@@ -159,6 +160,7 @@ fn run(con: &ConsoleState, args: Vec<String>) -> i32 {
             }
             "pack" => return cmd_pack(con, &rest[1..]),
             "check" => return cmd_check(con, &rest[1..]),
+            "test" => return test::cmd_test(con, &rest[1..]),
             "init" => return cmd_init(con, &rest[1..]),
             "vba" => return vba::cmd_vba(con, &rest[1..]),
             "repair" => return db::cmd_repair(con, &rest[1..]),

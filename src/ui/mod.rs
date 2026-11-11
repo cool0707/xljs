@@ -8,10 +8,10 @@ mod console_form;
 mod devtools;
 mod icon;
 pub mod mock;
-mod mock_app;
+pub(crate) mod mock_app;
 #[cfg(windows)]
 mod native;
-mod shell;
+pub(crate) mod shell;
 mod thread;
 
 use std::sync::Arc;
@@ -292,6 +292,9 @@ pub struct FormOptions {
     /// "$button": its index, or null for submit.
     pub submit: String,
     pub buttons: Vec<String>,
+    /// The names of all the fields of the form, also of those that are not
+    /// shown now (disabled or hidden): what an answer may name (tests).
+    pub names: Vec<String>,
 }
 
 /// One input of a form.

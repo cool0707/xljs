@@ -73,6 +73,8 @@ pub struct Env {
     pub dev_guard: bool,
     pub preview: String,
     pub removed: std::sync::atomic::AtomicU32,
+    /// See engine::Options::test.
+    pub test: Option<crate::engine::TestRun>,
 }
 
 impl Env {
@@ -426,8 +428,16 @@ fn install_core(n: &N) {
     n.val("script", env.script.clone());
     n.val("version", env.version.clone());
     n.val("platform", platform());
-    n.val("computerName", computer_name());
-    n.val("userName", user_name());
+    match &env.test {
+        Some(t) => {
+            n.val("computerName", t.computer_name.clone());
+            n.val("userName", t.user_name.clone());
+        }
+        None => {
+            n.val("computerName", computer_name());
+            n.val("userName", user_name());
+        }
+    }
     n.val("uiName", env.ui.name());
     n.val("lang", i18n::lang());
     n.set("t", |_, a| {

@@ -47,24 +47,56 @@ pub(crate) fn config_dir() -> String {
     }
 }
 
+/// Ends the script (like exit(), with engine::ABORT_CODE) when the UI of a
+/// test run asked for it during the call that has just returned: a
+/// question nobody answers.
+fn aborted<'js>(h: &super::Host, a: &js::A<'js>) -> rquickjs::Result<()> {
+    let stop = h.env.test.as_ref().is_some_and(|t| t.abort.load(std::sync::atomic::Ordering::SeqCst));
+    if stop {
+        h.set_exit(crate::engine::ABORT_CODE);
+        return Err(js::throw_uncatchable(&a.ctx));
+    }
+    Ok(())
+}
+
 pub(super) fn install(n: &N) {
     n.set("uiAlert", |h, a| {
         h.env.ui.alert(&a.str(0), &a.str(1));
         a.undefined()
     });
-    n.set("uiConfirm", |h, a| a.ret(h.env.ui.confirm(&a.str(0), &a.str(1))));
-    n.set("uiPrompt", |h, a| match h.env.ui.prompt(&a.str(0), &a.str(1), &a.str(2)) {
-        Some(s) => a.ret(s),
-        None => a.null(),
+    n.set("uiConfirm", |h, a| {
+        let v = h.env.ui.confirm(&a.str(0), &a.str(1));
+        aborted(h, a)?;
+        a.ret(v)
     });
-    n.set("uiOpen", |h, a| a.ret(h.env.ui.open_files(&picker_options(&a.arg(0)))));
-    n.set("uiSave", |h, a| match h.env.ui.save_file(&picker_options(&a.arg(0))) {
-        Some(p) => a.ret(p),
-        None => a.null(),
+    n.set("uiPrompt", |h, a| {
+        let v = h.env.ui.prompt(&a.str(0), &a.str(1), &a.str(2));
+        aborted(h, a)?;
+        match v {
+            Some(s) => a.ret(s),
+            None => a.null(),
+        }
     });
-    n.set("uiDirectory", |h, a| match h.env.ui.pick_directory(&picker_options(&a.arg(0))) {
-        Some(p) => a.ret(p),
-        None => a.null(),
+    n.set("uiOpen", |h, a| {
+        let v = h.env.ui.open_files(&picker_options(&a.arg(0)));
+        aborted(h, a)?;
+        a.ret(v)
+    });
+    n.set("uiSave", |h, a| {
+        let v = h.env.ui.save_file(&picker_options(&a.arg(0)));
+        aborted(h, a)?;
+        match v {
+            Some(p) => a.ret(p),
+            None => a.null(),
+        }
+    });
+    n.set("uiDirectory", |h, a| {
+        let v = h.env.ui.pick_directory(&picker_options(&a.arg(0)));
+        aborted(h, a)?;
+        match v {
+            Some(p) => a.ret(p),
+            None => a.null(),
+        }
     });
     n.set("uiError", |h, a| {
         h.env.ui.show_error(&a.str(0), &a.str(1));
@@ -100,7 +132,9 @@ pub(super) fn install(n: &N) {
     // uiForm(optionsJSON) -> valuesJSON | null (UIs without windows)
     n.set("uiForm", |h, a| {
         let o: FormOptions = serde_json::from_str(&a.str(0)).map_err(|e| a.throw(&Error::from(e)))?;
-        match h.env.ui.form(&o) {
+        let v = h.env.ui.form(&o);
+        aborted(h, a)?;
+        match v {
             Some(v) => a.ret(serde_json::Value::Object(v).to_string()),
             None => a.null(),
         }
