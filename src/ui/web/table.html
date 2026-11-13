@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>table</title>
 <link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="gridkit.css">
 <link rel="stylesheet" href="table.css">
 </head>
 <body>
@@ -11,6 +12,7 @@
   <input type="search" id="filter" spellcheck="false">
   <span id="count"></span>
   <span class="spacer"></span>
+  <button type="button" id="clear-filters" class="small" hidden></button>
   <button type="button" id="copy" class="small"></button>
   <button type="button" id="save-csv" class="small"></button>
   <button type="button" id="save-xlsx" class="small"></button>
@@ -26,6 +28,7 @@
   <button type="button" id="cancel"></button>
 </footer>
 <script src="bridge.js"></script>
+<script src="gridkit.js"></script>
 <script src="table.js"></script>
 </body>
 </html>

@@ -1,12 +1,21 @@
 "use strict";
-// Built-in table page (ui.table): virtual scrolling, sort, filter, column
-// resize, copy as TSV, save as CSV/Excel (done by the script) and row
-// selection. Cells are numbers, strings, booleans or null.
+// Built-in table page (ui.table): virtual scrolling, sort, filter (the box
+// above and per column), column resize, pinned / frozen / hidden columns
+// (gridkit.js), conditional formats, copy as TSV, save as CSV/Excel (done by
+// the script) and row selection. Cells are numbers, strings, booleans or null.
 const $ = (id) => document.getElementById(id);
 
 let texts = {};
 let columns = [];   // [{ label, width }]
-let widths = [];    // px per column, after the row-number gutter
+let widths = [];    // px per column (by index in columns)
+let cols = new GridKit.Columns(0); // hidden, pinned and frozen columns
+let order = [];     // the columns shown: [{ c, side }] (GridKit.Columns.order)
+let sticky = [];    // per entry of order: its sticky offset, or null
+const filters = new Map(); // column -> filter (gridkit.js)
+const kinds = new Map();   // column -> "number" | "date" | "text", found when filtering
+let formats = [];   // conditional formats (gridkit.js)
+let hits = [];      // per row: the "rule:column" keys of the formats with functions that matched
+let fmtStats = null;
 let rows = [];      // arrays of cells; the index is the row's index in the script
 let total = 0;      // number of rows the script will send
 let select = "";    // "" | "single" | "multiple"
@@ -25,7 +34,7 @@ const rowH = () => parseFloat(getComputedStyle(document.documentElement).getProp
 host.on((m) => {
   switch (m.type) {
     case "init": init(m); break;
-    case "rows": addRows(m.rows); break;
+    case "rows": addRows(m.rows, m.hits); break;
     case "saved": status(fmt(texts.saved, m.path)); break;
     case "error": status(m.message, true); break;
   }
@@ -33,6 +42,7 @@ host.on((m) => {
 
 function init(m) {
   texts = m.texts || {};
+  texts.grid = texts.grid || {};
   columns = m.columns || [];
   total = m.total || 0;
   select = m.select || "";
@@ -45,8 +55,12 @@ function init(m) {
   $("ok").hidden = !select;
   $("cancel").textContent = select ? texts.cancel : texts.close;
   $("empty").textContent = texts.empty;
+  $("clear-filters").textContent = texts.grid.clearFilters;
+  formats = m.formats || [];
   rows = [];
+  hits = [];
   widths = columns.map((c) => c.width || 0);
+  cols = new GridKit.Columns(columns.length);
   buildHead();
   update();
   grid.focus();
@@ -56,13 +70,21 @@ function init(m) {
 // ---- data
 
 let rebuildTimer = 0;
-function addRows(chunk) {
+function addRows(chunk, chunkHits) {
   const autosize = rows.length === 0;
-  for (const r of chunk) rows.push(r);
+  for (let i = 0; i < chunk.length; i++) {
+    rows.push(chunk[i]);
+    hits.push(chunkHits ? chunkHits[i] : null);
+  }
+  kinds.clear();
   if (searchText) for (const r of chunk) searchText.push(rowText(r));
   if (autosize) autosizeColumns();
   // Re-filter and re-sort at most a few times a second while loading.
-  if (!rebuildTimer) rebuildTimer = setTimeout(() => { rebuildTimer = 0; update(); }, rows.length >= total ? 0 : 150);
+  if (!rebuildTimer) rebuildTimer = setTimeout(() => {
+    rebuildTimer = 0;
+    if (rows.length >= total) buildHead(); // numbers' headings are right-aligned
+    update();
+  }, rows.length >= total ? 0 : 150);
 }
 
 function cellText(v) {
@@ -84,13 +106,23 @@ function compare(a, b) {
   return collator.compare(String(a), String(b));
 }
 
+function kindOf(c) {
+  if (!kinds.has(c)) kinds.set(c, GridKit.kindOf(rows, c));
+  return kinds.get(c);
+}
+
 function rebuildView() {
   let v = [];
-  if (filterTokens.length) {
-    if (!searchText) searchText = rows.map(rowText);
+  const byColumn = [...filters].filter(([c, f]) => c < columns.length && GridKit.filterOn(f));
+  if (filterTokens.length || byColumn.length) {
+    if (filterTokens.length && !searchText) searchText = rows.map(rowText);
     for (let i = 0; i < rows.length; i++) {
-      const t = searchText[i];
-      if (filterTokens.every((tok) => t.includes(tok))) v.push(i);
+      if (filterTokens.length) {
+        const t = searchText[i];
+        if (!filterTokens.every((tok) => t.includes(tok))) continue;
+      }
+      if (byColumn.length && !byColumn.every(([c, f]) => GridKit.match(f, rows[i][c]))) continue;
+      v.push(i);
     }
   } else {
     v = new Array(rows.length);
@@ -111,6 +143,7 @@ function rebuildView() {
 function update() {
   const curRow = cursor >= 0 ? view[cursor] : -1;
   rebuildView();
+  fmtStats = formats.length ? GridKit.stats(formats, rows, columns.length) : null;
   cursor = curRow >= 0 ? view.indexOf(curRow) : -1;
   if (cursor < 0 && view.length) cursor = Math.min(Math.max(cursor, 0), view.length - 1);
   anchor = cursor;
@@ -127,6 +160,7 @@ function updateCount() {
   if (selected.size) s += "　" + fmt(texts.selected, selected.size);
   $("count").textContent = s;
   $("ok").disabled = selected.size === 0;
+  $("clear-filters").hidden = ![...filters.values()].some(GridKit.filterOn);
 }
 
 // ---- columns
@@ -164,59 +198,92 @@ function autosizeColumns() {
   applyWidths();
 }
 
+let gutterW = 0;
 function gutterWidth() {
   return measure([String(Math.max(total, 1))])[0] + 2;
 }
 
+/** Lays the columns out again: the grid's columns and the sticky offsets. */
 function applyWidths() {
-  const cols = [gutterWidth() + "px", ...widths.map((w) => (w || 120) + "px")].join(" ");
-  document.documentElement.style.setProperty("--cols", cols);
+  if (!gutterW) gutterW = gutterWidth();
+  order = cols.order();
+  sticky = GridKit.stickyLayout(order, (c) => widths[c] || 120, gutterW);
+  // The columns pinned to the right stay at the right edge: an empty column before them takes the rest.
+  const tpl = [gutterW + "px", ...order.map((o, i) => (i === firstRight() ? "minmax(0, 1fr) " : "") + (widths[o.c] || 120) + "px")].join(" ");
+  document.documentElement.style.setProperty("--cols", tpl);
+  head.querySelectorAll(".cell[data-c]").forEach((cell, i) => GridKit.stick(cell, sticky[i]));
 }
 
+/** The position in order of the first column pinned to the right, or -1. */
+const firstRight = () => order.findIndex((o) => o.side === "right");
+/** The empty cell before the columns pinned to the right. */
+const spacer = () => Object.assign(document.createElement("div"), { className: "cell spacer-cell" });
+
 function buildHead() {
+  order = cols.order();
   head.textContent = "";
-  head.append(Object.assign(document.createElement("div"), { className: "cell gutter" }));
-  columns.forEach((c, i) => {
+  const g = Object.assign(document.createElement("div"), { className: "cell gutter gk-stk" });
+  g.style.left = "0px";
+  head.append(g);
+  for (const { c: i, side } of order) {
+    if (side === "right" && !head.querySelector(".spacer-cell")) head.append(spacer());
+    const c = columns[i];
     const cell = document.createElement("div");
     cell.className = "cell";
-    cell.textContent = c.label;
-    cell.title = c.label;
-    const mark = document.createElement("span");
-    mark.className = "sort";
-    cell.append(mark);
-    const grip = document.createElement("span");
-    grip.className = "grip";
-    grip.addEventListener("mousedown", (e) => startResize(e, i));
-    grip.addEventListener("dblclick", (e) => { e.stopPropagation(); fitColumn(i); });
-    cell.append(grip);
-    cell.addEventListener("click", (e) => { if (e.target !== grip) sortBy(i); });
+    cell.dataset.c = i;
+    const f = filters.get(i);
+    GridKit.heading(cell, {
+      label: c.label,
+      sort: sortCol === i ? sortDir : 0,
+      filtered: GridKit.filterOn(f),
+      numeric: rows.length >= total && rows.length > 0 && kindOf(i) === "number",
+      texts: texts.grid,
+      onSort: () => sortBy(i),
+      onFilter: (btn) => GridKit.filterPopup({
+        anchor: btn, kind: kindOf(i), filter: filters.get(i), texts: texts.grid,
+        onChange: (nf) => {
+          if (nf) filters.set(i, nf); else filters.delete(i);
+          cell.classList.toggle("gk-filtered", !!nf);
+          update();
+        },
+      }),
+      onMenu: (btn) => GridKit.columnMenu({
+        anchor: btn, c: i, labels: columns.map((x) => x.label), cols, texts: texts.grid,
+        onChange: () => { buildHead(); render(); },
+        onReset: resetColumns,
+      }),
+      onResize: (e) => GridKit.resize(e, widths[i] || 120, (w) => { widths[i] = w; applyWidths(); render(); }),
+      onFit: () => fitColumn(i),
+    });
     head.append(cell);
-  });
+  }
   applyWidths();
+}
+
+/** The menu's "reset": all columns shown and not pinned, their widths, no sort and no column filters. */
+function resetColumns() {
+  cols.reset();
+  filters.clear();
+  sortCol = -1;
+  sortDir = 0;
+  if (rows.length) autosizeColumns();
+  buildHead();
+  update();
 }
 
 function sortBy(i) {
   if (sortCol !== i) { sortCol = i; sortDir = 1; }
   else if (sortDir === 1) sortDir = -1;
   else { sortCol = -1; sortDir = 0; }
-  head.querySelectorAll(".sort").forEach((m, k) => { m.textContent = k === sortCol ? (sortDir > 0 ? "▲" : "▼") : ""; });
+  buildHead();
   update();
-}
-
-function startResize(e, i) {
-  e.preventDefault();
-  e.stopPropagation();
-  const x0 = e.clientX, w0 = widths[i] || 120;
-  const move = (ev) => { widths[i] = Math.max(32, w0 + ev.clientX - x0); applyWidths(); };
-  const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
-  document.addEventListener("mousemove", move);
-  document.addEventListener("mouseup", up);
 }
 
 function fitColumn(i) {
   const first = Math.floor(grid.scrollTop / rowH());
   widths[i] = Math.round(Math.min(columnWidth(i, view.slice(first, first + 200)), 800));
   applyWidths();
+  render();
 }
 
 // ---- rendering
@@ -237,18 +304,29 @@ function render() {
     tr.className = "trow" + (selected.has(ri) ? " sel" : "") + (p === cursor ? " cur" : "");
     tr.dataset.pos = p;
     const g = document.createElement("div");
-    g.className = "cell gutter";
+    g.className = "cell gutter gk-stk";
+    g.style.left = "0px";
     g.textContent = ri + 1;
     tr.append(g);
-    for (let c = 0; c < columns.length; c++) {
+    const fm = formats.length ? GridKit.rowFormats(formats, r, hits[ri], fmtStats) : null;
+    const sel = selected.has(ri);
+    const fr = firstRight();
+    order.forEach(({ c }, k) => {
+      if (k === fr) {
+        const sp = tr.appendChild(spacer());
+        if (fm) GridKit.paint(sp, fm[0], null, sel);
+      }
       const v = r[c];
       const td = document.createElement("div");
       td.className = "cell" + (typeof v === "number" ? " num" : "");
+      td.dataset.c = c;
       const t = cellText(v);
       td.textContent = t;
       if (t.length > 20) td.title = t;
+      if (sticky[k]) GridKit.stick(td, sticky[k]);
+      if (fm) GridKit.paint(td, fm[0], fm[1].get(c), sel);
       tr.append(td);
-    }
+    });
     frag.append(tr);
   }
   // Keep the alternating stripes on the same rows while scrolling.
@@ -300,9 +378,9 @@ function scrollIntoView(pos) {
 rowsEl.addEventListener("mousedown", (e) => {
   const p = rowAt(e.target);
   if (p < 0 || e.button !== 0) return;
-  // Column index among the data cells; -1 for the row number.
+  // The column's index; -1 for the row number.
   const cell = e.target.closest(".cell");
-  const column = cell ? Array.prototype.indexOf.call(cell.parentNode.children, cell) - 1 : -1;
+  const column = cell && cell.dataset.c !== undefined ? Number(cell.dataset.c) : -1;
   grid.focus();
   if (e.detail === 2 && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
     e.preventDefault();
@@ -351,7 +429,7 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     $("filter").focus();
     $("filter").select();
-  } else if ((e.key === "c" || e.key === "C") && e.ctrlKey && document.activeElement !== $("filter")) {
+  } else if ((e.key === "c" || e.key === "C") && e.ctrlKey && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) {
     e.preventDefault();
     copy();
   }
@@ -391,8 +469,9 @@ function chosenRows() {
 
 async function copy() {
   const list = chosenRows();
-  const lines = [columns.map((c) => tsvCell(c.label)).join("\t")];
-  for (const ri of list) lines.push(rows[ri].map((v) => tsvCell(cellText(v))).join("\t"));
+  const shown = order.map((o) => o.c);
+  const lines = [shown.map((c) => tsvCell(columns[c].label)).join("\t")];
+  for (const ri of list) lines.push(shown.map((c) => tsvCell(cellText(rows[ri][c]))).join("\t"));
   const text = lines.join("\r\n") + "\r\n";
   try {
     await navigator.clipboard.writeText(text);
@@ -415,7 +494,10 @@ function isIdentity() {
 
 function save(format) {
   status("");
-  host.send({ type: "save", format, indices: isIdentity() ? null : view });
+  // The columns shown, in their order (null: all of them as they are).
+  const shown = order.map((o) => o.c);
+  const all = shown.length === columns.length && shown.every((c, i) => c === i);
+  host.send({ type: "save", format, indices: isIdentity() ? null : view, columns: all ? null : shown });
 }
 
 function ok() {
@@ -429,6 +511,7 @@ function status(text, error) {
 }
 
 $("copy").onclick = copy;
+$("clear-filters").onclick = () => { filters.clear(); buildHead(); update(); };
 $("save-csv").onclick = () => save("csv");
 $("save-xlsx").onclick = () => save("xlsx");
 $("ok").onclick = ok;

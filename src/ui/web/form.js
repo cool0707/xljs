@@ -50,7 +50,12 @@ host.on((m) => {
     }
     case "table": { const c = controls.get(m.field); if (c && c.setTable) c.setTable(m); break; }
     case "chart": { const c = controls.get(m.field); if (c && c.setChart) c.setChart(m); break; }
-    case "cellErrors": { const c = controls.get(m.field); if (c && c.setCellErrors) c.setCellErrors(m.errors || [], m.row); break; }
+    case "cellErrors": {
+      const c = controls.get(m.field);
+      if (c && c.setCellErrors) c.setCellErrors(m.errors || [], m.row);
+      if (c && c.setHits && m.hits !== undefined && m.row !== undefined) c.setHits(m.row, m.hits);
+      break;
+    }
     case "running": startRun(m); break;
     case "progress": progress(m); break;
     case "log": appendLog(m.lines, m.level); break;
@@ -692,47 +697,164 @@ function cellInput(e, v) {
 
 function tableControl(f, id) {
   let cols = f.table.columns, rows = f.table.rows, select = f.table.select, edit = f.table.editable || null;
+  let specWidths = f.table.widths || [], formats = f.table.formats || [], hits = f.table.hits || [];
   let order = [], sortCol = -1, sortDir = 1, boxes = [], cellInputs = [];
   let off = false; // disabled by the script
   const locked = () => state !== "input" || off;
   const selected = new Set();
   const errors = new Map(); // "row:col" -> message (col -1: the row)
+  // Columns (gridkit.js): hidden, pinned and frozen ones, filters and widths.
+  // The widths are measured once the table is first shown and then kept
+  // (sorting or filtering does not change them).
+  let colState = new GridKit.Columns(cols.length);
+  const filters = new Map(); // column -> filter
+  let widths = null, firstWidths = null; // px per column once measured
+  let layout = colState.order(), sticky = [];
+  let stats = null;
   const head = el("thead");
   const body = el("tbody");
+  const colgroup = el("colgroup");
+  const table = el("table", {}, colgroup, head, body);
   const all = el("input", { type: "checkbox", tabIndex: -1 });
-  const wrap = el("div", { className: "ftable" + (edit ? " editable" : ""), id, tabIndex: 0 }, el("table", {}, head, body));
+  const wrap = el("div", { className: "ftable" + (edit ? " editable" : ""), id, tabIndex: 0 }, table);
   const list = el("ul", { className: "cell-errors", hidden: true });
+  const shownText = el("span");
+  const clear = el("button", { type: "button", className: "link", textContent: (texts.grid || {}).clearFilters || "" });
+  const bar = el("div", { className: "ftable-status", hidden: true }, shownText, clear);
   wrap.style.maxHeight = (32 + 29 * (f.rows || 8)) + "px";
 
+  const gt = () => texts.grid || {};
+  const kindOf = (c) => GridKit.kindOf(rows, c);
+  // The empty column that takes the rest of the width: last, or before the columns pinned to the right.
+  const firstRight = () => layout.findIndex((o) => o.side === "right");
+  const selW = () => (select ? 32 : 0); // the selection column (see form.css)
+
   function header() {
+      layout = colState.order();
     head.textContent = "";
     const tr = el("tr");
-    if (select) tr.append(el("th", { className: "sel" }, select === "multiple" ? all : ""));
-    cols.forEach((label, k) => {
-      const th = el("th", { textContent: label, title: label });
-      if (k === sortCol) th.dataset.sort = sortDir > 0 ? "asc" : "desc";
-      th.onclick = () => {
-        sortDir = k === sortCol ? -sortDir : 1;
-        sortCol = k;
-        sort();
-        header();
-        render();
-      };
+    if (select) {
+      const th = el("th", { className: "sel gk-stk" }, select === "multiple" ? all : "");
+      th.style.left = "0px";
+      tr.append(th);
+    }
+    layout.forEach(({ c: k }, n) => {
+      if (n === firstRight()) tr.append(el("th", { className: "fill" }));
+      const th = el("th");
+      th.dataset.col = k;
+      GridKit.heading(th, {
+        label: cols[k],
+        sort: k === sortCol ? sortDir : 0,
+        filtered: GridKit.filterOn(filters.get(k)),
+        numeric: kindOf(k) === "number",
+        texts: gt(),
+        onSort: () => {
+          sortDir = k === sortCol ? -sortDir : 1;
+          sortCol = k;
+          refresh();
+        },
+        onFilter: (btn) => GridKit.filterPopup({
+          anchor: btn, kind: kindOf(k), filter: filters.get(k), texts: gt(),
+          onChange: (nf) => {
+            if (nf) filters.set(k, nf); else filters.delete(k);
+            th.classList.toggle("gk-filtered", !!nf);
+            sort();
+            render();
+          },
+        }),
+        onMenu: (btn) => { measure(); GridKit.columnMenu({ anchor: btn, c: k, labels: cols, cols: colState, texts: gt(), onChange: refresh, onReset: reset }); },
+        onResize: (e) => { measure(); GridKit.resize(e, widths ? widths[k] : th.offsetWidth, (w) => { widths[k] = w; applyWidths(); }); },
+        onFit: () => { measure(); widths[k] = fitWidth(k); applyWidths(); },
+      });
       tr.append(th);
     });
+    if (firstRight() < 0) tr.append(el("th", { className: "fill" }));
     head.append(tr);
+    applyWidths();
+  }
+
+  /** The widths as columns of the table (fixed once measured) and the sticky offsets. */
+  function applyWidths() {
+    colgroup.textContent = "";
+    if (!widths) { table.classList.remove("fixed"); table.style.width = ""; sticky = layout.map(() => null); return; }
+    if (select) colgroup.append(el("col", { style: "width:" + selW() + "px" }));
+    let sum = selW();
+    const fr = firstRight();
+    layout.forEach(({ c }, n) => {
+      if (n === fr) colgroup.append(el("col"));
+      colgroup.append(el("col", { style: "width:" + widths[c] + "px" }));
+      sum += widths[c];
+    });
+    if (fr < 0) colgroup.append(el("col"));
+    table.classList.add("fixed");
+    table.style.width = "max(100%, " + sum + "px)";
+    sticky = GridKit.stickyLayout(layout, (c) => widths[c], selW());
+    const stickAll = (tr) => tr.querySelectorAll(":scope > [data-col]").forEach((cell, n) => GridKit.stick(cell, sticky[n]));
+    head.querySelectorAll("tr").forEach(stickAll);
+    body.querySelectorAll("tr[data-i]").forEach(stickAll);
+  }
+
+  /** Measures the columns as laid out by their contents (once, when the table is shown). */
+  function measure() {
+    if (widths || !wrap.offsetWidth) return;
+    const ths = head.querySelectorAll("th[data-col]");
+    if (ths.length !== cols.length) return;
+    widths = cols.map((_, k) => specWidths[k] || Math.min(Math.max(Math.ceil(ths[k].getBoundingClientRect().width) + 36, 56), 360));
+    firstWidths = widths.slice();
+    applyWidths();
+  }
+  new ResizeObserver(() => measure()).observe(wrap);
+
+  /** The width a column's contents need (the grip's double click). */
+  function fitWidth(k) {
+    const probe = el("span", { className: "ftable-probe" });
+    wrap.append(probe);
+    let w = 0;
+    const texts = new Set([cols[k]]);
+    for (const r of rows) texts.add(r[k] === null || r[k] === undefined ? "" : String(r[k]));
+    for (const t of texts) {
+      probe.textContent = t;
+      w = Math.max(w, probe.offsetWidth);
+      if (w > 800) break;
+    }
+    probe.remove();
+    const inputs = edit && edit[k] ? 16 : 0;
+    return Math.min(Math.max(w + 2 * 12 + 40 + inputs, 56), 800);
   }
 
   function sort() {
-    order = rows.map((_, i) => i);
+    const on = [...filters].filter(([k, flt]) => k < cols.length && GridKit.filterOn(flt));
+    order = [];
+    rows.forEach((r, i) => { if (on.every(([k, flt]) => GridKit.match(flt, r[k]))) order.push(i); });
     if (sortCol >= 0) order.sort((a, b) => sortDir * compareCells(rows[a][sortCol], rows[b][sortCol]) || a - b);
+    const filtered = on.length > 0;
+    bar.hidden = !filtered;
+    if (filtered) shownText.textContent = fill(gt().filtered, order.length, rows.length);
   }
+
+  function refresh() {
+    sort();
+    header();
+    render();
+  }
+
+  function reset() {
+    colState.reset();
+    filters.clear();
+    sortCol = -1;
+    sortDir = 1;
+    if (firstWidths) widths = firstWidths.slice();
+    refresh();
+  }
+
+  clear.onclick = () => { filters.clear(); refresh(); };
 
   /** Sends the value of an editable cell; text inputs wait until typing pauses. */
   function changed(i, k, input, now) {
     const e = edit[k];
     const v = e.type === "checkbox" ? input.checked : input.value;
     rows[i][k] = e.type === "number" && v.trim() !== "" && isFinite(v) ? Number(v) : v;
+    paintAll();
     const key = i + ":" + k;
     // Enter sends at once and the change on leaving the cell would again.
     if (now && !pendingCells.has(key) && input._sent === v) return;
@@ -753,8 +875,8 @@ function tableControl(f, id) {
     body.textContent = "";
     boxes = [];
     cellInputs = [];
-    if (!rows.length) {
-      body.append(el("tr", { className: "empty" }, el("td", { colSpan: cols.length + (select ? 1 : 0), textContent: texts.noRows })));
+    if (!order.length) {
+      body.append(el("tr", { className: "empty" }, el("td", { colSpan: layout.length + (select ? 1 : 0) + 1, textContent: texts.noRows })));
     }
     for (const i of order) {
       const tr = el("tr");
@@ -763,10 +885,15 @@ function tableControl(f, id) {
         const box = el("input", { type: select === "multiple" ? "checkbox" : "radio", name: id + "-sel", tabIndex: -1 });
         box.disabled = locked();
         boxes.push(box);
-        tr.append(el("td", { className: "sel" }, box));
+        const td = el("td", { className: "sel gk-stk" }, box);
+        td.style.left = "0px";
+        tr.append(td);
       }
-      cols.forEach((_, k) => {
+      const fr = firstRight();
+      layout.forEach(({ c: k }, n) => {
+        if (n === fr) tr.append(el("td", { className: "fill" }));
         const v = rows[i][k] === undefined ? null : rows[i][k];
+        let td;
         if (edit && edit[k]) {
           const input = cellInput(edit[k], v);
           input.disabled = locked();
@@ -775,15 +902,33 @@ function tableControl(f, id) {
           input.addEventListener(text ? "input" : "change", () => changed(i, k, input, !text));
           if (text) input.addEventListener("change", () => changed(i, k, input, true));
           cellInputs.push(input);
-          tr.append(el("td", { className: "edit " + edit[k].type }, input));
+          td = el("td", { className: "edit " + edit[k].type }, input);
         } else {
-          tr.append(el("td", { className: "cell" + (typeof v === "number" ? " num" : ""), textContent: v === null ? "" : String(v) }));
+          const t = v === null ? "" : String(v);
+          td = el("td", { className: "cell" + (typeof v === "number" ? " num" : ""), textContent: t });
+          if (t.length > 20) td.dataset.tip = t;
         }
+        td.dataset.col = k;
+        if (sticky[n]) GridKit.stick(td, sticky[n]);
+        tr.append(td);
       });
+      if (fr < 0) tr.append(el("td", { className: "fill" }));
       body.append(tr);
     }
     mark();
     markErrors();
+  }
+
+  /** Applies the conditional formats to the cells shown. */
+  function paintAll() {
+    if (!formats.length) return;
+    stats = GridKit.stats(formats, rows, cols.length);
+    body.querySelectorAll("tr[data-i]").forEach((tr) => {
+      const i = Number(tr.dataset.i);
+      const fm = GridKit.rowFormats(formats, rows[i], hits[i], stats);
+      const on = selected.has(i);
+      tr.querySelectorAll(":scope > td[data-col], :scope > td.fill").forEach((td) => GridKit.paint(td, fm[0], td.dataset.col ? fm[1].get(Number(td.dataset.col)) : null, on));
+    });
   }
 
   function mark() {
@@ -792,8 +937,11 @@ function tableControl(f, id) {
       tr.classList.toggle("selected", on);
       if (boxes[k]) boxes[k].checked = on;
     });
-    all.checked = rows.length > 0 && selected.size === rows.length;
-    all.indeterminate = selected.size > 0 && selected.size < rows.length;
+    // The box in the heading chooses the rows shown (filtered).
+    const shown = order.filter((i) => selected.has(i)).length;
+    all.checked = order.length > 0 && shown === order.length;
+    all.indeterminate = shown > 0 && shown < order.length;
+    paintAll();
   }
 
   /** Marks the cells and rows with errors and lists the first ones below the table. */
@@ -803,12 +951,10 @@ function tableControl(f, id) {
       const rowMsg = errors.get(i + ":-1") || "";
       tr.classList.toggle("bad-row", rowMsg !== "" || [...errors.keys()].some((x) => x.startsWith(i + ":")));
       tr.title = rowMsg;
-      tr.querySelectorAll("td").forEach((td, n) => {
-        const k = n - (select ? 1 : 0);
-        if (k < 0) return;
-        const msg = errors.get(i + ":" + k) || "";
+      tr.querySelectorAll("td[data-col]").forEach((td) => {
+        const msg = errors.get(i + ":" + td.dataset.col) || "";
         td.classList.toggle("bad", msg !== "");
-        td.title = msg;
+        td.title = msg || td.dataset.tip || "";
       });
     });
     list.textContent = "";
@@ -823,9 +969,16 @@ function tableControl(f, id) {
   }
 
   function focusCell(i, k) {
-    const tr = body.querySelector(`tr[data-i="${i}"]`);
-    if (!tr) return;
-    const input = tr.querySelector(`[data-c="${k}"]`) || tr.querySelector("[data-c]");
+    let tr = body.querySelector(`tr[data-i="${i}"]`);
+    if (!tr || (k >= 0 && colState.hidden.has(k))) {
+      // Filtered out or hidden: shown again.
+      filters.clear();
+      if (k >= 0) colState.setHidden(k, false);
+      refresh();
+      tr = body.querySelector(`tr[data-i="${i}"]`);
+      if (!tr) return;
+    }
+    const input = tr.querySelector(`:is(input, select)[data-c="${k}"]`) || tr.querySelector(":is(input, select)[data-c]");
     tr.scrollIntoView({ block: "nearest" });
     if (input && !input.disabled) input.focus();
   }
@@ -844,29 +997,27 @@ function tableControl(f, id) {
   });
   // Enter in a cell goes to the same column of the next row (Shift+Enter: the row above), as in Excel.
   body.addEventListener("keydown", (e) => {
-    const input = e.target.closest("[data-c]");
+    const input = e.target.closest(":is(input, select)[data-c]");
     if (!input || e.key !== "Enter" || e.isComposing) return;
     e.preventDefault();
     const trs = [...body.querySelectorAll("tr[data-i]")];
     const next = trs[trs.indexOf(input.closest("tr")) + (e.shiftKey ? -1 : 1)];
-    const target = next && next.querySelector(`[data-c="${input.dataset.c}"]`);
+    const target = next && next.querySelector(`:is(input, select)[data-c="${input.dataset.c}"]`);
     if (target) target.focus();
     if (input.tagName === "INPUT" && input.type !== "checkbox") changed(Number(input.closest("tr").dataset.i), Number(input.dataset.c), input, true);
   });
   all.onclick = (e) => {
     e.stopPropagation();
     if (locked()) { e.preventDefault(); return; }
-    if (selected.size === rows.length) selected.clear();
-    else rows.forEach((_, i) => selected.add(i));
+    if (order.length && order.every((i) => selected.has(i))) for (const i of order) selected.delete(i);
+    else for (const i of order) selected.add(i);
     mark();
     if (control.onChange) control.onChange();
   };
 
-  sort();
-  header();
-  render();
+  refresh();
   const control = {
-    node: el("div", {}, wrap, list),
+    node: el("div", {}, wrap, bar, list),
     get inputs() { return [...(select ? [all, ...boxes] : []), ...cellInputs]; },
     get: () => Array.from(selected).sort((a, b) => a - b),
     set: (v) => {
@@ -875,14 +1026,21 @@ function tableControl(f, id) {
       mark();
     },
     setTable: (m) => {
+      // The same columns keep how they are shown; others start again.
+      const same = m.columns.length === cols.length && m.columns.every((c, k) => c === cols[k]);
       cols = m.columns; rows = m.rows; select = m.select; edit = m.editable || null;
+      specWidths = m.widths || []; formats = m.formats || []; hits = m.hits || [];
       wrap.classList.toggle("editable", !!edit);
       selected.clear();
       errors.clear();
-      sortCol = -1;
-      sort();
-      header();
-      render();
+      if (!same) {
+        colState = new GridKit.Columns(cols.length);
+        filters.clear();
+        sortCol = -1;
+        widths = firstWidths = null;
+      }
+      refresh();
+      measure();
     },
     /** Errors of the whole table, or (row) of one row. */
     setCellErrors: (list, row) => {
@@ -890,6 +1048,8 @@ function tableControl(f, id) {
       for (const e of list) errors.set(e.row + ":" + e.col, e.message);
       markErrors();
     },
+    /** The formats with functions that a row matches again (after an edit). */
+    setHits: (row, h) => { hits[row] = h; paintAll(); },
     setOff: (v) => { off = v; },
     focus: () => wrap.focus(),
   };

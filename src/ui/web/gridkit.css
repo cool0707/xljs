@@ -1,0 +1,119 @@
+/* Shared parts of the built-in tables (gridkit.js): headings with a sort
+   mark, filter and menu buttons, sticky columns, the column menu and the
+   filter popup. */
+
+/* Headings: the label, the sort mark (a chevron) and the buttons, shown on
+   hover (the filter button stays while the column is filtered). */
+.gk-th { position: relative; cursor: pointer; }
+.gk-head { display: flex; align-items: center; gap: 2px; min-width: 0; height: 100%; }
+.gk-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk-sort { display: inline-flex; flex: none; width: 14px; color: var(--fg); }
+.gk-sort:empty { width: 0; }
+.gk-sort svg { width: 14px; height: 14px; }
+.gk-btn {
+  display: none;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 0;
+  height: 20px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-check);
+  background: transparent;
+  box-shadow: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.gk-btn svg { width: 14px; height: 14px; }
+.gk-btn:hover, .gk-btn.open { background: var(--border); color: var(--fg); }
+.gk-th:hover .gk-btn, .gk-btn.open, .gk-filtered .gk-filter { display: inline-flex; }
+.gk-filtered .gk-filter { color: var(--accent); }
+.gk-filter { margin-left: auto; }
+/* Numbers: the label on the right and the buttons on the left. */
+.gk-num .gk-label { margin-left: auto; }
+.gk-num .gk-filter { margin-left: 0; order: -1; }
+.gk-num .gk-menu { order: -2; }
+.gk-grip { position: absolute; top: 0; right: 0; width: 7px; height: 100%; cursor: col-resize; z-index: 2; }
+.gk-grip::after { content: ""; position: absolute; top: 25%; bottom: 25%; right: 0; width: 2px; border-radius: 1px; background: transparent; }
+.gk-th:hover .gk-grip::after { background: var(--border); }
+.gk-grip:hover::after, body.gk-resizing .gk-grip::after { background: var(--accent); }
+body.gk-resizing, body.gk-resizing * { cursor: col-resize !important; -webkit-user-select: none; user-select: none; }
+
+/* Sticky columns: the edge toward the scrolling columns has a line and a shadow. */
+.gk-stk { position: sticky; z-index: 1; }
+.gk-edge-l { box-shadow: inset -1px 0 0 var(--border), 4px 0 4px -2px rgba(0, 0, 0, .08); }
+.gk-edge-r { box-shadow: inset 1px 0 0 var(--border), -4px 0 4px -2px rgba(0, 0, 0, .08); }
+
+/* Popups: the column menu and the filter. */
+.gk-popup {
+  position: fixed;
+  z-index: 100;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-box);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: normal;
+  text-align: left;
+}
+.gk-menu-pop { width: 256px; }
+.gk-menu-pop .gk-title {
+  padding: var(--sp-s) var(--sp-m);
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gk-popup .gk-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-s);
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  padding: 6px var(--sp-m);
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  justify-content: flex-start;
+}
+.gk-popup .gk-item:hover:not(:disabled), .gk-popup .gk-item:focus-visible { background: var(--hover); outline: none; }
+.gk-popup .gk-item:disabled { color: var(--muted); opacity: .6; }
+.gk-popup .gk-item svg { width: 16px; height: 16px; flex: none; color: var(--muted); }
+.gk-popup .gk-sec { border-top: 1px solid var(--border); padding: var(--sp-s) var(--sp-m) 0; }
+.gk-popup .gk-sec-title { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+.gk-popup input[type=search], .gk-popup input[type=text], .gk-popup input[type=date], .gk-popup select {
+  width: 100%;
+  height: 28px;
+  min-height: 0;
+  font: inherit;
+}
+.gk-popup .gk-cols { list-style: none; margin: 6px 0 0; padding: 0; max-height: 224px; overflow-y: auto; }
+.gk-popup .gk-cols label { display: flex; align-items: center; gap: var(--sp-s); padding: 3px 0; cursor: pointer; }
+.gk-popup .gk-cols label > span:first-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gk-popup .gk-cols input { flex: none; margin: 0; }
+.gk-popup .gk-pin { margin-left: auto; flex: none; font-size: 12px; color: var(--accent); }
+.gk-popup .gk-foot { display: flex; gap: 6px; padding: var(--sp-s) var(--sp-m) 10px; }
+.gk-popup .gk-foot button { flex: 1; height: 28px; min-height: 0; padding: 0 6px; font-size: 12px; white-space: nowrap; }
+.gk-filter-pop { width: 248px; padding-top: var(--sp-m); }
+.gk-filter-pop .gk-cond { display: grid; gap: var(--sp-s); padding: 0 var(--sp-m); }
+.gk-filter-pop .gk-input { position: relative; }
+.gk-filter-pop .gk-input[hidden] { display: none; }
+.gk-filter-pop .gk-input svg { position: absolute; left: 8px; top: 7px; width: 14px; height: 14px; color: var(--muted); pointer-events: none; }
+.gk-filter-pop .gk-input svg + input { padding-left: 28px; }
+.gk-filter-pop .gk-join { display: flex; gap: var(--sp-l); padding: var(--sp-s) var(--sp-m); }
+.gk-filter-pop .gk-join[hidden], .gk-filter-pop .gk-cond[hidden] { display: none; }
+.gk-filter-pop .gk-join label { display: flex; align-items: center; gap: var(--sp-xs); cursor: pointer; }
+.gk-filter-pop .gk-join input { margin: 0; }
+.gk-filter-pop .gk-foot { justify-content: flex-end; padding-top: var(--sp-m); }
+.gk-filter-pop .gk-foot button { flex: none; padding: 0 var(--sp-m); }

@@ -571,7 +571,7 @@ if (!v) exit();
 | `file` `saveFile` | ファイルハンドルか `null`（`accept: [".xlsx"]`） |
 | `files` | ファイルハンドルの配列 |
 | `folder` | フォルダハンドルか `null` |
-| `table` | 表から選んだ行（`rows` `columns` `selectable: true | "single"`） |
+| `table` | 表から選んだ行（`rows` `columns` `selectable: true | "single"`。色分けは `formats`（下の ui.table）） |
 | `switch` | `true` / `false`（オン・オフのスイッチ） |
 | `checkboxes` | 選んだ文字列の配列（`options` の複数選択。`required` は 1 つ以上） |
 | `segmented` | 選んだ文字列（`options` を横に並べたボタン。`multiple: true` なら配列） |
@@ -704,7 +704,19 @@ ui.table(rows, {
 });
 ```
 
-表は並べ替え・絞り込み・コピー・CSV / Excel への保存が画面上でできる。
+表は並べ替え・絞り込み（全体と列ごと）・列の固定・列の表示/非表示・幅の変更・コピー・CSV / Excel への保存が画面上でできる（フォームの `table` 項目も同じ）。スクリプトで作らない。
+
+色分けは `formats`（`ui.table` とフォームの `table` 項目で共通）。先の規則が優先。
+
+```js
+ui.table(rows, { formats: [
+  { column: "金額", gte: 100000, color: "#9c0006", background: "#ffc7ce" }, // 条件: equals notEquals gt gte lt lte between contains startsWith endsWith empty
+  { column: "状態", equals: "未完了", row: true, bold: true },              // row: true で行全体
+  { column: "金額", dataBar: true },                                        // データバー（数値の列。太さは { color, height: 0.3 }）
+  { column: "達成率", colorScale: ["#f8696b", "#ffeb84", "#63be7b"] },      // カラースケール（2 色か 3 色）
+  { when: (row) => row.期限 < new Date(), color: "red" },                    // 関数（column なしは行ごと、行全体に付く）
+] });
+```
 
 - `ui.table` は表示と選択だけで、セルは編集できない。編集させるときは `ui.form` の `type: "table"` に `editable: true`（上の「入力フォーム」）。
 - `onDoubleClick` は `ui.table` だけにある（フォームの表にはない）。`e.column` はダブルクリックした列の見出し（行番号の欄なら `null`）、`e.key` は列のキー。`selectable: "single"` と一緒に指定すると、ダブルクリックでは OK にならない。

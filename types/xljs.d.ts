@@ -221,6 +221,8 @@ declare global {
     forms(options: FormsOptions): Promise<(FormValues | null)[]>;
     /**
      * 表を表示する（並べ替え・絞り込み・列幅の変更・コピー・CSV/Excel に保存）。
+     * 列見出しのボタンで列ごとのフィルタ、列メニューで列の固定（左端・右端・この列まで）と表示・非表示を変えられる。
+     * formats で条件付き書式を付けられる。
      * selectable を指定すると OK/キャンセル付きになり、選んだ行（元のオブジェクト）を返す。キャンセルは []。
      */
     table<T>(rows: Iterable<T>, options: TableSelectOptions): Promise<T[]>;
@@ -329,6 +331,8 @@ declare global {
     rows?: number | readonly unknown[];
     /** table の列（ui.table の columns と同じ。既定はオブジェクトのキー）。列ごとに編集の可否と検証を指定できる */
     columns?: (string | FormTableColumn)[];
+    /** table の条件付き書式（ui.table の formats と同じ） */
+    formats?: readonly TableFormat[];
     /** table で行を選べるようにする（クリックで選択。true は "multiple"） */
     selectable?: boolean | "single" | "multiple";
     /**
@@ -643,8 +647,71 @@ declare global {
     key: string | number;
     /** 見出し（既定は key） */
     label?: string;
-    /** 列幅（px）。既定は内容から決める */
+    /** 列幅（px）。既定は内容から決める（フォームの表では最初に表示したときの幅のまま、並べ替えても変わらない） */
     width?: number;
+  }
+
+  /**
+   * 表の条件付き書式（ui.table とフォームの table の formats）。
+   * column の列のセルが条件をすべて満たすと書式を付ける（条件がなければすべてのセル）。
+   * 複数の規則が当てはまるときは先の規則が優先される（書式の種類ごと）。
+   * 値の比較は表示する値で行う（Date は日付の文字列、文字列の比較は大文字小文字・全角半角を区別しない）。
+   * @example
+   * ui.table(rows, { formats: [
+   *   { column: "金額", gte: 100000, color: "#9c0006", background: "#ffc7ce" },
+   *   { column: "状態", equals: "未完了", row: true, bold: true },
+   *   { column: "進捗", dataBar: true },
+   *   { column: "点数", colorScale: ["#f8696b", "#ffeb84", "#63be7b"] },
+   *   { when: (row) => row.期限 < new Date(), color: "red", row: true },
+   * ] });
+   */
+  interface TableFormat {
+    /** 条件を調べて書式を付ける列（キーか見出し。配列で複数）。省略するとすべての列 */
+    column?: string | number | readonly (string | number)[];
+    /** 等しい（文字列は大文字小文字を区別しない） */
+    equals?: unknown;
+    /** 等しくない */
+    notEquals?: unknown;
+    /** より大きい（数値どうし、日付どうし、文字列どうしで比べる） */
+    gt?: number | string | Date;
+    /** 以上 */
+    gte?: number | string | Date;
+    /** 未満 */
+    lt?: number | string | Date;
+    /** 以下 */
+    lte?: number | string | Date;
+    /** 範囲（両端を含む） */
+    between?: readonly [number | string | Date, number | string | Date];
+    /** 含む / 含まない / で始まる / で終わる */
+    contains?: string;
+    notContains?: string;
+    startsWith?: string;
+    endsWith?: string;
+    /** true なら空のセル、false なら空でないセル */
+    empty?: boolean;
+    /**
+     * 関数で判定する（ほかの条件の代わり）。value はセルの値、row は行、index は rows の位置。
+     * column を省略すると行ごとに 1 回呼ばれ、value にも行が渡り、書式は行全体に付く。
+     * 表を表示するときと、フォームの表でセルが編集されたときに呼ばれる
+     */
+    when?(value: any, row: any, index: number): unknown;
+    /** 書式を当てはまったセルではなく行全体に付ける */
+    row?: boolean;
+    /** 文字の色・背景の色（CSS の色。"red"、"#ffc7ce" など） */
+    color?: string;
+    background?: string;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+    /** 取り消し線 */
+    strike?: boolean;
+    /**
+     * データバー（数値のセル。列の最小値〜最大値で長さを決める）。true は既定の青、文字列ならその色。
+     * { color, height } で太さも指定できる（height は行の高さに対する割合で 0 より大きく 1 以下。既定 0.75）
+     */
+    dataBar?: boolean | string | { color?: string; height?: number };
+    /** カラースケール（数値のセル。最小値・（中間・）最大値の色の 2 色か 3 色） */
+    colorScale?: readonly string[];
   }
 
   /** フォームの table の列。編集できる列は入力欄になり、入力のたびに検証される */
@@ -673,6 +740,8 @@ declare global {
      * 配列の行に文字列を指定すると、その位置の列の見出しになる
      */
     columns?: (string | TableColumn)[];
+    /** 条件付き書式 */
+    formats?: readonly TableFormat[];
     width?: number;
     height?: number;
     /** false にするとウィンドウの大きさを固定する。既定は true */

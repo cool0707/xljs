@@ -943,3 +943,59 @@ console.log(r.map((x) => x && Object.values(x).join()).join("|"));
 "#;
     form_case("forms.js", src, "b x\ny|x\n", pages);
 }
+
+#[test]
+fn table_formats() {
+    let pages: Vec<PageFn> = vec![
+        // ui.table: the rules go with init, the rows with the hits of the rules with functions.
+        Box::new(|p| {
+            let init = p.expect("init");
+            let got = as_json(&init["formats"]);
+            check!(
+                p,
+                got == r##"[{"bar":null,"cols":[1],"conds":[["gt",5]],"fn":false,"row":false,"scale":null,"style":{"bold":true,"color":"red"}},{"bar":{"color":"#638EC6","height":0.3},"cols":[1],"conds":[],"fn":false,"row":false,"scale":null,"style":{}},{"bar":null,"cols":[2],"conds":[["between",["2026-01-01","2026-12-31"]]],"fn":false,"row":true,"scale":null,"style":{"background":"#ffc7ce"}},{"bar":null,"cols":null,"conds":[],"fn":true,"row":false,"scale":null,"style":{"italic":true}},{"bar":null,"cols":[0],"conds":[],"fn":true,"row":false,"scale":["red","green"],"style":{}}]"##,
+                "formats = {got}"
+            );
+            let rows = p.expect("rows");
+            let got = as_json(&rows["hits"]);
+            check!(p, got == r#"[["4:0"],["3:-1"]]"#, "hits = {got}");
+            p.send(json!({"type": "close"}), &[]);
+            p.wait_closed();
+        }),
+        // A form's table: the same, and an edit sends the row's hits again.
+        Box::new(|p| {
+            let init = p.expect("init");
+            let t = &init["fields"][0]["table"];
+            let got = as_json(&json!([t["formats"], t["hits"], t["widths"]]));
+            check!(
+                p,
+                got == r#"[[{"bar":null,"cols":[1],"conds":[],"fn":true,"row":true,"scale":null,"style":{"color":"red"}}],[[],["0:1"]],[0,80]]"#,
+                "table = {got}"
+            );
+            p.expect("cellErrors");
+            p.send(json!({"type": "cell", "field": "t", "row": 0, "col": 1, "value": "9"}), &[]);
+            let got = as_json(&p.expect("cellErrors"));
+            check!(p, got == r#"{"errors":[],"field":"t","hits":["0:1"],"row":0,"type":"cellErrors"}"#, "cellErrors = {got}");
+            p.send(json!({"type": "submit", "values": {}}), &[]);
+            p.wait_closed();
+        }),
+    ];
+    let src = r##"
+const rows = [{ 名前: "a", 数: 7, 日: new Date(2026, 3, 1) }, { 名前: "b", 数: 1, 備考: "新規" }];
+const view = ui.table(rows, { columns: ["名前", "数", "日"], formats: [
+  { column: "数", gt: 5, color: "red", bold: true },
+  { column: 1, dataBar: { height: 0.3 } },
+  { column: "日", between: [new Date(2026, 0, 1), new Date(2026, 11, 31)], background: "#ffc7ce", row: true },
+  { when: (r) => r.備考 === "新規", italic: true },
+  { column: "名前", when: (v, row, i) => v === "a" && i === 0, colorScale: ["red", "green"] },
+] });
+await view.closed;
+const v = await ui.form({ fields: [{
+  name: "t", type: "table", rows: [{ 名前: "a", 数: 1 }, { 名前: "b", 数: 8 }], editable: true,
+  columns: ["名前", { key: "数", width: 80 }],
+  formats: [{ column: "数", when: (v) => v > 5, row: true, color: "red" }],
+}]});
+console.log(JSON.stringify(v.t));
+"##;
+    form_case("formats.js", src, "[{\"名前\":\"a\",\"数\":9},{\"名前\":\"b\",\"数\":8}]\n", pages);
+}
