@@ -768,6 +768,10 @@ fn test_cases_in_the_session() {
     // A case cannot be recorded under a name that is taken or not a name.
     page(&mut s, json!({"op": "testRecord", "name": "月次"}));
     assert!(w.take("error")[0]["message"].as_str().unwrap().contains("すでにあります"));
+    // Deleting asks first.
+    write(&dir, ".xljs/tests/月次/case.json", r#"{"script": "main.js", "variants": {"x": {}}}"#);
+    page(&mut s, json!({"op": "testRemove", "name": "月次/x"}));
+    assert!(std::fs::read_to_string(dir.join(".xljs/tests/月次/case.json")).unwrap().contains("\"x\""));
     page(&mut s, json!({"op": "testRecord", "name": "a/b"}));
     assert!(w.take("error")[0]["message"].as_str().unwrap().contains("ケース名「a/b」は使えません"));
 }

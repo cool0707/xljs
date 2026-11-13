@@ -163,6 +163,15 @@ fn field_event(f: &FormField) -> Value {
     if !f.options.is_empty() {
         m.insert("options".into(), options(&f.options));
     }
+    if let Some(x) = f.min {
+        m.insert("min".into(), json!(x));
+    }
+    if let Some(x) = f.max {
+        m.insert("max".into(), json!(x));
+    }
+    if f.max_length > 0 {
+        m.insert("maxLength".into(), f.max_length.into());
+    }
     if !f.accept.is_empty() {
         m.insert("accept".into(), json!(f.accept));
     }

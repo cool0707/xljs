@@ -1319,6 +1319,12 @@
         b.disabled = tests.running;
         head.append(b);
       }
+      if (!o.variant) {
+        const b = el("button", { type: "button", className: "link", title: L.testsSuggestTip, textContent: L.testsSuggest, onclick: () => { tests.asked = true; send({ op: "testSuggest", name: o.case }); } });
+        b.disabled = tests.running;
+        head.append(b);
+      }
+      head.append(el("button", { type: "button", className: "link", textContent: L.testsRemove, onclick: () => send({ op: "testRemove", name: o.name }) }));
       const li = el("li", { className: "test " + o.status }, head);
       if (open && lines.length) {
         if (o.status === "fail" || o.status === "new") li.append(el("p", { className: "muted", textContent: o.status === "fail" ? L.testsFailLead : L.testsNewLead }));

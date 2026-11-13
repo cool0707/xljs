@@ -573,6 +573,127 @@ pub fn record(u: std::sync::Arc<dyn crate::ui::Ui>, script: &str, name: &str, ar
     Ok(Recorded { path, result, failed })
 }
 
+// ---- variants from the fields of the form ----
+
+fn number(x: f64) -> Value {
+    if x == x.trunc() && x.abs() < 1e15 { serde_json::json!(x as i64) } else { serde_json::json!(x) }
+}
+
+/// The variants worth trying for a field of a form (an event of the
+/// transcript), as (name, value): the edges of what it accepts and just
+/// beyond, the other choices. base is the value of the case's own run.
+fn field_variants(f: &Value, base: &Value) -> Vec<(String, Value)> {
+    let label = match text(f, "label") {
+        "" => text(f, "name"),
+        l => l,
+    };
+    let kind = text(f, "kind");
+    let mut out = Vec::new();
+    let required = f.get("required").and_then(Value::as_bool).unwrap_or(false);
+    if required && !matches!(kind, "checkbox" | "table" | "note") {
+        out.push((t!("test.suggestEmpty", label), if kind == "files" || kind == "tags" || kind == "checkboxes" { serde_json::json!([]) } else { "".into() }));
+    }
+    match kind {
+        "number" => {
+            let (min, max) = (f.get("min").and_then(Value::as_f64), f.get("max").and_then(Value::as_f64));
+            if let Some(m) = min {
+                out.push((t!("test.suggestMin", label, number(m)), number(m)));
+                out.push((t!("test.suggestBelowMin", label, number(m - 1.0)), number(m - 1.0)));
+            }
+            if let Some(m) = max {
+                out.push((t!("test.suggestMax", label, number(m)), number(m)));
+                out.push((t!("test.suggestAboveMax", label, number(m + 1.0)), number(m + 1.0)));
+            }
+            if min.is_none() && max.is_none() {
+                out.push((t!("test.suggestValue", label, 0), number(0.0)));
+                out.push((t!("test.suggestValue", label, -1), number(-1.0)));
+            }
+        }
+        "checkbox" => {
+            let on = base.as_bool().unwrap_or(false);
+            out.push((t!("test.suggestValue", label, !on), (!on).into()));
+        }
+        "select" | "radio" => {
+            for o in f.get("options").and_then(Value::as_array).into_iter().flatten().take(8) {
+                // "value" or ["value", "label"]
+                let (v, shown) = match o {
+                    Value::Array(a) => (a.first().cloned().unwrap_or_default(), a.get(1).and_then(Value::as_str).unwrap_or("").to_string()),
+                    v => (v.clone(), v.as_str().unwrap_or("").to_string()),
+                };
+                out.push((t!("test.suggestValue", label, shown), v));
+            }
+        }
+        _ => {}
+    }
+    if let Some(n) = f.get("maxLength").and_then(Value::as_u64).filter(|n| *n > 0 && *n <= 2000) {
+        out.push((t!("test.suggestLength", label, n), "あ".repeat(n as usize).into()));
+        out.push((t!("test.suggestLength", label, n + 1), "あ".repeat(n as usize + 1).into()));
+    }
+    // A number of the form's values is a string.
+    let same = |a: &Value, b: &Value| a == b || quote(a).trim_matches('"') == quote(b).trim_matches('"');
+    out.retain(|(_, v)| !same(v, base));
+    out
+}
+
+/// Adds variants to the case named name (of the script or folder at path)
+/// that try the edges of the fields of its first form, and returns their
+/// names. Nothing that is there is changed: only variants are added, and
+/// they are not approved.
+pub fn suggest(path: &str, name: &str, o: &RunOptions) -> Result<Vec<String>> {
+    let (root, _) = target(path)?;
+    let case = cases(&root)?.into_iter().find(|c| c.name == name).ok_or_else(|| err!("test.noSuchCase", name))?;
+    let plan = case.plans().remove(0);
+    let events = run(&case, &plan, o.limit.unwrap_or(DEFAULT_LIMIT), &o.version)?;
+    let fields: Vec<&Value> = events.iter().skip_while(|e| text(e, "type") != "form").skip(1).take_while(|e| matches!(text(e, "type"), "field" | "row")).filter(|e| text(e, "type") == "field").collect();
+    let answer = plan.answers.get("form").and_then(|l| l.first()).cloned().unwrap_or_default();
+    let file = case.dir.join("case.json");
+    let source = std::fs::read_to_string(&file).map_err(|e| Error::path("open", file.display().to_string(), e))?;
+    let mut doc: Value = serde_json::from_str(source.strip_prefix('\u{feff}').unwrap_or(&source))?;
+    let Some(top) = doc.as_object_mut() else { return Ok(Vec::new()) };
+    let variants = top.entry("variants").or_insert_with(|| serde_json::json!({}));
+    let Some(variants) = variants.as_object_mut() else { return Ok(Vec::new()) };
+    let mut added = Vec::new();
+    for f in fields {
+        let field = text(f, "name");
+        let base = answer.get(field).or_else(|| f.get("value")).cloned().unwrap_or_default();
+        for (label, value) in field_variants(f, &base) {
+            let label: String = label.chars().map(|c| if c.is_control() || "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
+            let label = label.trim_start_matches(['_', '.']).trim_end_matches(['.', ' ']).to_string();
+            if label.is_empty() || variants.contains_key(&label) {
+                continue;
+            }
+            variants.insert(label.clone(), serde_json::json!({ "form": [{ field: value }] }));
+            added.push(label);
+        }
+    }
+    if !added.is_empty() {
+        let out = serde_json::to_string_pretty(&doc).unwrap_or_default() + "\n";
+        std::fs::write(&file, out).map_err(|e| Error::path("open", file.display().to_string(), e))?;
+    }
+    Ok(added)
+}
+
+/// Removes a variant of a case with its approved result, or (variant "")
+/// the whole case with its input files.
+pub fn remove(path: &str, name: &str, variant: &str) -> Result<()> {
+    let (root, _) = target(path)?;
+    let case = cases(&root)?.into_iter().find(|c| c.name == name).ok_or_else(|| err!("test.noSuchCase", name))?;
+    if variant.is_empty() {
+        return std::fs::remove_dir_all(&case.dir).map_err(|e| Error::path("remove", case.dir.display().to_string(), e));
+    }
+    let file = case.dir.join("case.json");
+    let source = std::fs::read_to_string(&file).map_err(|e| Error::path("open", file.display().to_string(), e))?;
+    let mut doc: Value = serde_json::from_str(source.strip_prefix('\u{feff}').unwrap_or(&source))?;
+    let gone = doc.get_mut("variants").and_then(Value::as_object_mut).and_then(|v| v.shift_remove(variant)).is_some();
+    if !gone {
+        return Err(err!("test.noSuchCase", format!("{name}/{variant}")));
+    }
+    let out = serde_json::to_string_pretty(&doc).unwrap_or_default() + "\n";
+    std::fs::write(&file, out).map_err(|e| Error::path("open", file.display().to_string(), e))?;
+    let _ = std::fs::remove_file(case.expected_path(variant));
+    Ok(())
+}
+
 /// Creates a case for script with an empty input folder and a case.json
 /// to fill in. Returns the file.
 pub fn new_case(script: &str, name: &str, today: &str) -> Result<PathBuf> {

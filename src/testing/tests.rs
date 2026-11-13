@@ -463,3 +463,52 @@ console.log("終わり", v.x, picked.map((r) => r.a).join("+"));
     let _ = std::fs::remove_dir_all(&root);
     let _ = std::fs::remove_dir_all(&out);
 }
+
+#[test]
+fn suggest_and_remove_variants() {
+    let _g = lock_lang("ja");
+    let root = project(
+        r#"await ui.form({
+  title: "登録",
+  fields: [
+    { name: "名前", label: "名前", required: true, maxLength: 3 },
+    { name: "数", label: "数量", type: "number", min: 1, max: 9, default: 3 },
+    { name: "区分", label: "区分", type: "select", options: ["通常", "至急"], default: "通常" },
+    { name: "控え", label: "控え/出す", type: "checkbox" },
+  ],
+  onSubmit(v, ctx) { ctx.log(`${v.名前} x${v.数} ${v.区分} ${v.控え}`); },
+});
+"#,
+        r#"{"script": "main.js", "answers": {"form": [{"名前": "山田", "数": 9}]}, "variants": {"手書き": {"form": [{"数": 5}]}}}"#,
+    );
+    let path = root.to_string_lossy().into_owned();
+    let added = suggest(&path, "基本", &options(false)).unwrap();
+    // The value of the case's own run (数 = 9, 区分 = 通常) is not suggested again.
+    assert_eq!(added, ["名前が空", "名前が3文字", "名前が4文字", "数量が下限（1）", "数量が下限未満（0）", "数量が上限超え（10）", "区分＝至急", "控え_出す＝true"]);
+    // What was there stays; a second time adds nothing.
+    let c = cases(&root).unwrap().remove(0);
+    assert_eq!(c.variants.len(), 9);
+    assert_eq!((c.variants[0].name.as_str(), serde_json::json!(c.variants[0].answers)), ("手書き", serde_json::json!({"form": [{"数": 5}]})));
+    assert_eq!(serde_json::json!(c.variants[5].answers), serde_json::json!({"form": [{"数": 0}]}));
+    assert!(suggest(&path, "基本", &options(false)).unwrap().is_empty());
+    assert!(suggest(&path, "ない", &options(false)).is_err());
+
+    // The suggestions run: inside the limits the script runs, outside the form refuses.
+    let r = run_dir(&root, true);
+    assert!(r.iter().all(|o| o.problems.is_empty() && o.approved), "{:?}", r.iter().map(|o| (&o.variant, &o.problems)).collect::<Vec<_>>());
+    let of = |v: &str| described(r.iter().find(|o| o.variant == v).unwrap());
+    assert!(of("数量が下限（1）").contains("out: 山田 x1 通常 false"));
+    assert!(of("数量が下限未満（0）").contains("form error: 数:"));
+    assert!(of("名前が4文字").contains("form error: 名前:"));
+    assert!(of("区分＝至急").contains("out: 山田 x9 至急 false"));
+
+    // Removing a variant takes its approved result along; removing the case, its folder.
+    let expected = c.expected_path("区分＝至急");
+    assert!(expected.is_file());
+    remove(&path, "基本", "区分＝至急").unwrap();
+    assert!(!expected.exists() && cases(&root).unwrap()[0].variants.len() == 8);
+    assert!(remove(&path, "基本", "区分＝至急").is_err());
+    remove(&path, "基本", "").unwrap();
+    assert!(!c.dir.exists());
+    let _ = std::fs::remove_dir_all(&root);
+}

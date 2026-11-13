@@ -475,6 +475,30 @@ impl Session {
             "tests" => self.start_tests("", false)?,
             "testApprove" => self.start_tests(&r.name, true)?,
             "testRecord" => self.start_record(&r.name)?,
+            "testSuggest" => {
+                // Variants that try the edges of the form's fields; then all runs again.
+                if let Some(t) = self.testing.take() {
+                    t.run.kill();
+                }
+                let p = self.project()?.clone();
+                let mut args = self.o.run_args.clone();
+                args.extend(["test".to_string(), "--suggest".to_string(), r.name.clone(), p.entry.to_string_lossy().into_owned()]);
+                let id = self.next_run;
+                self.next_run += 1;
+                self.post(json!({"type": "testsStarted", "runs": 1, "approve": false}));
+                let run = Run::start(&self.o.exe, &args, &p.dir, &[], id, self.tx.clone(), Event::Test)?;
+                self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve: true });
+            }
+            "testRemove" => {
+                let p = self.project()?.clone();
+                let (case, variant) = r.name.split_once('/').unwrap_or((r.name.as_str(), ""));
+                let what = r.name.trim_end_matches('/');
+                if !self.u.confirm(&t!("dev.title"), &if variant.is_empty() { t!("dev.testRemoveCase", what) } else { t!("dev.testRemoveVariant", what) }) {
+                    return Ok(());
+                }
+                crate::testing::remove(&p.entry.to_string_lossy(), case, variant)?;
+                self.auto_tests();
+            }
             "testPrompt" => {
                 let p = self.project()?;
                 let Some(o) = self.tests.iter().find(|o| o["name"] == r.name.as_str()) else { return Ok(()) };

@@ -14,6 +14,8 @@ struct Args {
     only: String,
     limit: Option<Duration>,
     new: Option<String>,
+    /// --suggest: the case to add variants to.
+    suggest: Option<String>,
     /// --record: the name of the case; the paths after the script are its arguments.
     record: Option<String>,
     paths: Vec<String>,
@@ -53,6 +55,7 @@ fn parse(args: &[String]) -> Result<Args> {
             "only" => a.only = value()?,
             "new" => a.new = Some(value()?),
             "record" => a.record = Some(value()?),
+            "suggest" => a.suggest = Some(value()?),
             "timeout" => {
                 let v = value()?;
                 match v.parse::<f64>() {
@@ -149,6 +152,18 @@ pub(super) fn cmd_test(con: &ConsoleState, args: &[String], ui_mode: &str, answe
         };
     }
     let o = RunOptions { approve: a.approve, only: a.only.clone(), limit: a.limit, version: super::version() };
+    if let Some(name) = &a.suggest {
+        return match testing::suggest(&a.paths[0], name, &o) {
+            Ok(added) => {
+                for n in &added {
+                    println!("{}/{n}", name);
+                }
+                println!("{}", t!("test.suggested", added.len()));
+                0
+            }
+            Err(e) => con.fail(None, &e),
+        };
+    }
     let json = a.json;
     let outcomes = match testing::run_all(&a.paths[0], &o, |r| {
         if !json {

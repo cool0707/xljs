@@ -3174,6 +3174,7 @@
         fields: fields.filter((f) => !f.chart && !inactive(fields, f, wire)).map((f) => Object.assign({
           name: f.name, label: promptLabel(f), type: promptType(f), options: f.options, required: f.required, custom: f.custom,
           placeholder: f.placeholder, help: f.help, accept: f.accept, value: wire[f.name], error: errors[f.name] || "",
+          min: f.min, max: f.max, maxLength: f.maxLength,
           tab: f.tab >= 0 ? o.tabs[f.tab] : "",
           group: f.group >= 0 ? o.groups[f.group].label : "", groupHelp: f.group >= 0 ? o.groups[f.group].help : "",
         }, f.table ? Object.assign({ select: f.table.select }, tableText(f.table)) : {},
