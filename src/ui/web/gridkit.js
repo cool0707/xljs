@@ -458,7 +458,7 @@ const GridKit = (() => {
 
   /**
    * The styles of a row's cells: [rowStyle, Map(column -> style)] where a
-   * style is { color, background, bold, italic, underline, strike, bar: [color, from, to] }.
+   * style is { color, background, bold, italic, underline, strike, bar: [color, from, to, height] }.
    * hits: the "rule:column" keys of the rules with functions that matched.
    */
   function rowFormats(rules, row, hits, st) {
@@ -486,7 +486,7 @@ const GridKit = (() => {
         if (r.bar && s.bar === undefined) {
           const lo = Math.min(0, mm[0]), hi = Math.max(0, mm[1]), span = hi - lo || 1;
           const a = (Math.min(0, v) - lo) / span, b = (Math.max(0, v) - lo) / span;
-          s.bar = [r.bar, a, b];
+          s.bar = [r.bar.color, a, b, r.bar.height];
         }
         if (r.scale && s.background === undefined) {
           const span = mm[1] - mm[0];
@@ -510,14 +510,19 @@ const GridKit = (() => {
     const deco = [get("underline") ? "underline" : "", get("strike") ? "line-through" : ""].filter(Boolean).join(" ");
     st.textDecoration = deco;
     const bar = s && s.bar;
-    const layers = [];
+    const layers = [], sizes = [];
     if (bar) {
-      const [color, a, b] = bar;
+      // A band of the row's height (height: 0 to 1), centered.
+      const [color, a, b, h] = bar;
       const c = `color-mix(in srgb, ${color} 55%, transparent)`;
       layers.push(`linear-gradient(to right, transparent ${a * 100}%, ${c} ${a * 100}%, ${c} ${b * 100}%, transparent ${b * 100}%)`);
+      sizes.push(`100% ${Math.round(h * 100)}%`);
     }
-    if (bg && !selected) layers.push(`linear-gradient(${bg}, ${bg})`);
+    if (bg && !selected) { layers.push(`linear-gradient(${bg}, ${bg})`); sizes.push("100% 100%"); }
     st.backgroundImage = layers.join(", ");
+    st.backgroundSize = sizes.join(", ");
+    st.backgroundPosition = layers.length ? "left center" : "";
+    st.backgroundRepeat = layers.length ? "no-repeat" : "";
     cell.classList.toggle("gk-fmt", !!(bg && !selected) || !!bar);
   }
 

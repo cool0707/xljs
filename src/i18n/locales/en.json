@@ -1017,6 +1017,7 @@
     "table.badFormats": "{0}: formats must be an array of objects",
     "table.badFormatKey": "{0}: unknown key \"{1}\" in formats",
     "table.badFormatColumn": "{0}: formats names column \"{1}\", which the table does not have",
+    "table.badBarHeight": "{0}: the height of formats' dataBar must be a number above 0 and at most 1 (the row's height is 1; \"{1}\" was given)",
     "table.badFormatValue": "{0}: formats' {1} must be an array of 2 values (colorScale: 2 or 3 colors)",
     "grid.filterOf": "Filter {0}",
     "grid.menuOf": "Column menu of {0}",

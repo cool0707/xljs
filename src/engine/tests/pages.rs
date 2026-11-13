@@ -953,7 +953,7 @@ fn table_formats() {
             let got = as_json(&init["formats"]);
             check!(
                 p,
-                got == r##"[{"bar":null,"cols":[1],"conds":[["gt",5]],"fn":false,"row":false,"scale":null,"style":{"bold":true,"color":"red"}},{"bar":"#638EC6","cols":[1],"conds":[],"fn":false,"row":false,"scale":null,"style":{}},{"bar":null,"cols":[2],"conds":[["between",["2026-01-01","2026-12-31"]]],"fn":false,"row":true,"scale":null,"style":{"background":"#ffc7ce"}},{"bar":null,"cols":null,"conds":[],"fn":true,"row":false,"scale":null,"style":{"italic":true}},{"bar":null,"cols":[0],"conds":[],"fn":true,"row":false,"scale":["red","green"],"style":{}}]"##,
+                got == r##"[{"bar":null,"cols":[1],"conds":[["gt",5]],"fn":false,"row":false,"scale":null,"style":{"bold":true,"color":"red"}},{"bar":{"color":"#638EC6","height":0.3},"cols":[1],"conds":[],"fn":false,"row":false,"scale":null,"style":{}},{"bar":null,"cols":[2],"conds":[["between",["2026-01-01","2026-12-31"]]],"fn":false,"row":true,"scale":null,"style":{"background":"#ffc7ce"}},{"bar":null,"cols":null,"conds":[],"fn":true,"row":false,"scale":null,"style":{"italic":true}},{"bar":null,"cols":[0],"conds":[],"fn":true,"row":false,"scale":["red","green"],"style":{}}]"##,
                 "formats = {got}"
             );
             let rows = p.expect("rows");
@@ -984,7 +984,7 @@ fn table_formats() {
 const rows = [{ 名前: "a", 数: 7, 日: new Date(2026, 3, 1) }, { 名前: "b", 数: 1, 備考: "新規" }];
 const view = ui.table(rows, { columns: ["名前", "数", "日"], formats: [
   { column: "数", gt: 5, color: "red", bold: true },
-  { column: 1, dataBar: true },
+  { column: 1, dataBar: { height: 0.3 } },
   { column: "日", between: [new Date(2026, 0, 1), new Date(2026, 11, 31)], background: "#ffc7ce", row: true },
   { when: (r) => r.備考 === "新規", italic: true },
   { column: "名前", when: (v, row, i) => v === "a" && i === 0, colorScale: ["red", "green"] },

@@ -35,14 +35,14 @@ ui.table(rows, {
   formats: [
     { column: "金額", gte: 100000, color: "#9c0006", background: "#ffc7ce" },  // 10 万以上を赤く
     { column: "状態", equals: "未完了", row: true, bold: true },               // 行全体を太字
-    { column: "金額", dataBar: true },                                         // データバー
+    { column: "金額", dataBar: true },                                         // データバー（太さは dataBar: { color, height: 0.3 } など）
     { column: "達成率", colorScale: ["#f8696b", "#ffeb84", "#63be7b"] },       // 赤 → 黄 → 緑
     { when: (row) => row.期限 < new Date(), color: "red", row: true },         // 関数で判定（行ごと）
   ],
 });
 ```
 
-条件は `equals` `notEquals` `gt` `gte` `lt` `lte` `between: [下限, 上限]` `contains` `notContains` `startsWith` `endsWith` `empty`（すべてを満たすとき）、または `when(value, row, index)` 関数です。書式は `color` `background` `bold` `italic` `underline` `strike` `dataBar`（`true` か色）`colorScale`（2 色か 3 色）。フォームの `table` 項目にも同じ `formats` が使えます。
+条件は `equals` `notEquals` `gt` `gte` `lt` `lte` `between: [下限, 上限]` `contains` `notContains` `startsWith` `endsWith` `empty`（すべてを満たすとき）、または `when(value, row, index)` 関数です。書式は `color` `background` `bold` `italic` `underline` `strike` `dataBar`（`true` か色。`{ color, height }` で太さを行の高さに対する割合で指定、既定 0.5）`colorScale`（2 色か 3 色）。フォームの `table` 項目にも同じ `formats` が使えます。
 
 行やセルのダブルクリックには `onDoubleClick` で処理を登録できます（ネイティブ UI のみ）。
 

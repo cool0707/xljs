@@ -4072,7 +4072,14 @@
       const style = {};
       for (const k of ["color", "background"]) if (r[k] !== undefined && r[k] !== null && r[k] !== "") style[k] = String(r[k]);
       for (const k of ["bold", "italic", "underline", "strike"]) if (r[k] !== undefined) style[k] = !!r[k];
-      const bar = r.dataBar === undefined || r.dataBar === false || r.dataBar === null ? null : r.dataBar === true ? "#638EC6" : String(r.dataBar);
+      // A data bar: { color, height (of the row, 0 to 1) }.
+      let bar = null;
+      if (r.dataBar !== undefined && r.dataBar !== false && r.dataBar !== null) {
+        const o = typeof r.dataBar === "object" ? r.dataBar : { color: r.dataBar === true ? undefined : r.dataBar };
+        const height = o.height === undefined || o.height === null ? 0.5 : Number(o.height);
+        if (!(height > 0 && height <= 1)) throw new TypeError(T("table.badBarHeight", who, String(o.height)));
+        bar = { color: o.color === undefined || o.color === null || o.color === "" ? "#638EC6" : String(o.color), height };
+      }
       let scale = null;
       if (r.colorScale !== undefined && r.colorScale !== null) {
         scale = Array.isArray(r.colorScale) ? r.colorScale.map(String) : [];

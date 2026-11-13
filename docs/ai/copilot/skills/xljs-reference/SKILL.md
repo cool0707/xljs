@@ -436,7 +436,7 @@ ui.table(rows, {
 ui.table(rows, { formats: [
   { column: "金額", gte: 100000, color: "#9c0006", background: "#ffc7ce" }, // 条件: equals notEquals gt gte lt lte between contains startsWith endsWith empty
   { column: "状態", equals: "未完了", row: true, bold: true },              // row: true で行全体
-  { column: "金額", dataBar: true },                                        // データバー（数値の列）
+  { column: "金額", dataBar: true },                                        // データバー（数値の列。太さは { color, height: 0.3 }）
   { column: "達成率", colorScale: ["#f8696b", "#ffeb84", "#63be7b"] },      // カラースケール（2 色か 3 色）
   { when: (row) => row.期限 < new Date(), color: "red" },                    // 関数（column なしは行ごと、行全体に付く）
 ] });

@@ -42,6 +42,8 @@ throws(() => ui.table(rows, { formats: [{ column: "合計", greater: 1 }] }), /g
 throws(() => ui.table(rows, { formats: [{ column: "無い列", bold: true }] }), /無い列/);
 throws(() => ui.table(rows, { formats: [{ column: "合計", between: [1] }] }), /between/);
 throws(() => ui.table(rows, { formats: [{ colorScale: ["red"] }] }), /colorScale/);
+ui.table(rows, { formats: [{ column: "合計", dataBar: { color: "green", height: 0.3 } }, { column: "件数", dataBar: "red" }] });
+throws(() => ui.table(rows, { formats: [{ column: "合計", dataBar: { height: 2 } }] }), /height/);
 throws(() => ui.table(rows, { formats: [{ when: "x" }] }), /when/);
 throws(() => ui.table(rows, { formats: { bold: true } }), /formats/);
 console.log("table ok");
