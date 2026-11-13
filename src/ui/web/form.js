@@ -680,7 +680,11 @@ const fill = (t, ...a) => String(t || "").replace(/\{(\d)\}/g, (_, i) => a[i]);
 function cellInput(e, v) {
   let i;
   if (e.type === "select") {
-    i = el("select", {}, el("option", { value: "", textContent: "" }), ...(e.options || []).map((o) => el("option", { value: o.value, textContent: o.label })));
+    // The empty option (clearing the cell) comes first; an "" among the options takes its place
+    // instead of making a second blank row (options: ["", "A", "B"] is a common way to write it).
+    const opts = e.options || [];
+    i = el("select", {}, ...(opts.some((o) => o.value === "") ? [] : [el("option", { value: "", textContent: "" })]),
+      ...opts.map((o) => el("option", { value: o.value, textContent: o.label })));
     i.value = v === null ? "" : String(v);
     if (i.selectedIndex < 0) i.append(el("option", { value: String(v), textContent: String(v), selected: true }));
   } else if (e.type === "checkbox") {
