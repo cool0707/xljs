@@ -680,13 +680,12 @@ const fill = (t, ...a) => String(t || "").replace(/\{(\d)\}/g, (_, i) => a[i]);
 function cellInput(e, v) {
   let i;
   if (e.type === "select") {
-    // The empty option (clearing the cell) comes first; an "" among the options takes its place
-    // instead of making a second blank row (options: ["", "A", "B"] is a common way to write it).
-    const opts = e.options || [];
-    i = el("select", {}, ...(opts.some((o) => o.value === "") ? [] : [el("option", { value: "", textContent: "" })]),
-      ...opts.map((o) => el("option", { value: o.value, textContent: o.label })));
+    // Only the options: an empty cell shows no option (selectedIndex -1, value ""), and
+    // Delete / Backspace empties it (see the keydown handler of the table).
+    i = el("select", {}, ...(e.options || []).map((o) => el("option", { value: o.value, textContent: o.label })));
     i.value = v === null ? "" : String(v);
-    if (i.selectedIndex < 0) i.append(el("option", { value: String(v), textContent: String(v), selected: true }));
+    if (i.selectedIndex < 0 && v !== null && v !== "") i.append(el("option", { value: String(v), textContent: String(v), selected: true }));
+    if (v === null || v === "") i.selectedIndex = -1;
   } else if (e.type === "checkbox") {
     i = el("input", { type: "checkbox", checked: v === true });
   } else {
@@ -1002,6 +1001,12 @@ function tableControl(f, id) {
   // Enter in a cell goes to the same column of the next row (Shift+Enter: the row above), as in Excel.
   body.addEventListener("keydown", (e) => {
     const input = e.target.closest(":is(input, select)[data-c]");
+    // Delete / Backspace empties a select cell (its options have no blank one).
+    if (input && input.tagName === "SELECT" && (e.key === "Delete" || e.key === "Backspace") && !input.disabled) {
+      e.preventDefault();
+      if (input.selectedIndex >= 0) { input.selectedIndex = -1; input.dispatchEvent(new Event("change", { bubbles: true })); }
+      return;
+    }
     if (!input || e.key !== "Enter" || e.isComposing) return;
     e.preventDefault();
     const trs = [...body.querySelectorAll("tr[data-i]")];

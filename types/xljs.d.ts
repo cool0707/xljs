@@ -720,7 +720,7 @@ declare global {
     editable?: boolean;
     /** 入力欄の種類（既定は値から: 数値は number、Date は date、真偽値は checkbox、ほかは text） */
     type?: "text" | "number" | "date" | "month" | "time" | "select" | "checkbox";
-    /** select の選択肢。先頭には未選択（空欄）が自動で付くので "" は書かない（書いても空欄は 1 つ） */
+    /** select の選択肢。空欄の選択肢は付かない（"" は書かない）。空のセルは何も選んでいない表示になり、Delete / Backspace で空に戻せる */
     options?: (string | { value: string; label?: string })[];
     required?: boolean;
     min?: number;
