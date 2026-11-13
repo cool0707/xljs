@@ -1,0 +1,78 @@
+/* A set of forms (ui.forms): a side menu (left or right) with a hamburger
+   button that narrows it to the icons, and the forms in frames beside it. */
+#shell { flex: 1; min-height: 0; display: flex; }
+#shell.right { flex-direction: row-reverse; }
+#side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-xxs);
+  width: 200px;
+  padding: var(--sp-s);
+  box-sizing: border-box;
+  overflow: hidden auto;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  transition: width .15s;
+}
+#shell.right #side { border-right: 0; border-left: 1px solid var(--border); }
+#shell.collapsed #side { width: 48px; padding: var(--sp-s) var(--sp-xs); }
+#items { display: flex; flex-direction: column; gap: var(--sp-xxs); }
+.item {
+  justify-content: flex-start;
+  gap: var(--sp-m);
+  min-width: 0;
+  width: 100%;
+  min-height: 36px;
+  padding: 0 var(--sp-m);
+  border: 0;
+  border-radius: var(--radius-check);
+  background: transparent;
+  box-shadow: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.item:hover:not(:disabled) { background: var(--hover); }
+.item.active, .item.active:hover:not(:disabled) { background: var(--sel); color: var(--sel-fg); }
+.item .item-icon { flex: none; width: 16px; text-align: center; font-size: 14px; opacity: .8; }
+.item.active .item-icon { color: var(--accent); opacity: 1; }
+.item .item-text { overflow: hidden; text-overflow: ellipsis; }
+/* Narrowed: only the icons (an item without one shows its first letter). */
+#shell.collapsed .item { justify-content: center; padding: 0; }
+#shell.collapsed .item .item-text { display: none; }
+.item .item-letter { flex: none; width: 16px; text-align: center; font-weight: 600; }
+#shell:not(.collapsed) .item .item-letter { display: none; }
+#frames { flex: 1; min-width: 0; position: relative; }
+#frames iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: var(--bg); }
+#frames iframe[hidden] { display: none; }
+/* The hamburger button: no border; open, its bars spin into an arrow
+   toward the side the menu folds to (closed: the three bars). */
+#burger {
+  align-self: flex-start;
+  min-width: 0;
+  width: 40px;
+  padding: 0;
+  margin-bottom: var(--sp-xs);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+#burger:hover:not(:disabled) { background: var(--hover); }
+#burger:focus-visible { box-shadow: 0 0 0 3px var(--ring); }
+#shell.right #burger { align-self: flex-end; }
+.bars { position: relative; display: block; width: 18px; height: 14px; }
+.bars i { position: absolute; right: 0; width: 100%; height: 2px; border-radius: 1px; background: currentColor; transform-origin: right center; }
+.bars i:nth-child(1) { top: 0; }
+.bars i:nth-child(2) { top: 6px; }
+.bars i:nth-child(3) { top: 12px; }
+/* Open: an arrow drawn pointing right, turned half a turn (left menu) or a whole turn (right menu). */
+#shell:not(.collapsed) .bars { transform: rotate(180deg); }
+#shell.right:not(.collapsed) .bars { transform: rotate(360deg); }
+#shell:not(.collapsed) .bars i:nth-child(1) { top: 6px; width: 10px; transform: rotate(45deg); }
+#shell:not(.collapsed) .bars i:nth-child(3) { top: 6px; width: 10px; transform: rotate(-45deg); }
+/* Animated only once shown (not when the page opens). */
+#shell.ready .bars { transition: transform .35s ease; }
+#shell.ready .bars i { transition: transform .35s ease, width .35s ease, top .35s ease; }
+@media (prefers-reduced-motion: reduce) {
+  #shell.ready .bars, #shell.ready .bars i { transition: none; }
+}

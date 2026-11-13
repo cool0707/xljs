@@ -304,6 +304,7 @@ if (!v) exit();
 | `dateRange` | `{ from: Date, to: Date }` か `null`（`default: { from, to }`。開始 > 終了はエラー） |
 | `tags` | 文字列の配列（Enter かカンマで区切って入力。`pattern` `maxLength` は 1 つずつ） |
 | `note` | 値なし。メッセージの表示（`label` が見出し、`default` が本文、`variant: "info" | "success" | "warning" | "error"`） |
+| `image` | 値なし。画像の表示（`default` に画像ファイルのパス・バイト列・URL。`width` `height` `align: "left" | "center" | "right"`。`label` なしならフォームの幅いっぱい） |
 
 - 項目の共通オプション: `label` `default` `required` `placeholder`（`select` では未選択の表示になり、初期値が `""`）`help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`maxLength`（文字数の上限。「12 / 100」と表示）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
 - ウィンドウの大きさは `width` `height`（既定は項目数から決める）。`resizable: false` で大きさを固定する（枠のドラッグ・最大化ができない）。`titleBar: "custom"` で OS のタイトルバーの代わりに自前のタイトルバー（`icon` とタイトル、最小化・最大化・閉じる）を表示する（`ui.table` / `app.open` も同じ。メインウィンドウは `@titlebar custom`）。
@@ -345,6 +346,9 @@ await ui.form({
 });
 ```
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
+- 横に並べる: `{ row: "氏名", fields: [{ name: "last", label: "姓" }, { name: "first", label: "名" }] }` を項目と並べて書く（`row` が左のラベル、各項目の `label` は入力欄の前。`""` で出さない）。値はほかの項目と同じオブジェクト。
+- 右上のツールバー: `toolbar: [{ name: "detail", type: "switch", label: "詳細表示" }, { icon: "gear", tooltip: "設定", onClick(values, ctx) { ... } }]`。`name` のあるものは項目（値は `values`）、ないものはボタン（`label` なしならアイコンだけ。検証せずに `onClick` を呼ぶ。`ctx.setValue` で項目を変えられる。`menu: [{ label, onClick }]` も可）。
+- 複数のフォームを 1 つのウィンドウに: `await ui.forms({ forms: [{ label: "登録", icon: "pen", fields, onSubmit }, { label: "設定", icon: "gear", fields }], side: "left", size: "fixed" })`。サイドメニュー（ハンバーガーで畳める）で切り替える。`side: "right"` で右、`size: "each"` で切り替えるたびにそのフォームの `width` / `height` にする（`"fixed"` は `ui.forms` の `width` / `height`）。戻り値はフォームごとの最後に送信された値（なければ `null`）の配列。
 - `fields` に `{ group: "出力", icon: "file-export", help: "説明", fields: [...] }` を項目と並べて書くと見出し付きのグループになる（タブの中でも可。値は項目と同じく 1 つのオブジェクト）。`collapsed: true` で閉じた状態の「詳細設定」にできる（見出しのクリックで開閉。エラーが出ると開く）。`collapsible: true` は開いた状態で開閉可能。
 - アイコン（Font Awesome Free の名前。`"folder-open"` など）: 項目・タブ・ボタンの `icon`、送信ボタンは `submitIcon`。フォームの `icon` は `titleBar: "custom"` のときだけタイトルバーに出る（それ以外は無視）。
 - アクセントカラー: `accent: "#c42b1c"`（CSS の色。ライト・ダーク共通）か `accent: { light, dark }`。送信ボタン・タブ・フォーカス枠などの色が変わる。

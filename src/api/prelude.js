@@ -2022,6 +2022,7 @@
     progress: (options) => new Progress(options),
     withProgress: (iterable, options) => withProgress(iterable, options),
     form: (options) => showForm(options),
+    forms: (options) => showForms(options),
     table: (rows, options) => showTable(rows, options),
     chart: (spec, options) => showChart(spec, options),
     /** Whether the most recent progress was cancelled by the user. */
@@ -2463,11 +2464,26 @@
 
   const FIELD_TYPES = ["text", "password", "number", "date", "month", "time", "select", "radio", "checkbox",
     "textarea", "file", "files", "folder", "saveFile", "table", "chart",
-    "switch", "checkboxes", "segmented", "combobox", "slider", "dateRange", "tags", "note"];
+    "switch", "checkboxes", "segmented", "combobox", "slider", "dateRange", "tags", "note", "image"];
 
   /** Field types whose wire value is a list of strings (segmented too with multiple: true). */
   const LIST_TYPES = ["checkboxes", "tags"];
   const isList = (f) => LIST_TYPES.includes(f.type) || (f.type === "segmented" && f.multiple);
+
+  /** How an image field lines up (without a label it spans the form). */
+  const IMAGE_ALIGNS = ["left", "center", "right"];
+
+  /**
+   * The src of an image field: a data: URL of an image file (path, handle,
+   * File) or bytes; http(s) and data:image URLs are kept; "" for none.
+   */
+  function imageSrc(v) {
+    if (v === null || v === undefined || v === "") return "";
+    if (typeof v === "string" && /^(https?:\/\/|data:image\/)/i.test(v.trim())) return v.trim();
+    if (v instanceof ArrayBuffer || ArrayBuffer.isView(v)) return native.imageDataUrl(v, "");
+    const p = toPath(v);
+    return native.imageDataUrl(native.fsReadBytes(p), p);
+  }
 
   /** Looks of a note field and of buttons. */
   const NOTE_VARIANTS = ["info", "success", "warning", "error"];
@@ -2635,7 +2651,7 @@
     return words.join(" ");
   }
 
-  function normField(f, i, tab, group) {
+  function normField(f, i, tab, group, row = -1) {
     if (!f || typeof f !== "object" || f.name === undefined || f.name === null || f.name === "") {
       throw new TypeError(T("form.fieldName", i + 1));
     }
@@ -2649,6 +2665,8 @@
     if (type === "combobox" && !options.length && !f.allowCustom) throw new TypeError(T("form.noOptions", name));
     const variant = f.variant === undefined || f.variant === null || f.variant === "" ? "info" : String(f.variant);
     if (type === "note" && !NOTE_VARIANTS.includes(variant)) throw new TypeError(T("form.badNoteVariant", name, variant));
+    const align = f.align === undefined || f.align === null || f.align === "" ? "left" : String(f.align);
+    if (type === "image" && !IMAGE_ALIGNS.includes(align)) throw new TypeError(T("form.badAlign", name, align));
     const accept = (typeof f.accept === "string" ? [f.accept] : Array.from(f.accept || []))
       .map((a) => String(a).replace(/^\*/, "")).map((a) => (a.startsWith(".") ? a : "." + a).toLowerCase());
     const num = (v) => (v === undefined || v === null || v === "" ? null : Number(v));
@@ -2658,26 +2676,30 @@
     const slider = type === "slider";
     const maxLength = Number(f.maxLength);
     return {
-      name, type, options, accept, table, chart, tab, group, columns: f.columns,
+      name, type, options, accept, table, chart, tab, group, row, columns: f.columns,
       multiple: type === "segmented" && !!f.multiple, custom: type === "combobox" && !!f.allowCustom,
       variant: type === "note" ? variant : "",
+      align: type === "image" ? align : "", alt: f.alt ? String(f.alt) : "",
+      // The size of an image (px; 0: its own, never wider than the form).
+      width: type === "image" ? Math.max(0, Number(f.width) || 0) : 0,
+      height: type === "image" ? Math.max(0, Number(f.height) || 0) : 0,
       prefix: f.prefix === undefined || f.prefix === null ? "" : String(f.prefix),
       suffix: f.suffix === undefined || f.suffix === null ? "" : String(f.suffix),
       maxLength: Number.isFinite(maxLength) && maxLength > 0 ? Math.floor(maxLength) : 0,
       tableSpec: { selectable: f.selectable, editable: f.editable, validateRow: f.validateRow },
       // A note shows no label unless it is given.
-      label: f.label === undefined ? (type === "note" ? "" : name) : String(f.label),
+      label: f.label === undefined ? (type === "note" || type === "image" ? "" : name) : String(f.label),
       icon: faClass(f.icon),
       required: !!f.required,
       placeholder: f.placeholder ? String(f.placeholder) : "",
       help: f.help ? String(f.help) : "",
       tooltip: f.tooltip ? String(f.tooltip) : "",
       min: num(f.min) ?? (slider ? 0 : null), max: num(f.max) ?? (slider ? 100 : null), step: f.step === undefined ? null : f.step,
-      rows: type === "table" || type === "chart" ? Number(f.height) || 0 : Number(f.rows) || 0,
+      rows: type === "table" || type === "chart" ? Number(f.height) || 0 : type === "image" ? 0 : Number(f.rows) || 0,
       pattern: f.pattern === undefined || f.pattern === null || f.pattern === "" ? null
         : f.pattern instanceof RegExp ? f.pattern : new RegExp("^(?:" + f.pattern + ")$"),
       patternMessage: f.patternMessage ? String(f.patternMessage) : "",
-      remember: f.remember !== false && !["password", "table", "chart", "note"].includes(type),
+      remember: f.remember !== false && !["password", "table", "chart", "note", "image"].includes(type),
       validate: typeof f.validate === "function" ? f.validate : null,
       onChange: typeof f.onChange === "function" ? f.onChange : null,
       // disabled / hidden: true, or a function of the values (checked again as they change); ctx.setDisabled / setHidden replace it.
@@ -2719,6 +2741,7 @@
     v = plainDate(v);
     if (f.type === "checkbox" || f.type === "switch") return !!v;
     if (f.type === "chart") return null;
+    if (f.type === "image") return imageSrc(v);
     if (isList(f)) return [v].flat().filter((x) => x !== null && x !== undefined && x !== "").map((x) => String(x));
     if (f.type === "dateRange") {
       // { from, to } or [from, to]; each a Date or "YYYY-MM-DD".
@@ -2759,7 +2782,7 @@
   }
 
   /** Fields without a value: tables only shown, and charts (but editable Gantt charts, whose value is their rows). */
-  const noValue = (f) => (f.type === "table" && !f.table.select && !f.table.edit) || (f.type === "chart" && !f.chart.editable) || f.type === "note";
+  const noValue = (f) => (f.type === "table" && !f.table.select && !f.table.edit) || (f.type === "chart" && !f.chart.editable) || f.type === "note" || f.type === "image";
 
   /** The two dates of a dateRange wire value: [from, to] (or "from/to"), as trimmed strings. */
   const wireRange = (w) => {
@@ -2914,7 +2937,7 @@
    * passes): its checks and its own validate, not the form's validate.
    */
   async function checkField(fields, f, wire) {
-    if ((f.type === "table" && !f.table.select) || f.type === "chart" || f.type === "note") return ""; // cells are checked on their own
+    if ((f.type === "table" && !f.table.select) || f.type === "chart" || noValue(f)) return ""; // cells are checked on their own
     if (inactive(fields, f, wire)) return "";
     const w = wire[f.name], v = fromWire(f, w);
     const e = checkValue(f, w, v) || (f.validate ? await f.validate(v, rawValues(fields, wire)) : "");
@@ -3044,13 +3067,36 @@
   }
 
   async function showForm(options) {
+    const { o, fields, wire } = normForm(options);
+    if (native.devPreview) return formPreview(o, fields, wire);
+    return native.supportsWindows ? formWindow(o, fields, wire, options) : formPrompt(o, fields, wire, options);
+  }
+
+  const isGroup = (f) => f !== null && typeof f === "object" && "group" in f;
+  const isRow = (f) => f !== null && typeof f === "object" && "row" in f;
+
+  /**
+   * The form of ui.form's options: { o (the form as a whole), fields (flat,
+   * normalized), wire (their values as shown first) }.
+   */
+  function normForm(options) {
     if (!options || typeof options !== "object") throw new TypeError(T("form.expectedOptions"));
-    // Fields above the tabs, then each tab's fields (tab: its index, or -1),
-    // flat; a group ({ group, fields }) gives its fields its index (or -1).
-    const fields = [], groups = [];
+    // The toolbar's fields, the fields above the tabs, then each tab's fields
+    // (tab: its index, or -1), flat; a group ({ group, fields }) gives its
+    // fields its index (or -1), a row ({ row, fields }) its index.
+    const fields = [], groups = [], rows = [];
+    const addRow = (r, tab, group) => {
+      if (!Array.isArray(r.fields)) throw new TypeError(T("form.badRow", String(r.row)));
+      const k = rows.length;
+      rows.push({ label: String(r.row ?? ""), icon: faClass(r.icon), help: r.help ? String(r.help) : "", tooltip: r.tooltip ? String(r.tooltip) : "" });
+      for (const x of r.fields) {
+        if (isGroup(x) || isRow(x)) throw new TypeError(T("form.nestedRow", String(r.row)));
+        fields.push(normField(x, fields.length, tab, group, k));
+      }
+    };
     const addFields = (list, tab) => {
       for (const f of Array.from(list || [])) {
-        if (f && typeof f === "object" && "group" in f) {
+        if (isGroup(f)) {
           if (!Array.isArray(f.fields) && f.fields !== undefined) throw new TypeError(T("form.badGroup", String(f.group)));
           // at: the index of its first field (where the group starts on the page).
           const g = groups.length;
@@ -3059,12 +3105,31 @@
             collapsible: !!(f.collapsible || f.collapsed), collapsed: !!f.collapsed,
           });
           for (const x of Array.from(f.fields || [])) {
-            if (x && typeof x === "object" && "group" in x) throw new TypeError(T("form.nestedGroup", String(x.group)));
-            fields.push(normField(x, fields.length, tab, g));
+            if (isGroup(x)) throw new TypeError(T("form.nestedGroup", String(x.group)));
+            if (isRow(x)) addRow(x, tab, g);
+            else fields.push(normField(x, fields.length, tab, g));
           }
-        } else fields.push(normField(f, fields.length, tab, -1));
+        } else if (isRow(f)) addRow(f, tab, -1);
+        else fields.push(normField(f, fields.length, tab, -1));
       }
     };
+    // The toolbar (the form's top right): fields (with a name) and buttons (onClick or menu).
+    const tools = [];
+    Array.from(options.toolbar || []).forEach((t, k) => {
+      if (!t || typeof t !== "object") throw new TypeError(T("form.badToolbarItem", k + 1));
+      if (t.name !== undefined && t.name !== null && t.name !== "") {
+        const f = normField(t, fields.length, -1, -1);
+        f.toolbar = true;
+        fields.push(f);
+        return;
+      }
+      const menu = Array.from(t.menu || []).map((x, j) => {
+        if (!x || typeof x !== "object" || typeof x.onClick !== "function") throw new TypeError(T("form.badMenuItem", toolLabel(t, k), j + 1));
+        return toolButton(x, toolLabel(x, j), []);
+      });
+      if (typeof t.onClick !== "function" && !menu.length) throw new TypeError(T("form.badToolbarItem", k + 1));
+      tools.push(toolButton(t, toolLabel(t, k), menu));
+    });
     addFields(options.fields, -1);
     const tabIcons = [];
     const tabs = Array.from(options.tabs || []).map((t, k) => {
@@ -3109,6 +3174,11 @@
       if (b.onClick) actions.push(b);
       for (const x of b.menu) actions.push(Object.assign({}, x, { path: b.label + " ▸ " + x.label }));
     }
+    // The toolbar's buttons after the form's buttons, for the console and mock.
+    for (const t of tools) {
+      if (t.onClick) actions.push(Object.assign({}, t, { path: t.text }));
+      for (const x of t.menu) actions.push(Object.assign({}, x, { path: t.text + " ▸ " + x.text }));
+    }
     const o = {
       title: options.title === undefined ? title() : String(options.title),
       description: options.description ? String(options.description) : "",
@@ -3116,10 +3186,26 @@
       noSubmit: options.submit === false && buttons.length > 0,
       titleBar: customTitleBar(options.titleBar), icon: faClass(options.icon), submitIcon: faClass(options.submitIcon),
       accent: themeColor(options.accent, "form.badAccent"), background: themeColor(options.background, "form.badBackground"),
-      radius: formRadius(options.radius), key, tabs, tabIcons, groups, buttons, actions,
+      radius: formRadius(options.radius), key, tabs, tabIcons, groups, rows, buttons, actions, tools,
     };
-    if (native.devPreview) return formPreview(o, fields, wire);
-    return native.supportsWindows ? formWindow(o, fields, wire, options) : formPrompt(o, fields, wire, options);
+    return { o, fields, wire };
+  }
+
+  /** The name of a toolbar button for the console and messages: its label, tooltip or icon. */
+  const toolLabel = (t, k) => String(t.label || t.tooltip || t.icon || k + 1);
+
+  /**
+   * A button of the toolbar (or of its menu): runs onClick(values, ctx)
+   * with the values as entered, without the run's progress and log.
+   */
+  function toolButton(t, text, menu) {
+    const variant = t.variant === undefined || t.variant === null || t.variant === "" ? "ghost" : String(t.variant);
+    if (!BUTTON_VARIANTS.includes(variant)) throw new TypeError(T("form.badVariant", text, variant));
+    return {
+      tool: true, text, label: t.label === undefined || t.label === null ? "" : String(t.label), icon: faClass(t.icon),
+      tooltip: t.tooltip ? String(t.tooltip) : "", variant,
+      onClick: typeof t.onClick === "function" ? t.onClick : null, menu,
+    };
   }
 
   /**
@@ -3171,7 +3257,7 @@
         title: o.title, description: o.description, error,
         submit: o.noSubmit ? "" : o.submit || T("form.ok"), buttons: o.actions.map((b) => b.path || b.label),
         names: fields.map((f) => f.name),
-        fields: fields.filter((f) => !f.chart && !inactive(fields, f, wire)).map((f) => Object.assign({
+        fields: fields.filter((f) => !f.chart && f.type !== "image" && !inactive(fields, f, wire)).map((f) => Object.assign({
           name: f.name, label: promptLabel(f), type: promptType(f), options: f.options, required: f.required, custom: f.custom,
           placeholder: f.placeholder, help: f.help, accept: f.accept, value: wire[f.name], error: errors[f.name] || "",
           min: f.min, max: f.max, maxLength: f.maxLength,
@@ -3235,6 +3321,19 @@
         }
       }
       if (seen) recordForm(fields, wire, seen, extra);
+      // A toolbar button: its onClick with the values as entered; then the form again.
+      if (b && b.tool) {
+        const ctx = promptContext(o, fields, wire);
+        try {
+          await b.onClick(rawValues(fields, wire), ctx);
+        } finally {
+          ctx._i.close();
+        }
+        if (seen) Object.assign(seen, wire);
+        errors = {};
+        error = "";
+        continue;
+      }
       const c = await pressValues(o, b, fields, wire, options);
       errors = c.errors || {};
       error = c.error || "";
@@ -3326,14 +3425,26 @@
     // Fields above the tabs, plus the tallest tab.
     const heights = o.tabs.map(() => 0);
     let common = 0;
+    // The toolbar takes a line of its own (beside the description, when there is one).
+    if (fields.some((f) => f.toolbar) || o.tools.length) h += o.description ? 12 : 48;
+    // A row is as tall as its tallest field.
+    const rowTall = o.rows.map(() => 0);
     for (const f of fields) {
+      if (f.toolbar) continue;
       if (f.group >= 0 && o.groups[f.group].collapsed) continue; // opened by the user
       const lines = (t) => String(t || "").split("\n").reduce((n, l) => n + 1 + Math.floor(l.length / 40), 0);
       let fh = 16 + (f.type === "textarea" ? 12 + 20 * (f.rows || 4) : f.type === "files" ? 12 + 20 * Math.max(3, f.rows || 3)
         : f.type === "table" ? 36 + 29 * tableLines(f) : f.type === "chart" ? 12 + chartHeight(f)
           : f.type === "note" ? 24 + 20 * (lines(wireStr(f.default)) + (f.label ? 1 : 0))
+            : f.type === "image" ? f.height || 120
             : ["checkbox", "radio", "switch", "checkboxes"].includes(f.type) ? 28 : 32);
       if (f.help || f.maxLength) fh += 20;
+      if (f.row >= 0) {
+        // Only what the row adds to its tallest field so far.
+        const more = Math.max(0, fh - rowTall[f.row]);
+        rowTall[f.row] += more;
+        fh = more;
+      }
       if (f.tab >= 0) heights[f.tab] += fh;
       else common += fh;
     }
@@ -3374,6 +3485,14 @@
           items: b.menu.map((x) => ({ label: x.label, icon: x.icon, tooltip: x.tooltip, variant: x.variant })),
         }))
         : undefined,
+      // Rows of fields side by side, and the toolbar's buttons (only when used).
+      rows: o.rows.length ? o.rows : undefined,
+      tools: o.tools.length
+        ? o.tools.map((t) => ({
+          label: t.label, icon: t.icon, tooltip: t.tooltip || (t.label ? "" : t.text), variant: t.variant, split: !!t.onClick && t.menu.length > 0,
+          menu: t.menu.length > 0, items: t.menu.map((x) => ({ label: x.label || x.text, icon: x.icon, tooltip: x.tooltip, variant: x.variant })),
+        }))
+        : undefined,
       fields: fields.map((f) => ({
         name: f.name, label: f.label, icon: f.icon, type: f.type, options: f.options, required: f.required,
         placeholder: f.placeholder, help: f.help, tooltip: f.tooltip, change: !!f.onChange,
@@ -3384,6 +3503,8 @@
         table: f.table ? Object.assign({ select: f.table.select, editable: editWire(f.table) || undefined }, tableWire(f.table)) : undefined,
         chart: f.chart ? Object.assign({ height: chartHeight(f) }, chartInit(f.chart)) : undefined,
         disabled: states[f.name].disabled || undefined, hidden: states[f.name].hidden || undefined,
+        row: f.row >= 0 ? f.row : undefined, toolbar: f.toolbar || undefined,
+        align: f.align || undefined, alt: f.alt || undefined, width: f.width || undefined, height: f.height || undefined,
       })),
       lang: native.lang, chartTexts: fields.some((f) => f.chart) ? chartTexts() : undefined,
     };
@@ -3395,8 +3516,114 @@
     return native.exit(0);
   }
 
+  // ---- ui.forms: forms in one window with a side menu (forms.html), each
+  // in a frame of form.html. Messages of a form go through the window's page
+  // ({ type: "from" | "to", form, msg }); each form is run by formWindow as
+  // if it had a window of its own.
+
+  const FORMS_SIDES = ["left", "right"];
+  const FORMS_SIZES = ["fixed", "each"];
+  /** The width of the side menu, open and closed (forms.css). */
+  const SIDE_OPEN = 200, SIDE_CLOSED = 48;
+
+  async function showForms(options) {
+    if (!options || typeof options !== "object" || !options.forms) throw new TypeError(T("forms.expectedOptions"));
+    const list = Array.from(options.forms);
+    if (!list.length) throw new TypeError(T("forms.expectedOptions"));
+    const side = options.side === undefined || options.side === null ? "left" : String(options.side);
+    if (!FORMS_SIDES.includes(side)) throw new TypeError(T("forms.badSide", side));
+    const size = options.size === undefined || options.size === null ? "fixed" : String(options.size);
+    if (!FORMS_SIZES.includes(size)) throw new TypeError(T("forms.badSize", size));
+    const forms = list.map((f, k) => {
+      if (!f || typeof f !== "object") throw new TypeError(T("forms.badForm", k + 1));
+      const label = f.label === undefined || f.label === null ? (f.title === undefined ? String(k + 1) : String(f.title)) : String(f.label);
+      // The look of the set unless the form has its own; the label is the form's title (remember's key, the console's heading).
+      const opts = Object.assign({}, f);
+      for (const key of ["accent", "background", "radius"]) if (opts[key] === undefined && options[key] !== undefined) opts[key] = options[key];
+      if (opts.title === undefined) opts.title = label;
+      const { o, fields, wire } = normForm(opts);
+      return { opts, o, fields, wire, label, icon: faClass(f.icon) };
+    });
+    // start: the form shown first (its index, label or id).
+    let start = 0;
+    if (options.start !== undefined && options.start !== null) {
+      start = typeof options.start === "number" ? options.start
+        : forms.findIndex((x) => x.label === String(options.start) || String(x.opts.id ?? "") === String(options.start));
+      if (!Number.isInteger(start) || start < 0 || start >= forms.length) throw new TypeError(T("forms.badStart", String(options.start)));
+    }
+    if (native.devPreview) return formPreview(forms[start].o, forms[start].fields, forms[start].wire);
+    if (!native.supportsWindows) {
+      // Console and mock: each form in turn.
+      const out = [];
+      for (const x of forms) out.push(await formPrompt(x.o, x.fields, x.wire, x.opts));
+      return out;
+    }
+    return formsWindow(options, forms, side, size, start);
+  }
+
+  function formsWindow(options, forms, side, size, start) {
+    const sizes = forms.map((x) => formSize(x.o, x.fields, typeof x.opts.onSubmit === "function" || x.o.buttons.length > 0, x.opts));
+    const collapsed = !!options.collapsed;
+    const sideWidth = collapsed ? SIDE_CLOSED : SIDE_OPEN;
+    // fixed: the set's size (by default the largest form's); each: the size of the form shown.
+    const page0 = size === "each" ? sizes[start]
+      : { width: Math.max(...sizes.map((x) => x.width)), height: Math.max(...sizes.map((x) => x.height)) };
+    const width = (size === "fixed" && Number(options.width)) || page0.width + sideWidth;
+    const height = (size === "fixed" && Number(options.height)) || page0.height;
+    const handlers = forms.map(() => null);
+    const asked = forms.map(() => false); // the form's own cancel (see cancelRequested)
+    const running = new Set();
+    const accent = themeColor(options.accent, "form.badAccent"), background = themeColor(options.background, "form.badBackground");
+    const radius = formRadius(options.radius);
+    const win = openPage("forms.html", {
+      title: options.title === undefined ? title() : String(options.title), width, height,
+      fixedSize: options.resizable === false, titleBar: customTitleBar(options.titleBar), icon: faClass(options.icon),
+    }, (m, files) => {
+      switch (m.type) {
+        case "ready":
+          win.send({
+            type: "init", forms: forms.map((x) => ({ label: x.label, icon: x.icon })), side, collapsed, start,
+            accent, background, radius, texts: { menu: T("forms.menu") },
+          });
+          break;
+        case "from": {
+          const h = handlers[m.form];
+          if (!h || !m.msg || typeof m.msg.type !== "string") return;
+          if (m.msg.type === "cancel") asked[m.form] = true;
+          h(m.msg, files);
+          break;
+        }
+        case "show":
+          // A form was chosen in the menu: with size "each", the window takes its size (and the menu's width).
+          if (size === "each" && sizes[m.form]) win.n.resize(sizes[m.form].width + (Number(m.side) || 0), sizes[m.form].height);
+          break;
+      }
+    });
+    return Promise.all(forms.map((x, k) => formWindow(x.o, x.fields, x.wire, x.opts, (handle) => {
+      handlers[k] = handle;
+      return {
+        n: {
+          close: () => win.n.close(), closed: win.n.closed, isClosed: () => win.n.isClosed(),
+          // The window notes a cancel at once (for a script busy in a loop) but not which form asked: that
+          // counts for the form running alone; otherwise the form's own message, once it is handled.
+          cancelRequested: () => asked[k] || (win.n.cancelRequested() && running.size === 1 && running.has(k)),
+          clearCancel: () => {
+            asked[k] = false;
+            running.add(k);
+            if (running.size === 1) win.n.clearCancel();
+          },
+        },
+        send: (msg) => {
+          if (msg.type === "done") running.delete(k);
+          win.send({ type: "to", form: k, msg });
+        },
+      };
+    })));
+  }
+
   // Native UI: the form page. Resolves with the last submitted values once the window is closed.
-  function formWindow(o, fields, wire, options) {
+  // embed(onMessage): the page of a form in a set (ui.forms) instead of a window of its own.
+  function formWindow(o, fields, wire, options, embed) {
     const byName = new Map(fields.map((f) => [f.name, f]));
     const onSubmit = typeof options.onSubmit === "function" ? options.onSubmit : null;
     const hasRun = !!onSubmit || o.buttons.length > 0;
@@ -3412,8 +3639,9 @@
       // edited since the last press of a button, and whether the form closed itself.
       const seen = native.recording ? defaultWire(fields) : null;
       let cellEdits = {}, autoClosed = false;
-      const page = openPage("form.html", Object.assign({ title: o.title, titleBar: o.titleBar, icon: o.icon }, formSize(o, fields, hasRun, options)),
-        (m, files) => { handle(m, files).catch(fail); });
+      const onMessage = (m, files) => { handle(m, files).catch(fail); };
+      const page = embed ? embed(onMessage)
+        : openPage("form.html", Object.assign({ title: o.title, titleBar: o.titleBar, icon: o.icon }, formSize(o, fields, hasRun, options)), onMessage);
       const finish = () => (failed ? reject(failed) : resolve(result));
       function fail(e) {
         if (!failed) failed = e;
@@ -3524,6 +3752,36 @@
             if (b ? b.close && ok : !handler) {
               autoClosed = true;
               page.n.close();
+            }
+            break;
+          }
+          case "tool": {
+            // A button of the toolbar (index; item: the index in its menu): onClick with the values as entered.
+            const top = typeof m.index === "number" ? o.tools[m.index] : null;
+            const b = top && typeof m.item === "number" ? top.menu[m.item] : top;
+            if (!b || !b.onClick) return;
+            try {
+              if (running) return;
+              await editQueue;
+              takeValues(m);
+              refresh();
+              if (seen) {
+                // As the console names it: "label" or "label ▸ item".
+                const extra = { $button: b === top ? top.text : top.text + " ▸ " + b.text };
+                if (Object.keys(cellEdits).length) extra.$cells = cellEdits;
+                cellEdits = {};
+                recordForm(fields, wire, seen, extra);
+              }
+              const ctx = windowContext(page, fields, wire, sets, refresh);
+              try {
+                await b.onClick(rawValues(fields, wire), ctx);
+              } catch (e) {
+                if (!(e instanceof FormCancel) && !page.n.isClosed()) page.send({ type: "formError", error: errorText(e).split("\n")[0] });
+              }
+              ctx._i.flush();
+              if (seen) Object.assign(seen, wire);
+            } finally {
+              if (!page.n.isClosed()) page.send({ type: "toolDone", index: m.index });
             }
             break;
           }

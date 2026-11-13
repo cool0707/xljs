@@ -363,3 +363,36 @@ input[type=checkbox].switch:hover:not(:disabled):not(:checked) { border-color: t
 .group-head .chevron { width: 14px; margin-right: var(--sp-s); font-size: 12px; color: var(--muted); transition: transform .15s; transform: rotate(90deg); }
 .group.collapsed .group-head .chevron { transform: none; }
 .group.collapsed > :not(.group-head) { display: none; }
+
+/* ---- the top: the description and the toolbar (the form's top right) */
+#top { display: flex; align-items: flex-start; gap: var(--sp-l); margin: 0 0 var(--sp-xl); }
+#top #description { flex: 1; min-width: 0; margin: 0; }
+#toolbar { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: flex-start; gap: var(--sp-s) var(--sp-m); margin-left: auto; }
+#toolbar .tool-buttons { display: flex; gap: var(--sp-xs); }
+#toolbar .tool-buttons:empty { display: none; }
+.tool-field { display: flex; flex-direction: column; align-items: flex-end; }
+.tool-field > .ctl { display: flex; flex-direction: column; align-items: flex-end; }
+.tool-field:has(> .tool-lbl) { flex-direction: row; align-items: flex-start; gap: var(--sp-s); }
+.tool-lbl { padding-top: calc((var(--control-h) - 20px) / 2); white-space: nowrap; }
+.tool-field .check { padding-top: calc((var(--control-h) - 20px) / 2); white-space: nowrap; }
+.tool-field select { width: auto; }
+.tool-field .err { text-align: right; }
+button.tool.icon-only { min-width: 0; width: var(--control-h); padding: 0; }
+button.tool.icon-only > .icon { margin: 0; }
+button.tool.icon-only.loading::before { margin-right: 0; }
+.menu.down { top: calc(100% + var(--sp-xs)); bottom: auto; }
+
+/* ---- rows: fields side by side under one label (姓・名) */
+.frow { display: flex; flex-wrap: wrap; gap: var(--sp-s) var(--sp-l); align-items: flex-start; }
+.frow-item { display: flex; gap: var(--sp-s); align-items: flex-start; flex: 1 1 0; min-width: 8em; }
+.frow-item.fit { flex: 0 1 auto; min-width: 0; }
+.frow-item > .ctl { flex: 1; min-width: 0; }
+.frow-item[hidden] { display: none; }
+.sub-lbl { padding-top: calc((var(--control-h) - 20px) / 2); white-space: nowrap; color: var(--muted); }
+.sub-lbl .req { color: var(--error); margin-left: var(--sp-xxs); }
+
+/* ---- image fields */
+.image-box { display: flex; }
+.image-box.center { justify-content: center; }
+.image-box.right { justify-content: flex-end; }
+.fimage { display: block; max-width: 100%; height: auto; object-fit: contain; border-radius: var(--radius-box); }

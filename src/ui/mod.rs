@@ -221,6 +221,10 @@ pub trait Window: Send + Sync {
     fn close(&self);
     /// Drives the browser pane (WindowOptions::browser); nothing without one.
     fn browser(&self, _cmd: BrowserCommand) {}
+    /// Changes the size of the page (as WindowOptions::width and height:
+    /// logical pixels, below a custom title bar), keeping the window's
+    /// center where it fits; nothing while maximized.
+    fn resize(&self, _width: i64, _height: i64) {}
 }
 
 /// The set of interactions available to scripts. Implementations are

@@ -79,6 +79,16 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
     `prefix` / `suffix` は入力欄の枠の中（`.affix`。コンソールはラベルに「(¥ … 円)」）、`maxLength` は文字数の表示と検査（tags は 1 つずつ）。
     入力欄の幅（form.js の `fit`）: 文字入力は `maxLength` があればその文字数（全角）分、数値は `min` / `max` / `step` の桁数分（なければ 10 桁）、select は一番長い選択肢、combobox は一番長い選択肢（canvas で測る）＋矢印。どれもフォームの幅を超えない（`max-width: 100%`）。指定のない文字入力・日付などは右端まで。
     グループの `collapsible` / `collapsed` は見出しで開閉し、中の項目にエラーが出ると開く（`formSize` は閉じたグループの項目を数えない）。
+    行（`{ row, fields }`）は prelude の `normForm` が項目に `row`（`o.rows` の番号）を付けて平らにし、`form.js` が最初の項目で
+    ラベル＋`.frow` を作って各項目を `.frow-item`（小さなラベル `.sub-lbl`＋入力欄）として並べる。行の項目がすべて隠れると行ごと隠す。
+    画像（`type: "image"`）は prelude が data: URL にして（`native.imageDataUrl`。先頭のバイトで種類を判定）値として送る。値なし（`noValue`）。
+    ツールバー（`toolbar`）: `name` のあるものは項目（`toolbar: true`。fields の先頭）として `#toolbar` に、ほかはボタン（`o.tools`）。
+    ボタンは `{ type: "tool", index, item, values }` を送り、prelude が `onClick(rawValues, ctx)` を走らせて `toolDone`（エラーは `formError`）を返す。
+  - `ui.forms`: `forms.html`（`forms.js`）がサイドメニューと、フォームごとの iframe（`form.html?frame`、初めて表示したときに作る）を持つ。
+    iframe の `bridge.js` は親へ `postMessage`（ドロップしたファイルは `{ text, files }` で渡し、`forms.js` が `host.send` に添える）。
+    スクリプトとは `{ type: "from" | "to", form, msg }` で中継し、prelude は各フォームを `formWindow(..., embed)` に仮のページを渡して
+    1 つのウィンドウと同じに動かす。中止はウィンドウの cancel フラグ（`{"type":"cancel"}` もそのまま送る）が実行中のフォームが 1 つのときだけそのフォームのもの。
+    `size: "each"` は `{ type: "show", form, side }` で `Window::resize`（ページの大きさ。最大化中は変えない）。
     init の項目には、使ったときだけ `multiple` `custom` `variant` `prefix` `suffix` `maxLength` を入れる。
   - 編集できる表（`editable` / 列の `editable`）: `formTable` が列ごとのセル用フィールド（`normField` を流用、`t.edit`）を作る。
     検証はスクリプト側だけ（`checkValue` をフォーム項目と共用＋列の `validate`＋`validateRow`）。ページは入力欄（数値は text＋`inputmode`）で、

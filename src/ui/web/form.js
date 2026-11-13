@@ -19,6 +19,7 @@ let ran = false;
 let noSubmit = false;
 let extraButtons = []; // the form's buttons (beside the submit button), with the toggles and items of their menus
 let extraNodes = []; // what init put in the footer for them
+let toolButtons = []; // the toolbar's buttons (by index), busy until the script answers "toolDone"
 let pressed = null, spinTimer = 0; // the button whose press runs (it shows a spinner), and the timer that shows it
 let seq = 0; // the last value set by the script (ctx.setValue) applied here; sent back with the values
 let chartTexts = {}, lang = "ja"; // for chart fields (chart.js)
@@ -28,6 +29,12 @@ host.on((m) => {
   switch (m.type) {
     case "init": init(m); break;
     case "errors": setState("input"); showErrors(m.errors || {}, m.error || ""); break;
+    case "formError": $("form-error").textContent = m.error || ""; $("form-error").hidden = !m.error; break;
+    case "toolDone": {
+      const b = toolButtons[m.index];
+      if (b) { b.classList.remove("loading"); b.disabled = state !== "input"; }
+      break;
+    }
     case "picked": {
       // From a picker or a drop (a change by the user), or quiet: set by the script.
       const c = controls.get(m.field);
@@ -74,7 +81,7 @@ function init(m) {
     extraButtons.push(b);
     const menu = (m.buttonMenus || [])[k];
     let node = b;
-    if (menu && (menu.items.length || !menu.split)) node = menuButton(b, k, menu, variant);
+    if (menu && (menu.items.length || !menu.split)) node = menuButton(b, menu, variant, (j) => submit(k, j, b));
     else b.onclick = () => submit(k, undefined, b);
     $("submit").before(node);
     return node;
@@ -84,6 +91,7 @@ function init(m) {
     const last = extraNodes[extraNodes.length - 1];
     for (const b of last.matches("button") ? [last] : last.querySelectorAll(":scope > button")) b.classList.add("primary");
   }
+  buildToolbar(m.tools || []);
   $("cancel").textContent = texts.cancel;
   $("open").textContent = texts.openFolder;
   const box = $("fields");
@@ -103,14 +111,31 @@ function init(m) {
     parent(g.tab).append(sec);
     groupBoxes[k] = sec;
   });
+  // Rows: one label (beside them, like a field's) and the fields side by side.
+  const rows = m.rows || [];
+  const rowBoxes = rows.map(() => null);
+  const rowBox = (f, id) => {
+    if (rowBoxes[f.row]) return rowBoxes[f.row];
+    const r = rows[f.row];
+    const line = el("div", { className: "frow" });
+    const named = !!(r.label || r.icon);
+    const label = named ? el("label", { className: "lbl", htmlFor: id, title: r.tooltip || "" }, ...withIcon(r.icon, r.label)) : null;
+    const ctl = el("div", { className: "ctl" + (named ? "" : " wide") }, line);
+    if (r.help) ctl.append(el("div", { className: "help", textContent: r.help }));
+    const where = f.group >= 0 ? groupBoxes[f.group] : parent(f.tab);
+    where.append(...(label ? [label, ctl] : [ctl]));
+    return (rowBoxes[f.row] = { label, ctl, line, items: [] });
+  };
   fields.forEach((f, i) => {
     startGroups(i);
     const id = "f" + i;
     const c = buildControl(f, id);
     const check = f.type === "checkbox" || f.type === "switch";
-    const wide = f.type === "table" || f.type === "chart" || f.type === "note" ? " wide" : "";
-    // A note has no label beside it (its label is its heading).
-    const label = f.type === "note" ? null : el("label", { className: "lbl" + wide, htmlFor: id }, ...(check ? [] : withIcon(f.icon, f.label)));
+    // A note has no label beside it (its label is its heading); an image has one only when it is given.
+    const noLabel = f.type === "note" || ((f.type === "image" || f.row >= 0) && !f.label && !f.icon);
+    const wide = f.type === "table" || f.type === "chart" || f.type === "note" || (f.type === "image" && noLabel) ? " wide" : "";
+    const label = noLabel || ((f.toolbar || f.row >= 0) && check) ? null
+      : el("label", { className: (f.toolbar ? "tool-lbl" : f.row >= 0 ? "sub-lbl" : "lbl" + wide), htmlFor: id }, ...(check ? [] : withIcon(f.icon, f.label)));
     if (label && f.required && !check) label.append(el("span", { className: "req", textContent: "*" }));
     if (f.tooltip) { if (label) label.title = f.tooltip; c.node.title = f.tooltip; }
     const ctl = el("div", { className: "ctl" + wide }, c.node);
@@ -125,7 +150,19 @@ function init(m) {
     c.ctl = ctl;
     c.label = label;
     c.group = f.group >= 0 ? groupBoxes[f.group] : null;
-    (c.group || parent(f.tab)).append(...(label ? [label, ctl] : [ctl]));
+    const parts = label ? [label, ctl] : [ctl];
+    if (f.toolbar) {
+      // In the toolbar: the label (none for a checkbox or switch, whose label is beside it) before the control.
+      c.item = el("div", { className: "tool-field" }, ...parts);
+      $("toolbar").querySelector(".tool-buttons").before(c.item);
+    } else if (f.row >= 0) {
+      const r = rowBox(f, id);
+      const fitted = !!(c.text && c.text.style.width) || c.node.classList.contains("fit") || !!c.node.style.width || f.type === "image";
+      c.item = el("div", { className: "frow-item" + (fitted ? " fit" : "") }, ...parts);
+      c.row = r;
+      r.items.push(c);
+      r.line.append(c.item);
+    } else (c.group || parent(f.tab)).append(...parts);
     controls.set(f.name, c);
     if (counter) countChars(c, counter);
     watch(c);
@@ -136,7 +173,7 @@ function init(m) {
   setState("input");
   if (tabButtons.length) showTab(0, false);
   const typing = ["text", "password", "number", "date", "month", "time", "select", "textarea", "file", "files", "folder", "saveFile", "combobox", "tags", "dateRange"];
-  const hidden = (f) => f.tab > 0 || !!controls.get(f.name).group?.classList.contains("collapsed") || controls.get(f.name).off || controls.get(f.name).hid;
+  const hidden = (f) => f.tab > 0 || f.toolbar || !!controls.get(f.name).group?.classList.contains("collapsed") || controls.get(f.name).off || controls.get(f.name).hid;
   const first = fields.find((f) => typing.includes(f.type) && !hidden(f));
   if (first) controls.get(first.name).focus();
   host.send({ type: "shown" });
@@ -176,71 +213,6 @@ function countChars(c, counter) {
 // ---- tabs
 
 /** Builds the tab bar and one panel per tab (after the fields above the tabs); returns the panels. */
-// The accent option: the accent color (buttons, tabs, focus, checkboxes,
-// selected rows, the title bar icon) per theme, with its hover color, the
-// text on it (black or white, whichever reads better) and the selection
-// color derived from it. The background option: the page's (and the custom
-// title bar's) background per theme; a dark background in the light theme
-// (or a light one in the dark theme) takes the other theme's text, input and
-// border colors so the page stays readable. An unknown color keeps the default.
-function applyColors(accent, background, radius) {
-  // Black or white text on a color: by the OKLab lightness (L <= 0.65 takes
-  // white), not the WCAG luminance, whose small weights for red and green put
-  // black text on red, teal or mid blue. White there still keeps 3:1 (WCAG's
-  // large text / UI components). The color is drawn on a canvas so any CSS
-  // color syntax (names, hsl(), oklch(), color-mix()) gives its sRGB value.
-  const lightness = (c) => {
-    const ctx = Object.assign(document.createElement("canvas"), { width: 1, height: 1 }).getContext("2d");
-    ctx.fillStyle = c;
-    ctx.fillRect(0, 0, 1, 1);
-    const [r, g, b] = [...ctx.getImageData(0, 0, 1, 1).data].map((v) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
-    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
-    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
-    return 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s;
-  };
-  const isDark = (c) => lightness(c) <= 0.65;
-  const valid = (c) => !!c && CSS.supports("color", c);
-  const accentVars = (c, dark) => {
-    if (!valid(c)) return "";
-    const mix = dark ? "black" : "white";
-    return `--accent: ${c}; --accent-hover: color-mix(in srgb, ${c} 88%, ${mix});` +
-      ` --accent-fg: ${isDark(c) ? "#ffffff" : "#000000"}; --xljs-titlebar-accent: ${c};` +
-      ` --sel: color-mix(in srgb, ${c} ${dark ? "45%" : "22%"}, ${dark ? "#18181b" : "white"});`;
-  };
-  // The text and control colors of base.css for a light and a dark background.
-  const palettes = {
-    light: { fg: "#18181b", muted: "#71717a", border: "#e4e4e7", inputBorder: "#d4d4d8", input: "#ffffff" },
-    dark: { fg: "#fafafa", muted: "#a1a1aa", border: "#2e2e33", inputBorder: "#3f3f46", input: "#1c1c20" },
-  };
-  const backgroundVars = (c, dark) => {
-    if (!valid(c)) return "";
-    const darkBg = isDark(c);
-    const p = palettes[darkBg ? "dark" : "light"];
-    // The footer, table heads, striped rows and the tab bar: tints of the background.
-    const tint = (k) => `color-mix(in srgb, ${c} ${k}, ${p.fg})`;
-    let vars = `--bg: ${c}; --xljs-titlebar-bg: ${c}; --xljs-titlebar-fg: ${p.fg};` +
-      ` --hover: ${tint(darkBg ? "88%" : "94%")}; --subtle: ${tint(darkBg ? "88%" : "94%")};` +
-      ` --panel: ${tint(darkBg ? "95%" : "98%")}; --alt: ${tint(darkBg ? "97%" : "98.5%")};`;
-    if (darkBg !== dark) {
-      vars += ` --fg: ${p.fg}; --muted: ${p.muted}; --border: ${p.border}; --input-border: ${p.inputBorder}; --input: ${p.input};` +
-        ` --sel-fg: ${p.fg}; color-scheme: ${darkBg ? "dark" : "light"};`;
-    }
-    return vars;
-  };
-  // The radius option: the corners of buttons, inputs and boxes (a CSS length; "" keeps the default).
-  if (radius && CSS.supports("border-radius", radius)) document.documentElement.style.setProperty("--radius", radius);
-  else document.documentElement.style.removeProperty("--radius");
-  const light = backgroundVars(background.light, false) + " " + accentVars(accent.light, false);
-  const dark = backgroundVars(background.dark, true) + " " + accentVars(accent.dark, true);
-  let css = "";
-  if (light.trim()) css += `:root { ${light.trim()} }\n`;
-  if (dark.trim()) css += `@media (prefers-color-scheme: dark) { :root { ${dark.trim()} } }\n`;
-  let style = $("accent-style");
-  if (!style) style = document.head.appendChild(el("style", { id: "accent-style" }));
-  style.textContent = css;
-}
-
 function buildTabs(labels, icons) {
   $("tabs").textContent = "";
   $("panels").textContent = "";
@@ -454,6 +426,18 @@ function buildControl(f, id) {
       const i = input(f.type, f, id);
       const text = f.type === "password" ? i : undefined;
       return { node: fit(affix(f, i), i, f, f.type), inputs: [i], text, get: () => i.value, set: (v) => { i.value = v ?? ""; }, focus: () => i.focus() };
+    }
+    case "image": {
+      // As large as the image (never wider than the form), or width / height (the other side keeps the shape).
+      const img = el("img", { id, alt: f.alt || "", className: "fimage", draggable: false });
+      if (f.width) img.style.width = f.width + "px";
+      if (f.height) img.style.height = f.height + "px";
+      const node = el("div", { className: "image-box " + (f.align || "left") }, img);
+      return {
+        node, inputs: [], get: () => null,
+        set: (v) => { if (v) img.src = v; else img.removeAttribute("src"); img.hidden = !v; },
+        focus: () => {},
+      };
     }
     case "table":
       return tableControl(f, id);
@@ -1006,7 +990,7 @@ function liveCheck(name, now, change) {
 
 function watch(c) {
   const name = c.field.name;
-  if (c.field.type === "chart") return;
+  if (c.field.type === "chart" || c.field.type === "image" || c.field.type === "note") return;
   if (c.field.type === "table") {
     c.onChange = () => { if (!c.err.hidden || c.field.change) liveCheck(name, true, true); };
     return;
@@ -1034,6 +1018,12 @@ function setFieldState(c, st) {
     if (!n) continue;
     n.classList.toggle("off", c.off);
     n.hidden = c.hid;
+  }
+  if (c.item) c.item.hidden = c.hid;
+  // A row is hidden with all of its fields.
+  if (c.row) {
+    const gone = c.row.items.every((x) => x.hid);
+    for (const n of [c.row.label, c.row.ctl]) if (n) n.hidden = gone;
   }
   if (c.off || c.hid) {
     clearTimeout(checkTimers.get(c.field.name));
@@ -1110,6 +1100,48 @@ function submit(k, item, b) {
   host.send(m);
 }
 
+// ---- the toolbar (the form's top right): fields (put there by init) and
+// buttons, which run their onClick with the values as entered.
+
+function buildToolbar(tools) {
+  const bar = $("toolbar");
+  bar.textContent = "";
+  // The buttons after the fields.
+  const end = bar.appendChild(el("div", { className: "tool-buttons" }));
+  toolButtons = tools.map((t, k) => {
+    const b = el("button", { type: "button", className: (variantClass(t.variant) + " tool" + (t.label ? "" : " icon-only")).trim(), title: t.tooltip || "" },
+      ...(t.label ? withIcon(t.icon, t.label) : [el("i", { className: (t.icon || "fa-solid fa-ellipsis") + " icon" })]));
+    if (!t.label) b.setAttribute("aria-label", t.tooltip || "");
+    extraButtons.push(b);
+    if (t.menu) end.append(menuButton(b, { split: t.split, items: t.items }, t.variant, (j) => tool(k, j, b), true));
+    else {
+      b.onclick = () => tool(k, undefined, b);
+      end.append(b);
+    }
+    return b;
+  });
+  // The toolbar's fields are added by init after this.
+  const show = () => {
+    bar.hidden = !bar.querySelector(".tool-field, button");
+    $("top").hidden = bar.hidden && $("description").hidden;
+  };
+  show();
+  requestAnimationFrame(show);
+  new MutationObserver(show).observe(bar, { childList: true });
+}
+
+/** Runs the k-th toolbar button (item: the item of its menu). */
+function tool(k, item, b) {
+  if (state !== "input" || b.classList.contains("loading")) return;
+  flushCells();
+  closeMenus();
+  b.classList.add("loading");
+  b.disabled = true;
+  const m = { type: "tool", index: k, values: values(), seq };
+  if (item !== undefined) m.item = item;
+  host.send(m);
+}
+
 const variantClass = (v) => (v === "primary" ? "primary" : v === "destructive" ? "destructive" : v === "ghost" ? "ghost" : "");
 
 // ---- menus of the buttons: a split button (the button, and a toggle for
@@ -1118,27 +1150,31 @@ const variantClass = (v) => (v === "primary" ? "primary" : v === "destructive" ?
 
 const menus = []; // { menu, toggle } of each button with a menu
 
-/** The footer node of button b (the k-th) with its menu. */
-function menuButton(b, k, spec, variant) {
-  const menu = el("div", { className: "menu", hidden: true });
+/**
+ * The node of button b with its menu (spec: { split, items }); press(j)
+ * runs the j-th item (undefined: the button itself). down: the menu opens
+ * below the button (the toolbar), not above it (the footer).
+ */
+function menuButton(b, spec, variant, press, down) {
+  const menu = el("div", { className: "menu" + (down ? " down" : ""), hidden: true });
   menu.setAttribute("role", "menu");
   const items = spec.items.map((x, j) => {
     const it = el("button", { type: "button", className: "menu-item" + (x.variant === "destructive" ? " destructive" : ""), title: x.tooltip || "" },
       ...withIcon(x.icon, x.label));
     it.setAttribute("role", "menuitem");
     it.tabIndex = -1;
-    it.onclick = () => submit(k, j, b);
+    it.onclick = () => press(j);
     return it;
   });
   menu.append(...items);
   let toggle = b;
   if (spec.split) {
-    b.onclick = () => submit(k, undefined, b);
+    b.onclick = () => press(undefined);
     toggle = el("button", { type: "button", className: "split-toggle " + variantClass(variant), title: texts.moreActions },
       el("i", { className: "ic ic-chevron-down" }));
     toggle.setAttribute("aria-label", texts.moreActions);
     extraButtons.push(toggle);
-  } else {
+  } else if (!b.classList.contains("icon-only")) {
     b.append(el("i", { className: "ic ic-chevron-down caret" }));
   }
   toggle.setAttribute("aria-haspopup", "menu");

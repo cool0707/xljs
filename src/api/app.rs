@@ -80,7 +80,7 @@ pub(super) fn install(n: &N) {
     let icon: std::rc::Rc<std::cell::RefCell<Option<Vec<u8>>>> = Default::default();
     // appOpen(html, title, width, height, onMessage(msg, files), fixedSize,
     //         customTitleBar, titleIcon) ->
-    // {close(), closed: Promise, post(msg), isClosed(), cancelRequested(), clearCancel()}
+    // {close(), closed: Promise, post(msg), isClosed(), cancelRequested(), clearCancel(), resize(width, height)}
     n.set("appOpen", move |h, a| {
         let html = a.str(0);
         let (url, name) = page_url(&html).map_err(|e| a.throw(&e))?;
@@ -172,6 +172,8 @@ pub(super) fn install(n: &N) {
         obj.set("cancelRequested", Function::new(ctx.clone(), move || c2.load(Ordering::SeqCst))?)?;
         let c3 = cancel.clone();
         obj.set("clearCancel", Function::new(ctx.clone(), move || c3.store(false, Ordering::SeqCst))?)?;
+        let w3 = w.clone();
+        obj.set("resize", Function::new(ctx.clone(), move |width: f64, height: f64| w3.resize(width as i64, height as i64))?)?;
         Ok(obj.into_value())
     });
 }

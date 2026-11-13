@@ -212,6 +212,14 @@ declare global {
      */
     form<V extends FormValues = FormValues>(options: FormOptions<V>): Promise<V | null>;
     /**
+     * 複数のフォームを 1 つのウィンドウにまとめ、左（side: "right" なら右）のサイドメニューで切り替えて表示する。
+     * メニューの上のハンバーガーボタンでメニューをアイコンだけの幅に畳める。各フォームは ui.form と同じように動く
+     * （onSubmit・buttons・検証・remember。値は別々）。ウィンドウが閉じられると、フォームごとの最後に送信された値
+     * （送信されていなければ null）の配列を返す。送信ボタン（onSubmit なし）・キャンセル・Esc はウィンドウを閉じる。
+     * コンソール・mock では forms の順に 1 つずつ尋ねる
+     */
+    forms(options: FormsOptions): Promise<(FormValues | null)[]>;
+    /**
      * 表を表示する（並べ替え・絞り込み・列幅の変更・コピー・CSV/Excel に保存）。
      * selectable を指定すると OK/キャンセル付きになり、選んだ行（元のオブジェクト）を返す。キャンセルは []。
      */
@@ -245,7 +253,7 @@ declare global {
 
   type FormFieldType = "text" | "password" | "number" | "date" | "month" | "time" | "select" | "radio" |
     "checkbox" | "textarea" | "file" | "files" | "folder" | "saveFile" | "table" | "chart" |
-    "switch" | "checkboxes" | "segmented" | "combobox" | "slider" | "dateRange" | "tags" | "note";
+    "switch" | "checkboxes" | "segmented" | "combobox" | "slider" | "dateRange" | "tags" | "note" | "image";
 
   /**
    * フォームの項目。値の型は type による:
@@ -253,7 +261,7 @@ declare global {
    * date は Date | null（ローカル日付）、month は "YYYY-MM" | null、time は "HH:MM" | null、
    * checkbox / switch は boolean、slider は number、checkboxes / tags は string[]、
    * segmented は string（multiple: true なら string[]）、dateRange は { from: Date, to: Date } | null、
-   * note は値なし、file / saveFile は FileSystemFileHandle | null、
+   * note・image は値なし、file / saveFile は FileSystemFileHandle | null、
    * files は FileSystemFileHandle[]、folder は FileSystemDirectoryHandle | null、
    * table は選択した行（元のオブジェクト）の配列（selectable: "single" なら行か null。selectable なしなら値なし。
    * 編集できる表で selectable なしならすべての行）、
@@ -272,12 +280,15 @@ declare global {
      * combobox は入力で options を絞り込んで選ぶ欄（allowCustom: true なら自由入力も可）、
      * slider は min〜max（既定 0〜100）のスライダー、dateRange は開始日と終了日、
      * tags は Enter かカンマで区切って入力する文字列のリスト、
-     * note は入力欄ではなくメッセージの表示（label が見出し、default が本文、variant が種類）
+     * note は入力欄ではなくメッセージの表示（label が見出し、default が本文、variant が種類）、
+     * image は画像の表示（default が画像。label を付けなければフォームの幅いっぱいに置く）
      */
     type?: FormFieldType;
     /**
      * 初期値。ファイル系はパスかハンドル、date は Date か "YYYY-MM-DD"、table は選択する行（行そのものか番号、配列可）、
-     * checkboxes / tags / segmented（multiple）は配列、dateRange は { from, to } か [from, to]（Date か "YYYY-MM-DD"）、note は本文
+     * checkboxes / tags / segmented（multiple）は配列、dateRange は { from, to } か [from, to]（Date か "YYYY-MM-DD"）、note は本文、
+     * image は画像ファイル（PNG・JPEG・GIF・BMP・WebP・ICO・SVG。パス・ハンドル・File）・バイト列（Uint8Array / ArrayBuffer）・
+     * "https://..." や "data:image/..." の URL。ctx.setValue で画像を差し替えられる
      */
     default?: unknown;
     /** 入力必須（checkbox / switch はオン必須、checkboxes は 1 つ以上、table は 1 行以上の選択が必須、dateRange は両方） */
@@ -288,6 +299,15 @@ declare global {
     multiple?: boolean;
     /** combobox で選択肢にない入力も値として受け付ける */
     allowCustom?: boolean;
+    /** image の置き方（既定 "left"） */
+    align?: "left" | "center" | "right";
+    /** image の代わりの文字（読み上げ用） */
+    alt?: string;
+    /**
+     * image の表示する幅（px）。既定は画像の大きさ（フォームの幅を超えるときは縮める）。
+     * width か height の片方だけなら縦横比を保つ。height は table・chart では行数（下の height を参照）
+     */
+    width?: number;
     /** note の種類（既定 "info"）。色とアイコンが変わる */
     variant?: "info" | "success" | "warning" | "error";
     /** text / number / password の入力欄の中に付ける前後の文字（"¥"、"件" など）。slider では値の表示に付く */
@@ -323,7 +343,7 @@ declare global {
      */
     validateRow?(row: any, index: number): Record<string, string | null | undefined> | string | null | undefined | void |
       Promise<Record<string, string | null | undefined> | string | null | undefined | void>;
-    /** table の表示する高さ（行数。既定は 8 行まで）。chart の高さ（1 行 25px として。既定 12） */
+    /** table の表示する高さ（行数。既定は 8 行まで）。chart の高さ（1 行 25px として。既定 12）。image の高さ（px） */
     height?: number;
     /** chart の項目のグラフ（ui.chart と同じ定義。ExcelChart も可）。ctx.chart(name, spec) で変えられる */
     chart?: ChartSpec | ExcelChart;
@@ -379,7 +399,45 @@ declare global {
     collapsible?: boolean;
     /** 閉じた状態で表示する（collapsible を兼ねる）。中の項目にエラーが出ると開く */
     collapsed?: boolean;
+    fields: (FormField | FormRow)[];
+  }
+
+  /**
+   * 横に並べる項目（姓・名など）。fields（タブ・グループの fields でも可）に項目と並べて書くと、
+   * row を左のラベルにして、項目を 1 行に並べる。各項目の label は入力欄の前に小さく出る（"" で出さない）。
+   * 値は項目の name でほかの項目と同じオブジェクトにまとまる（行の中に行・グループは入れられない）。
+   * 幅は等分（maxLength・数値・選択肢の幅に合わせる項目はその幅）。狭いウィンドウでは折り返す。コンソールでは順に尋ねる
+   */
+  interface FormRow {
+    /** 左に出すラベル（"" ならラベルなしでフォームの幅いっぱいに並べる） */
+    row: string;
+    /** ラベルの前に出す Font Awesome のアイコン（FormField の icon と同じ） */
+    icon?: string;
+    /** 行の下に出す説明 */
+    help?: string;
+    /** ラベルにマウスを重ねたときに出す説明 */
+    tooltip?: string;
     fields: FormField[];
+  }
+
+  /**
+   * フォームの右上（ツールバー）のボタン。label なしで icon だけならアイコンのボタン（tooltip が説明）。
+   * 押すと検証せずに入力のままの値で onClick を呼ぶ（進捗・ログの表示はしない。ctx.setValue などで項目を変えられる。
+   * ここで起きたエラーはフォームの下にエラーとして表示される）。menu を付けるとメニューを開くボタンになる。
+   * コンソール・mock では「label（なければ tooltip）」でボタンのあとに並び、押したあとはフォームをもう一度尋ねる
+   */
+  interface FormToolbarButton<V extends FormValues = FormValues> {
+    label?: string;
+    /** Font Awesome のアイコン（FormField の icon と同じ） */
+    icon?: string;
+    /** マウスを重ねたときに出す説明（ツールチップ） */
+    tooltip?: string;
+    /** 見た目（既定 "ghost"＝枠なし） */
+    variant?: "default" | "primary" | "destructive" | "ghost";
+    /** メニューの項目。項目は menu を持てない */
+    menu?: Omit<FormToolbarButton<V>, "menu" | "variant">[];
+    /** 押されたときの処理。menu があれば省略可 */
+    onClick?(values: V, ctx: FormChangeContext): unknown;
   }
 
   interface FormValues {
@@ -470,12 +528,17 @@ declare global {
     /** 項目の上に出す説明 */
     description?: string;
     /** 項目（tabs があればタブの上に常に表示する項目）。{ group, fields } で見出し付きのグループにまとめられる */
-    fields?: (FormField | FormGroup)[];
+    fields?: (FormField | FormGroup | FormRow)[];
+    /**
+     * フォームの右上に置く項目（switch・checkbox・select など。name のあるもの）とボタン（FormToolbarButton）。
+     * 項目の値はほかの項目と同じく values に入る。説明（description）があればその右に並ぶ
+     */
+    toolbar?: (FormField | FormToolbarButton<V>)[];
     /**
      * タブ。各タブの項目はタブを切り替えて表示する（値は fields と同じく 1 つのオブジェクトにまとまるので、名前は全体で重複不可）。
      * コンソールではタブごとに見出しを出して順に尋ねる
      */
-    tabs?: { label: string; icon?: string; fields: (FormField | FormGroup)[] }[];
+    tabs?: { label: string; icon?: string; fields: (FormField | FormGroup | FormRow)[] }[];
     /** 送信ボタンの文字（既定 "OK"）。false で送信ボタンを出さない（buttons があるときだけ） */
     submit?: string | false;
     /** 送信ボタンの Font Awesome のアイコン（FormField の icon と同じ） */
@@ -530,6 +593,46 @@ declare global {
      * 角丸の大きさ（ボタン・入力欄・タブ・表などの角）。ピクセル数か "none"（0）・"small"（4）・"medium"（6。既定）・
      * "large"（10）・"full"（ボタンと入力欄を丸く。表などの枠は 10 まで）。コンソール・モックでは無視
      */
+    radius?: number | "none" | "small" | "medium" | "large" | "full";
+  }
+
+  /** ui.forms でまとめるフォーム */
+  interface FormsItem extends FormOptions {
+    /** サイドメニューに出す名前（既定は title → 番号）。title を省くとこれがフォームの title（remember のキー）になる */
+    label?: string;
+    /** サイドメニューに出す Font Awesome のアイコン（FormField の icon と同じ）。なければメニューを畳んだとき label の 1 文字目を出す */
+    icon?: string;
+  }
+
+  interface FormsOptions {
+    /** ウィンドウのタイトル（既定は @title → スクリプト名） */
+    title?: string;
+    /** まとめるフォーム。各フォームの titleBar / icon / resizable は無視する（ウィンドウはこのオプションのもの） */
+    forms: FormsItem[];
+    /** サイドメニューの位置（既定 "left"） */
+    side?: "left" | "right";
+    /** サイドメニューをアイコンだけの幅に畳んだ状態で開く */
+    collapsed?: boolean;
+    /** 最初に表示するフォーム（番号・label・id。既定 0） */
+    start?: number | string;
+    /**
+     * ウィンドウの大きさの決め方。"fixed"（既定）は width / height（省略時はいちばん大きいフォームに合わせる）で、
+     * 各フォームの width / height は無視する。"each" はフォームを切り替えるたびにそのフォームの大きさ
+     * （フォームの width / height、なければ項目数から）にウィンドウを合わせる（width / height は無視。最大化中は変えない）
+     */
+    size?: "fixed" | "each";
+    /** size: "fixed" のウィンドウの大きさ（サイドメニューを含む） */
+    width?: number;
+    height?: number;
+    /** false にするとウィンドウの大きさを固定する */
+    resizable?: boolean;
+    /** FormOptions と同じ。自前のタイトルバー */
+    titleBar?: "system" | "custom";
+    /** 自前のタイトルバーのアイコン */
+    icon?: string;
+    /** FormOptions と同じ。サイドメニューと、指定のないフォームに使う */
+    accent?: string | { light?: string; dark?: string };
+    background?: string | { light?: string; dark?: string };
     radius?: number | "none" | "small" | "medium" | "large" | "full";
   }
 
