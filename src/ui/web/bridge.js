@@ -3,8 +3,11 @@
 // the script's side is in internal/api/prelude.js (ui.form, ui.table).
 const host = (() => {
   // In a frame of the development mode's preview (dev.js, form.html?preview)
-  // the parent page plays the script: messages go through window.postMessage.
-  const framed = window.parent !== window && new URLSearchParams(location.search).has("preview");
+  // or of a set of forms (forms.js, form.html?frame) the parent page plays
+  // the script: messages go through window.postMessage. A set passes on the
+  // files dropped (frame&attach).
+  const params = new URLSearchParams(location.search);
+  const framed = window.parent !== window && (params.has("preview") || params.has("frame"));
   const wv = framed ? null : window.chrome && window.chrome.webview;
   const handlers = [];
   if (wv) {
@@ -23,11 +26,15 @@ const host = (() => {
       for (const fn of handlers) fn(msg);
     });
   }
-  const canAttach = !!(wv && typeof wv.postMessageWithAdditionalObjects === "function");
+  const canAttach = framed ? params.has("attach") : !!(wv && typeof wv.postMessageWithAdditionalObjects === "function");
   return {
     /** Sends msg to the script; files (File objects) arrive there as paths. */
     send(msg, files) {
-      if (framed) window.parent.postMessage("\x01" + JSON.stringify(msg), "*");
+      if (framed) {
+        const text = "\x01" + JSON.stringify(msg);
+        if (files && files.length && canAttach) window.parent.postMessage({ text, files: Array.from(files) }, location.origin);
+        else window.parent.postMessage(text, "*");
+      }
       if (!wv) return;
       const s = JSON.stringify(msg);
       if (files && files.length && canAttach) wv.postMessageWithAdditionalObjects(s, Array.from(files));

@@ -13,10 +13,10 @@ use base64::Engine as _;
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use webview2_com::*;
 use windows::Win32::Foundation::*;
-use windows::Win32::Graphics::Gdi::UpdateWindow;
+use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, UpdateWindow};
 use windows::Win32::System::Com::CoTaskMemFree;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::HiDpi::GetDpiForSystem;
+use windows::Win32::UI::HiDpi::{GetDpiForSystem, GetDpiForWindow};
 use windows::Win32::UI::Input::KeyboardAndMouse::ReleaseCapture;
 use windows::Win32::UI::Shell::{ExtractIconExW, SHCreateMemStream};
 use windows::Win32::UI::WindowsAndMessaging::*;
@@ -109,6 +109,56 @@ impl Window for WebWindow {
             b.command(cmd);
         }
     }
+
+    fn resize(&self, width: i64, height: i64) {
+        let hwnd = self.hwnd();
+        let Some(st) = state(hwnd) else { return };
+        if *st.closed.borrow() || width <= 0 || height <= 0 {
+            return;
+        }
+        unsafe {
+            if IsZoomed(hwnd).as_bool() || IsIconic(hwnd).as_bool() {
+                return;
+            }
+            let style = WINDOW_STYLE(GetWindowLongW(hwnd, GWL_STYLE) as u32);
+            let mut dpi = GetDpiForWindow(hwnd);
+            if dpi == 0 {
+                dpi = 96;
+            }
+            let (ww, wh) = outer_size(width, height, st.o.custom_title_bar, style, dpi);
+            let mut cur = RECT::default();
+            let _ = GetWindowRect(hwnd, &mut cur);
+            // The same center, inside the work area of the window's monitor.
+            let mut work = RECT::default();
+            let mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+            let mut mi = MONITORINFO { cbSize: std::mem::size_of::<MONITORINFO>() as u32, ..Default::default() };
+            if GetMonitorInfoW(mon, &mut mi).as_bool() {
+                work = mi.rcWork;
+            }
+            let mut x = (cur.left + cur.right) / 2 - ww / 2;
+            let mut y = (cur.top + cur.bottom) / 2 - wh / 2;
+            if work.right > work.left {
+                x = x.min(work.right - ww).max(work.left);
+                y = y.min(work.bottom - wh).max(work.top);
+            }
+            let _ = SetWindowPos(hwnd, None, x, y, ww, wh, SWP_NOZORDER | SWP_NOACTIVATE);
+        }
+    }
+}
+
+/// The size of a window (with its frame) whose page is width x height
+/// logical pixels (below the custom title bar, when it has one).
+unsafe fn outer_size(width: i64, height: i64, custom_title_bar: bool, style: WINDOW_STYLE, dpi: u32) -> (i32, i32) {
+    let height = if custom_title_bar { height + TITLE_BAR_HEIGHT } else { height };
+    let mut r = RECT { left: 0, top: 0, right: (width * dpi as i64 / 96) as i32, bottom: (height * dpi as i64 / 96) as i32 };
+    unsafe {
+        let _ = AdjustWindowRectEx(&mut r, style, false, Default::default());
+    }
+    if custom_title_bar {
+        // No caption or top border (see WM_NCCALCSIZE).
+        r.top = 0;
+    }
+    (r.right - r.left, r.bottom - r.top)
 }
 
 static CLASS: OnceLock<bool> = OnceLock::new();
@@ -166,11 +216,7 @@ fn open_hwnd(o: WindowOptions) -> Result<HWND> {
     }
     register_class();
     let width = if o.width > 0 { o.width } else { DEFAULT_WIDTH };
-    let mut height = if o.height > 0 { o.height } else { DEFAULT_HEIGHT };
-    if o.custom_title_bar {
-        // The page's size is below the bar.
-        height += TITLE_BAR_HEIGHT;
-    }
+    let height = if o.height > 0 { o.height } else { DEFAULT_HEIGHT };
     let mut style = if o.hidden {
         WS_POPUP
     } else if o.fixed_size {
@@ -190,13 +236,8 @@ fn open_hwnd(o: WindowOptions) -> Result<HWND> {
         if dpi == 0 {
             dpi = 96;
         }
-        let mut r = RECT { left: 0, top: 0, right: (width * dpi as i64 / 96) as i32, bottom: (height * dpi as i64 / 96) as i32 };
-        let _ = AdjustWindowRectEx(&mut r, style, false, Default::default());
-        if o.custom_title_bar {
-            // No caption or top border (see WM_NCCALCSIZE).
-            r.top = 0;
-        }
-        let (ww, wh) = (r.right - r.left, r.bottom - r.top);
+        // The page's size is below the custom title bar.
+        let (ww, wh) = outer_size(width, height, o.custom_title_bar, style, dpi);
         let mut work = RECT::default();
         let _ = SystemParametersInfoW(SPI_GETWORKAREA, 0, Some(&mut work as *mut _ as *mut _), Default::default());
         let x = work.left + 0.max((work.right - work.left - ww) / 2);

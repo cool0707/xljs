@@ -274,4 +274,8 @@ impl Window for ThreadedWindow {
         let w = self.w.clone();
         self.t.post(Box::new(move || w.browser(cmd)));
     }
+    fn resize(&self, width: i64, height: i64) {
+        let w = self.w.clone();
+        self.t.post(Box::new(move || w.resize(width, height)));
+    }
 }

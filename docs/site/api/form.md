@@ -1,6 +1,6 @@
 ---
 title: 入力フォーム（ui.form）
-api: FormOptions, FormField, FormFieldType, FormGroup, FormValues, FormContext, FormChangeContext, FormButton, FormTableColumn
+api: FormOptions, FormField, FormFieldType, FormGroup, FormRow, FormToolbarButton, FormsOptions, FormsItem, FormValues, FormContext, FormChangeContext, FormButton, FormTableColumn
 ---
 
 HTML を書かずに、項目の定義だけで入力フォームを出せます。キャンセルは `null`。
@@ -25,6 +25,47 @@ if (!v) exit();              // v.src は FileSystemDirectoryHandle、v.out は 
 - `type: "table"` で表を表示します（`rows` `columns` は `ui.table` と同じ。`height` は表示する行数）。`selectable: true`（複数）/ `"single"` を付けると行をクリックして選べ、値は選んだ行（元のオブジェクト）になります。`selectable` なしは表示だけです。列見出しのクリックで並べ替えできます。`onSubmit` の中で `ctx.table(name, rows)` を呼ぶと行を入れ替えられます（結果の表示など）。
 - `editable: true`（または列ごとに `columns: [{ key, editable: true }]`）でセルをその場で編集できます。列に `type`（`text` `number` `date` `month` `time` `select` `checkbox`。既定は値から判断）、`required` `min` `max` `pattern` `options`、`validate(value, row, index)` を書くと入力のたびに検証し、エラーのセルを赤く表示して表の下に一覧を出します（クリックでそのセルへ）。行全体の検証は項目の `validateRow(row, index)`。エラーが残っていると送信できません。検証を通った値は元の行オブジェクトに直接書き込まれます。Enter で下のセルへ移ります。数値は全角数字や「1,000」も受け付けます。コンソールでは表のあとに編集する行の番号を尋ねます。
 - `fields`（タブの `fields` でも可）に `{ group: "見出し", icon, help, fields: [...] }` を項目と並べて書くと、見出しの下に項目をまとめて表示します。値はグループに関係なく 1 つのオブジェクトにまとまります（グループの中にグループは入れられません）。コンソールでは `-- 見出し --` を出してから順に尋ねます。
+- `fields`（タブ・グループの `fields` でも可）に `{ row: "氏名", fields: [...] }` を書くと、`row` を左のラベルにして項目を横に並べます（姓・名、郵便番号と都道府県など）。各項目の `label` は入力欄の前に小さく出ます（`""` で出しません）。幅は等分で、`maxLength` や数値の項目はその幅になります。値はほかの項目と同じく 1 つのオブジェクトにまとまります。
+
+```js
+const v = await ui.form({
+  title: "顧客登録",
+  fields: [
+    { row: "氏名", fields: [{ name: "last", label: "姓", required: true }, { name: "first", label: "名", required: true }] },
+    { row: "フリガナ", fields: [{ name: "lastKana", label: "", placeholder: "セイ" }, { name: "firstKana", label: "", placeholder: "メイ" }] },
+  ],
+});
+```
+
+- `type: "image"` で画像を表示します。`default` に画像ファイル（PNG・JPEG・GIF・BMP・WebP・ICO・SVG のパス・ハンドル）、バイト列（`Uint8Array`）、`"https://..."` の URL を指定します。`width` / `height`（px。片方だけなら縦横比を保つ）、`align`（`"left"` `"center"` `"right"`）、`alt` を指定できます。`label` を付けなければフォームの幅いっぱいに置きます。値はありません（`values` に入りません）。`ctx.setValue(name, 画像)` で差し替えられます。コンソール・モックでは表示しません。
+
+```js
+await ui.form({
+  title: "商品の確認",
+  fields: [
+    { name: "logo", type: "image", default: "logo.png", height: 48, align: "center" },
+    { name: "photo", label: "写真", type: "image", default: "images/item01.jpg", width: 240 },
+    { name: "code", label: "商品コード" },
+  ],
+});
+```
+
+- `toolbar` に項目（`name` のあるもの。`switch` `checkbox` `select` など）とボタンを書くと、フォームの右上に並べます（説明があればその右）。項目の値はほかの項目と同じく `values` に入ります。ボタンは `{ icon: "gear", tooltip: "設定", onClick(values, ctx) }` のように `label` なしならアイコンだけのボタンになり、押すと検証せずに入力のままの値で `onClick` を呼びます（進捗やログの表示はしません。`ctx.setValue` などで項目を変えられ、別の `ui.form` を開くこともできます）。`menu: [{ label, onClick }]` でメニューを開くボタンにできます。コンソール・モックではボタンは `label`（なければ `tooltip`）でほかのボタンのあとに並びます。
+
+```js
+const v = await ui.form({
+  title: "集計",
+  toolbar: [
+    { name: "detail", type: "switch", label: "詳細表示" },
+    { icon: "gear", tooltip: "設定", async onClick(values, ctx) {
+      const s = await ui.form({ title: "設定", fields: [{ name: "dir", label: "既定の出力先", type: "folder" }] });
+      if (s && s.dir) ctx.setValue("out", s.dir);
+    } },
+  ],
+  fields: [{ name: "out", label: "出力先", type: "folder", required: true }],
+});
+```
+
 - `tabs: [{ label, fields }]` を指定するとタブで項目を切り替えて表示します（`fields` はタブの上に常に表示）。値はタブに関係なく 1 つのオブジェクトにまとまります。エラーのある項目のタブには印が付き、そのタブに切り替わります。Ctrl+Tab でも切り替えられます。サンプル: `examples/form-tabs-table.js`
 - ウィンドウのアイコンはメタデータの `@icon` で変えられます（`@mode app` でなくても有効。表も同じ）。
 - 同梱の [Font Awesome Free](https://fontawesome.com/icons) のアイコンを、項目のラベル（`icon`）、タブ（`tabs: [{ label, icon, fields }]`）、ボタン（`buttons: [{ label, icon, ... }]`、送信ボタンは `submitIcon`）に付けられます。`"folder-open"` のように名前だけなら solid、`"fa-regular fa-calendar"` のようにクラスでも書けます。フォームの `icon` は `titleBar: "custom"` のときに自前のタイトルバーでタイトルの前に表示します（`"system"` では無視）。コンソール・モックでは無視されます。
@@ -34,3 +75,26 @@ if (!v) exit();              // v.src は FileSystemDirectoryHandle、v.out は 
 - `onSubmit(values, ctx)` を書くと、実行後もウィンドウが開いたままになり、進捗（`ctx.progress(done, total, message)` / `ctx.withProgress(iterable)`。中止ボタンで `ctx.withProgress` のループから onSubmit が終わる）、ログ（`ctx.log` / `ctx.error`）、中止ボタン（`ctx.cancelled`）を表示します。出力ファイルを返すと完了後に「フォルダを開く」ボタンが出ます。サンプル: `examples/form-aggregate.js`
 - `buttons: [{ label, onClick(values, ctx) }]` で送信ボタンの左にボタンを追加できます。押すと `onClick` が `onSubmit` と同じように実行されます（進捗・ログ・中止。ウィンドウは開いたまま）。`validate: false` を付けると検証せずに入力のままの値で実行し（読み込み・クリアなど）、`close: true` を付けると正常に終わったらフォームを閉じます。`submit: false` で送信ボタンを出さないこともできます。`ctx.setValue(name, value)` で項目の値を変えられます。コンソールでは項目のあとにどのボタンを押すか尋ねます。
 - `remember` ではパスワードは保存しません。保存したくない項目には `remember: false` を付けます。保存先のフォルダは環境変数 `XLJS_CONFIG_DIR` で変えられます。
+
+## 複数のフォームをまとめる（ui.forms）
+
+`ui.forms({ forms: [...] })` で複数のフォームを 1 つのウィンドウにまとめ、サイドメニューで切り替えて表示します。各フォームは `ui.form` と同じオプション（`fields` `onSubmit` `buttons` など）に、メニューに出す `label` と `icon` を加えたものです。メニューの上のハンバーガーボタンでメニューをアイコンだけの幅に畳めます。
+
+```js
+const [order, setting] = await ui.forms({
+  title: "受注管理",
+  side: "left",            // "right" で右側
+  size: "fixed",           // "each" ならフォームを切り替えるたびにそのフォームの大きさにする
+  width: 860, height: 560,
+  forms: [
+    { label: "受注登録", icon: "cart-plus", fields: [{ name: "customer", label: "顧客", required: true }],
+      onSubmit(v, ctx) { ctx.log(`${v.customer} を登録しました`); } },
+    { label: "設定", icon: "gear", fields: [{ name: "dir", label: "出力先", type: "folder" }], remember: true },
+  ],
+});
+```
+
+- `size: "fixed"`（既定）はウィンドウの大きさを `width` / `height`（省略時はいちばん大きいフォームに合わせる）で決め、各フォームの `width` / `height` は無視します。`size: "each"` はフォームを切り替えるたびに、そのフォームの大きさ（`width` / `height`、なければ項目数から）にウィンドウを合わせます。
+- `collapsed: true` でメニューを畳んだ状態で開きます。`start` で最初に表示するフォーム（番号・`label`・`id`）を選べます。`accent` `background` `radius` はメニューと、指定のないフォームに使います。
+- 値はフォームごとに別々で、ウィンドウを閉じると各フォームの最後に送信された値（送信されていなければ `null`）の配列を返します。`onSubmit` のない送信ボタン・キャンセル・Esc はウィンドウを閉じます。
+- コンソール・モックではフォームを順に 1 つずつ尋ねます。

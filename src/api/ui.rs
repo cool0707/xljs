@@ -47,7 +47,40 @@ pub(crate) fn config_dir() -> String {
     }
 }
 
+/// The type of an image by its first bytes (PNG, JPEG, GIF, BMP, WebP, ICO,
+/// SVG); None for anything else.
+pub(crate) fn sniff_image(b: &[u8]) -> Option<&'static str> {
+    Some(if b.starts_with(b"\x89PNG\r\n\x1a\n") {
+        "image/png"
+    } else if b.starts_with(b"\xff\xd8\xff") {
+        "image/jpeg"
+    } else if b.starts_with(b"GIF87a") || b.starts_with(b"GIF89a") {
+        "image/gif"
+    } else if b.starts_with(b"BM") && b.len() > 14 {
+        "image/bmp"
+    } else if b.len() > 12 && &b[..4] == b"RIFF" && &b[8..12] == b"WEBP" {
+        "image/webp"
+    } else if b.starts_with(&[0, 0, 1, 0]) && b.len() > 6 {
+        "image/x-icon"
+    } else {
+        let head = String::from_utf8_lossy(&b[..b.len().min(4096)]).to_lowercase();
+        let t = head.trim_start_matches('\u{feff}').trim_start();
+        if t.starts_with('<') && head.contains("<svg") {
+            "image/svg+xml"
+        } else {
+            return None;
+        }
+    })
+}
+
 pub(super) fn install(n: &N) {
+    // imageDataUrl(bytes, name): a data: URL for an image (name for messages); throws if it is not one.
+    n.set("imageDataUrl", |_, a| {
+        use base64::Engine as _;
+        let b = a.bytes(0)?;
+        let Some(mime) = sniff_image(&b) else { return Err(a.throw(&crate::err!("form.notImage", a.str(1)))) };
+        a.ret(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(&b)))
+    });
     n.set("uiAlert", |h, a| {
         h.env.ui.alert(&a.str(0), &a.str(1));
         a.undefined()

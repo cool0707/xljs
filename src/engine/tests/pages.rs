@@ -42,7 +42,7 @@ impl PageUi {
             return self.m.open_window(o);
         };
         let (tx, rx) = mpsc::channel();
-        let w = Arc::new(PageWindow { o, tx: Mutex::new(Some(tx)), closed: (Mutex::new(false), std::sync::Condvar::new()) });
+        let w = Arc::new(PageWindow { o, tx: Mutex::new(Some(tx)), closed: (Mutex::new(false), std::sync::Condvar::new()), sizes: Default::default() });
         let p = FakePage { w: w.clone(), rx, failures: self.failures.clone() };
         self.threads.lock().unwrap().push(std::thread::spawn(move || {
             p.send(json!({"type": "ready"}), &[]);
@@ -73,6 +73,8 @@ struct PageWindow {
     o: WindowOptions,
     tx: Mutex<Option<mpsc::Sender<Value>>>,
     closed: (Mutex<bool>, std::sync::Condvar),
+    /// The sizes asked for with resize.
+    sizes: Mutex<Vec<(i64, i64)>>,
 }
 
 impl Window for PageWindow {
@@ -94,6 +96,9 @@ impl Window for PageWindow {
         if let Some(f) = &self.o.on_closed {
             f();
         }
+    }
+    fn resize(&self, width: i64, height: i64) {
+        self.sizes.lock().unwrap().push((width, height));
     }
 }
 
@@ -836,4 +841,105 @@ const v = await ui.form({
 console.log(v.a, v.g.length, v.g[0].開始.getTime() === 1794268800000, v.g[0].進捗);
 "#;
     form_case("chartform.js", src, "change start,end true\nchange progress true\nx 1 true 0.5\n", pages);
+}
+
+#[test]
+fn form_window_image_row_toolbar() {
+    let pages: Vec<PageFn> = vec![Box::new(|p| {
+        let init = p.expect("init");
+        let f = &init["fields"];
+        // The toolbar's fields come first; an image's value is its data: URL.
+        check!(p, f[0]["name"] == "dark" && f[0]["toolbar"] == true, "toolbar field = {}", as_json(&f[0]));
+        check!(
+            p,
+            f[1]["type"] == "image" && f[1]["value"].as_str().unwrap_or("").starts_with("data:image/png;base64,iVBORw0KGgo") && f[1]["align"] == "center" && f[1]["height"] == 40 && f[1]["label"] == "",
+            "image = {}",
+            as_json(&f[1])
+        );
+        check!(p, f[2]["row"] == 0 && f[3]["row"] == 0 && f[4].get("row").is_none(), "rows = {}", as_json(f));
+        check!(p, as_json(&init["rows"]) == r#"[{"help":"","icon":"","label":"氏名","tooltip":""}]"#, "rows = {}", as_json(&init["rows"]));
+        let tools = as_json(&init["tools"]);
+        check!(
+            p,
+            tools == r#"[{"icon":"fa-solid fa-gear","items":[],"label":"","menu":false,"split":false,"tooltip":"設定","variant":"ghost"},{"icon":"","items":[{"icon":"","label":"A","tooltip":"","variant":"ghost"}],"label":"その他","menu":true,"split":false,"tooltip":"","variant":"ghost"}]"#,
+            "tools = {tools}"
+        );
+        // The gear: onClick with the values as entered (not checked), which sets a field.
+        p.send(json!({"type": "tool", "index": 0, "values": {"dark": true, "last": "", "first": "花子"}}), &[]);
+        let got = p.expect("picked");
+        check!(p, got["field"] == "last" && got["value"] == "山田", "picked = {}", as_json(&got));
+        p.expect("toolDone");
+        // A menu item that throws: the error is the form's.
+        p.send(json!({"type": "tool", "index": 1, "item": 0, "values": {}}), &[]);
+        let got = p.expect("formError");
+        check!(p, got["error"].as_str().unwrap_or("").contains("失敗"), "formError = {}", as_json(&got));
+        p.expect("toolDone");
+        p.send(json!({"type": "submit", "values": {"dark": true, "last": "山田", "first": "花子", "memo": "x"}}), &[]);
+        p.wait_closed();
+    })];
+    let src = r#"
+const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+const v = await ui.form({
+  toolbar: [
+    { icon: "gear", tooltip: "設定", onClick(values, ctx) { console.log("gear", values.dark, values.first); ctx.setValue("last", "山田"); } },
+    { label: "その他", menu: [{ label: "A", onClick() { throw new Error("失敗"); } }] },
+    { name: "dark", type: "switch", label: "ダーク" },
+  ],
+  fields: [
+    { name: "logo", type: "image", default: png, height: 40, align: "center" },
+    { row: "氏名", fields: [{ name: "last", label: "姓", required: true }, { name: "first", label: "名" }] },
+    { name: "memo" },
+  ],
+});
+console.log(v.dark, v.last, v.first, "logo" in v);
+"#;
+    form_case("tools.js", src, "gear true 花子\ntrue 山田 花子 false\n", pages);
+}
+
+#[test]
+fn forms_window() {
+    let pages: Vec<PageFn> = vec![Box::new(|p| {
+        let init = p.expect("init");
+        check!(
+            p,
+            as_json(&init["forms"]) == r#"[{"icon":"fa-solid fa-user","label":"基本"},{"icon":"","label":"詳細"}]"#
+                && init["side"] == "right" && init["start"] == 0 && init["collapsed"] == false && init["texts"]["menu"] == "メニュー",
+            "init = {}",
+            as_json(&init)
+        );
+        // size "each": the window takes the first form's size (and the menu's width), then the size of the form chosen.
+        check!(p, p.w.o.width == 500 + 200 && p.w.o.height == 300, "window = {}x{}", p.w.o.width, p.w.o.height);
+        p.send(json!({"type": "from", "form": 0, "msg": {"type": "ready"}}), &[]);
+        let got = p.expect("to");
+        check!(p, got["form"] == 0 && got["msg"]["type"] == "init" && got["msg"]["fields"][0]["name"] == "a", "to = {}", as_json(&got));
+        p.send(json!({"type": "show", "form": 1, "side": 48}), &[]);
+        p.send(json!({"type": "from", "form": 1, "msg": {"type": "ready"}}), &[]);
+        let got = p.expect("to");
+        check!(p, got["form"] == 1 && got["msg"]["fields"][0]["name"] == "b", "to = {}", as_json(&got));
+        check!(p, *p.w.sizes.lock().unwrap() == vec![(700 + 48, 400)], "sizes = {:?}", p.w.sizes.lock().unwrap());
+        // The second form runs its onSubmit; the first one's submit button closes the window.
+        p.send(json!({"type": "from", "form": 1, "msg": {"type": "submit", "values": {"b": "x"}}}), &[]);
+        let got = p.expect("to");
+        check!(p, got["form"] == 1 && got["msg"]["type"] == "running", "to = {}", as_json(&got));
+        loop {
+            let got = p.expect("to");
+            if got["msg"]["type"] == "done" || got.get("msg").is_none() {
+                check!(p, got["form"] == 1 && got["msg"]["ok"] == true, "done = {}", as_json(&got));
+                break;
+            }
+        }
+        p.send(json!({"type": "from", "form": 0, "msg": {"type": "submit", "values": {"a": "y"}}}), &[]);
+        p.wait_closed();
+    })];
+    let src = r#"
+const r = await ui.forms({
+  side: "right", size: "each",
+  forms: [
+    { label: "基本", icon: "user", width: 500, height: 300, fields: [{ name: "a" }] },
+    { label: "詳細", width: 700, height: 400, fields: [{ name: "b" }], onSubmit(v, ctx) { ctx.log("ok"); console.log("b", v.b); } },
+  ],
+});
+console.log(r.map((x) => x && Object.values(x).join()).join("|"));
+"#;
+    form_case("forms.js", src, "b x\ny|x\n", pages);
 }
