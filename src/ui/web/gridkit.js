@@ -365,7 +365,7 @@ const GridKit = (() => {
     };
     const inputType = kind === "date" ? "date" : "text";
     const condBox = (c) => {
-      const sel = mk("select", {}, ...ops.map((op) => mk("option", { value: op, textContent: t.ops[op] })));
+      const sel = mk("select", {}, ...ops.map((op) => mk("option", { value: op, textContent: (t.ops || {})[op] || op })));
       sel.value = c.op;
       const v = mk("input", { type: inputType, value: c.v, placeholder: t.value, spellcheck: false });
       const v2 = mk("input", { type: inputType, value: c.v2, placeholder: t.to, spellcheck: false });

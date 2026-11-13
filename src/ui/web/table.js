@@ -42,6 +42,7 @@ host.on((m) => {
 
 function init(m) {
   texts = m.texts || {};
+  texts.grid = texts.grid || {};
   columns = m.columns || [];
   total = m.total || 0;
   select = m.select || "";
