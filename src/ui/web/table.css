@@ -30,7 +30,7 @@ footer { padding: var(--sp-m) var(--sp-l); }
 #head {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 3;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
@@ -51,10 +51,8 @@ footer { padding: var(--sp-m) var(--sp-l); }
 .trow .cell:last-child { border-right: none; }
 .num { text-align: right; }
 .gutter { color: var(--muted); text-align: right; font-weight: normal; background: var(--panel); }
-#head .cell { position: relative; padding-right: 24px; }
-#head .cell:not(.gutter):hover { background: var(--hover); }
-#head .sort { position: absolute; right: var(--sp-s); font-size: 10px; color: var(--muted); }
-#head .grip { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 2; }
+#head .cell { position: relative; }
+#head .cell:not(.gutter):hover { background-color: var(--hover); }
 #rows .trow:nth-child(even) { background: var(--alt); }
 #rows .trow:hover { background: var(--hover); }
 #rows .trow.sel { background: var(--sel); color: var(--sel-fg); }
@@ -66,4 +64,11 @@ footer { padding: var(--sp-m) var(--sp-l); }
 #empty { padding: var(--sp-xxl); color: var(--muted); text-align: center; }
 .measure { position: absolute; top: 0; left: 0; visibility: hidden; white-space: nowrap; }
 .measure .cell { display: inline-block; overflow: visible; }
-.measure.head .cell { padding-right: 24px; }
+.measure.head .cell { padding-right: 32px; }
+/* Sticky columns (pinned or frozen, and the row numbers) cover the others: opaque, in the row's color. */
+#head .cell.gk-stk { position: sticky; background-color: var(--panel); z-index: 2; }
+#rows .gk-stk { background-color: var(--bg); }
+#rows .trow:nth-child(even) .gk-stk { background-color: var(--alt); }
+#rows .trow .gutter.gk-stk { background-color: var(--panel); }
+#rows .trow:hover .gk-stk { background-color: var(--hover); }
+#rows .trow.sel .gk-stk { background-color: var(--sel); }

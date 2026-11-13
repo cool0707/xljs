@@ -61,7 +61,14 @@ main { padding: var(--sp-xxl) var(--sp-xxl) var(--sp-xxl); }
   font-variant-numeric: tabular-nums;
 }
 .ftable:focus-visible { border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
-.ftable table { border-collapse: collapse; min-width: 100%; }
+.ftable table { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+/* Before the widths are measured (the table not yet shown) the columns take what their contents need;
+   then they are fixed (form.js), and the last, empty column takes the rest. */
+.ftable table:not(.fixed) { min-width: 0; }
+.ftable table.fixed { table-layout: fixed; }
+.ftable table.fixed td.cell { overflow: hidden; text-overflow: ellipsis; }
+.ftable th.fill, .ftable td.fill { padding: 0; }
+.ftable-probe { position: absolute; visibility: hidden; white-space: nowrap; }
 .ftable th, .ftable td { height: 28px; padding: 0 var(--sp-m); border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
 .ftable th {
   position: sticky;
@@ -74,8 +81,20 @@ main { padding: var(--sp-xxl) var(--sp-xxl) var(--sp-xxl); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.ftable th[data-sort=asc]::after { content: " ▲"; font-size: 10px; }
-.ftable th[data-sort=desc]::after { content: " ▼"; font-size: 10px; }
+.ftable th.gk-th:hover { background-color: var(--hover); }
+.ftable th.gk-th { padding-right: var(--sp-s); }
+/* Sticky columns (pinned, frozen and the selection boxes) cover the others. */
+.ftable th.gk-stk { z-index: 3; }
+.ftable td.gk-stk { background-color: var(--input); }
+.ftable tbody tr:hover td.gk-stk { background-color: var(--hover); }
+.ftable tbody tr.selected td.gk-stk { background-color: var(--sel); }
+.ftable-status { display: flex; gap: var(--sp-s); align-items: center; margin-top: var(--sp-xs); color: var(--muted); font-size: 12px; line-height: 16px; }
+.ftable-status[hidden] { display: none; }
+.ftable-status button.link {
+  height: auto; min-height: 0; padding: 0; border: 0; background: none; box-shadow: none;
+  color: var(--accent); font-size: inherit; cursor: pointer;
+}
+.ftable-status button.link:hover { text-decoration: underline; }
 .ftable th.sel, .ftable td.sel { width: 32px; padding: 0 0 0 var(--sp-m); }
 .ftable td.num { text-align: right; }
 .ftable tbody tr:last-child td { border-bottom: 0; }

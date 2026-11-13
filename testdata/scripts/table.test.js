@@ -29,4 +29,19 @@ deepEqual(await ui.table(rows, { selectable: true }), [], "cancel");
 throws(() => ui.table(rows, { selectable: "many" }), /single/);
 throws(() => ui.table(rows, { onDoubleClick: "open" }), /関数/);
 ui.table(rows, { title: "ダブルクリック", onDoubleClick() {} }); // console/mock: never called
+
+// Conditional formats: checked here (shown only in windows).
+ui.table(rows, { title: "書式", formats: [
+  { column: "合計", gt: 1000, color: "red", bold: true },
+  { column: ["件数", "合計"], dataBar: true },
+  { column: "日付", between: [new Date(2026, 0, 1), new Date(2026, 11, 31)], background: "#ffc7ce", row: true },
+  { when: (r) => r.備考 === "新規", italic: true },
+  { column: "件数", colorScale: ["red", "yellow", "green"] },
+] });
+throws(() => ui.table(rows, { formats: [{ column: "合計", greater: 1 }] }), /greater/);
+throws(() => ui.table(rows, { formats: [{ column: "無い列", bold: true }] }), /無い列/);
+throws(() => ui.table(rows, { formats: [{ column: "合計", between: [1] }] }), /between/);
+throws(() => ui.table(rows, { formats: [{ colorScale: ["red"] }] }), /colorScale/);
+throws(() => ui.table(rows, { formats: [{ when: "x" }] }), /when/);
+throws(() => ui.table(rows, { formats: { bold: true } }), /formats/);
 console.log("table ok");

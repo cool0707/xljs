@@ -2520,7 +2520,7 @@
       return cf;
     });
     return {
-      data, cols, select: sel,
+      data, cols, select: sel, formats: tableFormats(f.formats, cols, "ui.form"),
       edit: edit.some(Boolean) ? edit : null, bad: new Map(),
       validateRow: typeof f.validateRow === "function" ? f.validateRow : null,
     };
@@ -2587,10 +2587,13 @@
     type: cf.type, options: cf.options, min: cf.min, max: cf.max, step: cf.step, required: cf.required,
   }) : null);
 
-  /** Rows and columns of a form table for the page. */
+  /** Rows and columns of a form table for the page (widths and formats when given). */
   const tableWire = (t) => ({
     columns: t.cols.map((c) => c.label),
     rows: t.data.map((r) => t.cols.map((c) => cellWire(c.get(r)))),
+    widths: t.cols.some((c) => c.width) ? t.cols.map((c) => c.width) : undefined,
+    formats: t.formats ? t.formats.wire : undefined,
+    hits: t.formats && t.formats.fns.length ? t.data.map((r, i) => formatHits(t.formats, t.cols, r, i)) : undefined,
   });
 
   /** Rows and columns of a form table as text (console and mock). */
@@ -2686,7 +2689,7 @@
       prefix: f.prefix === undefined || f.prefix === null ? "" : String(f.prefix),
       suffix: f.suffix === undefined || f.suffix === null ? "" : String(f.suffix),
       maxLength: Number.isFinite(maxLength) && maxLength > 0 ? Math.floor(maxLength) : 0,
-      tableSpec: { selectable: f.selectable, editable: f.editable, validateRow: f.validateRow },
+      tableSpec: { selectable: f.selectable, editable: f.editable, validateRow: f.validateRow, formats: f.formats },
       // A note shows no label unless it is given.
       label: f.label === undefined ? (type === "note" || type === "image" ? "" : name) : String(f.label),
       icon: faClass(f.icon),
@@ -3059,7 +3062,7 @@
       ok: T("form.ok"), cancel: T("form.cancel"), close: T("form.close"), browse: T("form.browse"),
       clear: T("form.clear"), dropHere: T("form.dropHere"), dropFolder: T("form.dropFolder"), abort: T("form.abort"), aborting: T("form.aborting"),
       running: T("form.running"), done: T("form.done"), aborted: T("form.aborted"), failed: T("form.failed"),
-      openFolder: T("form.openFolder"), noRows: T("table.empty"),
+      openFolder: T("form.openFolder"), noRows: T("table.empty"), grid: gridTexts(),
       cellError: T("form.cellError"), rowError: T("form.rowError"), moreErrors: T("form.moreErrors"),
       moreActions: T("form.moreActions"), removeTag: T("form.removeTag"), addTag: T("form.addTag"),
       rangeFrom: T("form.rangeFrom"), rangeTo: T("form.rangeTo"), noMatch: T("form.noMatch"),
@@ -3686,7 +3689,9 @@
               if (t !== f.table || !setCell(t, m.row, m.col, m.value)) return;
               if (seen) (cellEdits[f.name] = cellEdits[f.name] || []).push([m.row, m.col, m.value]);
               const errors = await rowErrors(t, m.row);
-              if (!page.n.isClosed()) page.send({ type: "cellErrors", field: f.name, row: m.row, errors });
+              // The formats with functions are checked again with the new value.
+              const hits = t.formats && t.formats.fns.length ? formatHits(t.formats, t.cols, t.data[m.row], m.row) : undefined;
+              if (!page.n.isClosed()) page.send({ type: "cellErrors", field: f.name, row: m.row, errors, hits });
             });
             await editQueue;
             break;
@@ -4021,6 +4026,81 @@
     return inspect(v, { depth: 0 });
   }
 
+  // ---- conditional formats (the formats option of ui.table and table fields)
+
+  const FORMAT_CONDS = ["equals", "notEquals", "gt", "gte", "lt", "lte", "between", "contains", "notContains", "startsWith", "endsWith", "empty"];
+  const FORMAT_STYLES = ["color", "background", "bold", "italic", "underline", "strike"];
+  const FORMAT_KEYS = new Set(["column", "when", "row", "dataBar", "colorScale", ...FORMAT_CONDS, ...FORMAT_STYLES]);
+
+  /** The index of a column named by its key or label (who: the API, for the message). */
+  function columnIndex(cols, x, who) {
+    let i = cols.findIndex((c) => c.key === x);
+    if (i < 0) i = cols.findIndex((c) => c.label === String(x));
+    if (i < 0 && typeof x === "number" && Number.isInteger(x) && x >= 0 && x < cols.length && cols.every((c) => typeof c.key !== "number")) i = x;
+    if (i < 0) throw new TypeError(T("table.badFormatColumn", who, String(x)));
+    return i;
+  }
+
+  /**
+   * Checks the formats option: { wire: the rules for the pages (gridkit.js),
+   * fns: [{ rule, cols (null: the row), when }] } or null.
+   */
+  function tableFormats(list, cols, who) {
+    if (list === undefined || list === null) return null;
+    if (!Array.isArray(list)) throw new TypeError(T("table.badFormats", who));
+    const wire = [], fns = [];
+    list.forEach((r, ri) => {
+      if (r === null || typeof r !== "object") throw new TypeError(T("table.badFormats", who));
+      for (const k of Object.keys(r)) if (!FORMAT_KEYS.has(k)) throw new TypeError(T("table.badFormatKey", who, k));
+      const colList = r.column === undefined || r.column === null ? null
+        : (Array.isArray(r.column) ? r.column : [r.column]).map((x) => columnIndex(cols, x, who));
+      const conds = [];
+      for (const op of FORMAT_CONDS) {
+        if (r[op] === undefined) continue;
+        let v = r[op];
+        if (op === "between") {
+          if (!Array.isArray(v) || v.length !== 2) throw new TypeError(T("table.badFormatValue", who, op));
+          v = v.map(cellWire);
+        } else if (op === "empty") v = !!v;
+        else {
+          v = cellWire(v);
+          if (["contains", "notContains", "startsWith", "endsWith"].includes(op)) v = v === null ? "" : String(v);
+        }
+        conds.push([op, v]);
+      }
+      if (r.when !== undefined && typeof r.when !== "function") throw new TypeError(T("table.badHandler", "when"));
+      const style = {};
+      for (const k of ["color", "background"]) if (r[k] !== undefined && r[k] !== null && r[k] !== "") style[k] = String(r[k]);
+      for (const k of ["bold", "italic", "underline", "strike"]) if (r[k] !== undefined) style[k] = !!r[k];
+      const bar = r.dataBar === undefined || r.dataBar === false || r.dataBar === null ? null : r.dataBar === true ? "#638EC6" : String(r.dataBar);
+      let scale = null;
+      if (r.colorScale !== undefined && r.colorScale !== null) {
+        scale = Array.isArray(r.colorScale) ? r.colorScale.map(String) : [];
+        if (scale.length !== 2 && scale.length !== 3) throw new TypeError(T("table.badFormatValue", who, "colorScale"));
+      }
+      if (r.when) fns.push({ rule: ri, cols: colList, when: r.when });
+      wire.push({ cols: colList, conds, fn: !!r.when, row: !!r.row, style, bar, scale });
+    });
+    return wire.length ? { wire, fns } : null;
+  }
+
+  /**
+   * The "rule:column" keys of the formats with functions that a row matches
+   * ("rule:-1" for a function without columns, called with the row), or null.
+   */
+  function formatHits(fm, cols, row, index) {
+    if (!fm || !fm.fns.length) return null;
+    const out = [];
+    for (const f of fm.fns) {
+      if (!f.cols) {
+        if (f.when(row, row, index)) out.push(f.rule + ":-1");
+        continue;
+      }
+      for (const c of f.cols) if (f.when(plainDate(cols[c].get(row)), row, index)) out.push(f.rule + ":" + c);
+    }
+    return out;
+  }
+
   /** What ui.table returns when nothing is selected: the window, closed and close(). */
   class TableView {
     constructor(closed, close) {
@@ -4035,7 +4115,27 @@
       filter: T("table.filter"), count: T("table.count"), countFiltered: T("table.countFiltered"),
       loading: T("table.loading"), selected: T("table.selected"), copy: T("table.copy"), copied: T("table.copied"),
       saveCsv: T("table.saveCsv"), saveXlsx: T("table.saveXlsx"), saved: T("table.saved"), ok: T("form.ok"),
-      cancel: T("form.cancel"), close: T("form.close"), empty: T("table.empty"),
+      cancel: T("form.cancel"), close: T("form.close"), empty: T("table.empty"), grid: gridTexts(),
+    };
+  }
+
+  /** Texts of the tables' headings, column menu and filters (gridkit.js). */
+  function gridTexts() {
+    const ops = {
+      contains: T("grid.op.contains"), notContains: T("grid.op.notContains"), equals: T("grid.op.equals"),
+      notEqual: T("grid.op.notEqual"), startsWith: T("grid.op.startsWith"), endsWith: T("grid.op.endsWith"),
+      blank: T("grid.op.blank"), notBlank: T("grid.op.notBlank"), lessThan: T("grid.op.lessThan"),
+      lessThanOrEqual: T("grid.op.lessThanOrEqual"), greaterThan: T("grid.op.greaterThan"),
+      greaterThanOrEqual: T("grid.op.greaterThanOrEqual"), inRange: T("grid.op.inRange"),
+    };
+    return {
+      ops, filterOf: T("grid.filterOf"), menuOf: T("grid.menuOf"),
+      pinLeft: T("grid.pinLeft"), pinRight: T("grid.pinRight"), unpin: T("grid.unpin"),
+      freeze: T("grid.freeze"), unfreeze: T("grid.unfreeze"), frozen: T("grid.frozen"), hide: T("grid.hide"),
+      columns: T("grid.columns"), findColumn: T("grid.findColumn"), pinned: T("grid.pinned"),
+      showAll: T("grid.showAll"), reset: T("grid.reset"), resetTip: T("grid.resetTip"),
+      value: T("grid.value"), from: T("grid.from"), to: T("grid.to"), and: T("grid.and"), or: T("grid.or"),
+      resetFilter: T("grid.resetFilter"), clearFilters: T("grid.clearFilters"), filtered: T("grid.filtered"),
     };
   }
 
@@ -4051,7 +4151,8 @@
     }
     const t = options.title === undefined ? title() : String(options.title);
     const titleBar = customTitleBar(options.titleBar);
-    if (native.supportsWindows) return tableWindow(data, cols, sel, t, Object.assign({}, options, { titleBar }));
+    const formats = tableFormats(options.formats, cols, "ui.table");
+    if (native.supportsWindows) return tableWindow(data, cols, sel, t, Object.assign({}, options, { titleBar, formats }));
     const text = (v) => { const w = cellWire(v); return w === null ? "" : String(w); };
     const picked = native.uiTable(JSON.stringify({
       title: t, select: sel, columns: cols.map((c) => c.label), rows: data.map((r) => cols.map((c) => text(c.get(r)))),
@@ -4071,10 +4172,18 @@
     async function handle(m) {
       switch (m.type) {
         case "ready": {
-          page.send({ type: "init", select: sel, total: data.length, texts: tableTexts(), dblclick: !!options.onDoubleClick, columns: cols.map((c) => ({ label: c.label, width: c.width })) });
+          const fm = options.formats;
+          page.send({
+            type: "init", select: sel, total: data.length, texts: tableTexts(), dblclick: !!options.onDoubleClick,
+            columns: cols.map((c) => ({ label: c.label, width: c.width })), formats: fm ? fm.wire : undefined,
+          });
           const chunk = 2000;
           for (let i = 0; i < data.length; i += chunk) {
-            page.send({ type: "rows", rows: data.slice(i, i + chunk).map((r) => cols.map((c) => cellWire(c.get(r)))) });
+            const part = data.slice(i, i + chunk);
+            page.send({
+              type: "rows", rows: part.map((r) => cols.map((c) => cellWire(c.get(r)))),
+              hits: fm && fm.fns.length ? part.map((r, k) => formatHits(fm, cols, r, i + k)) : undefined,
+            });
           }
           break;
         }
@@ -4102,12 +4211,14 @@
           break;
         }
         case "save":
-          await saveTable(m.format === "xlsx" ? "xlsx" : "csv", Array.isArray(m.indices) ? m.indices : null);
+          await saveTable(m.format === "xlsx" ? "xlsx" : "csv", Array.isArray(m.indices) ? m.indices : null,
+            Array.isArray(m.columns) ? m.columns.filter((c) => Number.isInteger(c) && c >= 0 && c < cols.length) : null);
           break;
       }
     }
 
-    async function saveTable(format, indices) {
+    /** Saves the rows (indices: those shown, in their order) with the columns shown (shown: their indices). */
+    async function saveTable(format, indices, shown) {
       const ext = "." + format;
       const h = await showSaveFilePicker({
         suggestedName: t.replace(/[\\/:*?"<>|]/g, "_") + ext,
@@ -4117,8 +4228,9 @@
       if (native.recording) native.testForget("showSaveFilePicker");
       if (!h) return;
       const list = indices ? indices.filter((i) => i >= 0 && i < data.length).map((i) => data[i]) : data;
-      const labels = cols.map((c) => c.label);
-      const matrix = list.map((r) => cols.map((c) => cellSave(c.get(r))));
+      const use = shown && shown.length ? shown.map((c) => cols[c]) : cols;
+      const labels = use.map((c) => c.label);
+      const matrix = list.map((r) => use.map((c) => cellSave(c.get(r))));
       if (format === "xlsx") {
         const book = workbooksObj.create();
         try {
