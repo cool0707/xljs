@@ -162,6 +162,7 @@ body.tab-dragging iframe { pointer-events: none; }
 .menu button i { width: 16px; margin-right: 8px; text-align: center; }
 .menu button .badge { display: none; }
 .badge { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 15px; height: 15px; margin-left: 6px; padding: 0; border-radius: 50%; background: var(--accent); color: var(--accent-fg); font-size: 10px; font-weight: 600; line-height: 1; }
+.badge > span { display: block; text-box: trim-both cap alphabetic; }
 .badge[hidden] { display: none; }
 .badge.error { background: var(--error); }
 .panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
