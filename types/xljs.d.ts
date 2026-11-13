@@ -707,7 +707,7 @@ declare global {
     strike?: boolean;
     /**
      * データバー（数値のセル。列の最小値〜最大値で長さを決める）。true は既定の青、文字列ならその色。
-     * { color, height } で太さも指定できる（height は行の高さに対する割合で 0 より大きく 1 以下。既定 0.5）
+     * { color, height } で太さも指定できる（height は行の高さに対する割合で 0 より大きく 1 以下。既定 0.75）
      */
     dataBar?: boolean | string | { color?: string; height?: number };
     /** カラースケール（数値のセル。最小値・（中間・）最大値の色の 2 色か 3 色） */

@@ -4076,7 +4076,7 @@
       let bar = null;
       if (r.dataBar !== undefined && r.dataBar !== false && r.dataBar !== null) {
         const o = typeof r.dataBar === "object" ? r.dataBar : { color: r.dataBar === true ? undefined : r.dataBar };
-        const height = o.height === undefined || o.height === null ? 0.5 : Number(o.height);
+        const height = o.height === undefined || o.height === null ? 0.75 : Number(o.height);
         if (!(height > 0 && height <= 1)) throw new TypeError(T("table.badBarHeight", who, String(o.height)));
         bar = { color: o.color === undefined || o.color === null || o.color === "" ? "#638EC6" : String(o.color), height };
       }

@@ -42,7 +42,7 @@ ui.table(rows, {
 });
 ```
 
-条件は `equals` `notEquals` `gt` `gte` `lt` `lte` `between: [下限, 上限]` `contains` `notContains` `startsWith` `endsWith` `empty`（すべてを満たすとき）、または `when(value, row, index)` 関数です。書式は `color` `background` `bold` `italic` `underline` `strike` `dataBar`（`true` か色。`{ color, height }` で太さを行の高さに対する割合で指定、既定 0.5）`colorScale`（2 色か 3 色）。フォームの `table` 項目にも同じ `formats` が使えます。
+条件は `equals` `notEquals` `gt` `gte` `lt` `lte` `between: [下限, 上限]` `contains` `notContains` `startsWith` `endsWith` `empty`（すべてを満たすとき）、または `when(value, row, index)` 関数です。書式は `color` `background` `bold` `italic` `underline` `strike` `dataBar`（`true` か色。`{ color, height }` で太さを行の高さに対する割合で指定、既定 0.75）`colorScale`（2 色か 3 色）。フォームの `table` 項目にも同じ `formats` が使えます。
 
 行やセルのダブルクリックには `onDoubleClick` で処理を登録できます（ネイティブ UI のみ）。
 
