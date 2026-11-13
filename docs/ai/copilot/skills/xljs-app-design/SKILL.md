@@ -86,7 +86,7 @@ await ui.form({
         { key: "受注番号", editable: false },
         { key: "顧客名", editable: false },
         { key: "納期", editable: false },
-        { key: "配送", type: "select", options: ["宅配便", "自社便"] } // 先頭の空欄（未選択）は自動で付く。"" を書かない,
+        { key: "配送", type: "select", options: ["宅配便", "自社便"] } // "" は書かない（空のセルは未選択の表示、Delete で空に戻せる）,
       ],
       validateRow: (r) => (r.出荷 && !r.配送 ? { 配送: "配送の方法を選んでください" } : ""),
     },
