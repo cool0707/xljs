@@ -47,7 +47,11 @@ impl Run {
             args: args.to_vec(),
             cwd: Some(dir.to_string_lossy().into_owned()),
             env: env.iter().map(|(k, v)| (k.clone(), Some(v.clone()))).collect(),
-            window: Window::Hidden,
+            // Not Hidden: Windows applies STARTUPINFO's SW_HIDE to the
+            // first ShowWindow of the run, which would hide the script's
+            // first window (a form) and leave it waiting for good. Default
+            // sets no window state and still opens no console.
+            window: Window::Default,
             stdin: Io::Ignore,
             discard_output: true,
             ..Default::default()

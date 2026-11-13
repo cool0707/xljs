@@ -29,6 +29,19 @@ ok(!/border-top:/.test(html), "no CSS borders");
 ok(/background-color:#DDEBF7/i.test(html), "fill");
 ok(html.includes("font-family:&quot;游ゴシック&quot;,&quot;Yu Gothic&quot;"), "the default font");
 
+ok(html.includes("font-variant-emoji:text"), "emoji in the colors of the text");
+
+// Text running over the empty cells beside it is printed whole: the used range takes in those cells.
+const ov = wb.addSheet("はみ出し");
+ov.setValue("B2", "未チェックの件数が表示されるので、自身の担当の行の施設をチェックしてください。");
+ov.setValue("H4", "右寄せの長いテキストです");
+ov.style("H4", { align: "right" });
+const oh = ov.toHtml();
+// About 37 em of 11pt text from B: B:J (H4 runs over the empty cells to its left, inside them).
+equal(oh.match(/<col /g).length, 9, "B:J for the text in B2");
+ok(oh.includes(">未チェックの件数"), "the text");
+wb.removeSheet("はみ出し");
+
 // Diagonal borders are SVG lines (vectors in the PDF), not CSS gradients.
 const dg = wb.addSheet("斜め");
 dg.setValue("A1", "x");

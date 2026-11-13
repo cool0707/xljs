@@ -1265,7 +1265,7 @@
       $("tests-state").textContent = "";
       badge.hidden = false;
       badge.className = "badge error";
-      badge.textContent = "!";
+      badge.firstElementChild.textContent = "!";
       renderTests();
       if (asked) setTab("tests");
       return;
@@ -1276,7 +1276,7 @@
     $("tests-state").textContent = text;
     badge.hidden = !(bad || fresh);
     badge.className = bad ? "badge error" : "badge";
-    badge.textContent = String(bad || fresh);
+    badge.firstElementChild.textContent = String(bad || fresh);
     // What needs a look is open; the rest stays as the user left it.
     for (const o of tests.outcomes) if (o.status !== "pass") tests.open.add(o.name);
     renderTests();
