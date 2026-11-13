@@ -109,6 +109,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `chat` `browser` | チャットの URL（空でホーム）、枠の表示・位置・戻る・進む・再読み込み |
 | `intro` `notify` `showFolder` | AI への説明のコピー（［プロンプト］のドロップダウン。`mode` が `prompt`＝指示だけ、`script`＝スクリプトだけ、空＝両方）、自分で直したところのコピー、フォルダを開く |
 | `wizardBooks` `wizardFolder` `wizardPrompt` `wizardSave` `wizardCreate` | 新規作成ウィザード（`answers`） |
+| `tests` `testApprove` `testRecord` `testPrompt` | 「テスト」タブ（`docs/design/test-design.md`） |
 
 | Rust → ページ（`type`） | 内容 |
 |---|---|
@@ -117,6 +118,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `download` | ダウンロードしたファイル（`name` `text` `target` `old` `files`） |
 | `runStarted` `output` `runEnded` | 実行。`runEnded` は失敗時に `message` `location` `prompt` |
 | `previewForm` `previewFailed` `previewSkipped` | フォームのプレビュー（`previewSkipped` は自動表示をしなかったとき） |
+| `testsStarted` `tests` | テストケースの実行と結果 |
 | `url` `copy` `error` `info` `browserFailed` | チャットの URL、クリップボードへのコピー、エラー・お知らせ |
 | `wizardBooks` `wizardFolder` `wizardPrompt` `wizardAttach` | ウィザードの答え（`wizardPrompt` の `attachment`、`wizardAttach` の `file` は添付ファイルの名前） |
 

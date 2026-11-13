@@ -713,3 +713,61 @@ fn preview_by_itself_and_picked_elements() {
     page(&mut s, json!({"op": "pick", "elements": []}));
     assert!(w.take("copy").is_empty());
 }
+
+#[test]
+fn test_cases_in_the_session() {
+    let _l = lock_lang("ja");
+    let dir = tempdir();
+    write(&dir, "main.js", "alert(1);\n");
+    let main = dir.join("main.js").to_string_lossy().into_owned();
+    let (mut s, w, _rx) = session(&dir, "{}");
+    page(&mut s, json!({"op": "open", "path": main}));
+
+    // Without cases nothing runs.
+    page(&mut s, json!({"op": "tests"}));
+    let t = w.take("tests");
+    assert_eq!((t.len(), &t[0]["none"]), (1, &json!(true)));
+    // Replacing the script asks for the tests too.
+    page(&mut s, json!({"op": "apply", "file": "main.js", "text": "alert(2);\n"}));
+    assert_eq!(w.take("tests")[0]["none"], true);
+
+    // A mistake in a case is told instead of running.
+    write(&dir, ".xljs/tests/月次/case.json", r#"{"script": "main.js", "ansers": {}}"#);
+    page(&mut s, json!({"op": "apply", "file": "main.js", "text": "alert(3);\n"}));
+    let t = w.take("tests");
+    assert!(t[0]["error"].as_str().unwrap().contains("「answers」ですか？"), "{t:?}");
+    // The cases of other scripts do not count.
+    write(&dir, ".xljs/tests/月次/case.json", r#"{"script": "other.js"}"#);
+    write(&dir, "other.js", "");
+    page(&mut s, json!({"op": "tests"}));
+    assert_eq!(w.take("tests")[0]["none"], true);
+
+    // What xljs test --json gives: the page gets the lines, not the events.
+    let report = json!({"pass": 1, "fail": 1, "new": 0, "problem": 0, "outcomes": [
+        {"case": "月次", "variant": "", "status": "fail", "approved": false, "problems": [], "lines": ["- out: a", "+ out: b"], "transcript": [{"type": "out", "text": "b"}]},
+        {"case": "月次", "variant": "商品別", "status": "pass", "approved": false, "problems": [], "lines": [], "transcript": []},
+    ]});
+    s.tests_finished(&format!("{report}\n"), "");
+    let t = w.take("tests");
+    assert_eq!((&t[0]["fail"], &t[0]["outcomes"][0]["name"], &t[0]["outcomes"][1]["name"]), (&json!(1), &json!("月次/"), &json!("月次/商品別")));
+    assert!(t[0]["outcomes"][0].get("transcript").is_none());
+
+    // The request for the AI: the difference, not the case.
+    page(&mut s, json!({"op": "testPrompt", "name": "月次/"}));
+    let c = w.take("copy");
+    let text = c[0]["text"].as_str().unwrap();
+    assert_eq!(c[0]["what"], "test");
+    assert!(text.starts_with("直前の変更のあと、スクリプト「main.js」が、以前に確認した結果と違う結果を出すようになりました（テストケース「月次」）。"), "{text}");
+    assert!(text.contains("```\n- out: a\n+ out: b\n```") && text.ends_with("出力してください（省略しないでください）。"), "{text}");
+    assert!(!text.contains("case.json") && !text.contains("answers"), "{text}");
+
+    // Without a report: what kept the tests from running.
+    s.tests_finished("", "エラー: だめです\n");
+    assert!(w.take("tests")[0]["error"].as_str().unwrap().contains("だめです"));
+
+    // A case cannot be recorded under a name that is taken or not a name.
+    page(&mut s, json!({"op": "testRecord", "name": "月次"}));
+    assert!(w.take("error")[0]["message"].as_str().unwrap().contains("すでにあります"));
+    page(&mut s, json!({"op": "testRecord", "name": "a/b"}));
+    assert!(w.take("error")[0]["message"].as_str().unwrap().contains("ケース名「a/b」は使えません"));
+}

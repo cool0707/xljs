@@ -537,6 +537,12 @@ fn new_dir(root: &Path, file: Option<&str>, script: &str, name: &str) -> Result<
     Ok((dir, path))
 }
 
+/// Checks that a case of the name can be created for the script.
+pub fn check_new(script: &str, name: &str) -> Result<()> {
+    let (root, file) = target(script)?;
+    new_dir(&root, file.as_deref(), script, name).map(|_| ())
+}
+
 /// The outcome of record.
 pub struct Recorded {
     /// The case.json written.
