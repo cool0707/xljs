@@ -53,6 +53,7 @@ function init(m) {
   });
   frames = forms.map(() => null);
   show(Math.min(Math.max(m.start || 0, 0), forms.length - 1), false);
+  requestAnimationFrame(() => requestAnimationFrame(() => shell.classList.add("ready")));
 }
 
 /** Shows the k-th form (made on its first showing); chosen: by the user (the window may take its size). */
