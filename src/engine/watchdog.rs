@@ -194,8 +194,18 @@ impl Drop for Guard {
 
 /// Sets up the watchdog (limit), the stop key and the memory floor (bytes)
 /// for a script run on this thread in rt. None when all are off.
-pub(crate) fn install(rt: &rquickjs::Runtime, host: Weak<Host>, limit: Option<Duration>, key: Option<StopKey>, floor: Option<u64>) -> Option<Guard> {
-    if limit.is_none() && key.is_none() && floor.is_none() {
+///
+/// With unattended (a test run) nobody is asked: the script is stopped when
+/// the limit has passed, and as soon as the flag is set (engine::TestRun).
+pub(crate) fn install(
+    rt: &rquickjs::Runtime,
+    host: Weak<Host>,
+    limit: Option<Duration>,
+    key: Option<StopKey>,
+    floor: Option<u64>,
+    unattended: Option<Arc<AtomicBool>>,
+) -> Option<Guard> {
+    if limit.is_none() && key.is_none() && floor.is_none() && unattended.is_none() {
         return None;
     }
     let st = Arc::new(State { base: Instant::now(), active_since: AtomicU64::new(0), pressed: AtomicU64::new(0) });
@@ -241,6 +251,14 @@ pub(crate) fn install(rt: &rquickjs::Runtime, host: Weak<Host>, limit: Option<Du
                 return true;
             }
         }
+        if let Some(abort) = &unattended
+            && abort.load(Ordering::SeqCst)
+            && let Some(h) = host.upgrade()
+        {
+            stopped = true;
+            h.set_exit(super::ABORT_CODE);
+            return true;
+        }
         let active = st.active_since.load(Ordering::SeqCst);
         let pressed = st.pressed.swap(0, Ordering::SeqCst);
         let (message, code) = if pressed != 0 && pressed.saturating_sub(active) >= grace {
@@ -253,7 +271,7 @@ pub(crate) fn install(rt: &rquickjs::Runtime, host: Weak<Host>, limit: Option<Du
             return false;
         };
         let Some(h) = host.upgrade() else { return false };
-        let stop = h.env.ui.confirm(&h.env.title, &message);
+        let stop = unattended.is_some() || h.env.ui.confirm(&h.env.title, &message);
         waited();
         if stop {
             stopped = true;

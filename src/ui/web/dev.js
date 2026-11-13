@@ -121,7 +121,7 @@
   // "+" at the end of a group's tabs (or of the chat's bar); a closed tab
   // that something shows (setTab) opens again by itself.
   // The layout is kept per user (localStorage).
-  const TABS = ["chat", "code", "diff", "preview", "history", "output"];
+  const TABS = ["chat", "code", "diff", "preview", "history", "output", "tests"];
   const MAX_GROUPS = 4;
   const tabButton = (tab) => document.querySelector(`button[data-tab="${tab}"]`);
   const panelOf = (tab) => $("panel-" + tab);
@@ -130,7 +130,7 @@
     return {
       groups: [
         { id: "g1", tabs: ["chat"], active: "chat", size: 42 },
-        { id: "g2", tabs: ["code", "diff", "preview", "history", "output"], active: "code", size: 58 },
+        { id: "g2", tabs: ["code", "diff", "preview", "history", "output", "tests"], active: "code", size: 58 },
       ],
       closed: [],
     };
@@ -1171,7 +1171,7 @@
     st.running = true;
     updateButtons();
     if (m.kind !== "preview") setTab("output");
-    $("run-state").textContent = m.kind === "debug" ? L.debugging : m.kind === "preview" ? L.previewRunning : L.running;
+    $("run-state").textContent = m.kind === "debug" ? L.debugging : m.kind === "preview" ? L.previewRunning : m.kind === "record" ? L.testsRecordStarted : L.running;
     status($("run-state").textContent);
   }
 
@@ -1233,6 +1233,146 @@
     status(done, "ok");
   }
 
+  // ------------------------------------------------------------ tests
+
+  // The runs of the script's test cases (the "tests" message): what each
+  // gave against what was approved. A run that differs is approved (the
+  // change was asked for) or goes to the AI as a request with the
+  // difference; the AI is never shown the cases themselves.
+  const tests = { running: false, outcomes: [], open: new Set(), asked: false };
+
+  function testsStarted() {
+    tests.running = true;
+    $("tests-state").textContent = L.testsRunning;
+    $("tests-error").hidden = true;
+    updateTests();
+  }
+
+  function testsDone(m) {
+    tests.running = false;
+    const asked = tests.asked;
+    tests.asked = false;
+    const badge = $("tests-badge");
+    $("tests-error").hidden = !m.error;
+    if (m.stopped) {
+      $("tests-state").textContent = L.testsStopped;
+      updateTests();
+      return;
+    }
+    if (m.error) {
+      tests.outcomes = [];
+      $("tests-error").textContent = m.error;
+      $("tests-state").textContent = "";
+      badge.hidden = false;
+      badge.className = "badge error";
+      badge.firstElementChild.textContent = "!";
+      renderTests();
+      if (asked) setTab("tests");
+      return;
+    }
+    tests.outcomes = m.outcomes || [];
+    const total = tests.outcomes.length, bad = (m.fail || 0) + (m.problem || 0), fresh = m.new || 0;
+    const text = !total ? "" : bad ? fmt(L.testsFailed, bad, total) : fresh ? fmt(L.testsSummaryNew, m.pass || 0, total, fresh) : fmt(L.testsSummary, m.pass || 0, total);
+    $("tests-state").textContent = text;
+    badge.hidden = !(bad || fresh);
+    badge.className = bad ? "badge error" : "badge";
+    badge.firstElementChild.textContent = String(bad || fresh);
+    // What needs a look is open; the rest stays as the user left it.
+    for (const o of tests.outcomes) if (o.status !== "pass") tests.open.add(o.name);
+    renderTests();
+    if (total) status(text, bad ? "error" : fresh ? "" : "ok");
+    // A run nobody asked for (after the script was replaced) only comes
+    // to the front when something changed.
+    if (bad || (fresh && asked)) setTab("tests");
+  }
+
+  function testLine(l) {
+    const cls = l.startsWith("- ") ? "del" : l.startsWith("+ ") ? "add" : /^\s*problem: /.test(l) ? "bad" : "";
+    return el("span", { className: cls }, l + "\n");
+  }
+
+  function renderTests() {
+    const list = $("tests-list");
+    $("tests-hint").hidden = tests.outcomes.length > 0 || !$("tests-error").hidden;
+    const labels = { pass: L.testsPass, fail: L.testsFail, new: L.testsNew, problem: L.testsProblem };
+    list.replaceChildren(...tests.outcomes.map((o) => {
+      const open = tests.open.has(o.name);
+      const lines = o.lines || [];
+      const toggle = () => {
+        if (tests.open.has(o.name)) tests.open.delete(o.name);
+        else tests.open.add(o.name);
+        renderTests();
+      };
+      const head = el("div", { className: "head" },
+        icon(o.status === "pass" ? "ic ic-circle-check" : o.status === "new" ? "ic ic-info" : "ic ic-circle-x"),
+        el("span", { className: "label", textContent: labels[o.status] || o.status }),
+        el("span", { className: "name", textContent: o.name.replace(/\/$/, "") }),
+        el("span", { className: "spacer" }));
+      if (lines.length) head.append(el("button", { type: "button", className: "link", onclick: toggle, textContent: open ? L.testsHide : L.testsShow }));
+      if (o.status === "fail" || o.status === "problem") {
+        head.append(el("button", { type: "button", className: "primary", onclick: () => send({ op: "testPrompt", name: o.name }) },
+          icon("ic ic-clipboard"), " ", L.testsAskAi));
+      }
+      if (o.status === "fail" || o.status === "new") {
+        const b = el("button", { type: "button", title: L.testsApproveTip, onclick: () => { tests.asked = true; send({ op: "testApprove", name: o.name }); } },
+          icon("ic ic-check"), " ", L.testsApprove);
+        b.disabled = tests.running;
+        head.append(b);
+      }
+      if (!o.variant) {
+        const b = el("button", { type: "button", className: "link", title: L.testsSuggestTip, textContent: L.testsSuggest, onclick: () => { tests.asked = true; send({ op: "testSuggest", name: o.case }); } });
+        b.disabled = tests.running;
+        head.append(b);
+      }
+      head.append(el("button", { type: "button", className: "link", textContent: L.testsRemove, onclick: () => send({ op: "testRemove", name: o.name }) }));
+      const li = el("li", { className: "test " + o.status }, head);
+      if (open && lines.length) {
+        if (o.status === "fail" || o.status === "new") li.append(el("p", { className: "muted", textContent: o.status === "fail" ? L.testsFailLead : L.testsNewLead }));
+        li.append(el("pre", { className: "test-lines" }, ...lines.map(testLine)));
+      }
+      return li;
+    }));
+    updateTests();
+  }
+
+  function updateTests() {
+    const busy = tests.running || st.running || !st.project;
+    $("tests-run").disabled = busy;
+    $("tests-record").disabled = busy;
+    $("tests-name").disabled = busy;
+    const pending = tests.outcomes.filter((o) => o.status === "new" || o.status === "fail");
+    $("tests-approve-all").hidden = pending.length < 2 || pending.some((o) => o.status === "fail");
+    $("tests-approve-all").disabled = busy;
+  }
+
+  // A script was opened: its cases are listed by running them.
+  function resetTests() {
+    tests.outcomes = [];
+    tests.open.clear();
+    tests.running = false;
+    $("tests-state").textContent = "";
+    $("tests-badge").hidden = true;
+    $("tests-error").hidden = true;
+    renderTests();
+  }
+
+  function initTests() {
+    $("tests-run").onclick = () => { save(); tests.asked = true; send({ op: "tests" }); };
+    $("tests-approve-all").onclick = () => { tests.asked = true; send({ op: "testApprove", name: "" }); };
+    $("tests-record").onclick = () => {
+      if (!st.project || st.running) return;
+      save();
+      $("output").replaceChildren();
+      $("failure").hidden = true;
+      $("output-badge").hidden = true;
+      st.failure = null;
+      tests.asked = true;
+      send({ op: "testRecord", name: $("tests-name").value.trim() });
+      $("tests-name").value = "";
+    };
+    renderTests();
+  }
+
   function initRun() {
     $("btn-run").onclick = () => startRun(false);
     $("btn-debug").onclick = () => startRun(true);
@@ -1290,6 +1430,8 @@
     st.wizard = false;
     st.project = { path: m.path, dir: m.dir, entry: m.entry, app: m.app, html: m.html, title: m.title, files: m.files };
     showAttach("");
+    resetTests();
+    send({ op: "tests" });
     st.pending = null;
     st.versionView = null;
     st.failure = null;
@@ -1530,6 +1672,7 @@
         $("wz-input-note").placeholder = L.wzInputHint;
         $("wz-output-note").placeholder = L.wzOutputHint;
         $("wz-name").placeholder = L.wzNameHint;
+        $("tests-name").placeholder = L.testsNameHint;
         updateButtons();
         showDiff();
         setTab("code");
@@ -1599,11 +1742,13 @@
         }
         break;
       case "copy":
-        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "script" ? L.copiedScript : m.what === "wizard" ? L.wzCopied : m.what === "wizardAttach" ? L.wzCopiedAttach : m.what === "notify" ? L.copiedNotify : m.what === "pick" ? L.copiedPick : L.copied);
+        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "script" ? L.copiedScript : m.what === "wizard" ? L.wzCopied : m.what === "wizardAttach" ? L.wzCopiedAttach : m.what === "notify" ? L.copiedNotify : m.what === "pick" ? L.copiedPick : m.what === "test" ? L.copiedTest : L.copied);
         break;
-      case "runStarted": runStarted(m); break;
+      case "runStarted": runStarted(m); updateTests(); break;
+      case "testsStarted": testsStarted(); break;
+      case "tests": testsDone(m); break;
       case "output": appendOutput(m.text, m.stream === "stderr" ? "err" : ""); break;
-      case "runEnded": runEnded(m); break;
+      case "runEnded": runEnded(m); updateTests(); break;
       case "previewForm":
         pv.done = pv.sent;
         showFormPreview(m.form);
@@ -1660,6 +1805,7 @@
   initDiff();
   initPreview();
   initRun();
+  initTests();
   initWizard();
   initTabs();
   applyLayout();

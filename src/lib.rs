@@ -18,6 +18,7 @@ pub mod net;
 pub mod pack;
 pub mod process;
 pub mod shortcut;
+pub mod testing;
 pub mod ui;
 pub mod vba;
 pub(crate) mod xml;

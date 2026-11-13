@@ -161,7 +161,9 @@ body.tab-dragging iframe { pointer-events: none; }
 .menu button:disabled { color: var(--muted); }
 .menu button i { width: 16px; margin-right: 8px; text-align: center; }
 .menu button .badge { display: none; }
-.badge { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 8px; background: var(--accent); color: var(--accent-fg); font-size: 11px; }
+.badge { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 15px; height: 15px; margin-left: 6px; padding: 0; border-radius: 50%; background: var(--accent); color: var(--accent-fg); font-size: 10px; font-weight: 600; line-height: 1; }
+.badge > span { display: block; text-box: trim-both cap alphabetic; }
+.badge[hidden] { display: none; }
 .badge.error { background: var(--error); }
 .panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .panel.start { display: block; }
@@ -214,6 +216,20 @@ body.tab-dragging iframe { pointer-events: none; }
 .history .time { color: var(--muted); font-family: var(--mono); font-size: 12px; }
 .history .note { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.tests { list-style: none; margin: 0; padding: 0 12px 12px; overflow: auto; flex: 1; }
+.tests .test { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.tests .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tests .head .label { font-weight: 600; }
+.tests .head .name { font-family: var(--mono); }
+.tests .head .spacer { flex: 1; }
+.tests .pass .head .ic, .tests .pass .label { color: var(--ok, #1a7f37); }
+.tests .fail .head > .ic, .tests .fail .label, .tests .problem .head > .ic, .tests .problem .label { color: var(--error); }
+.tests p { margin: 6px 0 0; }
+.test-lines { margin: 6px 0 2px; padding: 8px; max-height: 320px; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; font-family: var(--mono); font-size: 12px; white-space: pre; }
+.test-lines .del { color: var(--error); }
+.test-lines .add { color: var(--ok, #1a7f37); }
+.test-lines .bad { color: var(--error); font-weight: 600; }
+#tests-name { width: 200px; }
 .failure { padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .failure h3 { margin: 0 0 4px; font-size: 14px; color: var(--error); }
 .failure .error-box { margin: 6px 0; }

@@ -43,10 +43,11 @@
   <nav id="tabs">
     <button type="button" data-tab="chat" data-tip="tabMoveTip"><i class="ic ic-messages-square"></i><span data-t="tabChat"></span></button>
     <button type="button" data-tab="code" data-tip="tabMoveTip"><i class="ic ic-code"></i><span data-t="tabCode"></span></button>
-    <button type="button" data-tab="diff" data-tip="tabMoveTip"><i class="ic ic-git-compare"></i><span data-t="tabDiff"></span><span id="diff-badge" class="badge" hidden>1</span></button>
+    <button type="button" data-tab="diff" data-tip="tabMoveTip"><i class="ic ic-git-compare"></i><span data-t="tabDiff"></span><span id="diff-badge" class="badge" hidden><span>1</span></span></button>
     <button type="button" data-tab="preview" data-tip="tabMoveTip"><i class="ic ic-eye"></i><span data-t="tabPreview"></span></button>
     <button type="button" data-tab="history" data-tip="tabMoveTip"><i class="ic ic-history"></i><span data-t="tabHistory"></span></button>
-    <button type="button" data-tab="output" data-tip="tabMoveTip"><i class="ic ic-terminal"></i><span data-t="tabOutput"></span><span id="output-badge" class="badge error" hidden>!</span></button>
+    <button type="button" data-tab="output" data-tip="tabMoveTip"><i class="ic ic-terminal"></i><span data-t="tabOutput"></span><span id="output-badge" class="badge error" hidden><span>!</span></span></button>
+    <button type="button" data-tab="tests" data-tip="tabMoveTip"><i class="ic ic-circle-check"></i><span data-t="tabTests"></span><span id="tests-badge" class="badge" hidden><span></span></span></button>
   </nav>
 
   <div id="panel-chat" class="panel">
@@ -313,6 +314,22 @@
         <p class="muted" data-t="copyHint"></p>
       </div>
       <pre id="output" class="output"></pre>
+    </div>
+
+    <!-- The test cases of the script (xljs test): what each run gives against
+         what was approved. The AI never sees the cases, only a difference. -->
+    <div id="panel-tests" class="panel">
+      <div class="bar">
+        <span id="tests-state"></span>
+        <span class="spacer"></span>
+        <input type="text" id="tests-name" spellcheck="false">
+        <button type="button" id="tests-record" class="tool" data-tip="testsRecordTip"><i class="ic ic-plus"></i><span data-t="testsRecord"></span></button>
+        <button type="button" id="tests-approve-all" class="tool" hidden><i class="ic ic-check"></i><span data-t="testsApproveAll"></span></button>
+        <button type="button" id="tests-run" class="tool"><i class="ic ic-play"></i><span data-t="testsRun"></span></button>
+      </div>
+      <p id="tests-hint" class="hint muted" data-t="testsNone"></p>
+      <pre id="tests-error" class="error-box" hidden></pre>
+      <ul id="tests-list" class="tests"></ul>
     </div>
 </div>
 

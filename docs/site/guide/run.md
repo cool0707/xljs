@@ -19,6 +19,7 @@ zip の `prompt/` は AI チャットに渡す資料です（[AI チャットで
 xljs [オプション] <script.js|script.ts> [引数...]
 xljs pack <script> [-o 出力.exe]   スクリプトを埋め込んだ exe を作成
 xljs check <script>                構文と import を検査（実行しない）
+xljs test <script|フォルダ>        テストケースを再生して結果を比べる（→ テスト）
 xljs init [フォルダ]               型定義 (xljs.d.ts) と jsconfig.json を作成
 xljs vba [--include=...|--all] <ブック>... [-o 出力.txt]  VBA コード（と数式・入力規則・グラフなど）を 1 つのテキストにまとめる
 xljs dev [script|フォルダ]         開発モード（AI チャットと並べて作る・直す）

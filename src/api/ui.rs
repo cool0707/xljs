@@ -73,6 +73,18 @@ pub(crate) fn sniff_image(b: &[u8]) -> Option<&'static str> {
     })
 }
 
+/// Ends the script (like exit(), with engine::ABORT_CODE) when the UI of a
+/// test run asked for it during the call that has just returned: a
+/// question nobody answers.
+fn aborted<'js>(h: &super::Host, a: &js::A<'js>) -> rquickjs::Result<()> {
+    let stop = h.env.test.as_ref().is_some_and(|t| t.abort.load(std::sync::atomic::Ordering::SeqCst));
+    if stop {
+        h.set_exit(crate::engine::ABORT_CODE);
+        return Err(js::throw_uncatchable(&a.ctx));
+    }
+    Ok(())
+}
+
 pub(super) fn install(n: &N) {
     // imageDataUrl(bytes, name): a data: URL for an image (name for messages); throws if it is not one.
     n.set("imageDataUrl", |_, a| {
@@ -85,19 +97,81 @@ pub(super) fn install(n: &N) {
         h.env.ui.alert(&a.str(0), &a.str(1));
         a.undefined()
     });
-    n.set("uiConfirm", |h, a| a.ret(h.env.ui.confirm(&a.str(0), &a.str(1))));
-    n.set("uiPrompt", |h, a| match h.env.ui.prompt(&a.str(0), &a.str(1), &a.str(2)) {
-        Some(s) => a.ret(s),
-        None => a.null(),
+    n.set("uiConfirm", |h, a| {
+        let v = h.env.ui.confirm(&a.str(0), &a.str(1));
+        aborted(h, a)?;
+        if let Some(r) = &h.env.record {
+            r.answer("confirm", v.into());
+        }
+        a.ret(v)
     });
-    n.set("uiOpen", |h, a| a.ret(h.env.ui.open_files(&picker_options(&a.arg(0)))));
-    n.set("uiSave", |h, a| match h.env.ui.save_file(&picker_options(&a.arg(0))) {
-        Some(p) => a.ret(p),
-        None => a.null(),
+    // testRecord(kind, answerJSON, pathsJSON): an answer the prelude saw (a
+    // form: pathsJSON names its fields that hold paths, with their types).
+    n.set("testRecord", |h, a| {
+        if let Some(r) = &h.env.record {
+            let v: serde_json::Value = serde_json::from_str(&a.str(1)).unwrap_or_default();
+            if a.str(0) == "form" {
+                let paths: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&a.str(2)).unwrap_or_default();
+                let answer = match v {
+                    serde_json::Value::Object(m) => Some(m),
+                    _ => None,
+                };
+                r.form(answer, &paths);
+            } else {
+                r.answer(&a.str(0), v);
+            }
+        }
+        a.undefined()
     });
-    n.set("uiDirectory", |h, a| match h.env.ui.pick_directory(&picker_options(&a.arg(0))) {
-        Some(p) => a.ret(p),
-        None => a.null(),
+    // testForget(kind): the last recorded answer of the kind is not one a
+    // run of the case will be asked for.
+    n.set("testForget", |h, a| {
+        if let Some(r) = &h.env.record {
+            r.forget(&a.str(0));
+        }
+        a.undefined()
+    });
+    n.set("uiPrompt", |h, a| {
+        let v = h.env.ui.prompt(&a.str(0), &a.str(1), &a.str(2));
+        aborted(h, a)?;
+        if let Some(r) = &h.env.record {
+            r.answer("prompt", serde_json::json!(v));
+        }
+        match v {
+            Some(s) => a.ret(s),
+            None => a.null(),
+        }
+    });
+    n.set("uiOpen", |h, a| {
+        let v = h.env.ui.open_files(&picker_options(&a.arg(0)));
+        aborted(h, a)?;
+        if let Some(r) = &h.env.record {
+            let list: Vec<String> = v.iter().map(|p| r.input(p)).collect();
+            r.answer("showOpenFilePicker", if list.is_empty() { serde_json::Value::Null } else { serde_json::json!(list) });
+        }
+        a.ret(v)
+    });
+    n.set("uiSave", |h, a| {
+        let v = h.env.ui.save_file(&picker_options(&a.arg(0)));
+        aborted(h, a)?;
+        if let Some(r) = &h.env.record {
+            r.answer("showSaveFilePicker", serde_json::json!(v.as_ref().map(|p| r.output(p))));
+        }
+        match v {
+            Some(p) => a.ret(p),
+            None => a.null(),
+        }
+    });
+    n.set("uiDirectory", |h, a| {
+        let v = h.env.ui.pick_directory(&picker_options(&a.arg(0)));
+        aborted(h, a)?;
+        if let Some(r) = &h.env.record {
+            r.answer("showDirectoryPicker", serde_json::json!(v.as_ref().map(|p| r.input(p))));
+        }
+        match v {
+            Some(p) => a.ret(p),
+            None => a.null(),
+        }
     });
     n.set("uiError", |h, a| {
         h.env.ui.show_error(&a.str(0), &a.str(1));
@@ -133,7 +207,9 @@ pub(super) fn install(n: &N) {
     // uiForm(optionsJSON) -> valuesJSON | null (UIs without windows)
     n.set("uiForm", |h, a| {
         let o: FormOptions = serde_json::from_str(&a.str(0)).map_err(|e| a.throw(&Error::from(e)))?;
-        match h.env.ui.form(&o) {
+        let v = h.env.ui.form(&o);
+        aborted(h, a)?;
+        match v {
             Some(v) => a.ret(serde_json::Value::Object(v).to_string()),
             None => a.null(),
         }
@@ -141,7 +217,11 @@ pub(super) fn install(n: &N) {
     // uiTable(optionsJSON) -> selected indices | null (UIs without windows)
     n.set("uiTable", |h, a| {
         let o: TableOptions = serde_json::from_str(&a.str(0)).map_err(|e| a.throw(&Error::from(e)))?;
-        match h.env.ui.table(&o) {
+        let v = h.env.ui.table(&o);
+        if let Some(r) = h.env.record.as_ref().filter(|_| o.select != crate::ui::SELECT_NONE) {
+            r.answer("table", serde_json::json!(v));
+        }
+        match v {
             Some(sel) => a.ret(sel.into_iter().map(|i| i as f64).collect::<Vec<f64>>()),
             None => a.null(),
         }
