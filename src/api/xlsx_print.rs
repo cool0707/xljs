@@ -846,7 +846,12 @@ impl<'a> Sheet<'a> {
         for c in self.cells.values() {
             if self.printed(c) {
                 let co = c.coordinate();
-                add(co.col_num(), co.row_num());
+                let (col, row) = (co.col_num(), co.row_num());
+                add(col, row);
+                // Text running over the empty cells beside it is printed whole, as in Excel.
+                let (c1, c2) = self.overflow(col, row);
+                add(c1, row);
+                add(c2, row);
             }
         }
         for t in super::xlsx_table::areas(self.ws) {
@@ -866,6 +871,66 @@ impl<'a> Sheet<'a> {
             }
         }
         a
+    }
+
+    /// The columns (first, last) that the text of the cell (c, r) shows over:
+    /// a text that does not fit runs over the empty cells beside it (to the
+    /// right when aligned left, to the left when aligned right, both ways
+    /// when centered). Only (c, c) when it does not run over.
+    fn overflow(&self, c: u32, r: u32) -> (u32, u32) {
+        let val = self.val(c, r);
+        if !matches!(val, Val::Text(_)) || self.merge_at.contains_key(&(c, r)) {
+            return (c, c);
+        }
+        let Some(st) = self.cells.get(&(c, r)).map(|x| x.style()) else { return (c, c) };
+        let (mut h, mut indent) = ("general".to_string(), 0);
+        if let Some(a) = st.alignment() {
+            if a.wrap_text() || a.shrink_to_fit() || a.text_rotation() != 0 {
+                return (c, c);
+            }
+            h = a.horizontal().value_string().to_string();
+            indent = a.indent();
+            let v = a.vertical().value_string();
+            if v == "justify" || v == "distributed" {
+                return (c, c);
+            }
+        }
+        let (left, right) = match h.as_str() {
+            "general" | "" | "left" => (false, true),
+            "right" => (true, false),
+            "center" => (true, true),
+            _ => return (c, c),
+        };
+        // No more than the guess (a little wide for proportional fonts): a
+        // column too many could push the sheet onto one more page.
+        let need = text_width(self, c, r, &val, st) + 3.0 + indent as f64 * self.mdw * 1.4 * 0.75;
+        let w = self.w(c);
+        if need <= w {
+            return (c, c);
+        }
+        let empty = |c: u32| self.val(c, r) == Val::Empty && !self.merge_at.contains_key(&(c, r));
+        // How far the text runs one way, given the room it needs on that side.
+        let run = |dir: i64, mut room: f64| -> u32 {
+            let mut at = c as i64;
+            while room > 0.0 {
+                let next = at + dir;
+                if !(1..=16384).contains(&next) || !empty(next as u32) {
+                    break;
+                }
+                at = next;
+                room -= self.w(at as u32);
+            }
+            at as u32
+        };
+        match (left, right) {
+            (false, true) => (c, run(1, need - w)),
+            (true, false) => (run(-1, need - w), c),
+            _ => {
+                // Centered text: half of what does not fit on each side.
+                let half = (need - w) / 2.0;
+                (run(-1, half), run(1, half))
+            }
+        }
     }
 
     /// The cells an anchor covers (1-based).
@@ -1119,7 +1184,7 @@ impl Classes {
 }
 
 const BASE_CSS: &str = r#"html,body{margin:0;padding:0;background:#fff;color:#000}
-body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-variant-emoji:text}
 .xljs-page{position:relative;overflow:clip;overflow-clip-margin:3pt;break-after:page;display:flex;flex-direction:column;box-sizing:border-box;width:var(--w);height:var(--h)}
 .xljs-page:last-child{break-after:auto}
 .xljs-sheet{position:relative;flex:none}
