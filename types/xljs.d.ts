@@ -720,7 +720,7 @@ declare global {
     editable?: boolean;
     /** 入力欄の種類（既定は値から: 数値は number、Date は date、真偽値は checkbox、ほかは text） */
     type?: "text" | "number" | "date" | "month" | "time" | "select" | "checkbox";
-    /** select の選択肢 */
+    /** select の選択肢。先頭には未選択（空欄）が自動で付くので "" は書かない（書いても空欄は 1 つ） */
     options?: (string | { value: string; label?: string })[];
     required?: boolean;
     min?: number;
