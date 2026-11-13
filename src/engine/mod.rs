@@ -88,8 +88,51 @@ pub struct Options {
     /// (development mode) The file that receives the first form the script
     /// opens, instead of showing it (the form preview); "" = off.
     pub preview: String,
+    /// A run of `xljs test` (see TestRun).
+    pub test: Option<TestRun>,
+    /// Records the answers the user gives as a test case (`xljs test
+    /// --record`).
+    pub record: Option<Arc<crate::testing::Recorder>>,
 }
 
+/// What a run of a test case (testing::run) asks of the engine, so that the
+/// run never waits for anybody and gives the same result every time.
+#[derive(Clone, Default)]
+pub struct TestRun {
+    /// The time the script sees as now ("2026-04-10T09:00:00", local wall
+    /// clock time): new Date(), Date.now() and Date() give it and it does
+    /// not advance. "" leaves the clock alone.
+    pub now: String,
+    /// xljs.userName and xljs.computerName.
+    pub user_name: String,
+    pub computer_name: String,
+    /// Set by the UI when the script must stop at once (a question nobody
+    /// answers): the UI natives end the script like exit() with ABORT_CODE.
+    pub abort: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// The exit code of a script stopped by TestRun::abort.
+pub const ABORT_CODE: i32 = 125;
+
+/// Replaces Date so that the current time is the fixed one. The prototype
+/// stays the original one: instanceof and the dates made by the natives
+/// keep working.
+const FIXED_CLOCK: &str = r#"((now) => {
+  const Real = Date, fixed = new Real(now).getTime();
+  if (Number.isNaN(fixed)) throw new RangeError("invalid time: " + now);
+  function FixedDate(...a) {
+    if (!new.target) return new Real(fixed).toString();
+    const d = a.length ? new Real(...a) : new Real(fixed);
+    if (new.target !== FixedDate) Object.setPrototypeOf(d, new.target.prototype);
+    return d;
+  }
+  FixedDate.prototype = Real.prototype;
+  FixedDate.now = () => fixed;
+  FixedDate.parse = Real.parse;
+  FixedDate.UTC = Real.UTC;
+  Object.defineProperty(Real.prototype, "constructor", { value: FixedDate, writable: true, configurable: true });
+  Object.defineProperty(globalThis, "Date", { value: FixedDate, writable: true, configurable: true });
+})"#;
 
 /// A JavaScript error that terminated the script.
 #[derive(Debug, Clone)]
@@ -201,6 +244,8 @@ pub fn run(mut o: Options) -> Result<i32> {
         dev_guard: o.dev_guard,
         preview: o.preview.clone(),
         removed: Default::default(),
+        test: o.test.clone(),
+        record: o.record.clone(),
     };
     if o.debug_script {
         return debug::run(&o, env, code);
@@ -222,7 +267,8 @@ pub fn run(mut o: Options) -> Result<i32> {
             }
         })));
     }
-    let stop = watchdog::install(&rt, Rc::downgrade(&host), o.watchdog, o.stop_key.clone(), o.memory_floor);
+    let unattended = o.test.as_ref().map(|t| t.abort.clone());
+    let stop = watchdog::install(&rt, Rc::downgrade(&host), o.watchdog, o.stop_key.clone(), o.memory_floor, unattended);
     let res = ctx.with(|ctx| run_in(&ctx, &host, &code));
     rt.set_interrupt_handler(None);
     drop(stop);
@@ -243,6 +289,12 @@ fn run_in<'js>(ctx: &Ctx<'js>, host: &Rc<Host>, code: &str) -> Result<i32> {
         Ok(n) => n,
         Err(e) => return Err(internal(describe_error(ctx, e))),
     };
+    if let Some(now) = host.env.test.as_ref().map(|t| t.now.as_str()).filter(|n| !n.is_empty()) {
+        let set: std::result::Result<Function, _> = ctx.eval(FIXED_CLOCK);
+        if let Err(e) = set.and_then(|f| f.call::<_, Value>((now,))) {
+            return Err(internal(describe_error(ctx, e)));
+        }
+    }
     let mut opts = rquickjs::context::EvalOptions::default();
     opts.global = true;
     opts.strict = false;

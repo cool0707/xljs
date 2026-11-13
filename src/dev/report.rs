@@ -101,6 +101,25 @@ pub fn prompt(p: &Project, stuck: bool, message: &str, loc: Option<&Location>) -
     s
 }
 
+/// The request for the AI chat about a run of a test case (name) that no
+/// longer gives what was approved (status "fail": lines is the difference)
+/// or cannot run as recorded ("problem": lines is the run). The AI is told
+/// what changed, never the test case itself.
+pub fn test_prompt(p: &Project, name: &str, status: &str, lines: &[String]) -> String {
+    let file = p.entry_name();
+    let name = name.trim_end_matches('/');
+    let mut s = if status == "problem" { t!("dev.testPromptProblem", file, name) } else { t!("dev.testPromptFail", file, name) };
+    s.push_str("\n\n");
+    let shown: Vec<&str> = lines.iter().take(120).map(String::as_str).collect();
+    s.push_str(&format!("{}\n```\n{}\n```\n", if status == "problem" { t!("dev.testPromptRun") } else { t!("dev.testPromptDiff") }, shown.join("\n")));
+    if lines.len() > shown.len() {
+        s.push_str(&format!("{}\n", t!("dev.testPromptMore", lines.len() - shown.len())));
+    }
+    s.push('\n');
+    s.push_str(&t!("dev.promptAsk", file));
+    s
+}
+
 /// The instructions for an AI chat that does not know xljs yet
 /// (docs/ai/prompt.md, with `prompt`) and the script so far (with `script`).
 /// Empty when there is nothing to copy (the script alone, and no script).

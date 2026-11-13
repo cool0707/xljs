@@ -16,6 +16,7 @@
         "guide/pack",
         "guide/dev-mode",
         "guide/debug",
+        "guide/test",
         "guide/editor",
         "guide/vba"
       ]

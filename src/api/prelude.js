@@ -3135,11 +3135,34 @@
     return { values: c.values };
   }
 
+  /**
+   * (recording a test case) Tells the answer that brings a form from the
+   * values seen to those of wire, with extra ($button, $cells). Passwords
+   * are left out.
+   */
+  function recordForm(fields, wire, seen, extra) {
+    const answer = {}, paths = {};
+    for (const f of fields) {
+      if (["file", "files", "folder", "saveFile"].includes(f.type)) paths[f.name] = f.type;
+      if (f.chart || f.type === "password" || noValue(f) || inactive(fields, f, wire)) continue;
+      if (JSON.stringify(wire[f.name]) !== JSON.stringify(seen[f.name])) answer[f.name] = wire[f.name];
+    }
+    native.testRecord("form", JSON.stringify(Object.assign(answer, extra)), JSON.stringify(paths));
+    Object.assign(seen, wire);
+  }
+
+  /** The values a form shows in a run of a test case: the defaults (nothing is remembered there). */
+  const defaultWire = (fields) => Object.fromEntries(fields.map((f) => [f.name, toWire(f, f.default)]));
+
   // Console and mock: ask until the values pass, then run onSubmit (or the
   // button's onClick) with a progress indicator. After a button without
   // close: true the form is asked again.
+  //
+  // A run of a test case (native.testMode) plays the form window instead:
+  // the form stays open after onSubmit, and an error of onSubmit is shown.
   async function formPrompt(o, fields, wire, options) {
     let errors = {}, error = "", result = null;
+    const seen = native.recording ? defaultWire(fields) : null;
     for (;;) {
       const cells = {};
       for (const f of fields) if (f.table && f.table.edit) cells[f.name] = await tableErrors(f.table);
@@ -3147,9 +3170,11 @@
       const spec = {
         title: o.title, description: o.description, error,
         submit: o.noSubmit ? "" : o.submit || T("form.ok"), buttons: o.actions.map((b) => b.path || b.label),
+        names: fields.map((f) => f.name),
         fields: fields.filter((f) => !f.chart && !inactive(fields, f, wire)).map((f) => Object.assign({
           name: f.name, label: promptLabel(f), type: promptType(f), options: f.options, required: f.required, custom: f.custom,
           placeholder: f.placeholder, help: f.help, accept: f.accept, value: wire[f.name], error: errors[f.name] || "",
+          min: f.min, max: f.max, maxLength: f.maxLength,
           tab: f.tab >= 0 ? o.tabs[f.tab] : "",
           group: f.group >= 0 ? o.groups[f.group].label : "", groupHelp: f.group >= 0 ? o.groups[f.group].help : "",
         }, f.table ? Object.assign({ select: f.table.select }, tableText(f.table)) : {},
@@ -3159,8 +3184,14 @@
         } : {})),
       };
       const r = native.uiForm(JSON.stringify(spec));
-      if (r === null) return result;
+      if (r === null) {
+        if (seen) native.testRecord("form", "null", "{}");
+        return result;
+      }
       const answer = JSON.parse(r);
+      const extra = {};
+      if (seen && answer.$button !== null && answer.$button !== undefined) extra.$button = answer.$button;
+      if (seen && answer.$cells) extra.$cells = answer.$cells;
       // "$button": the index or label of the button pressed (none: the submit button).
       // The items of the buttons' menus are listed after their button ("label ▸ item"; the item's label alone also works).
       let b = o.noSubmit ? o.actions[0] : null;
@@ -3203,6 +3234,7 @@
           }
         }
       }
+      if (seen) recordForm(fields, wire, seen, extra);
       const c = await pressValues(o, b, fields, wire, options);
       errors = c.errors || {};
       error = c.error || "";
@@ -3210,17 +3242,33 @@
       if (b && b.confirm && !native.uiConfirm(o.title, b.confirm)) continue;
       if (!b || b.validate || b.close) result = c.values;
       const handler = b ? b.onClick : options.onSubmit;
+      let ok = true;
       if (typeof handler === "function") {
         const ctx = promptContext(o, fields, wire);
         try {
           await handler(c.values, ctx);
+          ok = !ctx.cancelled;
         } catch (e) {
-          if (!(e instanceof FormCancel)) throw e;
+          ok = false;
+          if (!(e instanceof FormCancel)) {
+            if (!native.testMode) throw e;
+            err(errorText(e).split("\n")[0]);
+          }
         } finally {
           ctx._i.close();
         }
+        if (seen) Object.assign(seen, wire);
       }
-      if (!b || b.close) return result;
+      const closes = b ? b.close && ok : typeof handler !== "function";
+      if (native.testMode) {
+        if (closes) return result;
+        continue;
+      }
+      if (!b || b.close) {
+        // (recording a test case) A run of the case asks again here.
+        if (seen && !closes) native.testRecord("form", "null", "{}");
+        return result;
+      }
     }
   }
 
@@ -3360,6 +3408,10 @@
       let editQueue = Promise.resolve();
       // The disabled and hidden state the page shows (see refresh).
       let shownStates = null;
+      // (recording a test case) The values as a run of the case has them, the cells
+      // edited since the last press of a button, and whether the form closed itself.
+      const seen = native.recording ? defaultWire(fields) : null;
+      let cellEdits = {}, autoClosed = false;
       const page = openPage("form.html", Object.assign({ title: o.title, titleBar: o.titleBar, icon: o.icon }, formSize(o, fields, hasRun, options)),
         (m, files) => { handle(m, files).catch(fail); });
       const finish = () => (failed ? reject(failed) : resolve(result));
@@ -3367,7 +3419,11 @@
         if (!failed) failed = e;
         page.n.close();
       }
-      page.n.closed.then(() => { if (!running) finish(); });
+      page.n.closed.then(() => {
+        // A run of the case asks again where the user closed the form.
+        if (seen && !autoClosed) native.testRecord("form", "null", "{}");
+        if (!running) finish();
+      });
 
       async function handle(m, files) {
         switch (m.type) {
@@ -3400,6 +3456,7 @@
             const t = f.table;
             editQueue = editQueue.then(async () => {
               if (t !== f.table || !setCell(t, m.row, m.col, m.value)) return;
+              if (seen) (cellEdits[f.name] = cellEdits[f.name] || []).push([m.row, m.col, m.value]);
               const errors = await rowErrors(t, m.row);
               if (!page.n.isClosed()) page.send({ type: "cellErrors", field: f.name, row: m.row, errors });
             });
@@ -3422,6 +3479,8 @@
           case "pick": {
             const f = byName.get(m.field);
             const v = f ? await pickPath(f, m.value) : null;
+            // The path becomes part of the form's answer.
+            if (f && seen) native.testForget(f.type === "folder" ? "showDirectoryPicker" : f.type === "saveFile" ? "showSaveFilePicker" : "showOpenFilePicker");
             if (v !== null) page.send({ type: "picked", field: f.name, value: v, append: f.type === "files" });
             break;
           }
@@ -3439,6 +3498,12 @@
             await editQueue;
             takeValues(m);
             refresh();
+            if (seen) {
+              const extra = b ? { $button: b === top ? top.label : top.label + " ▸ " + b.label } : {};
+              if (Object.keys(cellEdits).length) extra.$cells = cellEdits;
+              cellEdits = {};
+              recordForm(fields, wire, seen, extra);
+            }
             const c = await pressValues(o, b, fields, wire, options);
             if (page.n.isClosed()) return;
             if (!c.values) {
@@ -3454,8 +3519,12 @@
             if (!b || b.validate || b.close) result = c.values;
             const handler = b ? b.onClick : onSubmit;
             const ok = handler ? await run(handler, c.values) : true;
+            if (seen) Object.assign(seen, wire);
             // Without onSubmit the submit button closes the form; a button with close: true does once it succeeds.
-            if (b ? b.close && ok : !handler) page.n.close();
+            if (b ? b.close && ok : !handler) {
+              autoClosed = true;
+              page.n.close();
+            }
             break;
           }
           case "open":
@@ -3734,7 +3803,7 @@
   }
 
   function tableWindow(data, cols, sel, t, options) {
-    let picked = [];
+    let picked = [], answered = false;
     const page = openPage("table.html", {
       title: t, width: Number(options.width) || 960, height: Number(options.height) || 600, fixedSize: options.resizable === false,
       titleBar: options.titleBar, icon: faClass(options.icon),
@@ -3751,11 +3820,15 @@
           }
           break;
         }
-        case "ok":
-          if (sel) picked = Array.from(m.indices || []).filter((i) => i >= 0 && i < data.length).map((i) => data[i]);
-          if (sel === "single") picked = picked.slice(0, 1);
+        case "ok": {
+          let chosen = sel ? Array.from(m.indices || []).filter((i) => i >= 0 && i < data.length) : [];
+          if (sel === "single") chosen = chosen.slice(0, 1);
+          picked = chosen.map((i) => data[i]);
+          answered = true;
+          if (sel && native.recording) native.testRecord("table", JSON.stringify(chosen), "{}");
           page.n.close();
           break;
+        }
         case "close":
           page.n.close();
           break;
@@ -3782,6 +3855,8 @@
         suggestedName: t.replace(/[\\/:*?"<>|]/g, "_") + ext,
         types: [{ description: format === "xlsx" ? "Excel" : "CSV", accept: [ext] }],
       });
+      // (recording a test case) A run of the case does not save the table.
+      if (native.recording) native.testForget("showSaveFilePicker");
       if (!h) return;
       const list = indices ? indices.filter((i) => i >= 0 && i < data.length).map((i) => data[i]) : data;
       const labels = cols.map((c) => c.label);
@@ -3802,7 +3877,11 @@
     }
 
     if (!sel) return new TableView(page.n.closed, () => page.n.close());
-    return page.n.closed.then(() => picked);
+    return page.n.closed.then(() => {
+      // (recording a test case) Closed without choosing.
+      if (!answered && native.recording) native.testRecord("table", "null", "{}");
+      return picked;
+    });
   }
 
   // ---------------------------------------------------------------- charts

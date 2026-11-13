@@ -11,6 +11,7 @@ SQLite（`sqlite.open`、ファイルサーバーで複数人が使う共有モ�
 PDF 出力（`book.toPdf`・`sheet.toPdf`・`xljs.htmlToPdf`。シートの印刷レイアウトを HTML にして WebView2 の `Page.printToPDF`）は `docs/design/pdf-design.md`。
 PDF の編集（グローバルの `pdf`: 結合・ページの削除・挿入・回転・文字の追加。lopdf ＋ フォントのサブセット埋め込み）は `docs/design/pdf-edit.md`。
 開発モード（`xljs dev`。AI チャットの枠＝2 つ目の WebView2、ダウンロードの差分と置き換え、`.xljs/versions` の履歴、別プロセスでの実行、エラーの場所と AI への依頼文、フォームのプレビュー、CodeMirror のエディタと d.ts からの補完）は `docs/design/dev-mode.md`。
+スクリプトの自動テスト（`xljs test`。記録・再生型: `.xljs/tests/<ケース>/case.json` の応答で画面を出さずに実行し、画面に出したものと出力ファイルを承認済みの台本と比べる。AI にテストを書かせない方針と実装の段階）は `docs/design/test-design.md`。
 実行ファイルのサイズ（内訳、埋め込みファイルの圧縮、今後の方針＝パック専用のランタイム・機能別の軽量ランタイム）は `docs/design/binary-size.md`。
 
 ## 構成
@@ -27,6 +28,7 @@ PDF の編集（グローバルの `pdf`: 結合・ページの削除・挿入�
 | `src/net` | `fetch` の通信（natives は `src/api/net.rs`、`fetch`・`Request`・`Response`・`Headers`・`FormData`・`URL`・`URLSearchParams`・`AbortController` は prelude）。1 回の呼び出しはリダイレクトなしの 1 リクエストで別スレッドで送り、リダイレクト・中止・`timeout` は prelude が扱う。Windows は WinHTTP（`winhttp.rs`。システムのプロキシ（PAC も）、401 に Negotiate / NTLM でサインイン中のユーザー（`credentials` の自動ログオンの方針に従う）、407 には方針に関係なく Negotiate / NTLM、だめなら Basic を `auth.rs` のログイン（プロキシは realm ごとに資格情報マネージャー「xljs:Basic:<realm>」、WebView2 でプロキシの設定がないときはサイトのホストごとに「xljs:Basic:<host>:<realm>」へ保存。プロキシの設定がなければ 407 には答えない、初回と拒否されたときは `Ui::credentials` で尋ねる。WebView2 の BasicAuthenticationRequested（`src/ui/native/auth.rs`）と共用）、`XLJS_PROXY` でプロキシを指定、プロセスで 1 つのセッション＝Cookie と keep-alive、中止は要求のハンドルを閉じる）、ほかは素の HTTP/1.1（`plain.rs`。テスト用、https なし）。User-Agent は `agent.rs`（このパソコンの Edge（既定）か Chrome のもの。版はレジストリ、選択は `XLJS_USER_AGENT` か exe の隣の `xljs.json` の `userAgent`。開発モードの AI チャットの枠にもクライアントヒントごと設定する。`docs/design/dev-mode.md`）。テスト用のサーバーは `testserver.rs`（`fetch.test.js` は `XLJS_TEST_HTTP` で URL を受け取る。絶対 URL の要求には Basic 認証のプロキシとして答え、`fetchproxy.test.js` が `XLJS_PROXY` で使う） |
 | `src/shortcut` | エクスプローラーのショートカット（`shell.readShortcutLink` / `shell.writeShortcutLink`。natives は `src/api/ui.rs`）。.lnk は Windows では IShellLinkW（`win.rs`）、ほかでは `lnk.rs` が MS-SHLLINK を直接読み書きする（Windows のテストで、IShellLinkW が書いたものを `lnk.rs` が読めることを確かめる。`lnk.rs` が書いたものは項目 ID リストがないので IShellLinkW からはリンク先が読めない）。.url（INI）は `mod.rs` |
 | `src/process` | プログラムの実行（`shell.run` / `shell.runSync` / `shell.spawn`。natives は `src/api/process.rs`）。`mod.rs` の `Running` が出力を読むスレッド（行に分けてコールバック、`\r` だけの区切りも 1 行）と終わりを待つスレッド（`timeout`、終了後も出力を 500ms まで待つ）を持つ。Windows は `win.rs` が CreateProcessW を直接呼ぶ（std では `wShowWindow` を指定できないため。`PROC_THREAD_ATTRIBUTE_HANDLE_LIST` で標準ハンドルだけを継承、ジョブオブジェクトで `kill()` が子孫まで終わらせる、`.bat`/`.cmd` と引数なしのコマンドラインは `cmd.exe /d /s /c`）、ほかは `unix.rs`（std::process、`sh -c`）。デバッガでは `runSync` の行コールバックを呼び戻せないので、行を結果に付けて返し prelude が後から呼ぶ |
+| `src/testing` | スクリプトのテスト（`xljs test`。CLI は `src/cli/test.rs`）。`mod.rs` がケース（`case.json`。厳密に検査し、誤りは場所と近い名前を示す）・パターンの重ね方・台本の比較と承認、`run.rs` が 1 回の実行（スクリプトのフォルダと `input/` を一時フォルダに写し、そこをカレントにして実行、前後のファイルの差を台本へ）、`replay.rs` が再生用の UI（応答の列から答え、出たものをイベントとして記録。応答のない問い合わせは `engine::TestRun::abort` でその場で止める）、`dump.rs` が出力ファイルの中身（xlsx はセルの表示文字と数式、テキストは行）、`record.rs` が記録（`xljs test --record`。`Options::record`。本物の UI で実行しながら応答を `case.json` へ、選ばれたファイルを `input/` に写してパスを付け替える。フォームの応答は prelude の `recordForm` が `native.testRecord` で渡す）。開発モードの「テスト」タブは `src/dev/mod.rs` が別プロセスの `xljs test --json` を起動して結果を渡す（依頼文は `report::test_prompt`。差分だけを載せ、ケースは AI に見せない）。エンジン側は `Options::test`（現在時刻の固定＝`Date` の差し替え、`xljs.userName`、監視が尋ねずに止める） |
 | `src/meta` | エントリ先頭の `// ==xljs==` メタデータのパースと、アセットだけを見せる `AssetFs`（`DirAssets`/`MemAssets`） |
 | `src/xml.rs`, `src/zippart.rs` | ブックなどの XML の木（`Node`。深さ 256 より下は捨てる。`parse` は整形式のみ、`parse_partial` は読めたところまで）と zip のパートの読み取り（1 パート 1GiB まで、名前の大文字小文字を問わない探索）。`src/book` と `src/api/xlsx_*` が共用 |
 | `src/embed.rs` | 埋め込みファイル（組み込みページ・Day.js・メッセージ・prelude・図形の定義・d.ts・AI のプロンプト）。`build.rs` が deflate で圧縮し、`File::bytes` / `text` が初めて使うときに展開して保持する |
@@ -71,6 +73,7 @@ make windows-gnu                                          # Linux から x64 版
 make windows && make dist                                 # Windows（MSVC）で x64/arm64 と配布 zip
 xljs --ui=mock --ui-answers=a.json --lang=ja script.js    # ダイアログなしで実行
 xljs --debug script.ts                                    # デバッグウィンドウ＋開発者ツール（Windows）
+xljs test [--approve] script.js                           # スクリプトのテストケース（.xljs/tests）を再生して比べる
 ```
 
 - GUI 版は既定のビルド（`windows_subsystem = "windows"`）、コンソール版（xljsc.exe）は `--features console`。アイコンとマニフェストは `build.rs` が `src/cli/xljs.rc` から埋め込む。

@@ -159,6 +159,8 @@ pub enum Event {
     Page(String, Vec<String>),
     Browser(BrowserEvent),
     Run(RunEvent),
+    /// From the process that runs the test cases (xljs test).
+    Test(RunEvent),
     Closed,
 }
 
@@ -221,6 +223,17 @@ enum RunKind {
     Run,
     Debug,
     Preview,
+    /// A run whose answers are recorded as a test case (xljs test --record).
+    Record,
+}
+
+/// The process that runs the test cases of the script (xljs test --json).
+struct Testing {
+    run: Run,
+    stdout: String,
+    stderr: String,
+    /// The run approves what it gives: all the cases run again afterwards.
+    approve: bool,
 }
 
 struct Running {
@@ -310,6 +323,9 @@ struct Request {
     elements: Vec<report::Picked>,
     /// With the whole file (pick).
     full: bool,
+    /// A test case or one of its runs ("case", "case/variant"; testApprove,
+    /// testPrompt), or the name of the case to record (testRecord).
+    name: String,
 }
 
 /// The state of the development window.
@@ -325,6 +341,9 @@ pub struct Session {
     /// The files saved in this session (the first save keeps a version).
     saved: Vec<String>,
     running: Option<Running>,
+    testing: Option<Testing>,
+    /// The outcomes of the last run of the test cases (for testPrompt).
+    tests: Vec<Value>,
     next_run: u64,
     ready: bool,
     /// The page the chat pane shows ("" = none).
@@ -335,7 +354,7 @@ pub struct Session {
 
 impl Session {
     pub fn new(u: Arc<dyn Ui>, w: Arc<dyn Window>, o: DevOptions, tx: Sender<Event>, dir: Arc<Mutex<Option<PathBuf>>>) -> Session {
-        Session { u, w, o, tx, dir, project: None, current: String::new(), saved: Vec::new(), running: None, next_run: 1, ready: false, chat_url: String::new(), defaults: DevDefaults::default() }
+        Session { u, w, o, tx, dir, project: None, current: String::new(), saved: Vec::new(), running: None, testing: None, tests: Vec::new(), next_run: 1, ready: false, chat_url: String::new(), defaults: DevDefaults::default() }
     }
 
     fn post(&self, v: Value) {
@@ -361,6 +380,7 @@ impl Session {
             }
             Event::Browser(b) => self.browser_event(b),
             Event::Run(r) => self.run_event(r),
+            Event::Test(r) => self.test_event(r),
         }
         true
     }
@@ -449,6 +469,42 @@ impl Session {
                 if r.file == p.entry_name() {
                     self.reload_meta();
                 }
+                // The AI's answer is in place: does the script still do what it did?
+                self.auto_tests();
+            }
+            "tests" => self.start_tests("", false)?,
+            "testApprove" => self.start_tests(&r.name, true)?,
+            "testRecord" => self.start_record(&r.name)?,
+            "testSuggest" => {
+                // Variants that try the edges of the form's fields; then all runs again.
+                if let Some(t) = self.testing.take() {
+                    t.run.kill();
+                }
+                let p = self.project()?.clone();
+                let mut args = self.o.run_args.clone();
+                args.extend(["test".to_string(), "--suggest".to_string(), r.name.clone(), p.entry.to_string_lossy().into_owned()]);
+                let id = self.next_run;
+                self.next_run += 1;
+                self.post(json!({"type": "testsStarted", "runs": 1, "approve": false}));
+                let run = Run::start(&self.o.exe, &args, &p.dir, &[], id, self.tx.clone(), Event::Test)?;
+                self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve: true });
+            }
+            "testRemove" => {
+                let p = self.project()?.clone();
+                let (case, variant) = r.name.split_once('/').unwrap_or((r.name.as_str(), ""));
+                let what = r.name.trim_end_matches('/');
+                if !self.u.confirm(&t!("dev.title"), &if variant.is_empty() { t!("dev.testRemoveCase", what) } else { t!("dev.testRemoveVariant", what) }) {
+                    return Ok(());
+                }
+                crate::testing::remove(&p.entry.to_string_lossy(), case, variant)?;
+                self.auto_tests();
+            }
+            "testPrompt" => {
+                let p = self.project()?;
+                let Some(o) = self.tests.iter().find(|o| o["name"] == r.name.as_str()) else { return Ok(()) };
+                let lines: Vec<String> = o["lines"].as_array().map(|a| a.iter().filter_map(|l| l.as_str().map(str::to_string)).collect()).unwrap_or_default();
+                let text = report::test_prompt(p, &r.name, o["status"].as_str().unwrap_or(""), &lines);
+                self.post(json!({"type": "copy", "what": "test", "text": text}));
             }
             "versions" => self.post_versions(&r.file),
             "version" => {
@@ -494,6 +550,10 @@ impl Session {
             "stop" => {
                 if let Some(r) = &self.running {
                     r.run.kill();
+                }
+                if let Some(t) = self.testing.take() {
+                    t.run.kill();
+                    self.post(json!({"type": "tests", "stopped": true}));
                 }
             }
             "intro" => {
@@ -1090,6 +1150,10 @@ impl Session {
         let stopped = code == Some(STOPPED_CODE);
         let stuck = code == Some(STUCK_CODE);
         let failed = code != Some(0) && !stopped;
+        if r.kind == RunKind::Record {
+            // The case is written however the script ended: show what it gives.
+            self.auto_tests();
+        }
         let mut ev = json!({"type": "runEnded", "kind": format!("{:?}", r.kind).to_lowercase(), "code": code, "stopped": stopped, "stuck": stuck});
         if failed {
             let message = report::last_error(&r.stderr);
@@ -1106,6 +1170,141 @@ impl Session {
         if let Some(r) = self.running.take() {
             r.run.kill();
         }
+        if let Some(t) = self.testing.take() {
+            t.run.kill();
+        }
+    }
+
+    // ---- test cases (crate::testing) ----
+
+    /// The test cases of the script being developed.
+    fn test_cases(&self) -> Result<Vec<crate::testing::Case>> {
+        let p = self.project()?;
+        let entry = p.entry_name();
+        Ok(crate::testing::cases(&p.dir)?.into_iter().filter(|c| c.script.replace('\\', "/") == entry).collect())
+    }
+
+    /// Runs the test cases when the script has any (after the script was
+    /// replaced, a case was recorded); mistakes in the cases are told.
+    fn auto_tests(&mut self) {
+        if self.project.is_none() {
+            return;
+        }
+        if let Err(e) = self.start_tests("", false) {
+            self.post(json!({"type": "tests", "error": i18n::error(&e)}));
+        }
+    }
+
+    /// Starts xljs test for the script: all its cases, or only one case or
+    /// run; with approve, what they give is saved as the expected results.
+    /// A run that is still going is given up. Without cases the page is
+    /// told so and nothing runs.
+    fn start_tests(&mut self, only: &str, approve: bool) -> Result<()> {
+        if let Some(t) = self.testing.take() {
+            t.run.kill();
+        }
+        let p = self.project()?.clone();
+        let cases = self.test_cases()?;
+        if cases.is_empty() {
+            self.tests.clear();
+            self.post(json!({"type": "tests", "none": true, "outcomes": []}));
+            return Ok(());
+        }
+        let mut args = self.o.run_args.clone();
+        args.extend(["test".to_string(), "--json".to_string()]);
+        if approve {
+            args.push("--approve".into());
+        }
+        if !only.is_empty() {
+            args.extend(["--only".to_string(), only.to_string()]);
+        }
+        args.push(p.entry.to_string_lossy().into_owned());
+        let id = self.next_run;
+        self.next_run += 1;
+        let runs: usize = cases.iter().map(|c| 1 + c.variants.len()).sum();
+        self.post(json!({"type": "testsStarted", "runs": runs, "approve": approve}));
+        let run = Run::start(&self.o.exe, &args, &p.dir, &[], id, self.tx.clone(), Event::Test)?;
+        self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve });
+        Ok(())
+    }
+
+    fn test_event(&mut self, e: RunEvent) {
+        match e {
+            RunEvent::Output { id, stderr, text } => {
+                if let Some(t) = self.testing.as_mut().filter(|t| t.run.id == id) {
+                    if stderr { t.stderr.push_str(&text) } else { t.stdout.push_str(&text) }
+                }
+            }
+            RunEvent::Exited { id, .. } => {
+                let Some(t) = self.testing.take_if(|t| t.run.id == id) else { return };
+                if t.approve {
+                    // Show all the cases as they are now.
+                    self.auto_tests();
+                    return;
+                }
+                self.tests_finished(&t.stdout, &t.stderr);
+            }
+        }
+    }
+
+    /// Tells the page what xljs test --json gave: its report (stdout), or
+    /// what kept it from running (stderr).
+    fn tests_finished(&mut self, stdout: &str, stderr: &str) {
+        let report = stdout.lines().rev().find_map(|l| serde_json::from_str::<Value>(l).ok().filter(|v| v.get("outcomes").is_some()));
+        let Some(mut report) = report else {
+            self.tests.clear();
+            let message = report::last_error(stderr);
+            self.post(json!({"type": "tests", "error": if message.is_empty() { stderr.trim().to_string() } else { message }}));
+            return;
+        };
+        let mut outcomes = report["outcomes"].take().as_array().cloned().unwrap_or_default();
+        for o in &mut outcomes {
+            // The page shows the lines; the events stay here.
+            if let Some(m) = o.as_object_mut() {
+                m.remove("transcript");
+                let name = match m.get("variant").and_then(Value::as_str) {
+                    Some(v) if !v.is_empty() => format!("{}/{v}", m["case"].as_str().unwrap_or("")),
+                    _ => format!("{}/", m["case"].as_str().unwrap_or("")),
+                };
+                m.insert("name".into(), name.into());
+            }
+        }
+        self.tests = outcomes.clone();
+        report["type"] = "tests".into();
+        report["outcomes"] = outcomes.into();
+        self.post(report);
+    }
+
+    /// Runs the script as usual, recording the answers as a new test case
+    /// (name; "" = the first free "ケース N").
+    fn start_record(&mut self, name: &str) -> Result<()> {
+        if self.running.as_ref().is_some_and(|r| r.run.running()) {
+            return Err(err!("dev.alreadyRunning"));
+        }
+        let p = self.project()?.clone();
+        let name = match name.trim() {
+            "" => {
+                let dir = p.dir.join(crate::testing::TESTS_DIR);
+                (1..).map(|n| t!("dev.testCaseName", n)).find(|n| !dir.join(n).exists()).unwrap_or_default()
+            }
+            n => n.to_string(),
+        };
+        crate::testing::check_new(&p.entry.to_string_lossy(), &name)?;
+        let mut args = self.o.run_args.clone();
+        args.extend(["test".to_string(), "--record".to_string(), name, p.entry.to_string_lossy().into_owned()]);
+        let mut env = Vec::new();
+        if std::env::var("XLJS_WATCHDOG").unwrap_or_default().is_empty() {
+            env.push(("XLJS_WATCHDOG".to_string(), "on".to_string()));
+        }
+        if std::env::var("XLJS_STOP_KEY").unwrap_or_default().is_empty() {
+            env.push(("XLJS_STOP_KEY".to_string(), "on".to_string()));
+        }
+        let id = self.next_run;
+        self.next_run += 1;
+        let run = Run::start(&self.o.exe, &args, &p.dir, &env, id, self.tx.clone(), Event::Run)?;
+        self.running = Some(Running { run, kind: RunKind::Record, stderr: String::new(), preview: None });
+        self.post(json!({"type": "runStarted", "kind": "record"}));
+        Ok(())
     }
 }
 
