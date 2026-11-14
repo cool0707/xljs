@@ -676,17 +676,11 @@ function flushCells() {
 
 const fill = (t, ...a) => String(t || "").replace(/\{(\d)\}/g, (_, i) => a[i]);
 
-/** The input of an editable cell (e: the column's { type, options, min, max, step }). */
+/** The input of an editable cell (e: the column's { type, options, custom, min, max, step }). */
 function cellInput(e, v) {
+  if (e.type === "select" || e.type === "combobox") return cellCombo(e, v);
   let i;
-  if (e.type === "select") {
-    // Only the options: an empty cell shows no option (selectedIndex -1, value ""), and
-    // Delete / Backspace empties it (see the keydown handler of the table).
-    i = el("select", {}, ...(e.options || []).map((o) => el("option", { value: o.value, textContent: o.label })));
-    i.value = v === null ? "" : String(v);
-    if (i.selectedIndex < 0 && v !== null && v !== "") i.append(el("option", { value: String(v), textContent: String(v), selected: true }));
-    if (v === null || v === "") i.selectedIndex = -1;
-  } else if (e.type === "checkbox") {
+  if (e.type === "checkbox") {
     i = el("input", { type: "checkbox", checked: v === true });
   } else {
     // Numbers are typed as text so that what does not parse stays visible (and full-width digits work).
@@ -695,6 +689,142 @@ function cellInput(e, v) {
     for (const k of ["min", "max", "step"]) if (e[k] !== undefined && e[k] !== null) i[k] = e[k];
     i.value = v === null ? "" : String(v);
   }
+  return i;
+}
+
+/**
+ * The list of the options of the cell being typed in (one for the page, fixed
+ * to the window as the table scrolls and would clip a list inside the cell).
+ */
+let cellList = null;
+function cellListNode() {
+  if (!cellList) {
+    cellList = el("div", { className: "combo-list cell-list", hidden: true });
+    cellList.setAttribute("role", "listbox");
+    document.body.append(cellList);
+    // Scrolling anything but the list moves the cell away from it.
+    document.addEventListener("scroll", (e) => { if (e.target !== cellList && cellList._close) cellList._close(); }, true);
+    window.addEventListener("resize", () => { if (cellList._close) cellList._close(); });
+  }
+  return cellList;
+}
+
+/**
+ * A select or combobox cell: a text input whose typing shows the options that
+ * contain it (label or value). The cell's value (input.cellValue()) is the
+ * option whose label or value is typed; a select cell (or a combobox without
+ * custom) goes back to its last value when what is typed is no option, and an
+ * empty text empties the cell. A custom combobox keeps any text.
+ */
+function cellCombo(e, v) {
+  const opts = e.options || [];
+  const custom = e.type === "combobox" && !!e.custom;
+  const i = el("input", { type: "text", spellcheck: false, autocomplete: "off" });
+  i.classList.add("cell-combo");
+  i.setAttribute("role", "combobox");
+  i.setAttribute("aria-autocomplete", "list");
+  i.setAttribute("aria-expanded", "false");
+  const labelOf = (x) => (opts.find((o) => o.value === x) || { label: x }).label;
+  /** The option typed (exactly, then ignoring case), or undefined. */
+  const optionOf = (text) => {
+    const t = text.trim(), l = t.toLowerCase();
+    return opts.find((o) => o.label === t) || opts.find((o) => o.value === t)
+      || opts.find((o) => o.label.toLowerCase() === l) || opts.find((o) => o.value.toLowerCase() === l);
+  };
+  let value = v === null || v === undefined ? "" : String(v);
+  i.value = labelOf(value);
+  let shown = [], active = -1;
+  const list = cellListNode();
+  const isOpen = () => !list.hidden && list._owner === i;
+
+  function render() {
+    list.textContent = "";
+    if (!shown.length) list.append(el("div", { className: "combo-empty", textContent: texts.noMatch }));
+    shown.slice(0, 200).forEach((o, k) => {
+      const item = el("div", { className: "combo-item" + (k === active ? " active" : ""), textContent: o.label });
+      item.setAttribute("role", "option");
+      item.addEventListener("mousedown", (ev) => { ev.preventDefault(); choose(o); });
+      list.append(item);
+    });
+    const a = list.children[active];
+    if (a) a.scrollIntoView({ block: "nearest" });
+  }
+  function place() {
+    const r = i.getBoundingClientRect();
+    list.style.left = r.left + "px";
+    list.style.minWidth = r.width + "px";
+    // Below the cell, or above it when there is more room there.
+    const below = window.innerHeight - r.bottom, above = r.top;
+    list.style.maxHeight = Math.max(80, Math.min(240, (below >= 160 || below >= above ? below : above) - 8)) + "px";
+    if (below >= 160 || below >= above) { list.style.top = r.bottom + 2 + "px"; list.style.bottom = ""; }
+    else { list.style.top = ""; list.style.bottom = window.innerHeight - r.top + 2 + "px"; }
+  }
+  /** Opens the list with the options containing the text (all: every option, the current one active). */
+  function open(all) {
+    if (i.disabled || !opts.length) return;
+    const q = all ? "" : i.value.trim().toLowerCase();
+    shown = opts.filter((o) => !q || o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q));
+    active = all ? shown.findIndex((o) => o.value === value) : shown.length ? 0 : -1;
+    list._owner = i;
+    list._close = close;
+    list.hidden = false;
+    i.setAttribute("aria-expanded", "true");
+    place();
+    render();
+  }
+  function close() {
+    if (list._owner !== i) return;
+    list.hidden = true;
+    list._owner = null;
+    list._close = null;
+    i.setAttribute("aria-expanded", "false");
+  }
+  /** Takes what is typed as the value and tells the table (via change). */
+  function commit() {
+    const t = i.value.trim();
+    const o = t === "" ? null : optionOf(t);
+    const next = t === "" ? "" : o ? o.value : custom ? t : value;
+    i.value = labelOf(next);
+    if (next === value) return;
+    value = next;
+    i.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  function choose(o) {
+    i.value = o.label;
+    close();
+    commit();
+  }
+  i.cellValue = () => value;
+  // The input's own change (on leaving it) comes before the blur's commit, with the old value.
+  i.addEventListener("change", (ev) => { if (ev.isTrusted) ev.stopImmediatePropagation(); });
+  i.addEventListener("input", () => open(false));
+  i.addEventListener("mousedown", () => { if (!isOpen()) open(true); });
+  i.addEventListener("blur", () => {
+    close();
+    if (i.value !== labelOf(value)) commit();
+  });
+  // Before the table's own keydown (Enter to the next row).
+  i.addEventListener("keydown", (ev) => {
+    if (ev.isComposing) return;
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (!isOpen()) { open(true); return; }
+      const n = Math.min(shown.length, 200);
+      if (n) { active = (active + (ev.key === "ArrowDown" ? 1 : -1) + n) % n; render(); }
+    } else if (ev.key === "Enter") {
+      if (isOpen() && active >= 0 && shown[active]) {
+        // The highlighted option, then on to the next row.
+        i.value = shown[active].label;
+      }
+      close();
+      if (i.value !== labelOf(value)) commit();
+    } else if (ev.key === "Escape" && isOpen()) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      close();
+      i.value = labelOf(value);
+    }
+  });
   return i;
 }
 
@@ -855,7 +985,7 @@ function tableControl(f, id) {
   /** Sends the value of an editable cell; text inputs wait until typing pauses. */
   function changed(i, k, input, now) {
     const e = edit[k];
-    const v = e.type === "checkbox" ? input.checked : input.value;
+    const v = e.type === "checkbox" ? input.checked : input.cellValue ? input.cellValue() : input.value;
     rows[i][k] = e.type === "number" && v.trim() !== "" && isFinite(v) ? Number(v) : v;
     paintAll();
     const key = i + ":" + k;
@@ -901,7 +1031,8 @@ function tableControl(f, id) {
           const input = cellInput(edit[k], v);
           input.disabled = locked();
           input.dataset.c = k;
-          const text = input.tagName === "INPUT" && input.type !== "checkbox";
+          // Text is sent as typed; a select or combobox cell once chosen (cellCombo).
+          const text = input.tagName === "INPUT" && input.type !== "checkbox" && !input.cellValue;
           input.addEventListener(text ? "input" : "change", () => changed(i, k, input, !text));
           if (text) input.addEventListener("change", () => changed(i, k, input, true));
           cellInputs.push(input);
@@ -1001,19 +1132,13 @@ function tableControl(f, id) {
   // Enter in a cell goes to the same column of the next row (Shift+Enter: the row above), as in Excel.
   body.addEventListener("keydown", (e) => {
     const input = e.target.closest(":is(input, select)[data-c]");
-    // Delete / Backspace empties a select cell (its options have no blank one).
-    if (input && input.tagName === "SELECT" && (e.key === "Delete" || e.key === "Backspace") && !input.disabled) {
-      e.preventDefault();
-      if (input.selectedIndex >= 0) { input.selectedIndex = -1; input.dispatchEvent(new Event("change", { bubbles: true })); }
-      return;
-    }
     if (!input || e.key !== "Enter" || e.isComposing) return;
     e.preventDefault();
     const trs = [...body.querySelectorAll("tr[data-i]")];
     const next = trs[trs.indexOf(input.closest("tr")) + (e.shiftKey ? -1 : 1)];
     const target = next && next.querySelector(`:is(input, select)[data-c="${input.dataset.c}"]`);
     if (target) target.focus();
-    if (input.tagName === "INPUT" && input.type !== "checkbox") changed(Number(input.closest("tr").dataset.i), Number(input.dataset.c), input, true);
+    if (input.tagName === "INPUT" && input.type !== "checkbox" && !input.cellValue) changed(Number(input.closest("tr").dataset.i), Number(input.dataset.c), input, true);
   });
   all.onclick = (e) => {
     e.stopPropagation();

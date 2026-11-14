@@ -313,6 +313,7 @@ fn ask_edits(c: &Console, f: &FormField) -> Option<Vec<Value>> {
             let label = &f.columns[ci];
             let v = match col.kind.as_str() {
                 "select" => ask_choice(c, label, &col.options, &row[ci])?,
+                "combobox" => ask_choice_or_text(c, label, &col.options, &row[ci])?,
                 "checkbox" => json!(is_yes(&c.prompt("", &format!("{label} [y/n]"), &row[ci])?)),
                 _ => Value::String(c.prompt("", label, &row[ci])?),
             };
