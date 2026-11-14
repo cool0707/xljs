@@ -154,7 +154,9 @@ impl Bundler {
 
     fn add_script(&mut self, idx: usize, path: &Path, id: &str, src: &str, ext: &str, entry: bool) {
         let alloc = Allocator::default();
-        let ts = matches!(ext, "ts" | "mts" | "cts");
+        // .xljs files (scripts given to users, see cli::assoc) are TypeScript,
+        // which plain JavaScript also is.
+        let ts = matches!(ext, "ts" | "mts" | "cts" | "xljs");
         let mut source_type = if ts { SourceType::ts() } else { SourceType::mjs() };
         if ext == "cjs" || ext == "cts" {
             source_type = source_type.with_commonjs(true);

@@ -75,7 +75,7 @@ pub fn excerpt(text: &str, line: u32, around: u32) -> String {
 /// The code fence language of a file.
 pub fn fence(file: &str) -> &'static str {
     match super::project::ext_of(file).as_str() {
-        "ts" | "mts" => "ts",
+        "ts" | "mts" | "xljs" => "ts",
         "html" | "htm" => "html",
         "css" => "css",
         "json" => "json",

@@ -1,3 +1,5 @@
 // The exe's icon and manifest (DPI awareness, common controls v6).
 1 ICON "../../assets/xljs.ico"
+// The icon of .xljs files (src/cli/assoc.rs: DefaultIcon "xljs.exe",-2).
+2 ICON "../../assets/xljs-file.ico"
 1 24 "xljs.manifest"

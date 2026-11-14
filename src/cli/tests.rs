@@ -48,6 +48,36 @@ fn launch_screen() {
 }
 
 #[test]
+fn xljs_files() {
+    let _l = lock_lang("ja");
+    let dir = tempdir();
+    // A .xljs file is a script in TypeScript syntax; dropped files arrive
+    // as arguments after it (Explorer's "open" command: "%1" %*).
+    let script = dir.join("集計.xljs");
+    std::fs::write(&script, "const n: number = xljs.args.length;\nui.alert(`引数 ${n}: ${xljs.args.join(\",\")}`);\n").unwrap();
+    let s = script.to_string_lossy().into_owned();
+    let log = SharedBuf::default();
+    let u = Arc::new(ui::Mock::from_json("{}", Some(log.sink())).unwrap());
+    let con = ConsoleState { has: true, own: false };
+    let code = start(&con, u, vec![s.clone(), "a.csv".into(), "b.csv".into()], false, "", &Stop::default());
+    assert!(code == 0 && log.text().contains("引数 2: a.csv,b.csv"), "{code}\n{}", log.text());
+
+    // Packed into an exe ("exe を作成" in its context menu: pack --dialog).
+    let out = dir.join("集計.exe");
+    assert_eq!(pack::default_output(&s), dir.join(if cfg!(windows) { "集計.exe" } else { "集計" }).to_string_lossy());
+    assert_eq!(cmd_pack(&con, &["-o".into(), out.to_string_lossy().into_owned(), s.clone()]), 0);
+    assert_eq!(pack::read(&out).unwrap().unwrap().name, "集計.xljs");
+
+    // The start screen's last choice associates .xljs files (Windows only).
+    let (code, log) = launch_with(serde_json::json!({"choose": [5], "confirm": [false]}));
+    assert_eq!(code, 0, "assoc cancelled\n{log}");
+    if !cfg!(windows) {
+        let (code, log) = launch_with(serde_json::json!({"choose": [5], "confirm": [true]}));
+        assert_eq!(code, 1, "assoc\n{log}");
+    }
+}
+
+#[test]
 fn drop_vba() {
     let _l = lock_lang("ja");
     let dir = tempdir();

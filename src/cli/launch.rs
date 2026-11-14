@@ -11,6 +11,7 @@ const LAUNCH_DEBUG: i64 = 1;
 const LAUNCH_DEV: i64 = 2;
 const LAUNCH_PACK: i64 = 3;
 const LAUNCH_VBA: i64 = 4;
+const LAUNCH_ASSOC: i64 = 5;
 
 // Icons of the choices in the dialog without HTML windows (drawn by
 // tools/make_launch_icons.py) and in the page (web/icons.css).
@@ -19,11 +20,12 @@ const ICON_DEBUG: &[u8] = include_bytes!("icons/debug.ico");
 const ICON_DEV: &[u8] = include_bytes!("icons/dev.ico");
 const ICON_PACK: &[u8] = include_bytes!("icons/pack.ico");
 const ICON_VBA: &[u8] = include_bytes!("icons/vba.ico");
+const ICON_ASSOC: &[u8] = include_bytes!("icons/assoc.ico");
 
 /// The start screen of xljs started without a script (double-clicked): it
 /// asks whether to run, debug or pack a script, to open the development
-/// mode, or to extract the VBA code of macro workbooks, and asks for the
-/// files.
+/// mode, to extract the VBA code of macro workbooks, or to associate .xljs
+/// files with this exe, and asks for the files.
 pub(super) fn launch(con: &ConsoleState, u: Arc<dyn Ui>, explicit_lang: bool, stop: &super::Stop) -> i32 {
     let choice = |label: &str, note: &str, icon: &[u8]| Choice { label: t!(label), note: t!(note), icon: icon.to_vec() };
     let choices = [
@@ -32,6 +34,7 @@ pub(super) fn launch(con: &ConsoleState, u: Arc<dyn Ui>, explicit_lang: bool, st
         choice("cli.launchDev", "cli.launchDevNote", ICON_DEV),
         choice("cli.launchPack", "cli.launchPackNote", ICON_PACK),
         choice("cli.launchVBA", "cli.launchVBANote", ICON_VBA),
+        choice("cli.launchAssoc", "cli.launchAssocNote", ICON_ASSOC),
     ];
     let Some(c) = ask(&u, &choices) else {
         eprint!("{}", super::usage());
@@ -63,16 +66,17 @@ pub(super) fn launch(con: &ConsoleState, u: Arc<dyn Ui>, explicit_lang: bool, st
             }
             super::vba::drop_vba(con, u, &books)
         }
+        LAUNCH_ASSOC => associate(con, &*u),
         _ => 0,
     }
 }
 
 /// The icons of the choices in the page (web/icons.css), in their order.
-const PAGE_ICONS: [&str; 5] = ["play", "bug", "sparkles", "package", "scroll-text"];
+const PAGE_ICONS: [&str; 6] = ["play", "bug", "sparkles", "package", "scroll-text", "link"];
 
 /// The size of the start screen's page (below its title bar).
 const PAGE_WIDTH: i64 = 600;
-const PAGE_HEIGHT: i64 = 424;
+const PAGE_HEIGHT: i64 = 496;
 
 /// Shows the start screen: a window of its own (web/launch.html) where the
 /// UI has HTML windows, else Ui::choose (also when the window cannot open,
@@ -162,7 +166,7 @@ impl AssetFs for LaunchAssets {
 fn pick_script(u: &dyn Ui, title: &str) -> Option<String> {
     let paths = u.open_files(&PickerOptions {
         title: title.to_string(),
-        filters: vec![FileFilter { description: t!("cli.scripts"), patterns: vec!["*.js".into(), "*.mjs".into(), "*.ts".into()] }],
+        filters: vec![FileFilter { description: t!("cli.scripts"), patterns: super::script_patterns() }],
         ..Default::default()
     });
     paths.into_iter().next()
@@ -170,7 +174,7 @@ fn pick_script(u: &dyn Ui, title: &str) -> Option<String> {
 
 /// Asks where to save the exe for the script, creates it and offers to
 /// show it in its folder.
-fn launch_pack_script(con: &ConsoleState, u: &dyn Ui, script: &str) -> i32 {
+pub(super) fn launch_pack_script(con: &ConsoleState, u: &dyn Ui, script: &str) -> i32 {
     let out = pack_output(script);
     let abs = std::path::absolute(&out).unwrap_or_else(|_| out.clone().into());
     let Some(out) = u.save_file(&PickerOptions {
@@ -191,4 +195,35 @@ fn launch_pack_script(con: &ConsoleState, u: &dyn Ui, script: &str) -> i32 {
         return con.fail(Some(u), &e);
     }
     0
+}
+
+/// Associates .xljs files with this exe (or removes the association when
+/// they already are), after asking.
+fn associate(con: &ConsoleState, u: &dyn Ui) -> i32 {
+    let exe = super::assoc::target_exe();
+    let r = match super::assoc::status(&exe) {
+        super::assoc::Status::This => {
+            if !u.confirm("xljs", &t!("assoc.askRemove", exe.display())) {
+                return 0;
+            }
+            super::assoc::unregister().map(|_| t!("assoc.unregistered"))
+        }
+        status => {
+            let ask = match status {
+                super::assoc::Status::Other(old) => t!("assoc.askReplace", old, exe.display()),
+                _ => t!("assoc.askRegister", exe.display()),
+            };
+            if !u.confirm("xljs", &ask) {
+                return 0;
+            }
+            super::assoc::register(&exe).map(|_| t!("assoc.registered", exe.display()))
+        }
+    };
+    match r {
+        Ok(m) => {
+            u.alert("xljs", &m);
+            0
+        }
+        Err(e) => con.fail(Some(u), &e),
+    }
 }

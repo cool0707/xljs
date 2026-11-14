@@ -129,6 +129,21 @@ fn agent_dir() -> PathBuf {
     std::env::temp_dir().join("xljs-dev").join(format!("{}-ai", std::process::id()))
 }
 
+/// The file to drag to the chat for a file of the project: a .xljs script
+/// as a copy named .ts (chats like Copilot take only known extensions; the
+/// answer, a .ts download, replaces the .xljs file, see
+/// Project::match_download), other files as they are.
+fn drag_copy(path: &Path) -> Result<PathBuf> {
+    if project::ext_of(&path.to_string_lossy()) != "xljs" {
+        return Ok(path.to_path_buf());
+    }
+    let dir = agent_dir().join("drag");
+    std::fs::create_dir_all(&dir).map_err(|e| Error::path("mkdir", dir.to_string_lossy(), e))?;
+    let out = dir.join(path.with_extension("ts").file_name().unwrap_or_default());
+    std::fs::copy(path, &out).map_err(|e| Error::path("write", out.to_string_lossy(), e))?;
+    Ok(out)
+}
+
 /// Reads the exe's settings; a missing file is the defaults.
 fn load_exe_settings(p: &Path) -> Result<DevDefaults> {
     if p.as_os_str().is_empty() || !p.is_file() {
@@ -617,6 +632,7 @@ impl Session {
                 let p = self.project()?;
                 let path = p.path(&r.file)?;
                 if path.is_file() {
+                    let path = drag_copy(&path)?;
                     self.w.browser(BrowserCommand::DragFiles(vec![path.to_string_lossy().into_owned()]));
                 }
             }
@@ -795,7 +811,7 @@ impl Session {
         let paths = self.u.open_files(&PickerOptions {
             title: t!("cli.selectScript"),
             start_in: start.to_string(),
-            filters: vec![FileFilter { description: t!("cli.scripts"), patterns: vec!["*.js".into(), "*.mjs".into(), "*.ts".into()] }],
+            filters: vec![FileFilter { description: t!("cli.scripts"), patterns: crate::cli::script_patterns() }],
             ..Default::default()
         });
         if let Some(p) = paths.into_iter().next()

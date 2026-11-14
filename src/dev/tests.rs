@@ -55,6 +55,24 @@ fn download_matching() {
 }
 
 #[test]
+fn xljs_entry() {
+    // A .xljs script is edited like a .ts one: the chat gets a .ts copy and
+    // its .js/.ts answer replaces the .xljs file.
+    let dir = tempdir();
+    write(&dir, "集計.xljs", "ui.alert('a');");
+    write(&dir, "lib.js", "export const x = 1;");
+    let p = Project::open(&dir.join("集計.xljs").to_string_lossy()).unwrap();
+    assert_eq!(p.files(), vec!["集計.xljs", "lib.js"]);
+    assert_eq!(p.match_download("集計.ts", ""), Some("集計.xljs".into()));
+    assert_eq!(p.match_download("集計_修正版.js", ""), Some("集計.xljs".into()));
+    assert_eq!(report::fence("集計.xljs"), "ts");
+    let copy = drag_copy(&p.entry).unwrap();
+    assert_eq!(copy.file_name().unwrap().to_string_lossy(), "集計.ts");
+    assert_eq!(std::fs::read_to_string(&copy).unwrap(), "ui.alert('a');");
+    assert_eq!(drag_copy(&dir.join("lib.js")).unwrap(), dir.join("lib.js"));
+}
+
+#[test]
 fn versions_keep_and_restore() {
     let dir = tempdir();
     write(&dir, "a.js", "v1");

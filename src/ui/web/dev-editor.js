@@ -94,7 +94,7 @@
   // plugins by the file's extension (TypeScript through babel-ts).
   const FORMATS = {
     js: ["babel", ["babel", "estree"]], mjs: ["babel", ["babel", "estree"]], cjs: ["babel", ["babel", "estree"]],
-    ts: ["babel-ts", ["babel", "estree"]], mts: ["babel-ts", ["babel", "estree"]], cts: ["babel-ts", ["babel", "estree"]],
+    ts: ["babel-ts", ["babel", "estree"]], xljs: ["babel-ts", ["babel", "estree"]], mts: ["babel-ts", ["babel", "estree"]], cts: ["babel-ts", ["babel", "estree"]],
     json: ["json", ["babel", "estree"]],
     html: ["html", ["html", "babel", "estree", "postcss"]], htm: ["html", ["html", "babel", "estree", "postcss"]],
     css: ["css", ["postcss"]],
@@ -135,7 +135,7 @@
   function language(file) {
     const ext = (String(file || "").match(/\.([^./\\]+)$/) || [])[1];
     switch ((ext || "").toLowerCase()) {
-      case "ts": case "mts": case "cts": {
+      case "ts": case "mts": case "cts": case "xljs": {
         const l = CM.javascript({ typescript: true });
         return [l, CM.typescriptLanguage.data.of({ autocomplete: devTypes.complete }), CM.hoverTooltip(devTypes.hover)];
       }
