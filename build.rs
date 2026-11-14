@@ -109,6 +109,7 @@ fn main() {
         println!("cargo:rerun-if-changed=src/cli/xljs.rc");
         println!("cargo:rerun-if-changed=src/cli/xljs.manifest");
         println!("cargo:rerun-if-changed=assets/xljs.ico");
+        println!("cargo:rerun-if-changed=assets/xljs-file.ico");
         embed_resource::compile("src/cli/xljs.rc", embed_resource::NONE).manifest_required().unwrap();
     }
 }

@@ -1,6 +1,7 @@
 //! The xljs command: global options, subcommands (pack, check, init, vba,
 //! version, help), the start screen, and running scripts.
 
+mod assoc;
 mod console;
 mod launch;
 mod db;
@@ -18,6 +19,12 @@ use crate::ui::{self, Ui};
 use crate::{Error, Result, err, i18n, pack, t};
 
 pub use console::ConsoleState;
+
+/// The file name patterns of scripts in file dialogs (.xljs files first:
+/// what users are given; .js/.ts while developing).
+pub(crate) fn script_patterns() -> Vec<String> {
+    ["*.xljs", "*.js", "*.mjs", "*.ts"].iter().map(|s| s.to_string()).collect()
+}
 
 /// The version (set by the build: XLJS_VERSION, else the crate version).
 pub fn version() -> String {
@@ -159,6 +166,7 @@ fn run(con: &ConsoleState, args: Vec<String>) -> i32 {
                 return 0;
             }
             "pack" => return cmd_pack(con, &rest[1..]),
+            "assoc" => return cmd_assoc(con, &rest[1..]),
             "check" => return cmd_check(con, &rest[1..]),
             "test" => {
                 let ui_mode = flags.ui.clone().unwrap_or_else(|| env("XLJS_UI"));
@@ -471,7 +479,11 @@ fn split_out(args: &[String]) -> Result<(Option<String>, Vec<String>)> {
 }
 
 fn cmd_pack(con: &ConsoleState, args: &[String]) -> i32 {
-    let (out, rest) = match split_out(args) {
+    // --dialog (the "pack" command of .xljs files in Explorer): ask where
+    // to save the exe, as the start screen does.
+    let dialog = args.iter().any(|a| a == "--dialog" || a == "-dialog");
+    let args: Vec<String> = args.iter().filter(|a| *a != "--dialog" && *a != "-dialog").cloned().collect();
+    let (out, rest) = match split_out(&args) {
         Ok(x) => x,
         Err(e) => return con.fail(None, &e),
     };
@@ -480,6 +492,13 @@ fn cmd_pack(con: &ConsoleState, args: &[String]) -> i32 {
         return 2;
     }
     let script = &rest[0];
+    if dialog && out.is_none() {
+        let u = match choose_ui(&env("XLJS_UI"), &env("XLJS_UI_ANSWERS")) {
+            Ok(u) => u,
+            Err(e) => return con.fail(None, &e),
+        };
+        return launch::launch_pack_script(con, &*u, script);
+    }
     let out = out.unwrap_or_else(|| pack_output(script));
     if let Err(e) = pack_script(script, &out) {
         return con.fail(None, &e);
@@ -501,6 +520,28 @@ pub(crate) fn pack_script(script: &str, out: &str) -> Result<()> {
         eprintln!("{w}");
     }
     Ok(())
+}
+
+/// xljs assoc [remove]: associates .xljs files with this exe for the
+/// current user (double-click runs, the context menu edits or packs), or
+/// removes the association.
+fn cmd_assoc(con: &ConsoleState, args: &[String]) -> i32 {
+    let exe = assoc::target_exe();
+    let r = match args {
+        [] => assoc::register(&exe).map(|_| t!("assoc.registered", exe.display())),
+        [a] if a == "remove" => assoc::unregister().map(|_| t!("assoc.unregistered")),
+        _ => {
+            eprintln!("{}", t!("cli.usageAssoc"));
+            return 2;
+        }
+    };
+    match r {
+        Ok(m) => {
+            println!("{m}");
+            0
+        }
+        Err(e) => con.fail(None, &e),
+    }
 }
 
 const JSCONFIG: &str = r#"{

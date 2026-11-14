@@ -73,9 +73,21 @@ def dev():
     return im
 
 
+def assoc():
+    im, d = base((90, 104, 128, 255))
+    # two chain links, drawn level and turned 45 degrees
+    layer = Image.new("RGBA", (S, S), (0, 0, 0, 0))
+    ld = ImageDraw.Draw(layer)
+    w = 18
+    ld.rounded_rectangle((44, 100, 140, 156), radius=28, outline=WHITE, width=w)
+    ld.rounded_rectangle((116, 100, 212, 156), radius=28, outline=WHITE, width=w)
+    im.alpha_composite(layer.rotate(45, resample=Image.BICUBIC, center=(128, 128)))
+    return im
+
+
 def main():
     os.makedirs(OUT, exist_ok=True)
-    all_icons = (("run", run), ("debug", debug), ("dev", dev), ("pack", pack), ("vba", vba))
+    all_icons = (("run", run), ("debug", debug), ("dev", dev), ("pack", pack), ("vba", vba), ("assoc", assoc))
     names = sys.argv[1:]
     for name, draw in all_icons:
         if names and name not in names:
