@@ -51,5 +51,24 @@ deepEqual(v2.t, [items[1]]);
 equal(items[1].数, 1020, "full-width digits and thousands separators");
 equal(items[0].数, 1);
 
+// combobox cells: options only, or (allowCustom) any text.
+const people = [{ 担当: "佐藤", 部署: "営業" }, { 担当: "鈴木", 部署: "経理" }];
+const comboErrors = [];
+const v3 = await ui.form({
+  title: "担当",
+  fields: [{
+    name: "t", type: "table", rows: people, editable: true, columns: [
+      { key: "担当", type: "combobox", options: ["佐藤", "鈴木", "高橋"] },
+      { key: "部署", type: "combobox", options: ["営業", "経理"], allowCustom: true },
+    ],
+  }],
+  validate() { comboErrors.push("validate"); },
+});
+equal(v3.t.length, 2);
+equal(people[0].担当, "高橋");
+equal(people[1].部署, "総務", "allowCustom: any text");
+equal(people[1].担当, "鈴木", "not an option: the value is not taken");
+deepEqual(comboErrors, ["validate"]);
+
 await rejects(() => ui.form({ fields: [{ name: "t", type: "table", rows: items, columns: [{ key: "数", type: "files", editable: true }] }] }), /files/);
 console.log("formedit ok");

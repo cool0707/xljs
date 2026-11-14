@@ -719,9 +719,15 @@ declare global {
     /** この列を編集できるか（既定は項目の editable） */
     editable?: boolean;
     /** 入力欄の種類（既定は値から: 数値は number、Date は date、真偽値は checkbox、ほかは text） */
-    type?: "text" | "number" | "date" | "month" | "time" | "select" | "checkbox";
-    /** select の選択肢。空欄の選択肢は付かない（"" は書かない）。空のセルは何も選んでいない表示になり、Delete / Backspace で空に戻せる */
+    type?: "text" | "number" | "date" | "month" | "time" | "select" | "combobox" | "checkbox";
+    /**
+     * select / combobox の選択肢。セルに入力すると、その文字を含む（部分一致の）選択肢に絞り込んで一覧に出す。
+     * 空欄の選択肢は書かない（""）。入力を消すとセルは空になる。select と allowCustom のない combobox は
+     * 選択肢にない入力を受け付けず元の値に戻す
+     */
     options?: (string | { value: string; label?: string })[];
+    /** combobox で選択肢にない入力も値として受け付ける */
+    allowCustom?: boolean;
     required?: boolean;
     min?: number;
     max?: number;

@@ -2490,7 +2490,7 @@
   const BUTTON_VARIANTS = ["default", "primary", "destructive", "ghost"];
 
   /** Types of editable table cells. */
-  const CELL_TYPES = ["text", "number", "date", "month", "time", "select", "checkbox"];
+  const CELL_TYPES = ["text", "number", "date", "month", "time", "select", "combobox", "checkbox"];
 
   /**
    * The table of a "table" field: { data, cols, select } (see ui.table) and,
@@ -2584,7 +2584,7 @@
 
   /** How the page edits the cells: per column { type, options, min, max, step, required } or null. */
   const editWire = (t) => (t.edit ? t.edit.map((cf) => cf && {
-    type: cf.type, options: cf.options, min: cf.min, max: cf.max, step: cf.step, required: cf.required,
+    type: cf.type, options: cf.options, custom: cf.custom, min: cf.min, max: cf.max, step: cf.step, required: cf.required,
   }) : null);
 
   /** Rows and columns of a form table for the page (widths and formats when given). */
@@ -3268,7 +3268,7 @@
           group: f.group >= 0 ? o.groups[f.group].label : "", groupHelp: f.group >= 0 ? o.groups[f.group].help : "",
         }, f.table ? Object.assign({ select: f.table.select }, tableText(f.table)) : {},
         f.table && f.table.edit ? {
-          editable: f.table.edit.filter(Boolean).map((cf) => ({ index: cf.col, type: cf.type, options: cf.options })),
+          editable: f.table.edit.filter(Boolean).map((cf) => ({ index: cf.col, type: promptType(cf), options: cf.options })),
           cellErrors: cells[f.name],
         } : {})),
       };

@@ -609,7 +609,7 @@ fn form_window_editable_table() {
         let got = as_json(&init["fields"]);
         check!(
             p,
-            got.contains(r#""editable":[null,{"max":null,"min":0,"options":[],"required":true,"step":null,"type":"number"},{"max":null,"min":null,"options":[{"label":"売上","value":"売上"},{"label":"返品","value":"返品"}],"required":false,"step":null,"type":"select"}]"#),
+            got.contains(r#""editable":[null,{"custom":false,"max":null,"min":0,"options":[],"required":true,"step":null,"type":"number"},{"custom":false,"max":null,"min":null,"options":[{"label":"売上","value":"売上"},{"label":"返品","value":"返品"}],"required":false,"step":null,"type":"select"}]"#),
             "fields = {got}"
         );
         // The errors of the rows as shown, then of the row edited.
