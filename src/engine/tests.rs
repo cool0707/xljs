@@ -568,14 +568,14 @@ fn md_sections(src: &str) -> (String, Vec<(String, String)>) {
 }
 
 /// The code in the documents for AI chats (docs/ai) is valid syntax, since
-/// the models copy it as is; prompt.md and the Copilot and Gemini instructions stay
+/// the models copy it as is; prompt.md and the instructions for the chats stay
 /// within the size limits of the chats' input boxes, and the skills within
 /// the limit of Copilot (30,000 characters).
 #[test]
 fn ai_docs() {
     let re = regex::Regex::new("(?s)```js\n(.*?)```").unwrap();
     let skills: Vec<_> = REFERENCE_SKILLS.iter().map(|n| (format!("copilot/skills/{n}/SKILL.md"), 30000)).collect();
-    let docs = [("prompt.md".to_string(), 15000), ("reference.md".into(), 0), ("copilot/instructions.md".into(), 8000), ("gemini/instructions.md".into(), 8000), ("copilot/skills/vba-port/SKILL.md".into(), 30000)];
+    let docs = [("prompt.md".to_string(), 15000), ("reference.md".into(), 0), ("copilot/instructions.md".into(), 8000), ("gemini/instructions.md".into(), 8000), ("chatgpt/instructions.md".into(), 8000), ("claude/instructions.md".into(), 8000), ("copilot/skills/vba-port/SKILL.md".into(), 30000)];
     for (name, limit) in docs.into_iter().chain(skills) {
         let src = std::fs::read_to_string(repo_path(&format!("docs/ai/{name}"))).unwrap().replace("\r\n", "\n");
         let n = src.chars().count();
@@ -626,6 +626,41 @@ fn ai_reference_skills() {
     }
     for (i, (h, _)) in refs.iter().enumerate() {
         assert!(seen.contains(&i), "{h} of reference.md is in no skill (XLJS_UPDATE_SKILLS=1 cargo test --lib ai_reference_skills adds it to xljs-reference)");
+    }
+}
+
+/// The chats that take knowledge files (ChatGPT, Gemini, Claude): their
+/// instructions are Copilot's with the skills called by the names of the
+/// knowledge files (<skill>.txt, as the dev mode drags them out).
+const KNOWLEDGE_CHATS: [&str; 3] = ["chatgpt", "gemini", "claude"];
+
+/// The instructions for a chat with knowledge files, from Copilot's.
+fn knowledge_instructions(copilot: &str) -> String {
+    let (first, rest) = copilot.split_once('\n').unwrap();
+    assert!(first.starts_with("あなたは「xljs」"), "copilot/instructions.md: the first line changed; update knowledge_instructions");
+    let head = "あなたは「xljs」用のスクリプトを書くアシスタントです。以下の決まりに従って、利用者の業務（Excel・CSV・JSON の集計や変換）を自動化する JavaScript を書いてください。詳しい API は知識のファイルにあります。画面のあるスクリプトを作る・直すときは、コードを書く前に `xljs-app-design.txt`（画面の設計の方針・型・アンチパターン、アプリモード）を必ず読んでください。API の詳細は `xljs-reference.txt`（PDF は `xljs-pdf.txt`、SQLite は `xljs-sqlite.txt`、fetch と Active Directory は `xljs-network.txt`、グラフは `xljs-chart.txt`）、Excel マクロ（VBA）の移植は `vba-port.txt` を必ず参照してください。知識のファイルの中で「スキル `xljs-pdf`」などとあるのは、同じ名前の知識のファイル（`xljs-pdf.txt`）のことです。";
+    let out = rest
+        .replace("8. リファレンスに無い関数やオプションを作らない。", "8. 知識のファイルに無い関数やオプションを作らない。")
+        .replace("スキル `xljs-app-design`", "`xljs-app-design.txt`");
+    assert!(!out.contains("スキル"), "copilot/instructions.md names a skill; update knowledge_instructions");
+    format!("{head}\n{out}")
+}
+
+/// The instructions of ChatGPT, Gemini and Claude follow Copilot's.
+/// XLJS_UPDATE_SKILLS=1 writes them.
+#[test]
+fn ai_knowledge_instructions() {
+    let copilot = std::fs::read_to_string(repo_path("docs/ai/copilot/instructions.md")).unwrap().replace("\r\n", "\n");
+    let want = knowledge_instructions(&copilot);
+    for c in KNOWLEDGE_CHATS {
+        let p = repo_path(&format!("docs/ai/{c}/instructions.md"));
+        if std::env::var_os("XLJS_UPDATE_SKILLS").is_some() {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, &want).unwrap();
+            continue;
+        }
+        let got = std::fs::read_to_string(&p).unwrap().replace("\r\n", "\n");
+        assert_eq!(got, want, "docs/ai/{c}/instructions.md differs from copilot/instructions.md (XLJS_UPDATE_SKILLS=1 cargo test --lib ai_knowledge_instructions writes it)");
     }
 }
 

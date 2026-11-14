@@ -134,15 +134,20 @@ pub fn kit(s: Service) -> Value {
         // The instructions fit Copilot's limit of 8,000 characters; the
         // reference is split into skills (30,000 characters each).
         Service::M365 => ("copilot/instructions.md", "skills", skill_items(true, "")),
-        // A GPT's instructions have the same limit: the short instructions,
-        // and the skills they name as knowledge files of those names.
-        Service::ChatGpt => ("copilot/instructions.md", "knowledge", skill_items(false, "md")),
-        // Gemini: the same split, with instructions that name the files.
-        // Its skills tell files by their MIME type, and a dragged .md has
-        // none where Windows has no Content Type for .md (most PCs): the
-        // files go as .txt (text/plain everywhere).
-        Service::Gemini => ("gemini/instructions.md", "knowledge", skill_items(false, "txt")),
-        Service::Claude => ("prompt.md", "knowledge", vec![item("reference.md", "reference.md", t!("dev.agentReference"))]),
+        // ChatGPT, Gemini and Claude: the same split, with instructions
+        // of their own that name the files (knowledge files have no names
+        // to call them by, as skills do). The files go as .txt: Gemini's
+        // skills tell files by their MIME type, and a dragged .md has none
+        // where Windows has no Content Type for .md (most PCs); .txt is
+        // text/plain everywhere.
+        Service::ChatGpt | Service::Gemini | Service::Claude => {
+            let ins: &'static str = match s {
+                Service::ChatGpt => "chatgpt/instructions.md",
+                Service::Gemini => "gemini/instructions.md",
+                _ => "claude/instructions.md",
+            };
+            (ins, "knowledge", skill_items(false, "txt"))
+        }
     };
     json!({
         "service": s.id(),
@@ -233,13 +238,15 @@ mod tests {
             }
             assert_eq!(Service::parse(s.id()), Some(s));
         }
-        // Gemini gets the files as .txt (a dragged .md may have no type),
-        // and its instructions name each of them.
-        let k = kit(Service::Gemini);
-        let ins = doc(k["instructions"]["file"].as_str().unwrap()).unwrap();
-        for f in k["files"].as_array().unwrap() {
-            let name = f["name"].as_str().unwrap();
-            assert!(name.ends_with(".txt") && ins.contains(&format!("`{name}`")), "{name}");
+        // The chats with knowledge files get them as .txt (a dragged .md
+        // may have no type), and their instructions name each of them.
+        for s in [Service::ChatGpt, Service::Gemini, Service::Claude] {
+            let k = kit(s);
+            let ins = doc(k["instructions"]["file"].as_str().unwrap()).unwrap();
+            for f in k["files"].as_array().unwrap() {
+                let name = f["name"].as_str().unwrap();
+                assert!(name.ends_with(".txt") && ins.contains(&format!("`{name}`")), "{s:?}: {name}");
+            }
         }
         // Every skill is offered to Copilot.
         let k = kit(Service::M365);
