@@ -35,6 +35,10 @@
     tabDrag: false, // a tab is being dragged
     fileDrag: false, // the file in the editor is dragged out (initFileDrag)
     menu: null, // the open menu's element (menu)
+    agent: false, // what goes into an assistant for xljs covers the code (agentKit)
+    agentChat: null, // the service of the chat: { url, service, what, custom } (agentHint)
+    agentAsked: "", // the chat and the home last asked about
+    agentHintClosed: false, // the hint was closed in this window
   };
 
   // ------------------------------------------------------------ drop
@@ -79,8 +83,8 @@
   }
 
   // A handle that drags a file of the project (file() gives its name, ""
-  // for none) out of the window.
-  function dragHandle(h, file) {
+  // for none) out of the window; msg() gives another request for Rust.
+  function dragHandle(h, file, msg) {
     h.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 || !file()) return;
       const x0 = e.clientX;
@@ -90,7 +94,7 @@
         done();
         save();
         st.fileDrag = true;
-        send({ op: "dragFile", file: file() });
+        send(msg ? msg() : { op: "dragFile", file: file() });
       };
       const done = () => {
         h.removeEventListener("pointermove", move);
@@ -203,6 +207,7 @@
   // The welcome or the wizard covers the group of the code.
   function covered() {
     const a = activeOf(homeGroup());
+    if (st.agent) return "agent";
     if (st.wizard) return "wizard";
     if (st.showWelcome || (!st.project && (a === "code" || a === "history" || a === "preview"))) return "welcome";
     return "";
@@ -261,7 +266,7 @@
       if (nav.lastElementChild !== add) nav.append(add);
       add.hidden = !st.layout.closed.length;
       add.title = L.tabAdd || "";
-      if (g === home) { moveTo(body, $("welcome")); moveTo(body, $("wizard")); }
+      if (g === home) { moveTo(body, $("welcome")); moveTo(body, $("wizard")); moveTo(body, $("agent")); }
       e.style.order = String(i * 2);
       e.style.flex = `${g.size} 1 0`;
       e.classList.toggle("solo-chat", isSoloChat(g));
@@ -297,6 +302,7 @@
     }
     $("welcome").hidden = cover !== "welcome";
     $("wizard").hidden = cover !== "wizard";
+    $("agent").hidden = cover !== "agent";
     if (shown("preview")) showPreviewHint();
     syncBrowser();
   }
@@ -306,7 +312,7 @@
     if (reopened) openTab(tab, tab === "chat" ? st.layout.groups[0] : homeGroup());
     const g = groupOf(tab);
     g.active = tab;
-    if (tab !== "code" && g === homeGroup()) { st.showWelcome = false; st.wizard = false; }
+    if (tab !== "code" && g === homeGroup()) { st.showWelcome = false; st.wizard = false; st.agent = false; }
     saveLayout();
     if (reopened) applyLayout();
     else showPanels();
@@ -351,7 +357,7 @@
         const g = st.layout.groups.find((x) => x.id === gid);
         if (!g || !st.layout.closed.includes(tab)) return;
         openTab(tab, g);
-        if (tab !== "code" && g === homeGroup()) { st.showWelcome = false; st.wizard = false; }
+        if (tab !== "code" && g === homeGroup()) { st.showWelcome = false; st.wizard = false; st.agent = false; }
         st.layout = normalizeLayout(st.layout);
         saveLayout();
         applyLayout();
@@ -461,11 +467,20 @@
       const show = st.chat && shown("chat") && !st.tabDrag && !document.hidden;
       $("chat-start").hidden = !!st.chat;
       view.hidden = !st.chat;
+      askAgent();
+      const hint = $("agent-hint");
+      hint.hidden = !show || !hintWanted();
       if (!show) { send({ op: "browser", path: "hide" }); return; }
       const r = view.getBoundingClientRect();
       if (r.width < 2 || r.height < 2) { send({ op: "browser", path: "hide" }); return; }
+      const holes = [];
       const hole = menuOver(view);
-      send({ op: "browser", path: "show", x: r.left, y: r.top, width: r.width, height: r.height, scale: window.devicePixelRatio || 1, holes: hole ? [hole] : [] });
+      if (hole) holes.push(hole);
+      if (!hint.hidden) {
+        const h = hint.getBoundingClientRect();
+        holes.push([h.left - r.left, h.top - r.top, h.width, h.height]);
+      }
+      send({ op: "browser", path: "show", x: r.left, y: r.top, width: r.width, height: r.height, scale: window.devicePixelRatio || 1, holes });
     });
   }
 
@@ -563,7 +578,7 @@
     if (i >= 0) dst.tabs.splice(i, 0, tab);
     else dst.tabs.push(tab);
     dst.active = tab;
-    if (tab !== "code" && dst === homeGroup()) { st.showWelcome = false; st.wizard = false; }
+    if (tab !== "code" && dst === homeGroup()) { st.showWelcome = false; st.wizard = false; st.agent = false; }
     st.layout = normalizeLayout(st.layout);
     saveLayout();
     applyLayout();
@@ -638,7 +653,7 @@
   function initTabs() {
     for (const tab of TABS) {
       const b = tabButton(tab);
-      b.onclick = () => { st.wizard = false; st.showWelcome = false; setTab(tab); };
+      b.onclick = () => { st.wizard = false; st.agent = false; st.showWelcome = false; setTab(tab); };
       b.addEventListener("pointerdown", (e) => startTabDrag(e, tab, b, () => tabLabel(tab)));
       b.addEventListener("contextmenu", (e) => { e.preventDefault(); tabMenu(tab, e.clientX, e.clientY); });
     }
@@ -1418,6 +1433,7 @@
     st.homeChat = url;
     send({ op: "setHome", url });
     showHomeChat();
+    syncBrowser();
   }
   function showHomeChat() {
     $("chat-default").checked = !!st.homeChat;
@@ -1445,6 +1461,8 @@
       item("ic ic-house", L.chatSetHome, () => setHomeChat(page), !/^https?:\/\//i.test(page) || page === st.homeChat),
     ];
     if (st.homeChat) items.push(item("ic ic-x", L.chatClearHome, () => setHomeChat("")));
+    const a = st.agentChat;
+    if (a && a.service) items.push(item("ic ic-wand-sparkles", fmt(L.agentMenu, a.what), () => openAgent(a.service)));
     openMenu(r.left, r.bottom, items);
   }
 
@@ -1470,11 +1488,88 @@
     $("chat-intro").onclick = $("chat-intro2").onclick = (e) => introMenu(e.currentTarget);
   }
 
+  // ------------------------------------------------------------ agent
+
+  // A chat started on a service that keeps assistants of one's own
+  // (Microsoft 365 Copilot's agents, Gems, GPTs, Claude's projects) but
+  // not on one: a hint over the chat offers what goes into one for xljs.
+  // Rust tells the service from the URL the chat started with (and the
+  // home chat).
+  const HINT_KEY = "xljs.dev.agentHint";
+  function hintOff() {
+    try { return localStorage.getItem(HINT_KEY) === "off"; } catch { return false; }
+  }
+  function askAgent() {
+    const key = st.chat + "\n" + st.homeChat;
+    if (key === st.agentAsked) return;
+    st.agentAsked = key;
+    st.agentChat = null;
+    if (st.chat) send({ op: "agentHint", url: st.chat, home: st.homeChat });
+  }
+  function hintWanted() {
+    const a = st.agentChat;
+    return !!(a && a.service && !a.custom && a.url === st.chat && !st.agentHintClosed && !st.agent && !hintOff());
+  }
+  function closeHint() {
+    st.agentHintClosed = true;
+    if ($("agent-hint-never").checked) {
+      try { localStorage.setItem(HINT_KEY, "off"); } catch { /* shown again next time */ }
+    }
+    syncBrowser();
+  }
+  function initAgent() {
+    $("agent-hint-close").onclick = closeHint;
+    $("agent-hint-prompt").onclick = () => {
+      const a = st.agentChat;
+      closeHint();
+      if (a && a.service) openAgent(a.service);
+    };
+    $("agent-close").onclick = () => { st.agent = false; showPanels(); };
+    $("agent-name-copy").onclick = () => copy($("agent-name").value, L.agentCopied);
+    $("agent-description-copy").onclick = () => copy($("agent-description").value, L.agentCopied);
+  }
+  function openAgent(service) {
+    send({ op: "agentKit", name: service });
+  }
+
+  // What goes into the assistant: the steps, an example name and
+  // description, the instructions and the files to attach (dragged to the
+  // chat as from Explorer).
+  function showAgent(k) {
+    $("agent-title").textContent = fmt(L.agentTitle, k.what);
+    $("agent-steps").replaceChildren(...String(k.steps || "").split("\n").filter((x) => x).map((x) => el("li", { textContent: x })));
+    $("agent-create-row").hidden = !k.createUrl;
+    $("agent-create").onclick = () => openChat(k.createUrl);
+    $("agent-name").value = k.name || "";
+    $("agent-description").value = k.description || "";
+    const copyButton = (file) => el("button", { type: "button", onclick: () => send({ op: "agentCopy", file }) }, icon("ic ic-clipboard"), el("span", { textContent: L.agentCopy || "" }));
+    const ins = k.instructions || {};
+    $("agent-instructions").replaceChildren(el("div", { className: "agent-file" },
+      el("span", { className: "agent-file-drag" }, icon("ic ic-file"), el("span", { textContent: ins.name || "" })),
+      el("span", { className: "agent-file-text" }, el("span", { className: "size", textContent: fmt(L.agentChars, (ins.size || 0).toLocaleString()) })),
+      copyButton(ins.file)));
+    $("agent-files-title").textContent = k.filesKind === "skills" ? L.agentSkills : L.agentKnowledge;
+    $("agent-files").replaceChildren(...(k.files || []).map((f) => {
+      const h = el("button", { type: "button", className: "tool agent-file-drag", title: L.agentDrag || "" }, icon("ic ic-grip-vertical"), icon("ic ic-file"), el("span", { textContent: f.name }));
+      dragHandle(h, () => f.file, () => ({ op: "agentDrag", file: f.file, path: f.name }));
+      return el("li", {}, h,
+        el("span", { className: "agent-file-text" }, f.description || "", " ", el("span", { className: "size", textContent: fmt(L.agentChars, (f.size || 0).toLocaleString()) })),
+        copyButton(f.file));
+    }));
+    save();
+    st.agent = true;
+    st.wizard = false;
+    st.showWelcome = false;
+    setTab("code");
+    $("agent").scrollTop = 0;
+  }
+
   // ------------------------------------------------------------ project
 
   function openProject(m) {
     st.showWelcome = false;
     st.wizard = false;
+    st.agent = false;
     st.project = { path: m.path, dir: m.dir, entry: m.entry, app: m.app, html: m.html, title: m.title, files: m.files };
     showAttach("");
     resetTests();
@@ -1521,6 +1616,7 @@
     if (!$("wz-folder").value) $("wz-folder").value = st.home || "";
     $("wz-error").hidden = true;
     st.wizard = true;
+    st.agent = false;
     st.showWelcome = false;
     updateWizard();
     setTab("code");
@@ -1787,7 +1883,15 @@
       case "home":
         st.homeChat = m.url || "";
         showHomeChat();
+        syncBrowser();
         break;
+      case "agentHint":
+        if (m.url !== st.chat) break;
+        st.agentChat = { url: m.url, service: m.service || "", what: m.what || "", custom: !!m.custom };
+        $("agent-hint-text").textContent = fmt(L.agentHint, st.agentChat.what);
+        syncBrowser();
+        break;
+      case "agentKit": showAgent(m.kit || {}); break;
       case "url":
         if (m.url && !m.url.startsWith("about:")) {
           $("chat-url").value = m.url;
@@ -1795,7 +1899,7 @@
         }
         break;
       case "copy":
-        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "script" ? L.copiedScript : m.what === "wizard" ? L.wzCopied : m.what === "wizardAttach" ? L.wzCopiedAttach : m.what === "notify" ? L.copiedNotify : m.what === "pick" ? L.copiedPick : m.what === "test" ? L.copiedTest : L.copied);
+        copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "script" ? L.copiedScript : m.what === "wizard" ? L.wzCopied : m.what === "wizardAttach" ? L.wzCopiedAttach : m.what === "notify" ? L.copiedNotify : m.what === "pick" ? L.copiedPick : m.what === "test" ? L.copiedTest : m.what === "agent" ? L.agentCopied : L.copied);
         break;
       case "runStarted": runStarted(m); updateTests(); break;
       case "testsStarted": testsStarted(); break;
@@ -1860,10 +1964,11 @@
   initRun();
   initTests();
   initWizard();
+  initAgent();
   initTabs();
   applyLayout();
   $("btn-open").onclick = $("w-open").onclick = () => { save(); send({ op: "open" }); };
-  $("btn-new").onclick = () => { save(); st.showWelcome = true; setTab("code"); };
+  $("btn-new").onclick = () => { save(); st.showWelcome = true; st.agent = false; setTab("code"); };
   $("w-new").onclick = () => send({ op: "new", template: "script" });
   $("w-new-form").onclick = () => send({ op: "new", template: "form" });
   $("w-new-app").onclick = () => send({ op: "new", template: "app" });

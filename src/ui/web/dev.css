@@ -121,7 +121,35 @@ body.tab-dragging iframe { pointer-events: none; }
 .bar button { flex: none; white-space: nowrap; }
 .bar .stats { flex: none; white-space: nowrap; }
 #diff-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-#chat-view { flex: 1; background: var(--panel); }
+#chat-view { flex: 1; position: relative; background: var(--panel); }
+
+/* The hint over the chat (the browser pane leaves its rectangle out). */
+.agent-hint {
+  position: absolute; top: 12px; right: 12px; z-index: 5; box-sizing: border-box; width: min(360px, calc(100% - 24px));
+  padding: 12px 36px 12px 14px; border: 1px solid var(--accent); border-radius: var(--radius-box);
+  background: var(--panel); color: var(--fg);
+}
+.agent-hint[hidden] { display: none; }
+.agent-hint p { margin: 0 0 10px; line-height: 1.5; }
+.agent-hint-close { position: absolute; top: 6px; right: 6px; border: 0; background: none; box-shadow: none; }
+.agent-hint-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.agent-hint-actions .check-row { margin: 0; }
+
+/* What goes into an assistant for xljs (covers the code like the wizard). */
+.agent { max-width: 860px; }
+.agent-head { display: flex; align-items: flex-start; gap: 8px; }
+.agent-head h2 { flex: 1; }
+.agent section { margin: 0 0 18px; }
+.agent-steps { padding-left: 20px; max-width: 720px; }
+.agent-steps li { margin: 4px 0; line-height: 1.5; }
+.agent-row { display: flex; gap: 6px; align-items: center; max-width: 720px; }
+.agent-row input[type=text] { flex: 1; min-width: 0; }
+.agent-files { list-style: none; padding: 0; margin: 0; max-width: 720px; }
+.agent-files li, .agent-file { display: flex; gap: 8px; align-items: flex-start; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.agent-file-drag { cursor: grab; touch-action: none; font-weight: 600; flex: none; }
+.agent-file-drag .ic-grip-vertical { opacity: 0.6; margin-right: -2px; }
+.agent-file-text { flex: 1; min-width: 0; color: var(--muted); line-height: 1.5; padding-top: 4px; }
+.agent-file-text .size { white-space: nowrap; margin-left: 6px; opacity: .8; }
 
 .start { flex: 1; overflow: auto; padding: 24px 28px; }
 .start h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; }

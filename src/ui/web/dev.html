@@ -81,7 +81,18 @@
       <button type="button" id="chat-intro2"><i class="ic ic-clipboard"></i> <span data-t="intro"></span> <i class="ic ic-chevron-down drop"></i></button>
       <p id="chat-failed" class="error-text" hidden></p>
     </div>
-    <div id="chat-view"></div>
+    <div id="chat-view">
+      <!-- Over the chat (the browser pane leaves it out): the chat started
+           on a service without an assistant set up for xljs. -->
+      <div id="agent-hint" class="agent-hint" hidden>
+        <button type="button" id="agent-hint-close" class="tool icon agent-hint-close" data-tip="agentHintClose"><i class="ic ic-x"></i></button>
+        <p id="agent-hint-text"></p>
+        <div class="agent-hint-actions">
+          <button type="button" id="agent-hint-prompt" class="primary"><i class="ic ic-wand-sparkles"></i><span data-t="agentHintPrompt"></span></button>
+          <label class="check-row"><input type="checkbox" id="agent-hint-never"><span data-t="agentHintNever"></span></label>
+        </div>
+      </div>
+    </div>
   </div>
 
     <div id="welcome" class="panel start">
@@ -100,6 +111,33 @@
       </p>
       <h3 data-t="recent" id="recent-title" hidden></h3>
       <ul id="recent" class="recent"></ul>
+    </div>
+
+    <!-- What goes into an assistant for xljs (an agent, a Gem, a GPT or a
+         project): built by dev.js (agentKit) from what Rust sends. -->
+    <div id="agent" class="panel start agent" hidden>
+      <div class="agent-head">
+        <h2 id="agent-title"></h2>
+        <button type="button" id="agent-close" class="tool"><i class="ic ic-x"></i><span data-t="agentClose"></span></button>
+      </div>
+      <p class="muted" data-t="agentLead"></p>
+      <ol id="agent-steps" class="agent-steps"></ol>
+      <p id="agent-create-row" hidden><button type="button" id="agent-create"><i class="ic ic-wand-sparkles"></i><span data-t="agentCreate"></span></button></p>
+      <section>
+        <h3 data-t="agentName"></h3>
+        <div class="agent-row"><input type="text" id="agent-name" readonly><button type="button" id="agent-name-copy"><i class="ic ic-clipboard"></i><span data-t="agentCopy"></span></button></div>
+        <h3 data-t="agentDescription"></h3>
+        <div class="agent-row"><input type="text" id="agent-description" readonly><button type="button" id="agent-description-copy"><i class="ic ic-clipboard"></i><span data-t="agentCopy"></span></button></div>
+      </section>
+      <section>
+        <h3 data-t="agentInstructions"></h3>
+        <div id="agent-instructions"></div>
+      </section>
+      <section>
+        <h3 id="agent-files-title"></h3>
+        <p class="muted" data-t="agentFilesLead"></p>
+        <ul id="agent-files" class="agent-files"></ul>
+      </section>
     </div>
 
     <div id="wizard" class="panel start wizard" hidden>

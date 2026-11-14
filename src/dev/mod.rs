@@ -13,6 +13,7 @@
 //! The page and this side talk in JSON: the page sends {op, ...}, this
 //! side answers with {type, ...} events.
 
+pub mod agent;
 pub mod notify;
 pub mod project;
 pub mod report;
@@ -38,7 +39,7 @@ use runner::{Run, RunEvent};
 
 /// The instructions for AI chats (docs/ai/prompt.md).
 pub fn ai_prompt() -> &'static str {
-    crate::embed::AI_PROMPT.text()
+    agent::doc("prompt.md").unwrap_or_default()
 }
 
 /// The page of the development window.
@@ -120,6 +121,12 @@ struct Service {
 
 fn is_web(url: &str) -> bool {
     url.starts_with("https://") || url.starts_with("http://")
+}
+
+/// Where the documents for an assistant of the chat are written to be
+/// dragged to it (removed when the window closes).
+fn agent_dir() -> PathBuf {
+    std::env::temp_dir().join("xljs-dev").join(format!("{}-ai", std::process::id()))
 }
 
 /// Reads the exe's settings; a missing file is the defaults.
@@ -297,6 +304,7 @@ pub fn run(u: Arc<dyn Ui>, o: DevOptions) -> Result<i32> {
     }
     s.shutdown();
     let _ = std::fs::remove_dir_all(&downloads);
+    let _ = std::fs::remove_dir_all(agent_dir());
     Ok(0)
 }
 
@@ -309,6 +317,8 @@ struct Request {
     text: String,
     note: String,
     url: String,
+    /// The home chat (agentHint).
+    home: String,
     /// The template of a new script (new): "script", "form" or "app".
     template: String,
     debug: bool,
@@ -609,6 +619,31 @@ impl Session {
                 if path.is_file() {
                     self.w.browser(BrowserCommand::DragFiles(vec![path.to_string_lossy().into_owned()]));
                 }
+            }
+            "agentHint" => {
+                // Which service the chat started on, and whether it is an
+                // assistant set up for xljs (the page offers to make one).
+                // The home chat counts too: an assistant's chats may have
+                // URLs of their own (Claude's projects).
+                let (service, custom) = match agent::classify(&r.url) {
+                    Some((s, custom)) => (s.id(), custom || agent::classify(&r.home) == Some((s, true))),
+                    None => ("", false),
+                };
+                let what = agent::Service::parse(service).map(|s| s.what()).unwrap_or_default();
+                self.post(json!({"type": "agentHint", "url": r.url, "service": service, "custom": custom, "what": what}));
+            }
+            "agentKit" => {
+                if let Some(s) = agent::Service::parse(&r.name) {
+                    self.post(json!({"type": "agentKit", "kit": agent::kit(s)}));
+                }
+            }
+            "agentCopy" => {
+                let text = agent::doc(&r.file).ok_or_else(|| err!("dev.agentNoFile", &r.file))?;
+                self.post(json!({"type": "copy", "what": "agent", "text": text}));
+            }
+            "agentDrag" => {
+                let path = agent::write_for_drag(&agent_dir(), &r.file, &r.path)?;
+                self.w.browser(BrowserCommand::DragFiles(vec![path.to_string_lossy().into_owned()]));
             }
             "pack" => self.pack()?,
             "showFolder" => {

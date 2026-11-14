@@ -34,9 +34,11 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 |---|---|
 | Claude | プロジェクトを作り、「指示」に `prompt.md`、「ファイル（ナレッジ）」に `reference.md` |
 | Gemini | Gem を作り、「カスタム指示」に `prompt.md`、「知識」に `reference.md` |
-| ChatGPT | GPT（またはプロジェクト）の「指示」に `prompt.md`、ファイルに `reference.md` |
+| ChatGPT | GPT（またはプロジェクト）の「指示」に `copilot/instructions.md`（指示は 8,000 字まで）、「知識」に `copilot/skills/` の 7 つ |
 | Microsoft 365 Copilot | エージェントを作れる場合は「指示」に `copilot/instructions.md`（8,000 字の上限に収まる）、スキルに `copilot/skills/` の 7 つ（スキルは 30,000 字までなので、リファレンスは機能ごとに分けてある。スキルが使えなければ「知識」に `reference.md`） |
 | GitHub Copilot（VS Code） | スクリプトのフォルダに `.github/copilot-instructions.md` として `prompt.md` を置く。`xljs init` で型定義も出すと補完が効く |
+
+開発モード（`xljs dev`）では、これらのサービスのふつうのチャットを開くと「xljs 用のエージェント（Gem・GPT・プロジェクト）を作成しましょう」と案内が出ます。［作成用のプロンプト］で、名前・説明の例、指示のコピー、スキル・知識のファイル（チャットの画面へドラッグして添付）をまとめて表示します。
 
 ## Excel マクロ（VBA）を移植する
 
