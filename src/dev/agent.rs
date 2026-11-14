@@ -130,12 +130,14 @@ fn item(file: &str, name: &str, description: String) -> Value {
 /// with the steps.
 pub fn kit(s: Service) -> Value {
     let skill = |n: &str| format!("copilot/skills/{n}/SKILL.md");
-    let skill_items = |as_folder: bool| -> Vec<Value> {
+    // A skill is dragged out as a folder (<n>/SKILL.md), or as a file of
+    // its name with the extension ext.
+    let skill_items = |as_folder: bool, ext: &str| -> Vec<Value> {
         SKILLS
             .iter()
             .map(|n| {
                 let file = skill(n);
-                let name = if as_folder { format!("{n}/SKILL.md") } else { format!("{n}.md") };
+                let name = if as_folder { format!("{n}/SKILL.md") } else { format!("{n}.{ext}") };
                 item(&file, &name, skill_description(doc(&file).unwrap_or("")))
             })
             .collect()
@@ -143,11 +145,21 @@ pub fn kit(s: Service) -> Value {
     let (instructions, files_kind, files) = match s {
         // The instructions fit Copilot's limit of 8,000 characters; the
         // reference is split into skills (30,000 characters each).
-        Service::M365 => ("copilot/instructions.md", "skills", skill_items(true)),
-        // A GPT's instructions have the same limit: the short instructions,
-        // and the skills they name as knowledge files of those names.
-        Service::ChatGpt => ("copilot/instructions.md", "knowledge", skill_items(false)),
-        Service::Gemini | Service::Claude => ("prompt.md", "knowledge", vec![item("reference.md", "reference.md", t!("dev.agentReference"))]),
+        Service::M365 => ("copilot/instructions.md", "skills", skill_items(true, "")),
+        // ChatGPT, Gemini and Claude: the same split, with instructions
+        // of their own that name the files (knowledge files have no names
+        // to call them by, as skills do). The files go as .txt: Gemini's
+        // skills tell files by their MIME type, and a dragged .md has none
+        // where Windows has no Content Type for .md (most PCs); .txt is
+        // text/plain everywhere.
+        Service::ChatGpt | Service::Gemini | Service::Claude => {
+            let ins: &'static str = match s {
+                Service::ChatGpt => "chatgpt/instructions.md",
+                Service::Gemini => "gemini/instructions.md",
+                _ => "claude/instructions.md",
+            };
+            (ins, "knowledge", skill_items(false, "txt"))
+        }
     };
     json!({
         "service": s.id(),
@@ -237,6 +249,16 @@ mod tests {
                 assert!(!f["description"].as_str().unwrap().is_empty(), "{f}");
             }
             assert_eq!(Service::parse(s.id()), Some(s));
+        }
+        // The chats with knowledge files get them as .txt (a dragged .md
+        // may have no type), and their instructions name each of them.
+        for s in [Service::ChatGpt, Service::Gemini, Service::Claude] {
+            let k = kit(s);
+            let ins = doc(k["instructions"]["file"].as_str().unwrap()).unwrap();
+            for f in k["files"].as_array().unwrap() {
+                let name = f["name"].as_str().unwrap();
+                assert!(name.ends_with(".txt") && ins.contains(&format!("`{name}`")), "{s:?}: {name}");
+            }
         }
         // Every skill is offered to Copilot.
         let k = kit(Service::M365);

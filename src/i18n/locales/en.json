@@ -134,7 +134,6 @@
     "dev.agentWhat.claude": "a project",
     "dev.agentNameExample": "xljs script writer",
     "dev.agentDescriptionExample": "Writes and fixes scripts for xljs (a tool that processes Excel, CSV and JSON files with JavaScript).",
-    "dev.agentReference": "The full reference (all the options, formats, forms, tables, how to design screens, the app mode and recipes)",
     "dev.agentNoFile": "There is no {0}",
     "dev.agentSteps.m365": "In Microsoft 365 Copilot, open \"Agents\" on the left, then \"Create agent\", and switch to \"Configure\".\nEnter a name and a description, and paste the instructions below into \"Instructions\".\nDrag the files below to \"Skills\".\nOnce it is created, open the agent's chat and choose \"Make this page the default\" from the ▼ of the home button.",
     "dev.agentSteps.gemini": "In Gemini, open \"Explore Gems\" and then \"New Gem\" (or \"Open the page to create it\" below).\nEnter a name and a description, and paste the instructions below into \"Instructions\".\nDrag the files below to \"Knowledge\".\nOnce it is saved, open the Gem's chat and choose \"Make this page the default\" from the ▼ of the home button.",
