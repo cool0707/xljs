@@ -99,7 +99,8 @@ fn main() {
     g.single("PRESET_SHAPES", "src/api/preset_shapes.xml");
     g.single("PRESET_TEXT_WARPS", "src/api/preset_text_warps.xml");
     g.single("DTS", "types/xljs.d.ts");
-    g.single("AI_PROMPT", "docs/ai/prompt.md");
+    // The documents for AI chats (the prompt, the reference and the skills).
+    g.dir("AI_FILES", "docs/ai", |n| n.ends_with(".md") && n != "README.md");
     writeln!(g.out, "// {} bytes stored for {} bytes of files", g.stored, g.raw).unwrap();
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("embedded.rs");
     std::fs::write(out, g.out).unwrap();

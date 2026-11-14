@@ -1,6 +1,6 @@
 //! Files built into the executable: the built-in web pages (src/ui/web),
 //! Day.js, the message files, prelude.js, the preset shape definitions, the
-//! type definitions and the AI prompt.
+//! type definitions and the documents for AI chats (docs/ai).
 //!
 //! build.rs stores them deflate-compressed (except files that do not get
 //! smaller, such as fonts) to keep the exe small; a file is decompressed on
@@ -60,8 +60,8 @@ mod tests {
     #[test]
     fn embedded_files_match_sources() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let dirs: [(&'static [File], &str); 3] =
-            [(&WEB_FILES, "src/ui/web"), (&DAYJS_FILES, "src/api/dayjs"), (&LOCALE_FILES, "src/i18n/locales")];
+        let dirs: [(&'static [File], &str); 4] =
+            [(&WEB_FILES, "src/ui/web"), (&DAYJS_FILES, "src/api/dayjs"), (&LOCALE_FILES, "src/i18n/locales"), (&AI_FILES, "docs/ai")];
         let mut compressed = 0;
         for (files, dir) in dirs {
             assert!(!files.is_empty(), "{dir}");
@@ -76,7 +76,6 @@ mod tests {
             (&PRESET_SHAPES, "src/api/preset_shapes.xml"),
             (&PRESET_TEXT_WARPS, "src/api/preset_text_warps.xml"),
             (&DTS, "types/xljs.d.ts"),
-            (&AI_PROMPT, "docs/ai/prompt.md"),
         ] {
             assert_eq!(f.text(), std::fs::read_to_string(root.join(path)).unwrap(), "{path}");
             assert!(f.deflated, "{path}");
@@ -84,5 +83,8 @@ mod tests {
         assert!(compressed > 0);
         assert!(find(&WEB_FILES, "form.html").is_some());
         assert!(find(&WEB_FILES, "nothing.html").is_none());
+        assert!(find(&AI_FILES, "prompt.md").is_some());
+        assert!(find(&AI_FILES, "copilot/skills/xljs-reference/SKILL.md").is_some());
+        assert!(find(&AI_FILES, "README.md").is_none());
     }
 }

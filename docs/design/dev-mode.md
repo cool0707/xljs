@@ -11,6 +11,7 @@ AI チャットと並べてスクリプトを作る・直すための画面。�
 | `src/dev/versions.rs` | 簡易バージョニング。置き換える前の内容を `<フォルダ>/.xljs/versions/<相対パス>/NNNN.<拡張子>` に、メモを同じフォルダの `log.json` に |
 | `src/dev/notify.rs` | 自分で直したところを AI に伝える（後述）。AI が最後に見た内容の記録と、行の差分（Myers）・依頼文 |
 | `src/dev/report.rs` | 失敗した実行の stderr から、エラーの部分（`last_error`）と場所（`find_location`）を取り出し、AI への依頼文（`prompt`）を作る。`intro` は `docs/ai/prompt.md` と今のスクリプト（どちらか片方も） |
+| `src/dev/agent.rs` | AI チャットのサービスの判定（`classify`）と、xljs 用のエージェント・Gem・GPT・プロジェクトに入れるもの（`kit`。`docs/ai` の文書を exe に埋め込んだもの）。後述の「xljs 用のエージェントの案内」 |
 | `src/dev/runner.rs` | スクリプトを別プロセス（この exe 自身）で実行し、stdout/stderr と終了をイベントで返す（`crate::process` 経由。Windows はジョブオブジェクトで、停止するとスクリプトが起動したプログラムも終わる） |
 | `src/ui/web/dev.html` `dev.js` `dev.css` `dev-diff.js` | ページ。キャンバス（タブ）、差分表示（Myers の行差分）、エディタ、プレビュー |
 | `src/ui/web/dev-editor.js` `dev-types.js` | エディタ（後述）。`vendor/codemirror/codemirror.js` は `tools/codemirror` で作る CodeMirror 6 のバンドル |
@@ -53,6 +54,16 @@ AI チャットと並べてスクリプトを作る・直すための画面。�
 - 表示中のページ（`SourceChanged`）を `BrowserEvent::Url` で知らせ、スクリプトごとに `.xljs/dev.json` の `chat` に覚える。スクリプトを開くとその URL を開く。チャットを開いていない状態でスクリプトを開いたときは、今のチャットをそのスクリプトに紐付ける。ホームボタンはスプリットボタン。本体はデフォルトのチャット（ユーザーの設定 `%APPDATA%\xljs\dev.json` の `home`。チャットを選ぶ画面のチェック「選んだチャットをデフォルトにする」か、メニューの「今のページをデフォルトにする」で決める。既定はなし）があればそこを開き、なければチャットを選び直す（紐付けを消し、`about:blank` にして隠す）。メニューは「AI チャットを選び直す」「今のページをデフォルトにする」「デフォルトを解除する」。デフォルトのチャットは、チャットのないスクリプトを開いたときと起動時にも、exe の隣の `xljs.json` の `dev.chat` より先に使う。
 - User-Agent（`src/net/agent.rs`。`fetch` と共通）: 既定はこのパソコンの Edge（版は EdgeUpdate の `Clients\{56EB18F8-…}` の `pv`、なければ `HKCU\Software\Microsoft\Edge\BLBeacon`、Edge がなければ WebView2 ランタイムの版）。`xljs.json` の `userAgent`（環境変数 `XLJS_USER_AGENT` が優先）で `"chrome"`（Google Update の `{8A69D345-…}`。なければ Edge）・`"xljs"`（枠は WebView2 のまま、`fetch` は `xljs/<版>`）・任意の文字列。`BrowserOptions::agent` で枠を作ったときに `ICoreWebView2Settings2::UserAgent` と DevTools プロトコルの `Emulation.setUserAgentOverride`（`userAgentMetadata`: ブランドを Chromium と同じ並びと GREASE で、`platformVersion` は Windows のビルド番号から）を設定する。WebView2 のままだと Sec-CH-UA に「Microsoft Edge WebView2」が入り、埋め込みのブラウザを断るサイトがあるため。ポップアップ（`window.open` のサインイン画面など）は WebView2 の既定のまま。
 - 配布用の既定（`DevOptions::exe_settings`＝exe と同じフォルダの `xljs.json` の `dev`。`load_exe_settings`）: `chat` は既定のチャット。`ready` でスクリプトが開かれず、チャットも開いていなければそれを開き（`url` を送ってページの `st.chat` にする）、`open` で紐付けのないスクリプトに今のチャットもなければそれを開く（紐付けは表示されたときの `BrowserEvent::Url` で覚える）。`services` はチャットの選択肢の先頭に、`builtinServices: false` で `SERVICES` を出さない。`chat` が選択肢になければ先頭に足す。http(s) 以外の URL は捨てる。読めない JSON は `dev.exeSettingsInvalid` を `error` で知らせ、既定なしで続ける。
+
+## xljs 用のエージェントの案内（`agent.rs`）
+
+指示を持たせた AI（Microsoft 365 Copilot のエージェント、Gemini の Gem、ChatGPT の GPT・プロジェクト、Claude のプロジェクト）を作れば毎回プロンプトを貼らなくてよいので、それを使っていない人にチャットの上で案内する。
+
+- 判定はチャットを開始した URL（ページの `st.chat`。スクリプトに紐付いたチャット・選んだチャット・デフォルトのチャット）で行う。ページが `st.chat` かデフォルトのチャットが変わるたびに `agentHint`（`url` `home`）を送り、Rust が `agent::classify` で `{service, custom, what}` を返す。M365（`*.cloud.microsoft`・`microsoft365.com`・`office.com`）は `titleId=` かパスの `agent(s)`、Gemini はパスの `gem`、ChatGPT は `/g/`（GPT とプロジェクト）、Claude はパスの `project` があれば作ったもの（`custom`）。Claude のプロジェクトの会話は `/chat/...` になるので、デフォルトのチャットが同じサービスの作ったものなら `custom` とする。Copilot（`copilot.microsoft.com`）はエージェントを作れないので出さない。
+- 案内（`#agent-hint`）は `#chat-view` の右上に置くページの要素で、チャットの枠はその矩形を穴として抜く（メニューと同じ `holes`）。文言はサービスで変わる（`dev.agentWhat.*`）。［作成用のプロンプト］・右上の閉じる・「今後表示しない」（`localStorage` の `xljs.dev.agentHint`＝`off`）。閉じたらそのウィンドウでは出さない。
+- ［作成用のプロンプト］とホームボタンの ▼ の「xljs 用の…を作る」は `agentKit`（`name`＝サービス）を送り、Rust が `agent::kit` を返す。ページはそれをウィザードと同じくコードのグループを覆うパネル（`#agent`）に出す: 手順（`dev.agentSteps.*`）、作成画面を開くボタン（URL が決まっているサービスだけ）、名前（例）・説明（例）とコピー、指示（`agentCopy` で全文をコピー）、スキル・知識のファイル（つまみをチャットへドラッグ＝`agentDrag`、コピー）。
+- 入れるもの: M365 は指示に `copilot/instructions.md`（8,000 字の上限）とスキルに `copilot/skills/*/SKILL.md`（`<スキル名>/SKILL.md` としてドラッグ）。ChatGPT は指示の上限が同じなので `copilot/instructions.md` と、指示が名前で呼ぶスキルを知識のファイル（`<スキル名>.md`）に。Gemini・Claude は指示に `prompt.md`、知識に `reference.md`。
+- ドラッグするファイルは埋め込みの文書を `%TEMP%\xljs-dev\<pid>-ai\` に書き出して `BrowserCommand::DragFiles` で渡す（ウィンドウを閉じたら消す）。
 
 ## ダウンロードの置き換え先（`Project::match_download`）
 
@@ -107,6 +118,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `pick` | プレビューで選んだ要素についての AI への依頼のコピー（`elements` `text` `full`） |
 | `pack` | exe の作成（保存先を尋ねる。結果は `packed`（`path`・`warnings`）） |
 | `chat` `setHome` `browser` | チャットの URL（空で選ぶ画面）、デフォルトのチャット（空で解除）、枠の表示・位置・戻る・進む・再読み込み |
+| `agentHint` `agentKit` `agentCopy` `agentDrag` | xljs 用のエージェントの案内（チャットのサービスの判定、入れるもの、文書のコピー、文書のドラッグ） |
 | `intro` `notify` `showFolder` | AI への説明のコピー（［プロンプト］のドロップダウン。`mode` が `prompt`＝指示だけ、`script`＝スクリプトだけ、空＝両方）、自分で直したところのコピー、フォルダを開く |
 | `wizardBooks` `wizardFolder` `wizardPrompt` `wizardSave` `wizardCreate` | 新規作成ウィザード（`answers`） |
 | `tests` `testApprove` `testRecord` `testPrompt` | 「テスト」タブ（`docs/design/test-design.md`） |
@@ -119,6 +131,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `runStarted` `output` `runEnded` | 実行。`runEnded` は失敗時に `message` `location` `prompt` |
 | `previewForm` `previewFailed` `previewSkipped` | フォームのプレビュー（`previewSkipped` は自動表示をしなかったとき） |
 | `testsStarted` `tests` | テストケースの実行と結果 |
+| `agentHint` `agentKit` | チャットのサービスと作ったものかどうか、エージェントなどに入れるもの |
 | `url` `copy` `error` `info` `browserFailed` | チャットの URL、クリップボードへのコピー、エラー・お知らせ |
 | `wizardBooks` `wizardFolder` `wizardPrompt` `wizardAttach` | ウィザードの答え（`wizardPrompt` の `attachment`、`wizardAttach` の `file` は添付ファイルの名前） |
 
