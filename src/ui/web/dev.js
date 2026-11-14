@@ -39,6 +39,7 @@
     agentChat: null, // the service of the chat: { url, service, what, custom } (agentHint)
     agentAsked: "", // the chat and the home last asked about
     agentHintClosed: false, // the hint was closed in this window
+    agents: [], // the assistants for xljs offered in the prompt menu: [{ id, what, name }]
   };
 
   // ------------------------------------------------------------ drop
@@ -378,6 +379,12 @@
       item(L.introPrompt, "prompt", false),
       item(L.introBoth, "", false),
       item(L.introScript, "script", !st.project),
+      // Then the assistants for xljs that each service can keep.
+      ...st.agents.map((a, i) => ({
+        label: el("span", {}, icon("ic ic-wand-sparkles"), el("span", { textContent: fmt(L.agentMenuFor, a.what, a.name) })),
+        action: () => openAgent(a.id),
+        sep: i === 0,
+      })),
     ]);
   }
 
@@ -420,7 +427,7 @@
     closeMenu();
     if (!items.length) return;
     const m = el("div", { className: "menu" }, ...items.map((it) => {
-      const b = el("button", { type: "button", disabled: !!it.disabled }, it.label);
+      const b = el("button", { type: "button", disabled: !!it.disabled, className: it.sep ? "sep" : "" }, it.label);
       b.onclick = () => { closeMenu(); it.action(); };
       return b;
     }));
@@ -1801,11 +1808,12 @@
         for (const e of document.querySelectorAll("[data-t]")) e.textContent = L[e.dataset.t] || e.dataset.t;
         for (const e of document.querySelectorAll("[data-tip]")) e.title = L[e.dataset.tip] || "";
         document.body.dataset.dropHint = L.dropHint || "";
-        $("chat-url").placeholder = L.urlPlaceholder;
+        $("chat-url").placeholder = L.urlShort;
         $("chat-url-start").placeholder = L.urlPlaceholder;
         $("pick-text").placeholder = L.pickPlaceholder || "";
         document.documentElement.lang = m.lang || "ja";
         initChat(m.services || []);
+        st.agents = m.agents || [];
         renderRecent(m.recent || []);
         st.home = m.home || "";
         st.homeChat = m.homeChat || "";

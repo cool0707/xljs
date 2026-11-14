@@ -194,6 +194,9 @@ body.tab-dragging iframe { pointer-events: none; }
 }
 .menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--hover); }
 .menu button:disabled { color: var(--muted); }
+.menu button.sep { margin-top: 5px; }
+.menu button.sep::before { content: ""; position: absolute; left: 6px; right: 6px; top: -3px; border-top: 1px solid var(--border); }
+.menu button { position: relative; }
 .menu button i { width: 16px; margin-right: 8px; text-align: center; }
 .menu button .badge { display: none; }
 .badge { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 15px; height: 15px; margin-left: 6px; padding: 0; border-radius: 50%; background: var(--accent); color: var(--accent-fg); font-size: 10px; font-weight: 600; line-height: 1; }

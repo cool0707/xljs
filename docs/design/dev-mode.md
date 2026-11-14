@@ -119,7 +119,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `pack` | exe の作成（保存先を尋ねる。結果は `packed`（`path`・`warnings`）） |
 | `chat` `setHome` `browser` | チャットの URL（空で選ぶ画面）、デフォルトのチャット（空で解除）、枠の表示・位置・戻る・進む・再読み込み |
 | `agentHint` `agentKit` `agentCopy` `agentDrag` | xljs 用のエージェントの案内（チャットのサービスの判定、入れるもの、文書のコピー、文書のドラッグ） |
-| `intro` `notify` `showFolder` | AI への説明のコピー（［プロンプト］のドロップダウン。`mode` が `prompt`＝指示だけ、`script`＝スクリプトだけ、空＝両方）、自分で直したところのコピー、フォルダを開く |
+| `intro` `notify` `showFolder` | AI への説明のコピー（［プロンプト］のドロップダウン。`mode` が `prompt`＝指示だけ、`script`＝スクリプトだけ、空＝両方。その下に各サービスの「xljs 用の〇〇を作る」＝`agentKit`。一覧は `init` の `agents`）、自分で直したところのコピー、フォルダを開く |
 | `wizardBooks` `wizardFolder` `wizardPrompt` `wizardSave` `wizardCreate` | 新規作成ウィザード（`answers`） |
 | `tests` `testApprove` `testRecord` `testPrompt` | 「テスト」タブ（`docs/design/test-design.md`） |
 

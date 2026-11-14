@@ -24,6 +24,18 @@ pub enum Service {
 }
 
 impl Service {
+    pub const ALL: [Service; 4] = [Service::M365, Service::Gemini, Service::ChatGpt, Service::Claude];
+
+    /// The service's name (a product name, not translated).
+    pub fn name(self) -> &'static str {
+        match self {
+            Service::M365 => "Microsoft 365 Copilot",
+            Service::Gemini => "Gemini",
+            Service::ChatGpt => "ChatGPT",
+            Service::Claude => "Claude",
+        }
+    }
+
     pub fn id(self) -> &'static str {
         match self {
             Service::M365 => "m365",
@@ -34,7 +46,7 @@ impl Service {
     }
 
     pub fn parse(s: &str) -> Option<Service> {
-        [Service::M365, Service::Gemini, Service::ChatGpt, Service::Claude].into_iter().find(|v| v.id() == s)
+        Service::ALL.into_iter().find(|v| v.id() == s)
     }
 
     /// What the service calls an assistant of one's own ("an agent").
