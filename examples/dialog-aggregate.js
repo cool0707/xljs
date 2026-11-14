@@ -16,8 +16,9 @@ const errors = [];
 for (const h of ui.withProgress(files, { title: "集計中" })) {
   try {
     const book = workbooks.open(h);
-    const sheet = book.sheets["明細"] ?? book.sheets[0];
-    for (const r of sheet.toObjects()) rows.push({ ...r, ファイル: h.relativePath });
+    const sheet = book.sheets["明細"];
+    if (sheet) for (const r of sheet.toObjects()) rows.push({ ...r, ファイル: h.relativePath });
+    else errors.push(`${h.relativePath}: 「明細」シートがありません`);
     book.close();
   } catch (e) {
     errors.push(`${h.relativePath}: ${e.message}`);
@@ -33,7 +34,7 @@ const summary = Object.entries(byCustomer).map(([name, list]) => ({
 
 const dest = await showSaveFilePicker({
   suggestedName: "集計結果.xlsx",
-  startIn: dir,
+  startIn: path.dirname(dir), // 集計したフォルダの外（次の集計に含めないため）
   types: [{ description: "Excel ブック", accept: [".xlsx"] }],
 });
 if (!dest) exit();

@@ -1,4 +1,4 @@
-// ファイルサーバー上の SQLite データベースに、Excel の受注一覧を取り込んで集計する。
+// ファイルサーバー上の SQLite データベースに、Excel の受注明細を取り込んで集計する。
 // 複数の人が同じデータベースを使っても壊れにくい「共有モード」で開く
 // （ネットワークドライブや \\server\share 上なら自動で共有モード）。
 // 万一壊れたときは、確認のダイアログが出て、自動バックアップと変更の記録から復旧できる。
@@ -15,13 +15,16 @@ db.exec(`CREATE TABLE IF NOT EXISTS 受注 (
 
 const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }] });
 if (h) {
-  const rows = workbooks.open(h).sheet(0).toObjects();
+  const book = workbooks.open(h);
+  const rows = (book.sheets["明細"] ?? book.sheet(0)).toObjects();
+  book.close();
   const user = xljs.env("USERNAME") || "";
   // 1 回のトランザクションで取り込む（同じ伝票番号は置き換える）
+  // 列の対応は data/売上/*.xlsx の「明細」シート（伝票番号・日付・顧客名・金額）に合わせている
   const n = db.insert("受注", rows.map((r) => ({
     伝票番号: String(r["伝票番号"]),
-    受注日: r["受注日"],
-    得意先: r["得意先"],
+    受注日: r["日付"],
+    得意先: r["顧客名"],
     金額: r["金額"],
     登録者: user,
   })), { replace: true });

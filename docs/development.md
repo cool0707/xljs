@@ -65,7 +65,7 @@ cargo check --target x86_64-pc-windows-gnu --all-targets   # Windows 専用コ�
 | `docs/site/` | スクリプトを書く人 | リファレンスサイト（GitHub Pages）の原稿。ページの並びと、インラインコードの変数名から型へのリンク（`sheet.toPdf` → `Worksheet.toPdf`）は `site.json` |
 | `docs/ai/` | AI チャット | プロンプトとリファレンス（配布 zip の `prompt/`）。文字数の上限に合わせて手で要約している |
 | `docs/design/` | 本体の開発者・Claude Code | 機能ごとの設計メモ |
-| `examples/` | スクリプトを書く人 | サンプル（サイトの「サンプル」ページは `examples/README.md` をそのまま表示） |
+| `examples/` | スクリプトを書く人 | サンプルと、それで試すサンプルデータ `examples/data/`（`tools/examples/make_data.py` で生成）。配布 zip の `examples/`。サイトの「サンプル」ページは `examples/README.md` をそのまま表示 |
 
 サイトは `tools/docs/build.mjs` が生成し、`.github/workflows/docs.yml` が main への push で GitHub Pages に公開します（リポジトリの Settings → Pages の Source を「GitHub Actions」にしておく）。
 

@@ -40,7 +40,7 @@ PDF の編集（グローバルの `pdf`: 結合・ページの削除・挿入�
 | `types/xljs.d.ts` | 公開 API の型定義（`xljs init` で出力）。**API の説明の正**（リファレンスサイトのエントリはここから生成）。API を変えたら必ず更新 |
 | `docs/site/` | リファレンスサイト（GitHub Pages）の原稿。`site.json` がページの並び、各ページのフロントマター `api:` がそのページで説明する d.ts の宣言。`tools/docs/build.mjs` が生成と検査（d.ts の宣言がすべてどこかのページにあるか、コード例が d.ts で型エラーにならないか、リンク切れ）を行い、`.github/workflows/docs.yml` が公開する。`docs/development.md` |
 | `testdata/scripts/*.test.{js,ts}` | モック UI で実行される結合テスト（`src/engine/tests.rs`）。`<name>.answers.json` がモック応答 |
-| `examples/` | サンプル。`xljs init` の d.ts と jsconfig.json で tsc の型チェックが通る状態を保つ（CI の ubuntu で検査） |
+| `examples/` | サンプル。`xljs init` の d.ts と jsconfig.json で tsc の型チェックが通る状態を保つ（CI の ubuntu で検査）。試すためのデータは `examples/data/`（`tools/examples/make_data.py` で生成。構成の違いが要らないサンプルは同じファイルを使う）。配布 zip には `prompt/` と並べて `examples/` として入る |
 | `tools/gui/` | Windows 実機での GUI 自動操作・スクリーンショット（`XljsGui.psm1`、`smoke.ps1`、`stay-awake.ps1`）。`docs/design/gui-testing.md` 参照 |
 | `docs/ai/` | AI チャット向けのプロンプトとリファレンス。`ai_docs` テストがコードブロックの構文と長さを検査 |
 | `docs/design/` | 機能ごとの設計メモ（開発者・Claude Code 向け） |

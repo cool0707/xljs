@@ -42,7 +42,7 @@ if (dest) {
 
 ## ダウンロード
 
-[Releases](https://github.com/cool0707/xljs/releases) から `xljs-windows-x64.zip`（ARM は `xljs-windows-arm64.zip`）を取得し、`xljs.exe` にスクリプトをドラッグ＆ドロップして実行します。
+[Releases](https://github.com/cool0707/xljs/releases) から `xljs-windows-x64.zip`（ARM は `xljs-windows-arm64.zip`）を取得し、`xljs.exe` にスクリプトをドラッグ＆ドロップして実行します。zip の `examples/` にサンプルと、それで試せるデータが入っています。
 
 ## ライセンス
 
