@@ -49,7 +49,7 @@
 [data-xljs-titlebar] [data-xljs-window], .xljs-tb-btn { app-region: no-drag; -webkit-app-region: no-drag; }
 .xljs-tb-btn {
   width: 46px; min-width: 0; height: 100%; margin: 0; padding: 0; border: 0; border-radius: 0;
-  background: transparent; color: inherit; outline: none;
+  background: transparent; color: inherit; outline: none; box-shadow: none; transition: none;
   font: 10px/1 "Segoe Fluent Icons", "Segoe MDL2 Assets"; cursor: default;
 }
 .xljs-tb-btn:hover { background: var(--xljs-titlebar-hover, rgba(0, 0, 0, .06)); }
