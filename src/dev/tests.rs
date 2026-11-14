@@ -576,6 +576,41 @@ fn exe_settings_default_chat() {
 }
 
 #[test]
+fn home_chat() {
+    let _l = lock_lang("ja");
+    let dir = tempdir();
+    write(&dir, "main.js", "alert(1);\n");
+    let agent = "https://m365.cloud.microsoft/chat/?titleId=T_agent";
+    write(&dir.join("exe"), "xljs.json", &json!({"dev": {"chat": agent}}).to_string());
+    let (mut s, w, _rx) = session(&dir, "{}");
+    // Off by default.
+    page(&mut s, json!({"op": "ready"}));
+    assert_eq!(w.take("init")[0]["homeChat"], "");
+
+    // Made the default: kept in the user's settings, before the exe's chat.
+    let home = "https://chat.example/c/home";
+    page(&mut s, json!({"op": "setHome", "url": home}));
+    assert_eq!(w.take("home")[0]["url"], home);
+    page(&mut s, json!({"op": "setHome", "url": "file:///x"}));
+    assert!(w.take("home").is_empty());
+    let (mut s, w, _rx) = session(&dir, "{}");
+    page(&mut s, json!({"op": "ready"}));
+    let posts = w.posts.lock().unwrap().clone();
+    assert_eq!(posts.iter().find(|v| v["type"] == "init").unwrap()["homeChat"], home);
+    assert_eq!(posts.iter().find(|v| v["type"] == "url").unwrap()["url"], home);
+    page(&mut s, json!({"op": "chat", "url": ""}));
+    page(&mut s, json!({"op": "open", "path": dir.join("main.js").to_string_lossy()}));
+    assert_eq!(w.take("project")[0]["chat"], home);
+
+    // Cleared: back to the exe's chat.
+    page(&mut s, json!({"op": "setHome", "url": ""}));
+    assert_eq!(w.take("home")[0]["url"], "");
+    page(&mut s, json!({"op": "chat", "url": ""}));
+    page(&mut s, json!({"op": "open", "path": dir.join("main.js").to_string_lossy()}));
+    assert_eq!(w.take("project")[0]["chat"], agent);
+}
+
+#[test]
 fn unified_diffs() {
     use super::notify::unified;
     assert_eq!(unified("a.js", "x\n", "x\n").unwrap(), "");

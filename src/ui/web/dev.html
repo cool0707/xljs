@@ -53,7 +53,10 @@
   <div id="panel-chat" class="panel">
     <div id="chat-bar" class="bar">
       <span id="chat-grip" class="grip" data-tip="moveChat"><i class="ic ic-grip-vertical"></i></span>
-      <button type="button" id="chat-home" class="tool icon" data-tip="chatHome"><i class="ic ic-house"></i></button>
+      <span class="split">
+        <button type="button" id="chat-home" class="tool icon"><i class="ic ic-house"></i></button>
+        <button type="button" id="chat-home-menu" class="tool icon split-drop" data-tip="chatHomeMenu"><i class="ic ic-chevron-down"></i></button>
+      </span>
       <button type="button" id="chat-back" class="tool icon" data-tip="back"><i class="ic ic-arrow-left"></i></button>
       <button type="button" id="chat-forward" class="tool icon" data-tip="forward"><i class="ic ic-arrow-right"></i></button>
       <button type="button" id="chat-reload" class="tool icon" data-tip="reload"><i class="ic ic-rotate-cw"></i></button>
@@ -69,6 +72,7 @@
         <input type="text" id="chat-url-start" spellcheck="false">
         <button type="submit" data-t="go"></button>
       </form>
+      <label class="check-row" data-tip="chatDefaultTip"><input type="checkbox" id="chat-default"><span data-t="chatDefault"></span></label>
       <ol class="steps">
         <li data-t="step1"></li>
         <li data-t="step2"></li>
