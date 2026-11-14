@@ -50,7 +50,7 @@ AI チャットと並べてスクリプトを作る・直すための画面。�
 - 位置はページが決める。`dev.js` が `#chat-view` の矩形（チャットのタブが表示中のときだけ。ほかのタブの裏やドラッグ中は `hide`）（CSS ピクセル）と `devicePixelRatio` を `{op:"browser", path:"show"}` で送り、Rust が子ウィンドウを `HWND_TOP` でそこに置く。親ウィンドウは `WS_CLIPCHILDREN`。ページ側の要素は枠（子ウィンドウ）の下に隠れるので、ページは枠の上に重なる要素を基本的に作らない（確認は `confirm()` のネイティブダイアログ）。例外はメニュー（依頼文のコピーの選択肢など）で、`show` にメニューと重なる部分の矩形（`holes`、枠の左上からの CSS ピクセル）を付けて送り、Rust が子ウィンドウのリージョン（`SetWindowRgn`）からその部分を抜いて下のページを見せる（以前は枠ごと隠していたので、メニューを開くと枠が灰色になっていた）。
 - ダウンロード（`ICoreWebView2_4::DownloadStarting`）は保存先を一時フォルダ（`%TEMP%\xljs-dev\<pid>`）に変え、ダウンロードの表示を出さない（`Handled`）。完了（`StateChanged` が COMPLETED）で `BrowserEvent::Downloaded`。
 - `.js` などは WebView2 の「危険なファイルの種類」の確認（保存するかを毎回尋ねる）にかかるため、`ICoreWebView2_26::SaveFileSecurityCheckStarting` で、開発モードが読むテキストの拡張子（`project::TEXT_EXTS`。`BrowserOptions::trusted_extensions`）だけ既定の確認を外す（`SuppressDefaultPolicy`）。受け取ったファイルはテキストとして読むだけで実行しない。.exe などはそのまま確認される。SmartScreen（評判の確認）は切らない。ランタイムが 1.0.2903 より古いと、このイベントがないので従来どおり尋ねる。
-- 表示中のページ（`SourceChanged`）を `BrowserEvent::Url` で知らせ、スクリプトごとに `.xljs/dev.json` の `chat` に覚える。スクリプトを開くとその URL を開く。チャットを開いていない状態でスクリプトを開いたときは、今のチャットをそのスクリプトに紐付ける。「ホーム」でチャットを選び直す（紐付けを消し、`about:blank` にして隠す）。
+- 表示中のページ（`SourceChanged`）を `BrowserEvent::Url` で知らせ、スクリプトごとに `.xljs/dev.json` の `chat` に覚える。スクリプトを開くとその URL を開く。チャットを開いていない状態でスクリプトを開いたときは、今のチャットをそのスクリプトに紐付ける。ホームボタンはスプリットボタン。本体はデフォルトのチャット（ユーザーの設定 `%APPDATA%\xljs\dev.json` の `home`。チャットを選ぶ画面のチェック「選んだチャットをデフォルトにする」か、メニューの「今のページをデフォルトにする」で決める。既定はなし）があればそこを開き、なければチャットを選び直す（紐付けを消し、`about:blank` にして隠す）。メニューは「AI チャットを選び直す」「今のページをデフォルトにする」「デフォルトを解除する」。デフォルトのチャットは、チャットのないスクリプトを開いたときと起動時にも、exe の隣の `xljs.json` の `dev.chat` より先に使う。
 - User-Agent（`src/net/agent.rs`。`fetch` と共通）: 既定はこのパソコンの Edge（版は EdgeUpdate の `Clients\{56EB18F8-…}` の `pv`、なければ `HKCU\Software\Microsoft\Edge\BLBeacon`、Edge がなければ WebView2 ランタイムの版）。`xljs.json` の `userAgent`（環境変数 `XLJS_USER_AGENT` が優先）で `"chrome"`（Google Update の `{8A69D345-…}`。なければ Edge）・`"xljs"`（枠は WebView2 のまま、`fetch` は `xljs/<版>`）・任意の文字列。`BrowserOptions::agent` で枠を作ったときに `ICoreWebView2Settings2::UserAgent` と DevTools プロトコルの `Emulation.setUserAgentOverride`（`userAgentMetadata`: ブランドを Chromium と同じ並びと GREASE で、`platformVersion` は Windows のビルド番号から）を設定する。WebView2 のままだと Sec-CH-UA に「Microsoft Edge WebView2」が入り、埋め込みのブラウザを断るサイトがあるため。ポップアップ（`window.open` のサインイン画面など）は WebView2 の既定のまま。
 - 配布用の既定（`DevOptions::exe_settings`＝exe と同じフォルダの `xljs.json` の `dev`。`load_exe_settings`）: `chat` は既定のチャット。`ready` でスクリプトが開かれず、チャットも開いていなければそれを開き（`url` を送ってページの `st.chat` にする）、`open` で紐付けのないスクリプトに今のチャットもなければそれを開く（紐付けは表示されたときの `BrowserEvent::Url` で覚える）。`services` はチャットの選択肢の先頭に、`builtinServices: false` で `SERVICES` を出さない。`chat` が選択肢になければ先頭に足す。http(s) 以外の URL は捨てる。読めない JSON は `dev.exeSettingsInvalid` を `error` で知らせ、既定なしで続ける。
 
@@ -106,7 +106,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `run` `stop` `preview` | 実行（`debug`）・停止・フォームのプレビュー（`auto` はタブを開いたときの自動表示） |
 | `pick` | プレビューで選んだ要素についての AI への依頼のコピー（`elements` `text` `full`） |
 | `pack` | exe の作成（保存先を尋ねる。結果は `packed`（`path`・`warnings`）） |
-| `chat` `browser` | チャットの URL（空でホーム）、枠の表示・位置・戻る・進む・再読み込み |
+| `chat` `setHome` `browser` | チャットの URL（空で選ぶ画面）、デフォルトのチャット（空で解除）、枠の表示・位置・戻る・進む・再読み込み |
 | `intro` `notify` `showFolder` | AI への説明のコピー（［プロンプト］のドロップダウン。`mode` が `prompt`＝指示だけ、`script`＝スクリプトだけ、空＝両方）、自分で直したところのコピー、フォルダを開く |
 | `wizardBooks` `wizardFolder` `wizardPrompt` `wizardSave` `wizardCreate` | 新規作成ウィザード（`answers`） |
 | `tests` `testApprove` `testRecord` `testPrompt` | 「テスト」タブ（`docs/design/test-design.md`） |

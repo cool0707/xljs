@@ -168,6 +168,10 @@ pub enum Event {
 #[serde(default)]
 struct GlobalSettings {
     recent: Vec<String>,
+    /// The chat the home button goes back to ("" = the start of the chat
+    /// pane); it is also the default chat, before the exe's.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    home: String,
 }
 
 /// The settings of a script's folder (.xljs/dev.json).
@@ -181,6 +185,12 @@ struct ProjectSettings {
     unnamed: Vec<String>,
     /// Where each script was last packed into an exe (entry name → path).
     exe: HashMap<String, String>,
+}
+
+/// The user's home chat, if it is a web page.
+fn home_chat(gs: &GlobalSettings) -> String {
+    let h = gs.home.trim();
+    if is_web(h) { h.to_string() } else { String::new() }
 }
 
 fn load<T: for<'a> Deserialize<'a> + Default>(p: &Path) -> T {
@@ -413,8 +423,9 @@ impl Session {
                     }
                 }
                 // Nothing to show yet: the default chat.
-                if self.project.is_none() && self.chat_url.is_empty() && !self.defaults.chat.is_empty() {
-                    self.chat_url = self.defaults.chat.clone();
+                let default = self.default_chat();
+                if self.project.is_none() && self.chat_url.is_empty() && !default.is_empty() {
+                    self.chat_url = default;
                     self.w.browser(BrowserCommand::Navigate(self.chat_url.clone()));
                     self.post(json!({"type": "url", "url": self.chat_url}));
                 }
@@ -632,6 +643,16 @@ impl Session {
                     self.w.browser(BrowserCommand::Navigate(r.url));
                 }
             }
+            "setHome" => {
+                // The chat of the home button (and the default chat); "" for none.
+                if !r.url.is_empty() && !is_web(&r.url) {
+                    return Ok(());
+                }
+                let mut gs: GlobalSettings = load(&self.o.settings);
+                gs.home = r.url.clone();
+                store(&self.o.settings, &gs);
+                self.post(json!({"type": "home", "url": r.url}));
+            }
             "wizardBooks" => {
                 let paths = self.u.open_files(&PickerOptions {
                     title: t!("wizard.selectBooks"),
@@ -706,9 +727,17 @@ impl Session {
             "services": self.services(),
             "recent": recent,
             "home": default_dir(&gs),
+            "homeChat": home_chat(&gs),
             // For the editor's completion (dev-types.js).
             "dts": crate::dts(),
         })
+    }
+
+    /// The chat opened when nothing else is: the user's home, else the
+    /// exe's default.
+    fn default_chat(&self) -> String {
+        let home = home_chat(&load(&self.o.settings));
+        if home.is_empty() { self.defaults.chat.clone() } else { home }
     }
 
     /// The chats offered on the start of the chat pane: those of the exe's
@@ -773,7 +802,7 @@ impl Session {
             ps.chat.insert(p.entry_name(), chat.clone());
             store(&settings, &ps);
         } else if chat.is_empty() {
-            chat = self.defaults.chat.clone();
+            chat = self.default_chat();
         }
         // The recent scripts, newest first.
         let mut gs: GlobalSettings = load(&self.o.settings);

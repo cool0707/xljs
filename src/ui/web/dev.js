@@ -26,6 +26,7 @@
     saved: "", // its text as saved
     dirty: false,
     chat: "", // the URL of the chat pane ("" = the start)
+    homeChat: "", // the chat of the home button ("" = the start of the pane)
     running: false,
     pending: null, // a downloaded answer: { name, text, target, old }
     versionView: null, // { file, n, text } compared in the diff tab
@@ -1394,12 +1395,57 @@
 
   function openChat(url) {
     url = String(url || "").trim();
-    if (!url) return;
+    if (!url) return "";
     if (!/^https?:\/\//i.test(url)) url = "https://" + url;
     st.chat = url;
     $("chat-url").value = url;
     send({ op: "chat", url });
     syncBrowser();
+    return url;
+  }
+
+  // A chat chosen on the start of the chat pane: with the check, it becomes
+  // the home (the default); without, the home is cleared.
+  function chooseChat(url) {
+    url = openChat(url);
+    if (!url) return;
+    const home = $("chat-default").checked ? url : "";
+    if (home !== st.homeChat) setHomeChat(home);
+  }
+
+  // The chat the home button goes back to ("" = the start of the pane).
+  function setHomeChat(url) {
+    st.homeChat = url;
+    send({ op: "setHome", url });
+    showHomeChat();
+  }
+  function showHomeChat() {
+    $("chat-default").checked = !!st.homeChat;
+    $("chat-home").title = st.homeChat ? fmt(L.chatHomeOpen, st.homeChat) : (L.chatHome || "");
+  }
+
+  // The home button: the home chat, else the start of the pane.
+  function goHome() {
+    if (st.homeChat) openChat(st.homeChat);
+    else chatStart();
+  }
+  function chatStart() {
+    st.chat = "";
+    send({ op: "chat", url: "" });
+    syncBrowser();
+  }
+
+  // The menu of the home button.
+  function homeMenu(anchor) {
+    const r = anchor.getBoundingClientRect();
+    const item = (ic, label, action, disabled) => ({ label: el("span", {}, icon(ic), el("span", { textContent: label || "" })), action, disabled });
+    const page = st.chat ? $("chat-url").value.trim() : "";
+    const items = [
+      item("ic ic-layout-grid", L.chatHome, chatStart, !st.chat),
+      item("ic ic-house", L.chatSetHome, () => setHomeChat(page), !/^https?:\/\//i.test(page) || page === st.homeChat),
+    ];
+    if (st.homeChat) items.push(item("ic ic-x", L.chatClearHome, () => setHomeChat("")));
+    openMenu(r.left, r.bottom, items);
   }
 
   // The logo of an AI chat: a bundled SVG (vendor/lobe-icons) or a Font
@@ -1412,11 +1458,12 @@
   }
 
   function initChat(services) {
-    $("services").replaceChildren(...services.map((s) => el("button", { type: "button", className: "big", onclick: () => openChat(s.url) },
+    $("services").replaceChildren(...services.map((s) => el("button", { type: "button", className: "big", onclick: () => chooseChat(s.url) },
       serviceIcon(s.icon), el("span", {}, s.name))));
-    $("chat-url-form").onsubmit = (e) => { e.preventDefault(); openChat($("chat-url-start").value); };
+    $("chat-url-form").onsubmit = (e) => { e.preventDefault(); chooseChat($("chat-url-start").value); };
     $("chat-url").addEventListener("keydown", (e) => { if (e.key === "Enter") openChat($("chat-url").value); });
-    $("chat-home").onclick = () => { st.chat = ""; send({ op: "chat", url: "" }); syncBrowser(); };
+    $("chat-home").onclick = goHome;
+    $("chat-home-menu").onclick = (e) => homeMenu(e.currentTarget);
     $("chat-back").onclick = () => send({ op: "browser", path: "back" });
     $("chat-forward").onclick = () => send({ op: "browser", path: "forward" });
     $("chat-reload").onclick = () => send({ op: "browser", path: "reload" });
@@ -1665,6 +1712,8 @@
         initChat(m.services || []);
         renderRecent(m.recent || []);
         st.home = m.home || "";
+        st.homeChat = m.homeChat || "";
+        showHomeChat();
         st.formTexts = m.formTexts || {};
         st.lang = m.lang || "ja";
         $("wz-rows").options[0].textContent = L.wzRowsNone;
@@ -1734,6 +1783,10 @@
         showDiff();
         setTab("diff");
         status(fmt(L.downloaded, m.name));
+        break;
+      case "home":
+        st.homeChat = m.url || "";
+        showHomeChat();
         break;
       case "url":
         if (m.url && !m.url.startsWith("about:")) {
