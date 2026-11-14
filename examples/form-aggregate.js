@@ -39,7 +39,12 @@ const values = await ui.form({
     for (const h of ctx.withProgress(files)) {
       try {
         const book = workbooks.open(h);
-        const sheet = book.sheets["明細"] ?? book.sheets[0];
+        const sheet = book.sheets["明細"];
+        if (!sheet) {
+          ctx.log(`${h.relativePath}: 「明細」シートがないので飛ばします`);
+          book.close();
+          continue;
+        }
         for (const r of sheet.toObjects()) {
           if (v.from && r.日付 instanceof Date && r.日付 < v.from) continue;
           rows.push({ ...r, ファイル: h.relativePath });

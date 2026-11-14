@@ -35,13 +35,14 @@ windows-gnu:
 	cp target/console/x86_64-pc-windows-gnu/release/xljs.exe dist/x64/xljsc.exe
 
 # Release archives: dist/xljs-windows-x64.zip, dist/xljs-windows-arm64.zip
-# (the executables and the contents of docs/ai as prompt/). Run after `make windows`.
+# (the executables, the contents of docs/ai as prompt/ and the examples with
+# their sample data as examples/). Run after `make windows`.
 dist:
 	cd dist && rm -f xljs-windows-*.zip \
 	  && zip -j xljs-windows-x64.zip x64/xljs.exe x64/xljsc.exe \
 	  && zip -j xljs-windows-arm64.zip arm64/xljs.exe arm64/xljsc.exe
-	rm -rf dist/prompt && cp -r docs/ai dist/prompt
-	cd dist && zip -r xljs-windows-x64.zip prompt && zip -r xljs-windows-arm64.zip prompt
+	rm -rf dist/prompt dist/examples && cp -r docs/ai dist/prompt && cp -r examples dist/examples
+	cd dist && zip -r xljs-windows-x64.zip prompt examples && zip -r xljs-windows-arm64.zip prompt examples
 
 linux:
 	$(CARGO) build --release
