@@ -760,6 +760,8 @@ impl Session {
             // For the wizard's preview of the look (form.html).
             "formTexts": texts_under("form."),
             "services": self.services(),
+            // The prompt menu's "Create ... for xljs" (agent.rs).
+            "agents": agent::Service::ALL.iter().map(|s| json!({"id": s.id(), "what": s.what(), "name": s.name()})).collect::<Vec<_>>(),
             "recent": recent,
             "home": default_dir(&gs),
             "homeChat": home_chat(&gs),
