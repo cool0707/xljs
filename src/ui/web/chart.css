@@ -1,6 +1,9 @@
 /* Charts (chart.html, chart fields of forms, xljs.chart). */
 body.chart-page { margin: 0; height: 100vh; display: flex; flex-direction: column; background: var(--bg); }
 body.chart-page .xljs-chart { flex: 1; min-height: 0; padding: 8px; box-sizing: border-box; }
+/* AG Charts fills the box; scrollbars here would shrink it, the chart would
+   fit again and the bars go away, over and over (main is overflow: auto). */
+body.chart-page .xljs-chart:not(.xljs-gantt) { overflow: hidden; }
 .xljs-chart { position: relative; }
 .xljs-chart.xljs-gantt { overflow: auto; }
 /* No scrollbars on paper (the box is the chart's place on the sheet). */
