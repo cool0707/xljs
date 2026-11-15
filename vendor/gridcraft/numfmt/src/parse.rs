@@ -1,5 +1,8 @@
 //! Format code parsing: sections, bracket tags and tokens.
 
+// xljs: for the `[DBNum1]` tags.
+use gridcraft_core::kanji::Kanji;
+
 use crate::FormatColor;
 use crate::calendar::Calendar;
 
@@ -157,6 +160,9 @@ pub(crate) struct Section {
     /// Excel rejects the whole code because of this section: a `B` and digit that is not a
     /// calendar prefix, or a prefix before a number format (`B20.00`).
     pub invalid: bool,
+    /// xljs: `[DBNum1]`, `[DBNum2]` or `[DBNum3]`: the numbers are written in kanji (or
+    /// full-width digits), as Japanese Excel does.
+    pub kanji: Option<Kanji>,
 }
 
 /// Splits a code into sections at unquoted, unescaped, unbracketed semicolons.
@@ -292,6 +298,8 @@ struct Raw {
     prefix: Option<char>,
     /// An unquoted `B` and digit that is not a calendar prefix: Excel rejects the code.
     invalid: bool,
+    /// xljs: the section's `[DBNum1]`-like tag.
+    kanji: Option<Kanji>,
 }
 
 /// Where a section's body starts: after its leading `[...]` tags, read as `tokenize` reads them.
@@ -313,7 +321,7 @@ fn after_leading_brackets(cs: &[char]) -> (usize, bool) {
 
 fn tokenize(src: &str) -> Raw {
     let cs: Vec<char> = src.chars().collect();
-    let mut raw = Raw { toks: Vec::new(), color: None, cond: None, currency: false, calendar: Calendar::Gregorian, prefix: None, invalid: false };
+    let mut raw = Raw { toks: Vec::new(), color: None, cond: None, currency: false, calendar: Calendar::Gregorian, prefix: None, invalid: false, kanji: None };
     let toks = &mut raw.toks;
     // With no `]` at or after a `[`, that `[` is a literal; checking this once keeps the scan linear.
     let last_close = cs.iter().rposition(|&c| c == ']');
@@ -386,7 +394,7 @@ fn tokenize(src: &str) -> Raw {
                 let close = if last_close.is_some_and(|l| l > i) { cs.get(i + 1..).and_then(|r| r.iter().position(|&d| d == ']')) } else { None };
                 if let Some(p) = close {
                     let content: String = cs.get(i + 1..i + 1 + p).unwrap_or(&[]).iter().collect();
-                    bracket(&mut raw_parts(toks, &mut raw.color, &mut raw.cond, &mut raw.currency), &content);
+                    bracket(&mut raw_parts(toks, &mut raw.color, &mut raw.cond, &mut raw.currency, &mut raw.kanji), &content);
                     i += p + 2;
                 } else {
                     push_lit(toks, "[");
@@ -423,6 +431,12 @@ fn tokenize(src: &str) -> Raw {
             'G' | 'g' if starts_with_ci(&cs, i, "general") => {
                 toks.push(Tok::General);
                 i += 7;
+                continue;
+            }
+            // xljs: `G/標準`, General as Japanese Excel writes it.
+            'G' | 'g' if cs.get(i + 1..i + 4) == Some(&['/', '標', '準'][..]) => {
+                toks.push(Tok::General);
+                i += 4;
                 continue;
             }
             // xljs: Japanese eras (`ggge`), written like Excel's Japanese formats.
@@ -506,10 +520,18 @@ struct RawParts<'a> {
     color: &'a mut Option<FormatColor>,
     cond: &'a mut Option<Cond>,
     currency: &'a mut bool,
+    /// xljs: see [`Raw::kanji`].
+    kanji: &'a mut Option<Kanji>,
 }
 
-fn raw_parts<'a>(toks: &'a mut Vec<Tok>, color: &'a mut Option<FormatColor>, cond: &'a mut Option<Cond>, currency: &'a mut bool) -> RawParts<'a> {
-    RawParts { toks, color, cond, currency }
+fn raw_parts<'a>(
+    toks: &'a mut Vec<Tok>,
+    color: &'a mut Option<FormatColor>,
+    cond: &'a mut Option<Cond>,
+    currency: &'a mut bool,
+    kanji: &'a mut Option<Kanji>,
+) -> RawParts<'a> {
+    RawParts { toks, color, cond, currency, kanji }
 }
 
 /// Handles the content of a `[...]` tag.
@@ -544,8 +566,17 @@ fn bracket(p: &mut RawParts<'_>, content: &str) {
             'm' => DatePart::ElapsedM(n),
             _ => DatePart::ElapsedS(n),
         }));
+        // xljs: nothing below is for this tag.
+        return;
     }
-    // Anything else ([DBNum1], [natural], locale tags…) is ignored.
+    // xljs: `[DBNum1]`, `[DBNum2]` and `[DBNum3]` write the section's numbers in kanji. The
+    // first such tag of a section counts.
+    if let Some(k) = Kanji::from_tag(&lc)
+        && p.kanji.is_none()
+    {
+        *p.kanji = Some(k);
+    }
+    // Anything else ([DBNum4], [natural], locale tags…) is ignored.
 }
 
 fn date_part(t: &Tok) -> Option<DatePart> {
@@ -553,7 +584,12 @@ fn date_part(t: &Tok) -> Option<DatePart> {
 }
 
 fn analyze(raw: Raw) -> Section {
-    let Raw { toks, color, cond, currency, calendar, prefix, invalid } = raw;
+    // xljs: with the section's `[DBNum1]` tag (`kanji`). The tag on its own is `[DBNum1]G/標準`,
+    // as Excel completes it.
+    let Raw { mut toks, color, cond, currency, calendar, prefix, invalid, kanji } = raw;
+    if kanji.is_some() && toks.is_empty() {
+        toks.push(Tok::General);
+    }
     let is_date = toks.iter().any(|t| matches!(t, Tok::Date(_)));
     let has_general = toks.iter().any(|t| matches!(t, Tok::General));
     let mut sec = Section {
@@ -575,6 +611,7 @@ fn analyze(raw: Raw) -> Section {
         ampm: false,
         calendar,
         invalid,
+        kanji,
     };
     if is_date {
         sec.kind = SecKind::Date;

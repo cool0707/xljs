@@ -164,7 +164,8 @@ pub(crate) fn apply_legacy(wb: &mut Workbook, cells: Vec<(usize, Vec<CellRef>)>,
 }
 
 /// The dynamic-array reading of a legacy formula, when it differs.
-fn legacy(wb: &Workbook, sheet: usize, at: CellRef, formula: &Formula, functions: FunctionInfo, names: &mut NameCache) -> Option<Formula> {
+// xljs: pub(crate), for `legacy_reading` of lib.rs.
+pub(crate) fn legacy(wb: &Workbook, sheet: usize, at: CellRef, formula: &Formula, functions: FunctionInfo, names: &mut NameCache) -> Option<Formula> {
     if formula.array.is_some() {
         return None;
     }

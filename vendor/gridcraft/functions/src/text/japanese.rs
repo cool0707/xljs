@@ -5,14 +5,15 @@
 //!   otherwise they are the character functions, as in GridCraft.
 //! - ASC and JIS (DBCS) convert between full-width and half-width letters, digits, symbols and
 //!   katakana.
-//! - YEN and DATESTRING, which only Japanese Excel has.
+//! - YEN, DATESTRING and NUMBERSTRING, which only Japanese Excel has.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use gridcraft_core::kanji::Kanji;
 use gridcraft_core::{CellError, Value};
 
 use super::{check_len, chars, count_arg, find, left, len, mid, replace, right, search};
-use crate::util::{R, num, num_val, opt_num, text, text_val};
+use crate::util::{R, num, num_val, opt_num, round_half_away, text, text_val};
 use crate::{Arg, Ctx};
 
 static DBCS: AtomicBool = AtomicBool::new(false);
@@ -233,7 +234,7 @@ pub(super) fn jis(a: &[Arg], _c: &mut dyn Ctx) -> R<Value> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// YEN and DATESTRING
+// YEN, DATESTRING and NUMBERSTRING
 
 /// `YEN(number, [decimals])`: the number rounded (to whole yen unless decimals says otherwise)
 /// with thousands separators after a yen sign, as text.
@@ -256,6 +257,46 @@ pub(super) fn datestring(a: &[Arg], c: &mut dyn Ctx) -> R<Value> {
     const ERAS: [((i32, u32, u32), &str); 5] = [((1868, 9, 8), "明治"), ((1912, 7, 30), "大正"), ((1926, 12, 25), "昭和"), ((1989, 1, 8), "平成"), ((2019, 5, 1), "令和")];
     let (start, name) = ERAS.iter().rev().find(|(start, _)| day >= *start).unwrap_or(&ERAS[0]);
     text_val(format!("{name}{:02}年{:02}月{:02}日", dt.year - start.0 + 1, dt.month, dt.day))
+}
+
+/// `NUMBERSTRING(number, type)`: the number, rounded to a whole one, in kanji. Type 1 writes it
+/// with units (一万二千三百四十五), type 2 with the formal numerals (壱萬弐阡参百四拾伍) and type 3
+/// digit by digit (一二三四五). A negative number and any other type are `#NUM!`.
+pub(super) fn numberstring(a: &[Arg], _c: &mut dyn Ctx) -> R<Value> {
+    let n = round_half_away(num(a, 0)?, 0);
+    let kind = num(a, 1)?.trunc();
+    if !n.is_finite() || n < 0.0 {
+        return Err(CellError::Num);
+    }
+    let digits = whole_digits(n);
+    text_val(if kind == 1.0 {
+        Kanji::Plain.positional(&digits)
+    } else if kind == 2.0 {
+        Kanji::Formal.positional(&digits)
+    } else if kind == 3.0 {
+        Kanji::Plain.digits(&digits)
+    } else {
+        return Err(CellError::Num);
+    })
+}
+
+/// The digits of a non-negative whole number as Excel knows it: fifteen significant digits, then
+/// zeros.
+fn whole_digits(n: f64) -> String {
+    if n < 1e15 {
+        return format!("{n:.0}");
+    }
+    let s = format!("{n:.14e}");
+    let Some((mantissa, exp)) = s.split_once('e') else { return format!("{n:.0}") };
+    let Ok(exp) = exp.parse::<usize>() else { return format!("{n:.0}") };
+    let mut out: String = mantissa.chars().filter(char::is_ascii_digit).collect();
+    // A double is below 1E+309: the text stays short.
+    let len = (exp + 1).min(400);
+    while out.len() < len {
+        out.push('0');
+    }
+    out.truncate(len);
+    out
 }
 
 #[cfg(test)]
@@ -326,5 +367,31 @@ mod tests {
         is_text(ev("DATESTRING", vec![n(46113.0)]), "令和08年04月01日");
         is_text(ev("DATESTRING", vec![n(43585.0)]), "平成31年04月30日");
         is_text(ev("DATESTRING", vec![n(43586.5)]), "令和01年05月01日");
+    }
+
+    #[test]
+    fn numberstring_writes_kanji() {
+        is_text(ev("NUMBERSTRING", vec![n(12345.0), n(1.0)]), "一万二千三百四十五");
+        is_text(ev("NUMBERSTRING", vec![n(12345.0), n(2.0)]), "壱萬弐阡参百四拾伍");
+        is_text(ev("NUMBERSTRING", vec![n(12345.0), n(3.0)]), "一二三四五");
+        is_text(ev("NUMBERSTRING", vec![n(123.0), n(1.0)]), "百二十三");
+        is_text(ev("NUMBERSTRING", vec![n(123.0), n(2.0)]), "壱百弐拾参");
+        is_text(ev("NUMBERSTRING", vec![n(123.0), n(3.0)]), "一二三");
+        is_text(ev("NUMBERSTRING", vec![n(1234567890.0), n(1.0)]), "十二億三千四百五十六万七千八百九十");
+        is_text(ev("NUMBERSTRING", vec![n(1000.0), n(1.0)]), "千");
+        is_text(ev("NUMBERSTRING", vec![n(1000.0), n(2.0)]), "壱阡");
+        is_text(ev("NUMBERSTRING", vec![n(1000.0), n(3.0)]), "一〇〇〇");
+        is_text(ev("NUMBERSTRING", vec![n(0.0), n(1.0)]), "〇");
+        is_text(ev("NUMBERSTRING", vec![n(0.0), n(3.0)]), "〇");
+        // Rounded to a whole number.
+        is_text(ev("NUMBERSTRING", vec![n(1234.5), n(1.0)]), "千二百三十五");
+        is_text(ev("NUMBERSTRING", vec![n(0.4), n(1.0)]), "〇");
+        is_text(ev("NUMBERSTRING", vec![t("10800"), n(2.0)]), "壱萬八百");
+        is_text(ev("NUMBERSTRING", vec![n(1e15), n(1.0)]), "千兆");
+        is_text(ev("NUMBERSTRING", vec![n(123456789012345678.0), n(3.0)]), "一二三四五六七八九〇一二三四六〇〇〇");
+        is_err(ev("NUMBERSTRING", vec![n(-1.0), n(1.0)]), CellError::Num);
+        is_err(ev("NUMBERSTRING", vec![n(1.0), n(4.0)]), CellError::Num);
+        is_err(ev("NUMBERSTRING", vec![n(1.0), n(0.0)]), CellError::Num);
+        is_err(ev("NUMBERSTRING", vec![t("abc"), n(1.0)]), CellError::Value);
     }
 }
