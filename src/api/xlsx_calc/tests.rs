@@ -255,3 +255,240 @@ fn circular_references_keep_their_values() {
     assert_eq!([raw(&b, "保存値", "H1"), raw(&b, "保存値", "H3"), raw(&b, "保存値", "H4")], ["", "8", "10"]);
     assert_eq!(Skip::Circular.message(), "循環参照です（数式が自分自身の結果を参照しています）");
 }
+
+// ---- formulas as scripts write them, array formulas in files ----
+
+/// A formula as a script writes it (cell.formula = ...).
+fn write(b: &mut Book, sheet: &str, r: &str, f: &str) {
+    let (col, row) = parse_ref(r).unwrap();
+    set_formula(b, sheet, col, row, f).unwrap();
+}
+
+/// A formula as a script reads it.
+fn shown(b: &Book, sheet: &str, r: &str) -> Option<String> {
+    let (col, row) = parse_ref(r).unwrap();
+    formula_shown(b, sheet, col, row)
+}
+
+/// How the cell holds its formula: (text, range, array formula, dynamic).
+fn held(b: &Book, sheet: &str, r: &str) -> Option<(String, String, bool, bool)> {
+    let (col, row) = parse_ref(r).unwrap();
+    let f = b.sheet(sheet).unwrap().cell((col, row))?.formula_obj()?;
+    Some((f.text().to_string(), f.reference().to_string(), *f.formula_type() == CellFormulaValues::Array, f.dynamic_array()))
+}
+
+fn column(b: &Book, sheet: &str, col: &str, rows: std::ops::RangeInclusive<u32>) -> Vec<String> {
+    rows.map(|r| raw(b, sheet, &format!("{col}{r}"))).collect()
+}
+
+/// The workbook saved and opened again.
+fn reopened(b: &Book) -> Book {
+    super::super::xlsx::open_bytes(&b.to_bytes().unwrap(), "saved.xlsx".into()).unwrap()
+}
+
+fn part(b: &Book, name: &str) -> Option<String> {
+    super::super::xlsx::zip_part(&b.to_bytes().unwrap(), name).map(|x| String::from_utf8(x).unwrap())
+}
+
+/// The array formulas of a file are array formulas in the file that is saved:
+/// the one entered over a range, and the ones that spill with their metadata.
+#[test]
+fn array_formulas_of_a_file_are_saved_as_they_were() {
+    let _l = lock_lang("ja");
+    let mut b = book();
+    assert_eq!(held(&b, "配列", "C1"), Some(("A1:A5*B1:B5".into(), "C1:C5".into(), true, false)));
+    assert_eq!(held(&b, "配列", "E1"), Some(("_xlfn._xlws.FILTER(A1:A5,B1:B5>20)".into(), "E1".into(), true, true)));
+    assert_eq!(held(&b, "配列", "I3"), Some(("A1:A5".into(), String::new(), false, false)));
+
+    let sheet = part(&b, "xl/worksheets/sheet3.xml").unwrap();
+    assert!(sheet.contains(r#"<c r="C1" t="str"><f t="array" ref="C1:C5">A1:A5*B1:B5</f>"#), "{sheet}");
+    assert!(sheet.contains(r#"cm="1"><f t="array" ref="E1">_xlfn._xlws.FILTER(A1:A5,B1:B5&gt;20)</f>"#), "{sheet}");
+    assert!(sheet.contains(r#"cm="1"><f t="array" ref="G1:G5">_xlfn._xlws.SORT(B1:B5,1,-1)</f>"#), "{sheet}");
+    assert!(sheet.contains("<f>A1:A5</f>"), "{sheet}");
+    let metadata = part(&b, "xl/metadata.xml").unwrap();
+    assert!(metadata.contains(r#"<xda:dynamicArrayProperties fDynamic="1" fCollapsed="0"/>"#), "{metadata}");
+    assert!(part(&b, "xl/_rels/workbook.xml.rels").unwrap().contains("relationships/sheetMetadata\" Target=\"metadata.xml\""));
+    assert!(part(&b, "[Content_Types].xml").unwrap().contains("<Override PartName=\"/xl/metadata.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheetMetadata+xml\"/>"));
+
+    // Calculated: the formulas say which cells they fill, and the values are in them.
+    calculate(&mut b);
+    let sheet = part(&b, "xl/worksheets/sheet3.xml").unwrap();
+    assert!(sheet.contains(r#"<c r="E1" cm="1"><f t="array" ref="E1:E3">_xlfn._xlws.FILTER(A1:A5,B1:B5&gt;20)</f><v>3</v></c>"#), "{sheet}");
+    assert!(sheet.contains(r#"<c r="E2"><v>4</v></c>"#), "{sheet}");
+
+    // Opened again, it is the same workbook: nothing changes when it is calculated.
+    let mut again = reopened(&b);
+    assert_eq!(held(&again, "配列", "C1"), Some(("A1:A5*B1:B5".into(), "C1:C5".into(), true, false)));
+    assert_eq!(held(&again, "配列", "E1").map(|h| (h.1, h.2, h.3)), Some(("E1:E3".into(), true, true)));
+    assert_eq!(held(&again, "配列", "E2"), None);
+    assert_eq!(calculate(&mut again).changed, 0);
+    // What depends on the data follows it, and the range with the result.
+    set(&mut again, "配列", "B2", 99.0);
+    calculate(&mut again);
+    assert_eq!(column(&again, "配列", "E", 1..=5), ["2", "3", "4", "5", ""]);
+    assert_eq!(held(&again, "配列", "E1").map(|h| h.1), Some("E1:E4".into()));
+    assert_eq!(column(&again, "配列", "C", 1..=2), ["10", "198"]);
+}
+
+/// A formula a script writes is one typed into Excel: it spills when it gives
+/// several values, and the file holds it as Excel saves it.
+#[test]
+fn formulas_scripts_write_spill() {
+    let _l = lock_lang("ja");
+    let mut b = book();
+    write(&mut b, "配列", "K1", "=FILTER(A1:A5,B1:B5>20)");
+    write(&mut b, "配列", "M1", "=A1:A5*2");
+    write(&mut b, "配列", "O1", "=SUM(A1:A5*B1:B5)");
+    write(&mut b, "配列", "O2", "=SUM(A1:A5)");
+    write(&mut b, "配列", "O3", "=@A1:A5");
+    write(&mut b, "配列", "Q1", "=TRANSPOSE(SORT(A1:A3,1,-1))");
+    // An array formula with the metadata where the old evaluation would differ.
+    assert_eq!(held(&b, "配列", "K1"), Some(("_xlfn._xlws.FILTER(A1:A5,B1:B5>20)".into(), String::new(), true, true)));
+    assert_eq!(held(&b, "配列", "M1"), Some(("A1:A5*2".into(), String::new(), true, true)));
+    assert_eq!(held(&b, "配列", "O1"), Some(("SUM(A1:A5*B1:B5)".into(), String::new(), true, true)));
+    // A plain formula where it gives one value either way, and for an `@`.
+    assert_eq!(held(&b, "配列", "O2"), Some(("SUM(A1:A5)".into(), String::new(), false, false)));
+    assert_eq!(held(&b, "配列", "O3"), Some(("A1:A5".into(), String::new(), false, false)));
+    // Read as written.
+    assert_eq!(shown(&b, "配列", "K1").as_deref(), Some("FILTER(A1:A5,B1:B5>20)"));
+    assert_eq!(shown(&b, "配列", "O3").as_deref(), Some("@A1:A5"));
+    assert_eq!(shown(&b, "配列", "O2").as_deref(), Some("SUM(A1:A5)"));
+    assert_eq!(shown(&b, "配列", "P9"), None);
+    // The formula in its own cell before it is calculated; cell.calc() gives its first value.
+    assert_eq!(raw(&b, "配列", "K2"), "");
+    assert_eq!(calc_cell(&b, "配列", "K1").unwrap(), "3");
+    assert_eq!(calc_cell(&b, "配列", "O1").unwrap(), "550");
+
+    calculate(&mut b);
+    assert_eq!(column(&b, "配列", "K", 1..=4), ["3", "4", "5", ""]);
+    assert_eq!(column(&b, "配列", "M", 1..=6), ["2", "4", "6", "8", "10", ""]);
+    assert_eq!([raw(&b, "配列", "O1"), raw(&b, "配列", "O2"), raw(&b, "配列", "O3")], ["550", "15", "3"]);
+    assert_eq!([raw(&b, "配列", "Q1"), raw(&b, "配列", "R1"), raw(&b, "配列", "S1"), raw(&b, "配列", "Q2")], ["3", "2", "1", ""]);
+    assert_eq!(held(&b, "配列", "K1").map(|h| h.1), Some("K1:K3".into()));
+    assert_eq!(held(&b, "配列", "Q1").map(|h| h.1), Some("Q1:S1".into()));
+    // One value: its own cell, which is what the file says of a formula without a range.
+    assert_eq!(held(&b, "配列", "O1").map(|h| h.1), Some(String::new()));
+    // Excel calculates when it opens the file.
+    assert!(part(&b, "xl/workbook.xml").unwrap().contains("fullCalcOnLoad=\"1\""));
+    let sheet = part(&b, "xl/worksheets/sheet3.xml").unwrap();
+    assert!(sheet.contains(r#"<c r="M1" cm="1"><f t="array" ref="M1:M5">A1:A5*2</f><v>2</v></c>"#), "{sheet}");
+    assert!(sheet.contains(r#"<c r="O1" cm="1"><f t="array" ref="O1">SUM(A1:A5*B1:B5)</f><v>550</v></c>"#), "{sheet}");
+    assert!(sheet.contains(r#"<c r="O3"><f>A1:A5</f><v>3</v></c>"#), "{sheet}");
+
+    // Saved and opened: the same formulas, the same values.
+    let mut again = reopened(&b);
+    assert_eq!(shown(&again, "配列", "K1").as_deref(), Some("FILTER(A1:A5,B1:B5>20)"));
+    assert_eq!(held(&again, "配列", "M1"), Some(("A1:A5*2".into(), "M1:M5".into(), true, true)));
+    assert_eq!(shown(&again, "配列", "O3").as_deref(), Some("@A1:A5"));
+    assert_eq!(column(&again, "配列", "M", 1..=6), ["2", "4", "6", "8", "10", ""]);
+    assert_eq!(calculate(&mut again).changed, 0);
+}
+
+/// A formula saved without dynamic-array metadata reads with the `@` Excel
+/// shows, so that writing the text into another cell gives the same formula.
+#[test]
+fn formulas_read_as_excel_shows_them() {
+    let _l = lock_lang("ja");
+    let mut b = book();
+    // The file's own: one value of the range, in the formula's row.
+    assert_eq!(shown(&b, "配列", "I3").as_deref(), Some("@A1:A5"));
+    assert_eq!(shown(&b, "配列", "I1").as_deref(), Some("SUM(C1:C5)"));
+    assert_eq!(shown(&b, "配列", "I4").as_deref(), Some("SUM(G1#)"));
+    // A column of the table in the row of the formula is one value: no `@` (the text is the file's).
+    assert_eq!(shown(&b, "表", "D3").as_deref(), Some("[[#This Row],数量]*[[#This Row],単価]"));
+    assert_eq!(shown(&b, "表", "F1").as_deref(), Some("SUM(売上表[金額])"));
+    // Array formulas work with every value as they are written.
+    assert_eq!(shown(&b, "配列", "C1").as_deref(), Some("A1:A5*B1:B5"));
+    assert_eq!(shown(&b, "配列", "E1").as_deref(), Some("FILTER(A1:A5,B1:B5>20)"));
+    // A name of a range.
+    write(&mut b, "データ", "L5", "=@金額列*2");
+    assert_eq!(held(&b, "データ", "L5"), Some(("金額列*2".into(), String::new(), false, false)));
+    assert_eq!(shown(&b, "データ", "L5").as_deref(), Some("@金額列*2"));
+    assert_eq!(calc_cell(&b, "データ", "L5").unwrap(), "1800");
+    // Copied as a script copies a formula: the same formula in the other cell.
+    let text = shown(&b, "配列", "I3").unwrap();
+    write(&mut b, "配列", "J4", &format!("={text}"));
+    assert_eq!(held(&b, "配列", "J4"), Some(("A1:A5".into(), String::new(), false, false)));
+    assert_eq!(calc_cell(&b, "配列", "J4").unwrap(), "4");
+    // The prefixes of the file never show, and an empty text removes the formula.
+    write(&mut b, "配列", "J5", "=_xlfn.XLOOKUP(3,A1:A5,B1:B5)");
+    assert_eq!(held(&b, "配列", "J5").map(|h| (h.0, h.3)), Some(("_xlfn.XLOOKUP(3,A1:A5,B1:B5)".into(), false)));
+    assert_eq!(shown(&b, "配列", "J5").as_deref(), Some("XLOOKUP(3,A1:A5,B1:B5)"));
+    write(&mut b, "配列", "J5", "");
+    assert_eq!(shown(&b, "配列", "J5"), None);
+    // What cannot be read is kept as it is.
+    write(&mut b, "配列", "J6", "=SUM(1,");
+    assert_eq!(shown(&b, "配列", "J6").as_deref(), Some("SUM(1,"));
+}
+
+/// The cells an array formula fills are the formula's: a value written into
+/// one is in its way, and writing over the formula takes its values away.
+#[test]
+fn writing_into_the_cells_of_an_array_formula() {
+    let _l = lock_lang("ja");
+    let mut b = book();
+    calculate(&mut b);
+    assert_eq!(column(&b, "配列", "G", 1..=5), ["50", "40", "30", "20", "10"]);
+    // Over a spilled value: the others go, the formula stays in its own cell.
+    set(&mut b, "配列", "G3", 7.0);
+    assert_eq!(column(&b, "配列", "G", 2..=5), ["", "7", "", ""]);
+    assert_eq!(held(&b, "配列", "G1").map(|h| (h.1, h.2, h.3)), Some(("G1".into(), true, true)));
+    let saved = part(&b, "xl/worksheets/sheet3.xml").unwrap();
+    assert!(saved.contains(r#"<f t="array" ref="G1">_xlfn._xlws.SORT(B1:B5,1,-1)</f>"#), "{saved}");
+    // Calculated, it cannot spill (#SPILL!, which files hold as #VALUE!), and what reads it follows.
+    calculate(&mut b);
+    assert_eq!(column(&b, "配列", "G", 1..=5), ["#VALUE!", "", "7", "", ""]);
+    assert_eq!(calc_cell(&b, "配列", "G1").unwrap(), "#SPILL!");
+    assert!(raw(&b, "配列", "I4").starts_with('#'), "=SUM(G1#): {}", raw(&b, "配列", "I4"));
+    // The cell emptied: it spills again.
+    let (col, row) = parse_ref("G3").unwrap();
+    b.cell_mut("配列", col, row).unwrap().cell_value_mut().set_blank();
+    calculate(&mut b);
+    assert_eq!(column(&b, "配列", "G", 1..=5), ["50", "40", "30", "20", "10"]);
+    assert_eq!(held(&b, "配列", "G1").map(|h| h.1), Some("G1:G5".into()));
+    assert_eq!(raw(&b, "配列", "I4"), "150");
+
+    // Over the formula itself, without calculating: its values go with it.
+    set(&mut b, "配列", "G1", 1.0);
+    assert_eq!(column(&b, "配列", "G", 1..=5), ["1", "", "", "", ""]);
+    // An array formula entered over a range (Ctrl+Shift+Enter) gives its cells up the same way.
+    set(&mut b, "配列", "C4", 0.0);
+    assert_eq!(column(&b, "配列", "C", 2..=5), ["", "", "0", ""]);
+    assert_eq!(held(&b, "配列", "C1"), Some(("A1:A5*B1:B5".into(), "C1".into(), true, false)));
+    // A new formula over a spilled value of a workbook that was not calculated here.
+    let mut b = reopened(&{
+        let mut b = book();
+        calculate(&mut b);
+        b
+    });
+    write(&mut b, "配列", "E2", "=A1+100");
+    assert_eq!(column(&b, "配列", "E", 1..=3), ["3", "", ""]);
+    calculate(&mut b);
+    assert_eq!(column(&b, "配列", "E", 1..=3), ["#VALUE!", "101", ""]);
+    assert_eq!(raw(&b, "配列", "I2"), "#VALUE!");
+}
+
+/// File > Options > Formulas > "Enable iterative calculation": the circular
+/// references of such a workbook are calculated, as many times as it says.
+#[test]
+fn iterative_calculation_follows_the_workbook() {
+    let _l = lock_lang("ja");
+    let mut b = book();
+    b.wb.calculation_properties_mut().set_iterate(true).set_iterate_count(10).set_iterate_delta(0.001);
+    b.calc_reset();
+    // Counts the iterations; settles on 2 * A1 (A1 is 5).
+    write(&mut b, "保存値", "H1", "=H1+1");
+    write(&mut b, "保存値", "H2", "=(H2+A1*2)/2");
+    write(&mut b, "保存値", "H3", "=H1*2");
+    let sum = calculate(&mut b);
+    assert!(sum.skipped.iter().all(|s| s.skip != Skip::Circular), "nothing is left out as circular");
+    assert_eq!(num(&b, "保存値", "H1"), 10.0);
+    assert!((num(&b, "保存値", "H2") - 10.0).abs() < 0.02, "{}", raw(&b, "保存値", "H2"));
+    assert_eq!(num(&b, "保存値", "H3"), 20.0);
+    // The setting stays in the file, and the next calculation goes on from the values.
+    let workbook = part(&b, "xl/workbook.xml").unwrap();
+    assert!(workbook.contains("iterate=\"1\"") && workbook.contains("iterateCount=\"10\""), "{workbook}");
+    let mut again = reopened(&b);
+    calculate(&mut again);
+    assert_eq!(num(&again, "保存値", "H1"), 20.0);
+}

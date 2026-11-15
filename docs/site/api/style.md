@@ -26,7 +26,7 @@ sheet.cell("A1").getStyle();   // 現在の書式を取得
 | `fill` | `"#RRGGBB"`（`null` で塗りなし） |
 | `border` | `"thin"` など（全セルの上下左右）、または `{ all, outline, inside, horizontal, vertical, top, bottom, left, right, diagonalUp, diagonalDown }`。各辺は `"thin"` `"medium"` `"thick"` `"double"` `"dashed"` `"dotted"` `"hair"` など、または `{ style, color }` |
 | `alignment` | `{ horizontal, vertical, wrap, shrink, indent, rotation }` |
-| `numberFormat` | `"#,##0"` `"yyyy/m/d"` `"0.0%"` `"¥#,##0"` など（`"General"` で標準） |
+| `numberFormat` | `"#,##0"` `"yyyy/m/d"` `"0.0%"` `"¥#,##0"` など（`"General"` で標準）。漢数字の `"[DBNum1]G/標準"`（一万二千三百四十五）・`"[DBNum2]G/標準"`（壱萬弐阡参百四拾伍）・`"[DBNum3]0"`（全角数字）も `cell.text` と PDF に出ます |
 | 省略形 | `bold` `italic` `underline` `strike` `color` `fontSize` `fontName` `background` `align` `valign` `wrap` `format` |
 
 - 色は `"#RRGGBB"`・`"#RGB"`・`red` などの色名で指定します。

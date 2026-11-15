@@ -8,6 +8,10 @@
 //! the cells scripts write are taken over, and what depends on them is
 //! calculated again. Results go back as the saved values of the formula
 //! cells (store). docs/design/calc-design.md has the reasoning.
+//!
+//! Formulas are those of dynamic-array Excel: one a script writes spills
+//! when it gives several values, and is saved the way Excel saves it
+//! (set_formula); the cells an array formula fills belong to it (Areas).
 
 use std::cell::{Cell as StdCell, RefMut};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -17,8 +21,8 @@ use gridcraft_calc::eval::{Ev, Evaluator, Host};
 use gridcraft_core::{CellError, CellRef, DateSystem, RangeRef, Value};
 use gridcraft_formula::{Expr, SheetSel};
 use gridcraft_model as gm;
-use gridcraft_xlsx_formulas::{FunctionInfo, apply_legacy, fmla};
-use umya_spreadsheet::{Cell, CellErrorType, CellFormulaValues, CellRawValue, Worksheet};
+use gridcraft_xlsx_formulas::{FunctionInfo, Names, SaveAs, apply_legacy, fmla, legacy_reading, save_as};
+use umya_spreadsheet::{Cell, CellErrorType, CellFormula, CellFormulaValues, CellRawValue, Worksheet};
 
 use super::xlsx::{Book, fmt_num, parse_ref};
 use crate::{Error, Result, i18n, t};
@@ -82,6 +86,82 @@ impl Touched {
 
     fn any(&self) -> bool {
         self.all || !self.cells.is_empty()
+    }
+}
+
+// ---- the cells array formulas fill ----
+
+/// The areas the array formulas of a sheet fill beyond their own cell, by
+/// first cell: (row, column) -> (last row, last column), 1-based. The cells
+/// in them hold what Excel (or store) laid out there and belong to the
+/// formula: the file says so with the range of the formula alone, and Excel
+/// lays its result over them again.
+#[derive(Default)]
+pub(crate) struct Areas {
+    map: BTreeMap<(u32, u32), (u32, u32)>,
+    /// The most rows an area has: how far above a cell its first cell can be.
+    tallest: u32,
+}
+
+impl Areas {
+    fn scan(ws: &Worksheet) -> Areas {
+        let mut areas = Areas::default();
+        for c in ws.cells() {
+            let Some(f) = c.formula_obj().filter(|f| *f.formula_type() == CellFormulaValues::Array) else { continue };
+            let at = at_of(c);
+            if let Some(r) = RangeRef::parse(f.reference()).filter(|r| r.start == at && !r.is_single() && r.end.is_valid()) {
+                areas.tallest = areas.tallest.max(r.end.row - r.start.row + 1);
+                areas.map.insert((r.start.row + 1, r.start.col + 1), (r.end.row + 1, r.end.col + 1));
+            }
+        }
+        areas
+    }
+
+    /// The area a cell is in: its first and its last cell.
+    fn around(&self, col: u32, row: u32) -> Option<((u32, u32), (u32, u32))> {
+        if self.map.is_empty() {
+            return None;
+        }
+        let from = row.saturating_sub(self.tallest.saturating_sub(1));
+        self.map.range((from, 0)..=(row, col)).find(|((_, c1), (r2, c2))| *c1 <= col && col <= *c2 && row <= *r2).map(|(first, last)| (*first, *last))
+    }
+}
+
+/// Before a script writes into a cell. When the cell is in the area of an
+/// array formula, the area is given up, as in Excel when something is typed
+/// over a spilled value: the values the formula filled in go, and the
+/// formula keeps its own cell (it gives #SPILL! when it is calculated and
+/// the written cell is in its way). Without this the file would still say
+/// that the area is the formula's, and Excel would lay the result over what
+/// the script wrote. Writing over the formula itself removes its values too.
+pub(crate) fn release_area(b: &mut Book, sheet: &str, col: u32, row: u32) {
+    let Book { wb, areas, touched, .. } = b;
+    let Ok(ws) = wb.sheet_by_name_mut(sheet) else { return };
+    if !areas.contains_key(sheet) {
+        areas.insert(sheet.to_string(), Areas::scan(ws));
+    }
+    let Some(areas) = areas.get_mut(sheet) else { return };
+    let Some((first, last)) = areas.around(col, row) else { return };
+    areas.map.remove(&first);
+    let touched = touched.get_mut();
+    for r in first.0..=last.0 {
+        for c in first.1..=last.1 {
+            if (r, c) == first || (r, c) == (row, col) {
+                continue;
+            }
+            if ws.cell((c, r)).is_some_and(|x| !x.is_formula() && !x.raw_value().is_empty()) {
+                ws.cell_mut((c, r)).cell_value_mut().set_blank();
+                touched.cell(sheet, c, r);
+            }
+        }
+    }
+    if first != (row, col) {
+        let c = ws.cell_mut((first.1, first.0));
+        if let Some(mut f) = c.formula_obj().cloned() {
+            f.set_reference(CellRef::new(first.0 - 1, first.1 - 1).a1());
+            c.cell_value_mut().set_formula_obj(f);
+        }
+        touched.cell(sheet, first.1, first.0);
     }
 }
 
@@ -363,7 +443,7 @@ fn make(c: &Cell) -> Made {
     }
     let mut formula = gm::Formula::new(&fmla::from_file(body));
     let at = at_of(c);
-    let dynamic = c.cell_meta_index() > 0;
+    let dynamic = f.dynamic_array();
     let kind = if *f.formula_type() == CellFormulaValues::Array {
         // The formula is in the first cell of the area it fills.
         let area = RangeRef::parse(f.reference()).filter(|r| r.start == at).unwrap_or(RangeRef::cell(at));
@@ -453,27 +533,39 @@ pub(crate) struct Engine {
     fresh: Vec<Key>,
 }
 
+/// The workbook for the engine without its cells: the sheets with what
+/// formulas depend on besides cells, the names, the calculation options.
+fn outline(b: &Book) -> gm::Workbook {
+    let mut wb = gm::Workbook::new();
+    wb.date_system = if b.date1904 { DateSystem::D1904 } else { DateSystem::D1900 };
+    // File > Options > Formulas > "Enable iterative calculation": circular
+    // references are worked out again and again instead of being an error.
+    let options = b.wb.calculation_properties();
+    wb.calc.iterative = options.iterate();
+    wb.calc.set_max_iterations(options.iterate_count());
+    wb.calc.set_max_change(options.iterate_delta());
+    let sheets = b.wb.sheet_collection();
+    let mut id = 0;
+    wb.sheets = sheets.iter().map(|ws| Arc::new(layout(ws, &mut id))).collect();
+    // Names: those of the workbook, and those umya-spreadsheet keeps with
+    // the sheet they refer to (of the sheet only when they say so).
+    let mut seen: HashSet<(String, Option<usize>)> = HashSet::new();
+    let global = b.wb.defined_names().iter().map(|d| (None, d));
+    let local = sheets.iter().enumerate().flat_map(|(i, ws)| ws.defined_names().iter().map(move |d| (d.has_local_sheet_id().then_some(i), d)));
+    for (scope, d) in global.chain(local) {
+        let name = d.name();
+        if name.is_empty() || name.to_ascii_lowercase().starts_with("_xlnm.") || !seen.insert((name.to_lowercase(), scope)) {
+            continue;
+        }
+        wb.names.push(gm::DefinedName { name: name.to_string(), scope, formula: fmla::from_file(&d.address()), comment: String::new(), hidden: d.hidden() });
+    }
+    wb
+}
+
 impl Engine {
     fn build(b: &Book) -> Engine {
-        let mut wb = gm::Workbook::new();
-        wb.date_system = if b.date1904 { DateSystem::D1904 } else { DateSystem::D1900 };
         let sheets = b.wb.sheet_collection();
-        let mut id = 0;
-        wb.sheets = sheets.iter().map(|ws| Arc::new(layout(ws, &mut id))).collect();
-        // Names: those of the workbook, and those umya-spreadsheet keeps with
-        // the sheet they refer to (of the sheet only when they say so).
-        let mut seen: HashSet<(String, Option<usize>)> = HashSet::new();
-        let global = b.wb.defined_names().iter().map(|d| (None, d));
-        let local = sheets.iter().enumerate().flat_map(|(i, ws)| ws.defined_names().iter().map(move |d| (d.has_local_sheet_id().then_some(i), d)));
-        for (scope, d) in global.chain(local) {
-            let name = d.name();
-            if name.is_empty() || name.to_ascii_lowercase().starts_with("_xlnm.") || !seen.insert((name.to_lowercase(), scope)) {
-                continue;
-            }
-            wb.names.push(gm::DefinedName { name: name.to_string(), scope, formula: fmla::from_file(&d.address()), comment: String::new(), hidden: d.hidden() });
-        }
-
-        let mut e = Engine { wb, calc: gridcraft_calc::Calc::new(), skipped: BTreeMap::new(), areas: vec![BTreeMap::new(); sheets.len()], fresh: Vec::new() };
+        let mut e = Engine { wb: outline(b), calc: gridcraft_calc::Calc::new(), skipped: BTreeMap::new(), areas: vec![BTreeMap::new(); sheets.len()], fresh: Vec::new() };
         e.calc.seed(seed());
         let mut formulas: Vec<(Key, Kind)> = Vec::new();
         // The values of the cells array formulas fill (other than their first
@@ -732,7 +824,7 @@ fn has_formulas(b: &Book) -> bool {
 /// the results of the formulas and the cells array formulas fill. Returns how
 /// many cells changed.
 fn store(b: &mut Book) -> usize {
-    let Book { wb, calc, .. } = b;
+    let Book { wb, calc, areas: written, .. } = b;
     let Some(e) = calc.get_mut().as_deref_mut() else { return 0 };
     let Engine { wb: model, areas, .. } = e;
     let mut changed = 0;
@@ -792,7 +884,11 @@ fn store(b: &mut Book) -> usize {
                 c.cell_value_mut().set_formula_obj(f);
             }
         }
-        *areas = sh.spill_ranges.clone();
+        if *areas != sh.spill_ranges {
+            // The ranges of the formulas changed: read again before the next write.
+            written.remove(ws.name());
+            *areas = sh.spill_ranges.clone();
+        }
     }
     changed
 }
@@ -934,7 +1030,11 @@ pub fn calc_cell(b: &Book, sheet: &str, r: &str) -> Result<String> {
         _ if circular(&sh.value(at)) => sh.value(at),
         // An array formula's own cell shows the first of its values.
         Some(f) if f.array.is_none() => match f.expr_arc() {
-            Some(expr) => e.eval_value(si, at, &expr),
+            Some(expr) => match e.eval_value(si, at, &expr) {
+                // Several values with something in their way: the formula cannot spill.
+                Value::Array(_) if sh.value(at) == Value::Error(CellError::Spill) => sh.value(at),
+                v => v,
+            },
             None => sh.value(at),
         },
         _ => sh.value(at),
@@ -1096,6 +1196,97 @@ pub fn eval_area(b: &Book, sheet: &str, formula: &str) -> Option<(u32, u32, u32,
         return None;
     }
     Some((r.start.col + 1, r.start.row + 1, r.end.col + 1, r.end.row + 1))
+}
+
+// ---- formulas as scripts write and read them ----
+
+/// What the formulas scripts write and read are checked against: the
+/// workbook's sheets, names and tables, without its cells.
+pub(crate) struct Shape {
+    wb: gm::Workbook,
+    names: Names,
+}
+
+fn shape(b: &Book) -> RefMut<'_, Shape> {
+    let mut slot = b.shape.borrow_mut();
+    if slot.is_none() {
+        *slot = Some(Box::new(Shape { wb: outline(b), names: Names::default() }));
+    }
+    RefMut::map(slot, |s| &mut **s.as_mut().expect("the shape was just made"))
+}
+
+/// Writes a formula into a cell as Excel takes one that is typed in: a
+/// formula that gives several values (`FILTER(...)`, `A1:A3*2`) is a dynamic
+/// array formula and spills, and an `@` asks for one value of several. The
+/// file holds it as Excel saves it: an array formula with dynamic-array
+/// metadata when evaluating it the old way (implicit intersection) would
+/// give something else, a plain formula otherwise. An empty text removes the
+/// formula and the value.
+pub(crate) fn set_formula(b: &mut Book, sheet: &str, col: u32, row: u32, text: &str) -> Result<()> {
+    let body = text.trim();
+    let body = body.strip_prefix('=').unwrap_or(body);
+    let saved = (!body.trim().is_empty()).then(|| file_form(b, sheet, col, row, body));
+    let c = b.cell_mut(sheet, col, row)?;
+    // The value the cell had is not the formula's.
+    c.cell_value_mut().set_blank();
+    let Some((text, dynamic)) = saved else { return Ok(()) };
+    if dynamic {
+        // Its range is its own cell until it is calculated (store), here or
+        // by Excel when it opens the file.
+        let mut f = CellFormula::default();
+        f.set_text(text);
+        f.set_formula_type(CellFormulaValues::Array);
+        f.set_dynamic_array(true);
+        c.cell_value_mut().set_formula_obj(f);
+    } else {
+        c.set_formula(text);
+    }
+    // Excel works the results out when it opens the file.
+    b.wb.calculation_properties_mut().set_full_calc_on_load(true);
+    Ok(())
+}
+
+/// A formula a script wrote as the file holds it, and whether it is a
+/// dynamic array formula there.
+fn file_form(b: &Book, sheet: &str, col: u32, row: u32, body: &str) -> (String, bool) {
+    // A prefix the script wrote itself (`_xlfn.`) says nothing about the formula.
+    let Ok(expr) = gridcraft_formula::parse(&formula_from_file(body)) else { return (formula_to_file(body), false) };
+    let mut shape = shape(b);
+    let Shape { wb, names } = &mut *shape;
+    let Some(si) = wb.sheet_index(sheet) else { return (formula_to_file(body), false) };
+    let at = CellRef::new(row.saturating_sub(1), col.saturating_sub(1));
+    match save_as(wb, si, at, &gm::Formula::from_expr(expr), FUNCTIONS, names) {
+        SaveAs::Unchanged => (formula_to_file(body), false),
+        // Every `@` is one Excel implies in a formula without the metadata.
+        SaveAs::Legacy(e) => (fmla::to_file(&gm::Formula::from_expr(e)), false),
+        SaveAs::Dynamic => (formula_to_file(body), true),
+    }
+}
+
+/// The formula of a cell as Excel shows it, and as a script would write it
+/// to get the same (no `=`): without the prefixes of the file, and with `@`
+/// where a formula saved without dynamic-array metadata takes one value of
+/// several (`@A1:A5`, `@Names`). None when the cell has no formula.
+pub(crate) fn formula_shown(b: &Book, sheet: &str, col: u32, row: u32) -> Option<String> {
+    let c = b.sheet(sheet).ok()?.cell((col, row))?;
+    let f = c.formula_obj()?;
+    if f.text().trim().is_empty() {
+        return None;
+    }
+    let shown = formula_from_file(f.text());
+    // Array formulas work with every value as they are written.
+    if f.dynamic_array() || *f.formula_type() != CellFormulaValues::Normal && *f.formula_type() != CellFormulaValues::Shared {
+        return Some(shown);
+    }
+    let formula = gm::Formula::new(&shown);
+    if formula.expr.is_none() {
+        return Some(shown);
+    }
+    let mut shape = shape(b);
+    let Shape { wb, names } = &mut *shape;
+    let Some(si) = wb.sheet_index(sheet) else { return Some(shown) };
+    let at = CellRef::new(row.saturating_sub(1), col.saturating_sub(1));
+    Some(legacy_reading(wb, si, at, &formula, FUNCTIONS, names).map_or(shown, |read| read.text))
 }
 
 // ---- formulas as files spell them ----

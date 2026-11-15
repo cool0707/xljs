@@ -126,6 +126,8 @@ strip = true
 panic = "unwind"
 
 # umya-spreadsheet with fixes xljs needs (alignment shrinkToFit, inline rich
-# text): the `xljs` branch of the fork, based on the 3.1.1 release.
+# text, array formulas): the `xljs` branch of the fork, based on the 3.1.1
+# release. Until its branch with the array formulas and the cell metadata of
+# dynamic arrays is merged into `xljs`, that branch.
 [patch.crates-io]
-umya-spreadsheet = { git = "https://github.com/cool0707/umya-spreadsheet", branch = "xljs" }
+umya-spreadsheet = { git = "https://github.com/cool0707/umya-spreadsheet", branch = "ccr-0c05acf0-7ca6lz" }

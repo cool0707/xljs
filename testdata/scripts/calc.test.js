@@ -126,4 +126,90 @@ const arr = saved.sheet("配列");
 deepEqual(arr.toArrays().map((row) => row[4] ?? null), [3, 4, 5, null, null], "FILTER fills three cells");
 equal(saved.sheet("表").cell("F1").value, 5500, "the table's column by name");
 
+// A formula that gives several values spills, as when it is typed into Excel.
+const sb = workbooks.create();
+const sp = sb.addSheet("スピル");
+sp.write([
+  ["品名", "数量"],
+  ["りんご", 3],
+  ["みかん", 0],
+  ["ぶどう", 2],
+]);
+sp.cell("D1").formula = "=FILTER(A2:B4,B2:B4>0)";
+sp.cell("G1").formula = "=B2:B4*10";
+sp.cell("I1").formula = "=SUM(B2:B4*10)";
+sp.cell("I2").formula = "=@B2:B4";
+equal(sp.cell("D1").calc(), "りんご", "the first of its values");
+equal(sp.cell("D2").value, null, "not laid out yet");
+r = sb.calculate();
+equal(r.formulas, 4);
+deepEqual(sp.range("D1:E3").values, [["りんご", 3], ["ぶどう", 2], [null, null]]);
+deepEqual(sp.range("G1:G4").values.flat(), [30, 0, 20, null]);
+equal(sp.cell("I1").value, 50, "every value of the range, not the one of the row");
+equal(sp.cell("I2").value, 3, "@: the value of the formula's row");
+equal(sp.cell("I2").formula, "=@B2:B4");
+equal(sp.cell("D2").formula, null, "a spilled value is a value");
+// The result follows the data: it grows and shrinks.
+sp.cell("B3").value = 5;
+sb.calculate();
+deepEqual(sp.range("D1:E4").values, [["りんご", 3], ["みかん", 5], ["ぶどう", 2], [null, null]]);
+sp.cell("B2").value = 0;
+sp.cell("B3").value = 0;
+sb.calculate();
+deepEqual(sp.range("D1:E3").values, [["ぶどう", 2], [null, null], [null, null]]);
+// A value in the way: #SPILL! (cell.value has the #VALUE! files hold for it).
+sp.cell("B2").value = 3;
+sp.cell("D2").value = "x";
+equal(sp.cell("D1").calc(), "#SPILL!");
+sb.calculate();
+deepEqual(sp.range("D1:D3").values.flat(), ["#VALUE!", "x", null]);
+sp.cell("D2").value = null;
+sb.calculate();
+deepEqual(sp.range("D1:E3").values, [["りんご", 3], ["ぶどう", 2], [null, null]]);
+// The file has the formulas as Excel saves them: opened again they spill the same.
+sb.save("spill.xlsx");
+const sb2 = workbooks.open("spill.xlsx");
+const sp2 = sb2.sheet("スピル");
+equal(sp2.cell("D1").formula, "=FILTER(A2:B4,B2:B4>0)");
+equal(sp2.cell("I2").formula, "=@B2:B4");
+deepEqual(sp2.range("D1:E3").values, [["りんご", 3], ["ぶどう", 2], [null, null]]);
+equal(sb2.calculate().changed, 0, "the same results");
+sp2.cell("B3").value = 1;
+sb2.calculate();
+deepEqual(sp2.range("D1:E3").values, [["りんご", 3], ["みかん", 1], ["ぶどう", 2]]);
+// Writing over the formula takes the values it laid out with it.
+sp2.cell("D1").value = "なし";
+deepEqual(sp2.range("D1:E3").values, [["なし", null], [null, null], [null, null]]);
+// The spills of a workbook Excel saved are still spills after a save here.
+saved.save("calc-saved.xlsx");
+const resaved = workbooks.open("calc-saved.xlsx");
+const arr2 = resaved.sheet("配列");
+equal(arr2.cell("E1").formula, "=FILTER(A1:A5,B1:B5>20)");
+equal(arr2.cell("I3").formula, "=@A1:A5", "saved without the metadata: one value, as Excel shows it");
+arr2.cell("B1").value = 21;
+resaved.calculate();
+deepEqual(arr2.range("E1:E5").values.flat(), [1, 3, 4, 5, null]);
+
+// Numbers in kanji: NUMBERSTRING and the [DBNum] number formats.
+const kj = sb.addSheet("漢数字");
+kj.cell("A1").value = 12345;
+kj.cell("A2").value = new Date(2026, 9, 7);
+[
+  ["=NUMBERSTRING(A1,1)", "一万二千三百四十五"],
+  ["=NUMBERSTRING(A1,2)", "壱萬弐阡参百四拾伍"],
+  ["=NUMBERSTRING(A1,3)", "一二三四五"],
+  ['=TEXT(A1,"[DBNum1]G/標準")', "一万二千三百四十五"],
+  ['=TEXT(A1,"[DBNum3]#,##0")&"円"', "１２,３４５円"],
+  ['=TEXT(A2,"[DBNum1]ggge年m月d日")', "令和八年十月七日"],
+].forEach(([f, want], i) => {
+  kj.cell(i + 1, 3).formula = f;
+  equal(kj.cell(i + 1, 3).calc(), want, f);
+});
+equal(sb.calculate().skipped.length, 0, "NUMBERSTRING is calculated");
+kj.cell("A1").style({ numberFormat: "[DBNum2][$-411]G/標準" });
+equal(kj.cell("A1").text, "壱萬弐阡参百四拾伍");
+equal(kj.cell("A1").getStyle().numberFormat, "[DBNum2][$-411]General", "as the file holds it");
+kj.cell("A2").style({ numberFormat: '[DBNum1]yyyy"年"m"月"d"日"' });
+equal(kj.cell("A2").text, "二〇二六年十月七日");
+
 console.log("calc ok");
