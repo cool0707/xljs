@@ -1,11 +1,15 @@
 //! Pictures placed in cells (Excel's "Place in Cell"). Excel keeps them as
-//! rich values, which umya-spreadsheet does not read: the cell is an error
-//! (`t="e"`, `#VALUE!`) with a value metadata index (`vm`), metadata.xml
-//! maps it to a rich value (xl/richData/rdrichvalue.xml), whose structure
+//! rich values: the cell is an error (`t="e"`, `#VALUE!`) with a value
+//! metadata index (`vm`), metadata.xml maps it to a rich value
+//! (xl/richData/rdrichvalue.xml), whose structure
 //! (rdrichvaluestructure.xml) names the key `_rvRel:LocalImageIdentifier`,
 //! an index into richValueRel.xml, whose relationship is the picture in
 //! xl/media. Formulas that refer to such a cell (`=B2`) show the picture
 //! too; Excel saves them with a `vm` of their own.
+//!
+//! umya-spreadsheet (the fork) keeps the `vm` of the cells and writes the
+//! rich values back as they were, without looking into them; what a `vm`
+//! shows is read here.
 
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -27,14 +31,20 @@ pub struct CellImage {
 #[derive(Debug, Clone, Default)]
 pub struct CellImages {
     pub images: Vec<CellImage>,
-    /// Sheet name -> (column, row) -> index in images.
-    pub cells: HashMap<String, HashMap<(u32, u32), usize>>,
+    /// The picture (index in images) of each block of value metadata: what
+    /// the `vm` of a cell, a 1-based index, refers to.
+    vm: Vec<Option<usize>>,
 }
 
 impl CellImages {
-    /// The picture placed in a cell when the file was opened.
-    pub fn at(&self, sheet: &str, col: u32, row: u32) -> Option<usize> {
-        self.cells.get(sheet)?.get(&(col, row)).copied()
+    /// The picture placed in a cell: its value metadata refers to one, and
+    /// the cell still is the error that stands for it (a value or a formula
+    /// a script writes takes the metadata off, Book::cell_mut).
+    pub fn of(&self, cell: &umya_spreadsheet::Cell) -> Option<usize> {
+        if !matches!(cell.raw_value(), umya_spreadsheet::CellRawValue::Error(_)) {
+            return None;
+        }
+        self.vm.get((cell.value_meta_index() as usize).checked_sub(1)?).copied().flatten()
     }
 
     pub fn collect(data: &[u8]) -> CellImages {
@@ -127,15 +137,7 @@ impl CellImages {
                     .collect()
             })
             .unwrap_or_default();
-        if vm.iter().all(|v| v.is_none()) {
-            return out;
-        }
-        super::xlsx_print::for_each_sheet(data, |_, name, sheet| {
-            let cells = vm_cells(sheet, &vm);
-            if !cells.is_empty() {
-                out.cells.insert(name.to_string(), cells);
-            }
-        });
+        out.vm = vm;
         out
     }
 }
@@ -168,43 +170,84 @@ pub(super) fn image_mime(part: &str) -> Option<&'static str> {
     })
 }
 
-/// The cells of a sheet's XML with a vm that is a picture.
-fn vm_cells(xml: &[u8], vm: &[Option<usize>]) -> HashMap<(u32, u32), usize> {
-    static CELL: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"<c\b([^>]*\bvm="[^"]*"[^>]*)>"#).unwrap());
-    static ATTR: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| regex::Regex::new(r#"\b(r|vm)="([^"]*)""#).unwrap());
-    let s = String::from_utf8_lossy(xml);
-    let mut out = HashMap::new();
-    if !s.contains(" vm=\"") {
-        return out;
-    }
-    for c in CELL.captures_iter(&s) {
-        let (mut r, mut v) = (None, None);
-        for a in ATTR.captures_iter(&c[1]) {
-            match &a[1] {
-                "r" => r = Some(a[2].to_string()),
-                _ => v = a[2].parse::<usize>().ok(),
-            }
-        }
-        if let (Some(r), Some(v)) = (r, v)
-            && let Some(Some(img)) = v.checked_sub(1).and_then(|i| vm.get(i))
-            && let Ok(pos) = super::xlsx::parse_ref(&r)
-        {
-            out.insert(pos, *img);
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
+    use std::io::Read;
+
     use super::*;
+    use crate::api::xlsx::{Book, open_bytes};
+
+    fn book() -> (Vec<u8>, Book) {
+        let data = std::fs::read(crate::testutil::repo_path("testdata/xlsx/cellimages.xlsx")).unwrap();
+        let b = open_bytes(&data, String::new()).unwrap();
+        (data, b)
+    }
+
+    fn parts(data: &[u8]) -> HashMap<String, Vec<u8>> {
+        let mut zr = zip::ZipArchive::new(Cursor::new(data)).unwrap();
+        (0..zr.len())
+            .map(|i| {
+                let mut f = zr.by_index(i).unwrap();
+                let mut v = Vec::new();
+                f.read_to_end(&mut v).unwrap();
+                (f.name().to_string(), v)
+            })
+            .collect()
+    }
+
+    fn picture(b: &Book, sheet: &str, at: (u32, u32)) -> Option<usize> {
+        b.cell_images.of(b.sheet(sheet).unwrap().cell(at)?)
+    }
 
     #[test]
-    fn cells_with_value_metadata() {
-        let xml = br#"<worksheet><sheetData><row r="2"><c r="A2" t="s"><v>0</v></c><c r="B2" t="e" vm="1"><v>#VALUE!</v></c><c r="C2" vm="2" t="e"/><c r="D2" t="e" vm="3"><f>B2</f><v>#VALUE!</v></c></row></sheetData></worksheet>"#;
-        let cells = vm_cells(xml, &[Some(0), None, Some(0)]);
-        assert_eq!(cells.len(), 2);
-        assert_eq!(cells.get(&(2, 2)), Some(&0));
-        assert_eq!(cells.get(&(4, 2)), Some(&0));
+    fn pictures_by_the_value_metadata_of_the_cells() {
+        let (_, mut b) = book();
+        assert_eq!(b.cell_images.images.len(), 3);
+        assert_eq!(picture(&b, "商品", (2, 2)), Some(0));
+        assert_eq!(picture(&b, "商品", (2, 4)), Some(2));
+        assert_eq!(picture(&b, "商品", (1, 2)), None);
+        assert_eq!(picture(&b, "参照", (1, 2)), Some(1));
+        // They go with their cells.
+        b.sheet_mut("商品").unwrap().insert_new_row(3, 2);
+        assert_eq!(picture(&b, "商品", (2, 2)), Some(0));
+        assert_eq!(picture(&b, "商品", (2, 3)), None);
+        assert_eq!(picture(&b, "商品", (2, 5)), Some(1));
+        assert_eq!(picture(&b, "商品", (2, 6)), Some(2));
+        // A value a script writes takes the picture off, an error too.
+        b.cell_mut("商品", 2, 5).unwrap().set_value_string("x");
+        b.cell_mut("商品", 2, 6).unwrap().set_error("#N/A");
+        assert_eq!(picture(&b, "商品", (2, 5)), None);
+        assert_eq!(picture(&b, "商品", (2, 6)), None);
+    }
+
+    #[test]
+    fn saved_with_the_workbook() {
+        let (data, mut b) = book();
+        let (before, after) = (parts(&data), parts(&b.to_bytes().unwrap()));
+        for name in before.keys().filter(|n| n.starts_with("xl/richData/") || n.starts_with("xl/media/")) {
+            if name.ends_with(".rels") {
+                assert!(after.contains_key(name), "{name}");
+            } else {
+                assert_eq!(after.get(name), before.get(name), "{name}");
+            }
+        }
+        let text = |name: &str| String::from_utf8_lossy(&after[name]).into_owned();
+        assert!(text("xl/worksheets/sheet1.xml").contains(r#"<c r="B2" t="e" vm="1"><v>#VALUE!</v></c>"#));
+        assert!(text("xl/metadata.xml").contains(r#"<valueMetadata count="3">"#));
+        assert!(text("xl/_rels/workbook.xml.rels").contains("richData/rdrichvalue.xml"));
+        assert!(text("[Content_Types].xml").contains("/xl/richData/richValueRel.xml"));
+        // Read again, the cells show what they did.
+        let again = open_bytes(&b.to_bytes().unwrap(), String::new()).unwrap();
+        assert_eq!(again.cell_images.images, b.cell_images.images);
+        for (sheet, at) in [("商品", (2, 2)), ("商品", (4, 2)), ("商品", (2, 3)), ("商品", (2, 4)), ("参照", (1, 2)), ("参照", (2, 2))] {
+            assert_eq!(picture(&again, sheet, at), picture(&b, sheet, at), "{sheet} {at:?}");
+        }
+
+        // With no picture left in a cell, the rich values are not written.
+        for (sheet, col, row) in [("商品", 2, 2), ("商品", 2, 3), ("商品", 2, 4), ("商品", 4, 2), ("商品", 4, 3), ("参照", 1, 2)] {
+            b.cell_mut(sheet, col, row).unwrap().cell_value_mut().set_blank();
+        }
+        let after = parts(&b.to_bytes().unwrap());
+        assert!(!after.keys().any(|n| n.starts_with("xl/richData/") || n.starts_with("xl/media/") || n == "xl/metadata.xml"), "{:?}", after.keys());
     }
 }
