@@ -45,7 +45,7 @@ PDF の編集（グローバルの `pdf`: 結合・ページの削除・挿入�
 | `testdata/scripts/*.test.{js,ts}` | モック UI で実行される結合テスト（`src/engine/tests.rs`）。`<name>.answers.json` がモック応答 |
 | `examples/` | サンプル。`xljs init` の d.ts と jsconfig.json で tsc の型チェックが通る状態を保つ（CI の ubuntu で検査）。試すためのデータは `examples/data/`（`tools/examples/make_data.py` で生成。構成の違いが要らないサンプルは同じファイルを使う）。配布 zip には `prompt/` と並べて `examples/` として入る |
 | `tools/gui/` | Windows 実機での GUI 自動操作・スクリーンショット（`XljsGui.psm1`、`smoke.ps1`、`stay-awake.ps1`）。`docs/design/gui-testing.md` 参照 |
-| `tools/excel-verify/` | Windows 実機の Excel（COM）で、xljs の xlsx の読み書き・数式の計算・表示形式を確かめる（`run.ps1`）。`docs/design/excel-verify.md` 参照 |
+| `tools/excel-verify/` | Windows 実機の Excel（COM）で、xljs の xlsx の読み書き・数式の計算・表示形式（`run.ps1`）と、保存でセル以外の機能が残るか（`features.ps1`）を確かめる。`docs/design/excel-verify.md`・`save-fidelity.md` 参照 |
 | `docs/ai/` | AI チャット向けのプロンプトとリファレンス。`ai_docs` テストがコードブロックの構文と長さを検査 |
 | `docs/design/` | 機能ごとの設計メモ（開発者・Claude Code 向け） |
 

@@ -8,7 +8,8 @@ xljs の xlsx の扱いは、それまで LibreOffice との突き合わせで�
 
 ```
 cargo build
-pwsh -File tools/excel-verify/run.ps1      # 各項目の PASS / FAIL。差の詳細は %TEMP%\xljs-excel-verify\*.txt
+pwsh -File tools/excel-verify/run.ps1        # 各項目の PASS / FAIL。差の詳細は %TEMP%\xljs-excel-verify\*.txt
+pwsh -File tools/excel-verify/features.ps1   # セル以外の機能を 1 つずつ（docs/design/save-fidelity.md）。-Features sparkline,pivot で絞れる
 ```
 
 | ファイル | 役割 |
@@ -22,6 +23,7 @@ pwsh -File tools/excel-verify/run.ps1      # 各項目の PASS / FAIL。差の�
 | `make_builtin.py` | 組み込みの表示形式 0〜81 を定義なしで参照するブック（Excel が保存するのと同じ形） |
 | `write.js` | xljs でいろいろ書いたブック |
 | `open-test.ps1` | Excel で開けるかだけを見る（開けないファイルは修復のダイアログを出さずに失敗する） |
+| `features.ps1` | セル以外の機能を 1 つずつ入れたブックを Excel に作らせ（`excel-make-features.ps1`）、xljs で保存したものを、開けるか・Excel から見て同じか（`excel-features.ps1`）・部品と要素（`partdiff.py`）で比べる |
 
 項目は、数式の計算（`calc`・`calc-saved`）、Excel が作ったブックの読み込み（`read`・`builtin-formats`）、xljs が書いたブック（`write`・`write-recalc`）、
 開いてそのまま保存したブックと元のブックの比較（`roundtrip-*`。セルと図形 `shapes-*`）。
