@@ -6,7 +6,8 @@
     "ja"
   ],
   "excel": {
-    "font": "游ゴシック"
+    "font": "游ゴシック",
+    "dbcs": true
   },
   "messages": {
     "cli.usage": "xljs - Excel/CSV スクリプトランナー\n\n使い方:\n  xljs [オプション] <script.xljs|script.js|script.ts> [引数...]\n  xljs pack <script> [-o 出力.exe]   スクリプトを埋め込んだ exe を作成\n  xljs assoc [remove]                拡張子 .xljs をこの exe に関連付け（実行・編集・exe 作成）\n  xljs check <script>                構文と import を検査（実行しない）\n  xljs test <script|フォルダ>        テストケース (.xljs/tests) を再生して結果を比べる\n  xljs init [フォルダ]               型定義 (xljs.d.ts) と jsconfig.json を作成\n  xljs dev [script|フォルダ]         開発モード（AI チャット・差分・実行・履歴）\n  xljs vba <book.xlsm>... [-o 出力.txt]  マクロブックの VBA コードを 1 つのテキストにまとめる\n  xljs repair <ファイル.db> [--force]  SQLite データベースを検査し、壊れていれば修復\n  xljs version                       バージョンを表示\n\nオプション:\n  --dev                              スクリプトを開発モードで開く（xljs dev と同じ）\n  --ui=auto|native|console|mock      UI の種類（既定: auto）\n  --ui-answers=<file.json>           mock UI の応答ファイル\n  --lang=auto|{0}                  メッセージの言語（既定: システムの言語）\n  --debug[=script|window]            デバッグ。script = デバッグウィンドウでスクリプトを実行\n                                     （WebView2 の開発者ツールでブレークポイント・ステップ実行）\n                                     window = 画面の開発者ツール（F12）だけを有効にする\n  --watchdog=<秒>|on|off             応答しないまま指定の秒数を過ぎたスクリプトを中止するか尋ねる\n                                     （無限ループ対策。既定: ネイティブ UI では 15 秒、それ以外は off）\n  --stop-key=<キー>|on|off           実行中にキーが押されたらスクリプトを中止するか尋ねる\n                                     （esc, f12, ctrl+shift+q など。Windows のみ。\n                                     既定: ネイティブ UI では esc、それ以外は off）\n\n環境変数 XLJS_UI / XLJS_UI_ANSWERS / XLJS_LANG / XLJS_DEBUG / XLJS_WATCHDOG / XLJS_STOP_KEY でも指定できます（埋め込み exe 向け）。\n",
@@ -925,6 +926,13 @@
     "xlsx.invalidBorder": "罫線の種類 \"{0}\" が不正です",
     "xlsx.invalidRange": "セル範囲 \"{0}\" が不正です",
     "xlsx.invalidOption": "{0} の指定 \"{1}\" が不正です",
+    "xlsx.calcSkip.syntax": "数式を読み取れません（{0}）",
+    "xlsx.calcSkip.function": "関数 {0} は計算できません",
+    "xlsx.calcSkip.name": "名前 {0} がブックに定義されていません",
+    "xlsx.calcSkip.external": "ほかのブックを参照している数式です",
+    "xlsx.calcSkip.dataTable": "データテーブル（What-If 分析）は計算できません",
+    "xlsx.calcSkip.large": "配列数式の範囲が大きすぎます",
+    "xlsx.calcSkip.circular": "循環参照です（数式が自分自身の結果を参照しています）",
     "os.error": "{0}: {1}: {2}",
     "os.op.open": "開けません",
     "os.op.read": "読み込めません",

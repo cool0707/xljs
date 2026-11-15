@@ -5518,6 +5518,8 @@
       native.xlsxSave(this._h, dest === undefined || dest === null ? "" : toPath(dest, "save()"));
       return this;
     }
+    /** Calculates every formula and stores the results in the cells: { formulas, changed, skipped }. */
+    calculate() { return JSON.parse(native.xlsxCalculate(this._h)); }
     /** The sheets as they would be printed, as an HTML document (charts are empty boxes). */
     toHtml(options) { return printLayout(this, options).html; }
 

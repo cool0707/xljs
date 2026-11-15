@@ -110,7 +110,7 @@ fn sheet(b: &Book, ws: &umya_spreadsheet::Worksheet, sample_rows: usize) -> Stri
     cells.sort_by_key(|c| (c.coordinate().row_num(), c.coordinate().col_num()));
     for c in cells {
         let (col, row) = (c.coordinate().col_num(), c.coordinate().row_num());
-        let text = c.formula().to_string();
+        let text = super::xlsx_calc::formula_from_file(c.formula());
         let si = c.formula_shared_index();
         let key = if text.is_empty() {
             match si.and_then(|i| shared.get(&i)) {

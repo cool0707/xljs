@@ -76,7 +76,8 @@ fn book_events(file: &str, data: &[u8], out: &mut Vec<Value>) -> bool {
         list.sort_by_key(|c| (c.coordinate().row_num(), c.coordinate().col_num()));
         for c in list {
             let text = crate::api::xlsx::cell_text(&b, c);
-            let formula = c.formula().to_string();
+            // As Excel shows it: without the prefixes files need (_xlfn.).
+            let formula = crate::api::xlsx_calc::formula_from_file(c.formula());
             if text.is_empty() && formula.is_empty() {
                 continue;
             }

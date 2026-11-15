@@ -2114,9 +2114,18 @@ declare global {
     value: CellValue;
     /** 表示形式を適用した文字列 */
     readonly text: string;
-    /** "=SUM(A1:A3)" のような数式。なければ null */
+    /**
+     * "=SUM(A1:A3)" のような数式。なければ null（null を代入すると数式と値を消す）。
+     * XLOOKUP・IFS・TEXTJOIN などの新しい関数も Excel に表示されるとおりに書く
+     * （ファイルに必要な接頭辞 `_xlfn.` は保存用に自動で付き、読むときは付かない）。
+     * 書いた数式の結果は `book.calculate()` を呼ぶまで `value` に入らない（Excel で開けば計算される）
+     */
     formula: string | null;
-    /** 数式を計算する（対応関数は一部） */
+    /**
+     * このセルの数式を、いまのセルの値で計算した結果を文字列で返す（標準の表示形式で Excel が表示する形。
+     * エラーは "#DIV/0!" など）。結果はセルに保存しない。数式でないセルは値の文字列。
+     * 計算できない数式（`book.calculate()` の `skipped` を参照）は保存されている値、なければ "#NAME?" など
+     */
     calc(): string;
     /** 書式を適用する（既存の書式にマージ） */
     style(style: CellStyle, options?: StyleOptions): this;
@@ -2291,6 +2300,19 @@ declare global {
     removeSheet(sheet: string | Worksheet): void;
     /** 保存。省略時は開いたファイルに上書き */
     save(dest?: PathLike): this;
+    /**
+     * ブックのすべての数式を計算し直し、結果を各セルに入れる（Excel の「再計算」）。
+     * セルの値を書き換えたあと・数式を書いたあとに、数式の結果を `value` や `toObjects()` で読む前、
+     * 計算済みの値をファイルに入れて保存したいときに呼ぶ（`toPdf()` は書き換えの影響を受ける数式を自動で計算する）。
+     * 計算できない数式（マクロやアドインの関数、ほかのブックへの参照など）は保存されていた値のまま残し、
+     * 戻り値の `skipped` で知らせる。
+     *
+     *     sheet.cell("B2").value = 30;
+     *     const r = book.calculate();
+     *     console.log(sheet.cell("B10").value); // =SUM(B2:B9) の新しい結果
+     *     if (r.skipped.length) console.log("計算できなかった数式:", r.skipped.map((s) => `${s.sheet}!${s.address}`).join(", "));
+     */
+    calculate(): CalcResult;
     toArrayBuffer(): ArrayBuffer;
     toBlob(): Blob;
     /** シート（既定: 非表示でないすべて。options.sheets で指定）を Excel で印刷したときのように 1 つの PDF に書き出す。詳しくは Worksheet.toPdf */
@@ -2302,6 +2324,35 @@ declare global {
     close(): void;
     /** ブックの既定フォント */
     readonly defaultFont: { name: string; size: number };
+  }
+
+  /** `book.calculate()` の結果 */
+  interface CalcResult {
+    /** 計算した数式の数 */
+    formulas: number;
+    /** 保存されていた値から変わったセルの数（数式の結果と、配列数式が値を入れたセル） */
+    changed: number;
+    /** 計算できず、保存されていた値のまま残した数式 */
+    skipped: CalcSkipped[];
+  }
+
+  /** 計算できなかった数式 */
+  interface CalcSkipped {
+    sheet: string;
+    /** セル番地（"D5"） */
+    address: string;
+    /** "=MYFUNC(A1)" */
+    formula: string;
+    /**
+     * 理由。"function" = 計算できない関数（マクロ・アドインの関数、PHONETIC、CUBE 関数など）、"name" = ブックに定義されていない名前、
+     * "external" = ほかのブックへの参照、"circular" = 循環参照（その結果を参照する数式も）、"dataTable" = データテーブル（What-If 分析）、
+     * "large" = 範囲が大きすぎる配列数式、"syntax" = 読み取れない数式
+     */
+    reason: "function" | "name" | "external" | "circular" | "dataTable" | "large" | "syntax";
+    /** 関数名・名前（reason が "function"・"name" のとき） */
+    name?: string;
+    /** 利用者に見せられる説明（"関数 MYFUNC は計算できません"） */
+    message: string;
   }
 
   interface VBAModule {
