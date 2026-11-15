@@ -12,9 +12,15 @@
   and table-file-list.js.
 - 資料/*.pdf: three short PDFs for pdf-merge-stamp.js (IPA Gothic, subset
   embedded).
+- 積算.xlsx: a cost estimate for xlsx-calc-estimate.js. 工事一覧 (one row
+  per job), 計算 (input cells and the breakdown as formulas: direct cost,
+  temporary works, site and general overhead, tax) and 率表 (the rates as
+  two tables the formulas look up with structured references). The rates
+  are made up.
 
-    python3 tools/examples/make_data.py   (needs openpyxl, reportlab and
-                                           the IPA Gothic font)
+    python3 tools/examples/make_data.py [name...]   (needs openpyxl,
+        reportlab and the IPA Gothic font; names: sales report gantt csvs
+        pdfs estimate, all by default)
 
 The data is fixed (seeded), so running it again gives the same values.
 """
@@ -22,6 +28,7 @@ import csv
 import datetime
 import os
 import random
+import sys
 
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, PieChart, Reference
@@ -253,9 +260,156 @@ def pdfs():
         c.save()
 
 
+def estimate():
+    from openpyxl.styles import Border, Side
+    from openpyxl.workbook.defined_name import DefinedName
+    from openpyxl.worksheet.datavalidation import DataValidation
+    from openpyxl.worksheet.table import Table, TableStyleInfo
+
+    wb = Workbook()
+    thin = Side(style="thin", color="808080")
+    box = Border(left=thin, right=thin, top=thin, bottom=thin)
+    head_fill = PatternFill("solid", fgColor="305496")
+    input_fill = PatternFill("solid", fgColor="FFF2CC")
+    total_fill = PatternFill("solid", fgColor="D9E1F2")
+
+    # ---- 工事一覧: 1 行が 1 件の工事。見出しは「計算」シートの入力欄の項目名と同じ ----
+    ws = wb.active
+    ws.title = "工事一覧"
+    head = ["工事番号", "工事名", "工種", "直接工事費", "工期"]
+    ws.append(head)
+    jobs = [
+        ("K-2601", "市民会館 外壁改修工事", "建築", 48_600_000, 5),
+        ("K-2602", "第二小学校 体育館新築工事", "建築", 312_000_000, 14),
+        ("K-2603", "市道 3 号線 舗装補修工事", "土木", 26_400_000, 3),
+        ("K-2604", "中央公園 護岸整備工事", "土木", 158_000_000, 9),
+        ("K-2605", "浄水場 受変電設備更新工事", "設備", 87_500_000, 7),
+        ("K-2606", "庁舎 空調設備改修工事", "設備", 9_800_000, 2),
+    ]
+    for j in jobs:
+        ws.append(list(j))
+    for r in range(2, ws.max_row + 1):
+        ws.cell(row=r, column=4).number_format = "#,##0"
+        ws.cell(row=r, column=5).number_format = '0"か月"'
+    style_header(ws, len(head))
+    for col, w in zip("ABCDE", [11, 30, 8, 15, 8]):
+        ws.column_dimensions[col].width = w
+    ws.freeze_panes = "A2"
+
+    # ---- 率表: 工種ごとの比率・率の式の係数と、一般管理費等率 ----
+    rt = wb.create_sheet("率表")
+    rt["A1"] = "工種別の比率と係数（サンプルの値。実際の積算基準ではない）"
+    rt["A1"].font = Font(name=FONT, bold=True)
+    rate_head = ["工種", "材料費比率", "労務費比率", "共通仮設係数", "共通仮設指数",
+                 "現場管理係数", "現場管理指数", "工期指数", "法定福利費率"]
+    rates = [
+        ("建築", 0.55, 0.32, 0.080, -0.10, 0.200, -0.12, 0.10, 0.155),
+        ("土木", 0.40, 0.35, 0.120, -0.12, 0.260, -0.13, 0.12, 0.160),
+        ("設備", 0.62, 0.28, 0.060, -0.09, 0.180, -0.11, 0.08, 0.150),
+    ]
+    for c, h in enumerate(rate_head, 1):
+        rt.cell(row=3, column=c, value=h)
+    for i, row in enumerate(rates):
+        for c, v in enumerate(row, 1):
+            cell = rt.cell(row=4 + i, column=c, value=v)
+            if c in (2, 3, 9):
+                cell.number_format = "0.0%"
+            elif c > 1:
+                cell.number_format = "0.000"
+    t = Table(displayName="率表", ref=f"A3:I{3 + len(rates)}")
+    t.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
+    rt.add_table(t)
+
+    rt["A9"] = "一般管理費等率（工事原価が「工事原価の下限」以上のときの率）"
+    rt["A9"].font = Font(name=FONT, bold=True)
+    rt["A10"], rt["B10"] = "工事原価の下限", "一般管理費等率"
+    bands = [(0, 0.140), (50_000_000, 0.120), (100_000_000, 0.110), (300_000_000, 0.100), (1_000_000_000, 0.090)]
+    for i, (lo, rate) in enumerate(bands):
+        rt.cell(row=11 + i, column=1, value=lo).number_format = "#,##0"
+        rt.cell(row=11 + i, column=2, value=rate).number_format = "0.0%"
+    t = Table(displayName="一般管理費率", ref=f"A10:B{10 + len(bands)}")
+    t.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
+    rt.add_table(t)
+    for col, w in zip("ABCDEFGHI", [16, 14, 12, 13, 13, 13, 13, 10, 13]):
+        rt.column_dimensions[col].width = w
+
+    # ---- 計算: 入力欄（A 列の項目名 → B 列）と内訳（数式） ----
+    cs = wb.create_sheet("計算", 1)
+    cs["A1"] = "工事費内訳書"
+    cs["A1"].font = Font(name=FONT, bold=True, size=16)
+    cs["A3"] = "入力"
+    cs["A3"].font = Font(name=FONT, bold=True)
+    inputs = [("工事番号", None), ("工事名", None), ("工種", None), ("直接工事費", "#,##0"), ("工期", '0"か月"')]
+    sample = jobs[0]
+    for i, (label, fmt) in enumerate(inputs):
+        r = 4 + i
+        cs.cell(row=r, column=1, value=label).border = box
+        v = cs.cell(row=r, column=2, value=sample[i])
+        v.fill, v.border = input_fill, box
+        if fmt:
+            v.number_format = fmt
+    dv = DataValidation(type="list", formula1='"建築,土木,設備"', allow_blank=False)
+    dv.add("B6")
+    cs.add_data_validation(dv)
+    wb.defined_names["工種"] = DefinedName("工種", attr_text="計算!$B$6")
+    wb.defined_names["工期"] = DefinedName("工期", attr_text="計算!$B$8")
+
+    def rate(col):
+        return f"INDEX(率表[{col}],MATCH(工種,率表[工種],0))"
+
+    head_row = 10
+    for c, h in enumerate(["項目", "率", "金額", "備考"], 1):
+        cell = cs.cell(row=head_row, column=c, value=h)
+        cell.font = Font(name=FONT, bold=True, color="FFFFFF")
+        cell.fill, cell.border = head_fill, box
+        cell.alignment = Alignment(horizontal="center")
+    # (項目, 率, 金額, 備考, 合計の行か)
+    items = [
+        ("直接工事費", None, "=B7", "入力の直接工事費", True),
+        ("　材料費", f"={rate('材料費比率')}", "=ROUNDDOWN(C11*B12,0)", "直接工事費 × 材料費比率", False),
+        ("　労務費", f"={rate('労務費比率')}", "=ROUNDDOWN(C11*B13,0)", "直接工事費 × 労務費比率", False),
+        ("　機械経費等", None, "=C11-C12-C13", "直接工事費の残り", False),
+        ("共通仮設費", f"=ROUND({rate('共通仮設係数')}*(C11/1000000)^{rate('共通仮設指数')},4)",
+         "=ROUNDDOWN(C11*B15,-3)", "率 = 係数 × (直接工事費/百万)^指数、千円未満切り捨て", False),
+        ("純工事費", None, "=C11+C15", "直接工事費 ＋ 共通仮設費", True),
+        ("現場管理費", f"=ROUND({rate('現場管理係数')}*(C16/1000000)^{rate('現場管理指数')}*(工期/12)^{rate('工期指数')},4)",
+         "=ROUNDDOWN(C16*B17,-3)", "率 = 係数 × (純工事費/百万)^指数 × (工期/12)^工期指数", False),
+        ("工事原価", None, "=C16+C17", "純工事費 ＋ 現場管理費", True),
+        ("一般管理費等", "=LOOKUP(C18,一般管理費率[工事原価の下限],一般管理費率[一般管理費等率])",
+         "=C20-C18", "工事価格との差（率で計算した額を万円未満切り捨てで調整）", False),
+        ("工事価格", None, "=ROUNDDOWN(C18*(1+B19),-4)", "工事原価 × (1 ＋ 一般管理費等率)、万円未満切り捨て", True),
+        ("消費税等相当額", 0.1, "=ROUNDDOWN(C20*B21,0)", "工事価格 × 消費税率", False),
+        ("工事費計", None, "=C20+C21", "", True),
+        (None, None, None, None, False),
+        ("（参考）法定福利費", f"={rate('法定福利費率')}", "=ROUNDDOWN(C13*B24,0)", "労務費 × 法定福利費率（事業主負担分）", False),
+    ]
+    for i, (label, rt_, amount, note, total) in enumerate(items):
+        r = head_row + 1 + i
+        if label is None:
+            continue
+        cells = [cs.cell(row=r, column=c) for c in range(1, 5)]
+        for cell, v in zip(cells, (label, rt_, amount, note)):
+            cell.value = v
+            cell.border = box
+            if total:
+                cell.fill = total_fill
+                cell.font = Font(name=FONT, bold=True)
+        cells[1].number_format = "0.00%"
+        cells[2].number_format = "#,##0"
+    for col, w in zip("ABCD", [20, 32, 16, 52]):
+        cs.column_dimensions[col].width = w
+    cs.column_dimensions["B"].width = 32  # 入力の工事名が入る幅
+    cs.page_setup.orientation = "landscape"
+    cs.page_setup.paperSize = cs.PAPERSIZE_A4
+    cs.page_setup.fitToWidth = 1
+    cs.page_setup.fitToHeight = 1
+    cs.sheet_properties.pageSetUpPr.fitToPage = True
+    for s in (ws, cs, rt):
+        set_font(s)
+    wb.save(os.path.join(ROOT, "積算.xlsx"))
+
+
+STEPS = {"sales": sales, "report": report, "gantt": gantt, "csvs": csvs, "pdfs": pdfs, "estimate": estimate}
 os.makedirs(ROOT, exist_ok=True)
-sales()
-report()
-gantt()
-csvs()
-pdfs()
+for name in sys.argv[1:] or STEPS:
+    STEPS[name]()

@@ -19,6 +19,7 @@
 | `xlsx-to-json.js` | Excel → JSON | Excel の先頭シートを JSON / JSON Lines に書き出す | `data/売上/*.xlsx` |
 | `xlsx-to-pdf.js` | Excel → PDF | Excel ファイルを印刷したときと同じページ設定・グラフ付きで PDF にする（`book.toPdf`） | `data/売上レポート.xlsx`・`data/売上/*.xlsx` |
 | `pdf-merge-stamp.js` | PDF の編集（`pdf`） | 複数の PDF を結合し、表紙・ページ番号・透かしを入れる（`pdf.merge`・`insertBlankPage`・`addText`） | `data/資料/*.pdf` |
+| `xlsx-calc-estimate.js` | 数式の計算（`book.calculate()`） | 積算ブックの「工事一覧」から選んだ工事ごとに、値を「計算」シートの入力欄に入れて計算し、計算シートの見た目のまま工事費内訳書と総括を作る。計算式はブックの数式のままなので、率や項目は Excel で計算シートを直せば反映される | `data/積算.xlsx` |
 | `xlsx-style-report.js` | Excel の書式 | フォント・罫線・塗りつぶし・表示形式・セル結合・ウィンドウ枠の固定などを使った帳票 |  |
 | `ad-account-report.js` | Active Directory（`ad`） | 自分の所属するグループの中の、無効・ロックアウト中・パスワード期限切れのアカウントと使われていないコンピューターを Excel に書き出す（`ad.me`・`ad.search` の `memberOf` と `limit`・`ui.withProgress`。ドメイン全体は検索しない） |  |
 | `pack-drop-xlsx-to-csv.js` | exe 化（`xljs pack`） | exe にドロップした Excel を CSV に変換する（`xljs.args`） | `data/売上/*.xlsx` |
@@ -30,6 +31,7 @@
 | `売上/2026-04.xlsx`〜`2026-06.xlsx` | 月ごとの売上明細。「明細」シートに 伝票番号・日付・支店・顧客名・商品名・数量・単価・金額 の表。フォルダの集計・変換・取り込みのサンプルで共通に使う |
 | `売上レポート.xlsx` | 「月別」シート（月・売上・粗利と、棒＋折れ線の組み合わせグラフ）と「支店別」シート（円グラフ）。印刷の設定（A4 横・ヘッダー/フッター）付き |
 | `工程表.xlsx` | 作業・開始・終了・進捗・前提・金額 の工程表（2026 年 10〜12 月） |
+| `積算.xlsx` | 「工事一覧」（工事番号・工事名・工種・直接工事費・工期）、「計算」（入力欄と、材料費・労務費・共通仮設費・現場管理費・一般管理費等・消費税の内訳を数式で計算する内訳書）、「率表」（工種ごとの比率・係数と一般管理費等率のテーブル。値は架空） |
 | `顧客一覧.csv` | Shift_JIS の CSV。顧客コードは `00001` のような先頭が 0 の文字列 |
 | `商品一覧.csv` | UTF-8（BOM 付き）の CSV |
 | `資料/*.pdf` | 結合用の 2 ページずつの PDF が 3 つ |
