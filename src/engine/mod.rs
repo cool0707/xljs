@@ -289,6 +289,8 @@ fn run_in<'js>(ctx: &Ctx<'js>, host: &Rc<Host>, code: &str) -> Result<i32> {
         Ok(n) => n,
         Err(e) => return Err(internal(describe_error(ctx, e))),
     };
+    // NOW() and TODAY() of the workbooks' formulas follow the same clock.
+    api::xlsx_calc::set_fixed_now(host.env.test.as_ref().map(|t| t.now.as_str()).filter(|n| !n.is_empty()));
     if let Some(now) = host.env.test.as_ref().map(|t| t.now.as_str()).filter(|n| !n.is_empty()) {
         let set: std::result::Result<Function, _> = ctx.eval(FIXED_CLOCK);
         if let Err(e) = set.and_then(|f| f.call::<_, Value>((now,))) {

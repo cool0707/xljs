@@ -1,0 +1,16 @@
+# Vendored from GridCraft (https://github.com/storytold/gridcraft); see ../README.md.
+[package]
+name = "gridcraft-formula"
+version = "0.19.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "GridCraft formula language: lexer, parser, printer and reference adjustment"
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+gridcraft-core = { path = "../core" }
+serde = { version = "1", features = ["derive", "rc"] }
+thiserror = "2"

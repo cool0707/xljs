@@ -1,0 +1,15 @@
+# Vendored from GridCraft (https://github.com/storytold/gridcraft); see ../README.md.
+[package]
+name = "gridcraft-functions"
+version = "0.19.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "GridCraft worksheet function library: math, statistics, text, dates, lookup, financial, engineering"
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+gridcraft-core = { path = "../core" }
+regex = { version = "1", default-features = false, features = ["std", "unicode", "perf"] }

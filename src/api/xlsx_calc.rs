@@ -1,655 +1,861 @@
-//! A small formula evaluator for cell.calc(): arithmetic, comparisons,
-//! text joining, cell and range references (also to other sheets) and the
-//! common functions. Results are returned as text, like Excel shows them in
-//! the General format.
+//! The formula engine of a workbook: book.calculate(), cell.calc() and what
+//! the print layout works out (conditional formatting, formulas without a
+//! saved result, print areas given as formulas).
+//!
+//! The engine is GridCraft's (vendor/gridcraft). The workbook itself lives in
+//! umya-spreadsheet, so its cells, names and tables are copied into the
+//! engine's model the first time something is calculated; after that only
+//! the cells scripts write are taken over, and what depends on them is
+//! calculated again. Results go back as the saved values of the formula
+//! cells (store). docs/design/calc-design.md has the reasoning.
 
-use umya_spreadsheet::CellRawValue;
+use std::cell::{Cell as StdCell, RefMut};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::sync::Arc;
 
-use super::xlsx::{Book, column_number, fmt_num, parse_ref};
-use crate::{Error, Result};
+use gridcraft_calc::eval::{Ev, Evaluator, Host};
+use gridcraft_core::{CellError, CellRef, DateSystem, RangeRef, Value};
+use gridcraft_formula::{Expr, SheetSel};
+use gridcraft_model as gm;
+use gridcraft_xlsx_formulas::{FunctionInfo, apply_legacy, fmla};
+use umya_spreadsheet::{Cell, CellErrorType, CellFormulaValues, CellRawValue, Worksheet};
 
-#[derive(Clone, Debug)]
-enum V {
-    Num(f64),
-    Str(String),
-    Bool(bool),
-    Empty,
-    Err(String),
-    Range(Vec<Vec<V>>),
-    /// A picture placed in a cell (index in Book::cell_images). Excel gives
-    /// #VALUE! when it is used as a number or text.
-    Image(usize),
+use super::xlsx::{Book, fmt_num, parse_ref};
+use crate::{Error, Result, i18n, t};
+
+/// A cell of the engine's model: (sheet index, position).
+type Key = (usize, CellRef);
+
+/// What the engine asks about worksheet functions when it reads formulas
+/// saved without dynamic-array metadata.
+const FUNCTIONS: FunctionInfo = FunctionInfo {
+    is_builtin: |name| gridcraft_functions::lookup(name).is_some(),
+    is_scalar_arg: |name, i| gridcraft_functions::lookup(name).is_none_or(|s| s.is_scalar_arg(i)),
+};
+
+/// Functions the engine has only a stand-in for: it would give an error (or,
+/// for PHONETIC, the text itself: the readings are not kept) where the
+/// workbook holds the value Excel worked out.
+const STAND_INS: &[&str] = &["CUBEKPIMEMBER", "CUBEMEMBER", "CUBEMEMBERPROPERTY", "CUBERANKEDMEMBER", "CUBESET", "CUBESETCOUNT", "CUBEVALUE", "FILTERXML", "PHONETIC", "WEBSERVICE"];
+
+/// Cells of array formula areas a workbook may have before the areas are no
+/// longer followed cell by cell (their formulas then keep their saved values).
+const MAX_AREA_CELLS: u64 = 2_000_000;
+
+// ---- what scripts changed ----
+
+/// The cells whose content changed since the engine last calculated (since
+/// the workbook was opened, when it has not yet).
+#[derive(Default)]
+pub(crate) struct Touched {
+    /// More changed than is followed cell by cell, or something other than
+    /// the content of cells: everything is calculated again.
+    all: bool,
+    sheets: Vec<String>,
+    /// (index in sheets, column, row)
+    cells: Vec<(u32, u32, u32)>,
 }
 
-impl V {
-    fn num(&self) -> std::result::Result<f64, String> {
-        match self {
-            V::Num(n) => Ok(*n),
-            V::Bool(b) => Ok(if *b { 1.0 } else { 0.0 }),
-            V::Empty => Ok(0.0),
-            V::Str(s) => s.trim().parse::<f64>().map_err(|_| "#VALUE!".to_string()),
-            V::Err(e) => Err(e.clone()),
-            V::Range(r) => r.first().and_then(|row| row.first()).map(|v| v.num()).unwrap_or(Ok(0.0)),
-            V::Image(_) => Err("#VALUE!".into()),
+const MAX_TOUCHED: usize = 200_000;
+
+impl Touched {
+    pub fn cell(&mut self, sheet: &str, col: u32, row: u32) {
+        if self.all {
+            return;
         }
-    }
-    fn text(&self) -> std::result::Result<String, String> {
-        match self {
-            V::Num(n) => Ok(super::numfmt::general(*n)),
-            V::Str(s) => Ok(s.clone()),
-            V::Bool(b) => Ok(if *b { "TRUE".into() } else { "FALSE".into() }),
-            V::Empty => Ok(String::new()),
-            V::Err(e) => Err(e.clone()),
-            V::Range(r) => r.first().and_then(|row| row.first()).map(|v| v.text()).unwrap_or(Ok(String::new())),
-            V::Image(_) => Err("#VALUE!".into()),
+        if self.cells.len() >= MAX_TOUCHED {
+            return self.everything();
         }
+        let i = match self.sheets.iter().rposition(|s| s == sheet) {
+            Some(i) => i,
+            None => {
+                self.sheets.push(sheet.to_string());
+                self.sheets.len() - 1
+            }
+        };
+        self.cells.push((i as u32, col, row));
     }
-    fn truthy(&self) -> std::result::Result<bool, String> {
-        match self {
-            V::Bool(b) => Ok(*b),
-            V::Str(s) if s.eq_ignore_ascii_case("true") => Ok(true),
-            V::Str(s) if s.eq_ignore_ascii_case("false") => Ok(false),
-            V::Str(_) => Err("#VALUE!".into()),
-            other => other.num().map(|n| n != 0.0),
-        }
+
+    pub fn everything(&mut self) {
+        *self = Touched { all: true, ..Default::default() };
     }
-    /// The values of a range (or the value itself).
-    fn flat(&self) -> Vec<V> {
-        match self {
-            V::Range(r) => r.iter().flatten().cloned().collect(),
-            v => vec![v.clone()],
+
+    fn any(&self) -> bool {
+        self.all || !self.cells.is_empty()
+    }
+}
+
+// ---- the clock ----
+
+thread_local! {
+    /// The time NOW() and TODAY() give instead of the clock's (a test run).
+    static FIXED_NOW: StdCell<Option<f64>> = const { StdCell::new(None) };
+}
+
+/// Fixes the time the formulas of this thread's scripts see ("2026-04-10T09:00:00",
+/// local wall clock time), or frees it again.
+pub(crate) fn set_fixed_now(now: Option<&str>) {
+    let serial = now.and_then(|s| {
+        let s = s.trim();
+        let t = ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%dT%H:%M"].iter().find_map(|f| chrono::NaiveDateTime::parse_from_str(s, f).ok());
+        let t = t.or_else(|| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok().and_then(|d| d.and_hms_opt(0, 0, 0)))?;
+        Some(serial_of(t))
+    });
+    FIXED_NOW.with(|n| n.set(serial));
+}
+
+fn serial_of(t: chrono::NaiveDateTime) -> f64 {
+    use chrono::{Datelike, Timelike};
+    super::xlsx::to_serial(t.year(), t.month(), t.day(), t.hour(), t.minute(), t.second(), t.nanosecond() / 1_000_000, false)
+}
+
+/// Now as a serial number of the 1900 date system, in local time (the engine
+/// converts it for a 1904 workbook).
+fn now_serial() -> f64 {
+    FIXED_NOW.with(|n| n.get()).unwrap_or_else(|| serial_of(chrono::Local::now().naive_local()))
+}
+
+/// Where RAND() starts: the clock, or always the same in a test run.
+fn seed() -> u64 {
+    if FIXED_NOW.with(|n| n.get()).is_some() {
+        return 0;
+    }
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos() as u64).unwrap_or(0)
+}
+
+// ---- values ----
+
+fn error_of(e: &CellErrorType) -> CellError {
+    CellError::parse(&e.to_string()).unwrap_or(CellError::Value)
+}
+
+/// The error as umya-spreadsheet can save it (it knows the errors of Excel 2007).
+fn error_to(e: CellError) -> CellErrorType {
+    match e {
+        CellError::Null => CellErrorType::Null,
+        CellError::Div0 => CellErrorType::Div0,
+        CellError::Ref => CellErrorType::Ref,
+        CellError::Name => CellErrorType::Name,
+        CellError::Num => CellErrorType::Num,
+        CellError::NA | CellError::GettingData => CellErrorType::NA,
+        _ => CellErrorType::Value,
+    }
+}
+
+/// The value of a cell for the engine. formula: the cell has one, so an
+/// empty text is a result ("") and not a blank cell.
+fn value_of(c: &Cell, formula: bool) -> Value {
+    match c.raw_value() {
+        CellRawValue::Empty => Value::Empty,
+        CellRawValue::Numeric(n) => Value::number(*n),
+        CellRawValue::Bool(v) => Value::Bool(*v),
+        // A picture placed in the cell is #VALUE! to formulas, as in Excel
+        // (cell_image finds the formulas that show it).
+        CellRawValue::Error(e) => Value::Error(error_of(e)),
+        other => {
+            let s = other.to_string();
+            if s.is_empty() && !formula { Value::Empty } else { Value::text(s) }
         }
     }
 }
 
+/// Whether the saved value of a cell is v.
+fn same(raw: &CellRawValue, v: &Value) -> bool {
+    match (raw, v) {
+        (CellRawValue::Empty, Value::Empty) => true,
+        (CellRawValue::Numeric(a), Value::Number(b)) => a == b,
+        (CellRawValue::Bool(a), Value::Bool(b)) => a == b,
+        (CellRawValue::Error(a), Value::Error(b)) => *a == error_to(*b),
+        (CellRawValue::String(a) | CellRawValue::Lazy(a), Value::Text(b)) => **a == **b,
+        (CellRawValue::RichText(a), Value::Text(b)) => *a.text() == **b,
+        _ => false,
+    }
+}
+
+/// Saves v as the result of the formula of c (the formula stays).
+fn set_result(c: &mut Cell, v: &Value) {
+    match v {
+        Value::Empty => c.set_formula_result_blank(),
+        Value::Number(n) => c.set_formula_result_number(*n),
+        Value::Bool(x) => c.set_formula_result_bool(*x),
+        Value::Error(e) => c.set_formula_result_error(error_to(*e)),
+        Value::Text(s) => c.set_formula_result_string(s.to_string()),
+        Value::Array(_) => return set_result(c, &v.scalar()),
+    };
+}
+
+/// Saves v as the value of a cell an array formula fills.
+fn set_plain(c: &mut Cell, v: &Value) {
+    match v {
+        Value::Empty => c.cell_value_mut().set_blank(),
+        Value::Number(n) => c.cell_value_mut().set_value_number(*n),
+        Value::Bool(x) => c.cell_value_mut().set_value_bool(*x),
+        Value::Error(e) => c.cell_value_mut().set_formula_result_error(error_to(*e)),
+        Value::Text(s) => c.cell_value_mut().set_value_string(s.to_string()),
+        Value::Array(_) => return set_plain(c, &v.scalar()),
+    };
+}
+
+fn at_of(c: &Cell) -> CellRef {
+    let co = c.coordinate();
+    CellRef::new(co.row_num().saturating_sub(1), co.col_num().saturating_sub(1))
+}
+
+fn coord(at: CellRef) -> (u32, u32) {
+    (at.col + 1, at.row + 1)
+}
+
+// ---- formulas the engine leaves alone ----
+
+/// Why a formula keeps the value it was saved with.
 #[derive(Clone, Debug, PartialEq)]
-enum Tok {
-    Num(f64),
-    Str(String),
-    Ref(String),
+pub(crate) enum Skip {
+    /// The engine cannot read the text (what it says about it).
+    Syntax(String),
+    /// A function it does not have: an add-in's, a VBA function, ...
+    Function(String),
+    /// A name the workbook does not define.
     Name(String),
-    Op(String),
-    LParen,
-    RParen,
-    Comma,
+    /// A reference to another workbook.
+    External,
+    /// A what-if data table.
+    DataTable,
+    /// An array formula over more cells than are followed.
+    Large,
+    /// The formula reads its own result, directly or through other formulas.
+    Circular,
 }
 
-fn tokenize(s: &str) -> Result<Vec<Tok>> {
-    let c: Vec<char> = s.chars().collect();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < c.len() {
-        let ch = c[i];
-        if ch.is_whitespace() {
-            i += 1;
-        } else if ch.is_ascii_digit() || (ch == '.' && i + 1 < c.len() && c[i + 1].is_ascii_digit()) {
-            let st = i;
-            while i < c.len() && (c[i].is_ascii_digit() || c[i] == '.') {
-                i += 1;
-            }
-            if i < c.len() && (c[i] == 'e' || c[i] == 'E') {
-                i += 1;
-                if i < c.len() && (c[i] == '+' || c[i] == '-') {
-                    i += 1;
-                }
-                while i < c.len() && c[i].is_ascii_digit() {
-                    i += 1;
-                }
-            }
-            let t: String = c[st..i].iter().collect();
-            out.push(Tok::Num(t.parse().map_err(|_| Error::msg(format!("invalid number {t}")))?));
-        } else if ch == '"' {
-            let mut t = String::new();
-            i += 1;
-            while i < c.len() {
-                if c[i] == '"' {
-                    if i + 1 < c.len() && c[i + 1] == '"' {
-                        t.push('"');
-                        i += 2;
-                        continue;
-                    }
-                    break;
-                }
-                t.push(c[i]);
-                i += 1;
-            }
-            i += 1;
-            out.push(Tok::Str(t));
-        } else if ch == '\'' {
-            // 'Sheet name'!A1
-            let mut t = String::new();
-            i += 1;
-            while i < c.len() && c[i] != '\'' {
-                t.push(c[i]);
-                i += 1;
-            }
-            i += 1;
-            if i < c.len() && c[i] == '!' {
-                i += 1;
-                let st = i;
-                while i < c.len() && (c[i].is_alphanumeric() || c[i] == '$' || c[i] == ':') {
-                    i += 1;
-                }
-                let r: String = c[st..i].iter().collect();
-                out.push(Tok::Ref(format!("{t}!{r}")));
-            }
-        } else if ch.is_alphabetic() || ch == '_' || ch == '$' {
-            let st = i;
-            while i < c.len() && (c[i].is_alphanumeric() || c[i] == '_' || c[i] == '.' || c[i] == '$' || c[i] == ':' || c[i] == '!') {
-                i += 1;
-            }
-            let t: String = c[st..i].iter().collect();
-            if (i < c.len() && c[i] == '(') || t.eq_ignore_ascii_case("TRUE") || t.eq_ignore_ascii_case("FALSE") {
-                out.push(Tok::Name(t.to_uppercase()));
-            } else {
-                out.push(Tok::Ref(t));
-            }
-        } else if ch == '(' {
-            out.push(Tok::LParen);
-            i += 1;
-        } else if ch == ')' {
-            out.push(Tok::RParen);
-            i += 1;
-        } else if ch == ',' {
-            out.push(Tok::Comma);
-            i += 1;
-        } else {
-            let two: String = c[i..(i + 2).min(c.len())].iter().collect();
-            if ["<=", ">=", "<>"].contains(&two.as_str()) {
-                out.push(Tok::Op(two));
-                i += 2;
-            } else if "+-*/^&=<>%".contains(ch) {
-                out.push(Tok::Op(ch.to_string()));
-                i += 1;
-            } else {
-                return Err(Error::msg(format!("formula: unexpected character '{ch}'")));
-            }
+impl Skip {
+    /// The reason as scripts get it.
+    pub fn reason(&self) -> &'static str {
+        match self {
+            Skip::Syntax(_) => "syntax",
+            Skip::Function(_) => "function",
+            Skip::Name(_) => "name",
+            Skip::External => "external",
+            Skip::DataTable => "dataTable",
+            Skip::Large => "large",
+            Skip::Circular => "circular",
         }
     }
-    Ok(out)
-}
 
-struct Ev<'a> {
-    b: &'a Book,
-    sheet: String,
-    toks: Vec<Tok>,
-    pos: usize,
-    depth: usize,
-}
-
-const MAX_DEPTH: usize = 64;
-
-impl<'a> Ev<'a> {
-    fn peek(&self) -> Option<&Tok> {
-        self.toks.get(self.pos)
-    }
-    fn next(&mut self) -> Option<Tok> {
-        let t = self.toks.get(self.pos).cloned();
-        self.pos += 1;
-        t
-    }
-    fn op_is(&self, ops: &[&str]) -> Option<String> {
-        match self.peek() {
-            Some(Tok::Op(o)) if ops.contains(&o.as_str()) => Some(o.clone()),
+    /// The function or name it is about.
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Skip::Function(n) | Skip::Name(n) => Some(n),
             _ => None,
         }
     }
 
-    fn expr(&mut self) -> Result<V> {
-        let mut l = self.concat()?;
-        while let Some(op) = self.op_is(&["=", "<>", "<", ">", "<=", ">="]) {
-            self.pos += 1;
-            let r = self.concat()?;
-            l = compare(&l, &r, &op);
-        }
-        Ok(l)
-    }
-    fn concat(&mut self) -> Result<V> {
-        let mut l = self.add()?;
-        while self.op_is(&["&"]).is_some() {
-            self.pos += 1;
-            let r = self.add()?;
-            l = match (l.text(), r.text()) {
-                (Ok(a), Ok(b)) => V::Str(a + &b),
-                (Err(e), _) | (_, Err(e)) => V::Err(e),
-            };
-        }
-        Ok(l)
-    }
-    fn add(&mut self) -> Result<V> {
-        let mut l = self.mul()?;
-        while let Some(op) = self.op_is(&["+", "-"]) {
-            self.pos += 1;
-            let r = self.mul()?;
-            l = arith(&l, &r, |a, b| if op == "+" { Ok(a + b) } else { Ok(a - b) });
-        }
-        Ok(l)
-    }
-    fn mul(&mut self) -> Result<V> {
-        let mut l = self.pow()?;
-        while let Some(op) = self.op_is(&["*", "/"]) {
-            self.pos += 1;
-            let r = self.pow()?;
-            l = arith(&l, &r, |a, b| {
-                if op == "*" {
-                    Ok(a * b)
-                } else if b == 0.0 {
-                    Err("#DIV/0!".into())
-                } else {
-                    Ok(a / b)
-                }
-            });
-        }
-        Ok(l)
-    }
-    fn pow(&mut self) -> Result<V> {
-        let mut l = self.unary()?;
-        while self.op_is(&["^"]).is_some() {
-            self.pos += 1;
-            let r = self.unary()?;
-            l = arith(&l, &r, |a, b| Ok(a.powf(b)));
-        }
-        Ok(l)
-    }
-    fn unary(&mut self) -> Result<V> {
-        if let Some(op) = self.op_is(&["-", "+"]) {
-            self.pos += 1;
-            let v = self.unary()?;
-            return Ok(if op == "-" { arith(&V::Num(0.0), &v, |a, b| Ok(a - b)) } else { v });
-        }
-        let v = self.primary()?;
-        if self.op_is(&["%"]).is_some() {
-            self.pos += 1;
-            return Ok(arith(&v, &V::Num(100.0), |a, b| Ok(a / b)));
-        }
-        Ok(v)
-    }
-    fn primary(&mut self) -> Result<V> {
-        match self.next() {
-            Some(Tok::Num(n)) => Ok(V::Num(n)),
-            Some(Tok::Str(s)) => Ok(V::Str(s)),
-            Some(Tok::LParen) => {
-                let v = self.expr()?;
-                match self.next() {
-                    Some(Tok::RParen) => Ok(v),
-                    _ => Err(Error::msg("formula: missing )")),
-                }
-            }
-            Some(Tok::Ref(r)) => self.reference(&r),
-            Some(Tok::Name(n)) if n == "TRUE" || n == "FALSE" => {
-                if self.peek() == Some(&Tok::LParen) {
-                    self.pos += 1;
-                    self.next();
-                }
-                Ok(V::Bool(n == "TRUE"))
-            }
-            Some(Tok::Name(n)) => {
-                self.next(); // (
-                let mut args = Vec::new();
-                if self.peek() != Some(&Tok::RParen) {
-                    loop {
-                        if matches!(self.peek(), Some(Tok::Comma) | Some(Tok::RParen)) {
-                            args.push(V::Empty);
-                        } else {
-                            args.push(self.expr()?);
-                        }
-                        match self.next() {
-                            Some(Tok::Comma) => continue,
-                            Some(Tok::RParen) => break,
-                            _ => return Err(Error::msg("formula: missing )")),
-                        }
-                    }
-                } else {
-                    self.next();
-                }
-                Ok(call(&n, args))
-            }
-            t => Err(Error::msg(format!("formula: unexpected {t:?}"))),
+    pub fn message(&self) -> String {
+        match self {
+            Skip::Syntax(m) => t!("xlsx.calcSkip.syntax", m),
+            Skip::Function(n) => t!("xlsx.calcSkip.function", n),
+            Skip::Name(n) => t!("xlsx.calcSkip.name", n),
+            Skip::External => t!("xlsx.calcSkip.external"),
+            Skip::DataTable => t!("xlsx.calcSkip.dataTable"),
+            Skip::Large => t!("xlsx.calcSkip.large"),
+            Skip::Circular => t!("xlsx.calcSkip.circular"),
         }
     }
 
-    fn reference(&mut self, r: &str) -> Result<V> {
-        let (sheet, r) = match r.rsplit_once('!') {
-            Some((s, r)) => (s.trim_matches('\'').to_string(), r.to_string()),
-            None => (self.sheet.clone(), r.to_string()),
-        };
-        let r = r.replace('$', "").to_uppercase();
-        let (a, b) = match r.split_once(':') {
-            Some((a, b)) => (a.to_string(), b.to_string()),
-            None => (r.clone(), r.clone()),
-        };
-        let ws = self.b.sheet(&sheet)?;
-        // Whole columns (A:A) end at the last used row.
-        let corner = |s: &str, last: bool| -> Result<(u32, u32)> {
-            if s.chars().all(|c| c.is_ascii_alphabetic()) {
-                let col = column_number(s)?;
-                let row = if last { ws.highest_row().max(1) } else { 1 };
-                return Ok((col, row));
-            }
-            parse_ref(s)
-        };
-        let (c1, r1) = corner(&a, false)?;
-        let (c2, r2) = corner(&b, true)?;
-        let mut rows = Vec::new();
-        for row in r1.min(r2)..=r1.max(r2) {
-            let mut vals = Vec::new();
-            for col in c1.min(c2)..=c1.max(c2) {
-                vals.push(self.cell(&sheet, col, row)?);
-            }
-            rows.push(vals);
+    /// What cell.calc() gives for such a formula that has no saved value.
+    fn error(&self) -> &'static str {
+        match self {
+            Skip::External => "#REF!",
+            Skip::DataTable | Skip::Large | Skip::Circular => "#VALUE!",
+            _ => "#NAME?",
         }
-        if rows.len() == 1 && rows[0].len() == 1 && a == b {
-            return Ok(rows.remove(0).remove(0));
-        }
-        Ok(V::Range(rows))
-    }
-
-    fn cell(&mut self, sheet: &str, col: u32, row: u32) -> Result<V> {
-        let ws = self.b.sheet(sheet)?;
-        let Some(c) = ws.cell((col, row)) else { return Ok(V::Empty) };
-        // A picture placed in the cell (or a formula Excel saved with one)
-        // reads as #VALUE!; a value written over it since is no picture.
-        if matches!(c.raw_value(), CellRawValue::Error(_))
-            && let Some(i) = self.b.cell_images.at(sheet, col, row)
-        {
-            return Ok(V::Image(i));
-        }
-        if c.is_formula() && matches!(c.raw_value(), CellRawValue::Empty) {
-            if self.depth >= MAX_DEPTH {
-                return Ok(V::Err("#REF!".into()));
-            }
-            let mut ev = Ev { b: self.b, sheet: sheet.to_string(), toks: tokenize(c.formula())?, pos: 0, depth: self.depth + 1 };
-            return ev.expr();
-        }
-        Ok(match c.raw_value() {
-            CellRawValue::Numeric(n) => V::Num(*n),
-            CellRawValue::Bool(b) => V::Bool(*b),
-            CellRawValue::Empty => V::Empty,
-            CellRawValue::Error(e) => V::Err(e.to_string()),
-            other => {
-                let s = other.to_string();
-                if s.is_empty() { V::Empty } else { V::Str(s) }
-            }
-        })
     }
 }
 
-/// The position (0-based) of look in list, as MATCH finds it: kind 0 the
-/// first equal value; 1 (-1) the last value <= (>=) it. Excel searches
-/// sorted data by halves; on sorted data that is the last value <= (or >=)
-/// the one looked up, which is also what MATCH(10^10, B:B) is used for: the
-/// last number.
-fn lookup(look: &V, list: &[V], kind: f64) -> std::result::Result<usize, String> {
-    if let V::Err(e) = look {
-        return Err(e.clone());
+/// Why the engine would not work out e as Excel does (None: it does).
+fn unsupported(wb: &gm::Workbook, sheet: usize, e: &Expr) -> Option<Skip> {
+    // The names LET and LAMBDA declare, anywhere in the formula.
+    let mut locals: Vec<&str> = Vec::new();
+    e.walk(&mut |x| {
+        if let Expr::Call(name, args) = x
+            && (name == "LET" || name == "LAMBDA")
+        {
+            let last = args.len().saturating_sub(1);
+            for (i, a) in args.iter().enumerate() {
+                if let Expr::Name(n) = a
+                    && i < last
+                    && (name == "LAMBDA" || i % 2 == 0)
+                {
+                    locals.push(n);
+                }
+            }
+        }
+    });
+    let local = |n: &str| locals.iter().any(|l| gridcraft_formula::same_name(l, n));
+    let external = |s: &str| s.contains('[');
+    let check = |x: &Expr| -> Option<Skip> {
+        match x {
+            Expr::Call(name, _) => {
+                let known = gridcraft_calc::is_known_function(name) && !STAND_INS.contains(&name.to_ascii_uppercase().as_str());
+                if known || local(name) || wb.name(name, sheet).is_some() { None } else { Some(Skip::Function(name.clone())) }
+            }
+            Expr::Ref(r) => match &r.sheet {
+                SheetSel::Named(s) if external(s) => Some(Skip::External),
+                SheetSel::Span(a, z) if external(a) || external(z) => Some(Skip::External),
+                _ => None,
+            },
+            Expr::Name(n) => {
+                // "Sheet1!Name" is a name of that sheet.
+                let (scope, bare) = match n.rsplit_once('!') {
+                    Some((s, _)) if external(s) => return Some(Skip::External),
+                    Some((s, bare)) => (wb.sheet_index(&gridcraft_core::unquote_sheet(s)).unwrap_or(sheet), bare),
+                    None => (sheet, n.as_str()),
+                };
+                if local(bare) || wb.name(bare, scope).is_some() || wb.table(bare).is_some() { None } else { Some(Skip::Name(n.clone())) }
+            }
+            Expr::Struct(st) if !st.table.is_empty() && wb.table(&st.table).is_none() => Some(Skip::Name(st.table.clone())),
+            _ => None,
+        }
+    };
+    let mut found: Option<Skip> = None;
+    e.walk(&mut |x| {
+        if found.is_none() {
+            found = check(x);
+        }
+    });
+    found
+}
+
+// ---- the engine's copy of the workbook ----
+
+/// How a formula cell was saved.
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    /// Without dynamic-array metadata: Excel intersects ranges implicitly.
+    Legacy,
+    /// With it (a formula that spills), over this area when it was saved.
+    Dynamic(RangeRef),
+    /// Entered with Ctrl+Shift+Enter over this area.
+    Array(RangeRef),
+}
+
+/// A cell of the workbook as the engine takes it.
+struct Made {
+    cell: gm::Cell,
+    kind: Kind,
+    skip: Option<Skip>,
+}
+
+/// Converts a cell. A formula the engine cannot read comes back without one
+/// (the saved value stays) and with the reason.
+fn make(c: &Cell) -> Made {
+    let plain = |skip: Option<Skip>| Made { cell: gm::Cell::value(value_of(c, skip.is_some())), kind: Kind::Legacy, skip };
+    let Some(f) = c.formula_obj() else { return plain(None) };
+    let text = f.text().trim();
+    if *f.formula_type() == CellFormulaValues::DataTable {
+        return plain(Some(Skip::DataTable));
     }
-    let same = |v: &V| matches!((v, look), (V::Num(_), V::Num(_)) | (V::Str(_), V::Str(_)) | (V::Bool(_), V::Bool(_)));
-    let is = |v: &V, op: &str| matches!(compare(v, look, op), V::Bool(true));
-    let mut found = None;
-    for (i, v) in list.iter().enumerate() {
-        if !same(v) {
+    if text.is_empty() {
+        // A cell of a shared formula whose first cell is gone.
+        return plain(None);
+    }
+    let body = text.strip_prefix('=').unwrap_or(text);
+    if let Err(e) = gridcraft_formula::parse(body) {
+        return plain(Some(Skip::Syntax(e.msg)));
+    }
+    let mut formula = gm::Formula::new(&fmla::from_file(body));
+    let at = at_of(c);
+    let dynamic = c.cell_meta_index() > 0;
+    let kind = if *f.formula_type() == CellFormulaValues::Array {
+        // The formula is in the first cell of the area it fills.
+        let area = RangeRef::parse(f.reference()).filter(|r| r.start == at).unwrap_or(RangeRef::cell(at));
+        if dynamic {
+            Kind::Dynamic(area)
+        } else {
+            formula.array = Some(area);
+            Kind::Array(area)
+        }
+    } else if dynamic {
+        Kind::Dynamic(RangeRef::cell(at))
+    } else {
+        Kind::Legacy
+    };
+    formula.dynamic = dynamic;
+    Made { cell: gm::Cell { value: value_of(c, true), formula: Some(Arc::new(formula)), ..Default::default() }, kind, skip: None }
+}
+
+/// What a sheet has besides its cells that formulas depend on: tables,
+/// merged cells, hidden rows.
+fn layout(ws: &Worksheet, id: &mut u32) -> gm::Sheet {
+    let mut sh = gm::Sheet::new(ws.name());
+    let range = |s: &str| RangeRef::parse(&s.replace('$', ""));
+    for m in ws.merge_cells() {
+        if let Some(r) = range(&m.range()) {
+            sh.merges.push(r);
+        }
+    }
+    let mut hidden: Vec<u32> = Vec::new();
+    for r in ws.row_dimensions() {
+        if r.hidden() && r.row_num() >= 1 {
+            hidden.push(r.row_num() - 1);
+            sh.rows.insert(r.row_num() - 1, gm::LineInfo { hidden: true, ..Default::default() });
+        }
+    }
+    // The criteria of a filter are not kept: rows hidden inside its range
+    // count as filtered out (SUBTOTAL leaves those out, unlike rows hidden by hand).
+    let filtered = |r: &RangeRef| hidden.iter().any(|h| *h > r.start.row && *h <= r.end.row);
+    let criterion = || vec![(0u32, gm::FilterCriterion::Values { values: Vec::new(), blanks: false })];
+    if let Some(r) = ws.auto_filter().and_then(|f| range(&f.range().range())) {
+        sh.autofilter = Some(gm::AutoFilter { range: r, criteria: if filtered(&r) { criterion() } else { Vec::new() } });
+    }
+    for t in ws.tables() {
+        if !t.is_ok() {
             continue;
         }
-        if kind == 0.0 {
-            if is(v, "=") {
-                return Ok(i);
+        let (a, z) = t.area();
+        let r = RangeRef::new(CellRef::new(a.row_num() - 1, a.col_num() - 1), CellRef::new(z.row_num() - 1, z.col_num() - 1));
+        *id += 1;
+        sh.tables.push(gm::Table {
+            id: *id,
+            name: (if t.display_name().is_empty() { t.name() } else { t.display_name() }).to_string(),
+            range: r,
+            // headerRowCount is not kept; tables nearly always have the row.
+            header_row: true,
+            totals_row: t.totals_row_shown() || t.totals_row_count() > 0,
+            columns: t
+                .columns()
+                .iter()
+                .map(|c| gm::TableColumn { name: c.name().to_string(), totals: Default::default(), totals_label: None, formula: None, unique_name: None, xml: None })
+                .collect(),
+            style: String::new(),
+            banded_rows: false,
+            banded_cols: false,
+            first_col: false,
+            last_col: false,
+            filter_button: true,
+            filter: if filtered(&r) { criterion() } else { Vec::new() },
+            table_type: None,
+            connection_id: None,
+        });
+    }
+    sh
+}
+
+/// The engine's copy of a workbook with its calculation state.
+pub(crate) struct Engine {
+    wb: gm::Workbook,
+    calc: gridcraft_calc::Calc,
+    /// The formula cells that keep the value they were saved with, by
+    /// (sheet, row, column), and why.
+    skipped: BTreeMap<(usize, u32, u32), Skip>,
+    /// The areas the array formulas fill in the workbook's own cells, by
+    /// sheet and first cell: what store() empties when an array gets smaller.
+    areas: Vec<BTreeMap<CellRef, RangeRef>>,
+    /// Formulas without a saved value: calculated the first time, whatever changed.
+    fresh: Vec<Key>,
+}
+
+impl Engine {
+    fn build(b: &Book) -> Engine {
+        let mut wb = gm::Workbook::new();
+        wb.date_system = if b.date1904 { DateSystem::D1904 } else { DateSystem::D1900 };
+        let sheets = b.wb.sheet_collection();
+        let mut id = 0;
+        wb.sheets = sheets.iter().map(|ws| Arc::new(layout(ws, &mut id))).collect();
+        // Names: those of the workbook, and those umya-spreadsheet keeps with
+        // the sheet they refer to (of the sheet only when they say so).
+        let mut seen: HashSet<(String, Option<usize>)> = HashSet::new();
+        let global = b.wb.defined_names().iter().map(|d| (None, d));
+        let local = sheets.iter().enumerate().flat_map(|(i, ws)| ws.defined_names().iter().map(move |d| (d.has_local_sheet_id().then_some(i), d)));
+        for (scope, d) in global.chain(local) {
+            let name = d.name();
+            if name.is_empty() || name.to_ascii_lowercase().starts_with("_xlnm.") || !seen.insert((name.to_lowercase(), scope)) {
+                continue;
             }
-        } else if is(v, if kind > 0.0 { "<=" } else { ">=" }) {
-            found = Some(i);
+            wb.names.push(gm::DefinedName { name: name.to_string(), scope, formula: fmla::from_file(&d.address()), comment: String::new(), hidden: d.hidden() });
         }
-    }
-    found.ok_or_else(|| "#N/A".into())
-}
 
-fn arith(a: &V, b: &V, f: impl Fn(f64, f64) -> std::result::Result<f64, String>) -> V {
-    match (a.num(), b.num()) {
-        (Ok(x), Ok(y)) => match f(x, y) {
-            Ok(n) if n.is_finite() => V::Num(n),
-            Ok(_) => V::Err("#NUM!".into()),
-            Err(e) => V::Err(e),
-        },
-        (Err(e), _) | (_, Err(e)) => V::Err(e),
-    }
-}
-
-fn compare(a: &V, b: &V, op: &str) -> V {
-    use std::cmp::Ordering;
-    let ord = match (a, b) {
-        (V::Err(e), _) | (_, V::Err(e)) => return V::Err(e.clone()),
-        (V::Image(_), _) | (_, V::Image(_)) => return V::Err("#VALUE!".into()),
-        (V::Str(x), V::Str(y)) => x.to_lowercase().cmp(&y.to_lowercase()),
-        (V::Str(_), _) => Ordering::Greater,
-        (_, V::Str(_)) => Ordering::Less,
-        _ => a.num().unwrap_or(0.0).partial_cmp(&b.num().unwrap_or(0.0)).unwrap_or(Ordering::Equal),
-    };
-    V::Bool(match op {
-        "=" => ord == Ordering::Equal,
-        "<>" => ord != Ordering::Equal,
-        "<" => ord == Ordering::Less,
-        ">" => ord == Ordering::Greater,
-        "<=" => ord != Ordering::Greater,
-        _ => ord != Ordering::Less,
-    })
-}
-
-fn nums(args: &[V]) -> std::result::Result<Vec<f64>, String> {
-    let mut out = Vec::new();
-    for a in args {
-        match a {
-            V::Range(_) => {
-                for v in a.flat() {
-                    match v {
-                        V::Num(n) => out.push(n),
-                        V::Err(e) => return Err(e),
-                        _ => {}
+        let mut e = Engine { wb, calc: gridcraft_calc::Calc::new(), skipped: BTreeMap::new(), areas: vec![BTreeMap::new(); sheets.len()], fresh: Vec::new() };
+        e.calc.seed(seed());
+        let mut formulas: Vec<(Key, Kind)> = Vec::new();
+        // The values of the cells array formulas fill (other than their first
+        // cell): the engine lays them out itself.
+        let mut filled: Vec<(usize, CellRef, CellRef, Value)> = Vec::new();
+        let mut budget = MAX_AREA_CELLS;
+        for (si, ws) in sheets.iter().enumerate() {
+            let cells = ws.cells();
+            // cell -> first cell of the array formula that fills it
+            let mut cover: HashMap<CellRef, CellRef> = HashMap::new();
+            let mut large: HashSet<CellRef> = HashSet::new();
+            for c in &cells {
+                let Some(f) = c.formula_obj().filter(|f| *f.formula_type() == CellFormulaValues::Array) else { continue };
+                let at = at_of(c);
+                let Some(r) = RangeRef::parse(f.reference()).filter(|r| r.start == at && !r.is_single()) else { continue };
+                if r.count() > budget {
+                    large.insert(at);
+                    continue;
+                }
+                budget -= r.count();
+                cover.extend(r.iter().filter(|p| *p != at).map(|p| (p, at)));
+            }
+            let Some(sh) = e.wb.sheet_mut(si) else { continue };
+            for c in &cells {
+                let at = at_of(c);
+                if !c.is_formula()
+                    && let Some(first) = cover.get(&at)
+                {
+                    let v = value_of(c, false);
+                    if !v.is_empty() {
+                        filled.push((si, at, *first, v));
+                    }
+                    continue;
+                }
+                let mut m = make(c);
+                if large.contains(&at) && m.cell.formula.is_some() {
+                    m.cell.formula = None;
+                    m.skip = Some(Skip::Large);
+                }
+                if let Some(skip) = m.skip {
+                    e.skipped.insert((si, at.row, at.col), skip);
+                }
+                if m.cell.formula.is_some() {
+                    formulas.push(((si, at), m.kind));
+                }
+                if m.cell.has_content() {
+                    sh.cells.set(at, m.cell);
+                }
+            }
+        }
+        // With every name and table in place: the formulas the engine would
+        // not work out as Excel does keep their saved values.
+        let mut legacy: Vec<Vec<CellRef>> = vec![Vec::new(); sheets.len()];
+        for ((si, at), kind) in formulas {
+            if e.settle(si, at) {
+                continue;
+            }
+            match kind {
+                Kind::Legacy => legacy[si].push(at),
+                Kind::Array(r) | Kind::Dynamic(r) if !r.is_single() => {
+                    e.areas[si].insert(at, r);
+                    if let Some(sh) = e.wb.sheet_mut(si) {
+                        sh.spill_ranges.insert(at, r);
                     }
                 }
+                _ => {}
             }
-            v => out.push(v.num()?),
+            if e.wb.sheet(si).and_then(|s| s.cell(at)).is_some_and(|c| c.value.is_empty()) {
+                e.fresh.push((si, at));
+            }
+        }
+        for (si, at, first, v) in filled {
+            let Some(sh) = e.wb.sheet_mut(si) else { continue };
+            if sh.spill_ranges.contains_key(&first) {
+                sh.spill.insert(at, v);
+            } else {
+                // Its formula is not calculated: the values stay as they are.
+                sh.cells.set(at, gm::Cell::value(v));
+            }
+        }
+        apply_legacy(&mut e.wb, legacy.into_iter().enumerate().filter(|(_, v)| !v.is_empty()).collect(), FUNCTIONS);
+        e.calc.rebuild(&e.wb);
+        e
+    }
+
+    /// Checks the formula of a cell against the workbook's names and tables.
+    /// One the engine would not work out as Excel does loses its formula here
+    /// (the saved value stays): true then.
+    fn settle(&mut self, si: usize, at: CellRef) -> bool {
+        let Some(expr) = self.wb.sheet(si).and_then(|s| s.cell(at)).and_then(|c| c.formula.as_ref()).and_then(|f| f.expr_arc()) else { return true };
+        let Some(skip) = unsupported(&self.wb, si, &expr) else { return false };
+        self.skipped.insert((si, at.row, at.col), skip);
+        if let Some(sh) = self.wb.sheet_mut(si) {
+            match sh.cells.get_mut(at) {
+                Some(c) if !c.value.is_empty() => c.formula = None,
+                _ => {
+                    sh.remove_cell(at);
+                }
+            }
+        }
+        true
+    }
+
+    /// Takes over the cells scripts wrote. None: the copy no longer matches
+    /// the workbook and has to be made again.
+    fn take_in(&mut self, b: &Book, touched: &Touched) -> Option<Vec<Key>> {
+        let sheets: Vec<(usize, &Worksheet)> = touched.sheets.iter().map(|n| Some((self.wb.sheet_index(n)?, b.wb.sheet_by_name(n).ok()?))).collect::<Option<_>>()?;
+        let mut cells = touched.cells.clone();
+        cells.sort_unstable();
+        cells.dedup();
+        let mut keys = Vec::with_capacity(cells.len());
+        let mut legacy: BTreeMap<usize, Vec<CellRef>> = BTreeMap::new();
+        for (i, col, row) in cells {
+            let (si, ws) = *sheets.get(i as usize)?;
+            let at = CellRef::new(row.checked_sub(1)?, col.checked_sub(1)?);
+            self.skipped.remove(&(si, at.row, at.col));
+            let made = ws.cell((col, row)).map(make);
+            let sh = self.wb.sheet_mut(si)?;
+            match made {
+                Some(m) => {
+                    if let Some(skip) = m.skip {
+                        self.skipped.insert((si, at.row, at.col), skip);
+                    }
+                    let formula = m.cell.formula.is_some();
+                    if m.cell.has_content() {
+                        sh.cells.set(at, m.cell);
+                    } else {
+                        sh.remove_cell(at);
+                    }
+                    if formula && !self.settle(si, at) && m.kind == Kind::Legacy {
+                        legacy.entry(si).or_default().push(at);
+                    }
+                }
+                None => {
+                    sh.remove_cell(at);
+                }
+            }
+            keys.push((si, at));
+        }
+        apply_legacy(&mut self.wb, legacy.into_iter().collect(), FUNCTIONS);
+        Some(keys)
+    }
+
+    fn sheet(&self, name: &str) -> Option<(usize, &gm::Sheet)> {
+        let si = self.wb.sheet_index(name)?;
+        Some((si, self.wb.sheet(si)?))
+    }
+
+    /// The value the engine has for a cell.
+    fn value(&self, sheet: &str, col: u32, row: u32) -> Value {
+        match (self.sheet(sheet), col.checked_sub(1), row.checked_sub(1)) {
+            (Some((_, sh)), Some(c), Some(r)) => sh.value(CellRef::new(r, c)),
+            _ => Value::Empty,
         }
     }
-    Ok(out)
+
+    /// Works out a formula as if it were in the cell at, without storing it.
+    fn eval(&self, si: usize, at: CellRef, e: &Expr) -> Ev {
+        let mut host = Reader { wb: &self.wb, now: now_serial(), rng: seed() | 1 };
+        Evaluator::new(&mut host, si, at).eval(e)
+    }
+
+    fn eval_value(&self, si: usize, at: CellRef, e: &Expr) -> Value {
+        let mut host = Reader { wb: &self.wb, now: now_serial(), rng: seed() | 1 };
+        Evaluator::new(&mut host, si, at).value(e)
+    }
 }
 
-fn round_to(n: f64, digits: f64, mode: i32) -> f64 {
-    let m = 10f64.powi(digits as i32);
-    let x = n * m;
-    let r = match mode {
-        0 => (x.abs() + 1e-9).round() * x.signum(),
-        1 => x.abs().ceil() * x.signum(),
-        _ => x.abs().floor() * x.signum(),
-    };
-    r / m
+/// Reads the engine's copy for a formula worked out on the side (its cells
+/// are up to date: nothing is calculated on the way).
+struct Reader<'a> {
+    wb: &'a gm::Workbook,
+    now: f64,
+    rng: u64,
 }
 
-/// Evaluates a criteria of SUMIF/COUNTIF (">10", "A社", "<>x").
-fn matches(v: &V, crit: &V) -> bool {
-    let c = crit.text().unwrap_or_default();
-    for op in ["<=", ">=", "<>", "<", ">", "="] {
-        if let Some(rest) = c.strip_prefix(op) {
-            let rhs = match rest.parse::<f64>() {
-                Ok(n) => V::Num(n),
-                Err(_) => V::Str(rest.to_string()),
-            };
-            if let (V::Str(_), V::Num(_)) = (&rhs, v) {
-                return op == "<>";
-            }
-            return matches!(compare(v, &rhs, op), V::Bool(true));
+impl Host for Reader<'_> {
+    fn workbook(&self) -> &gm::Workbook {
+        self.wb
+    }
+    fn cell_value(&mut self, sheet: usize, c: CellRef) -> Value {
+        self.wb.sheet(sheet).map(|s| s.value(c)).unwrap_or_default()
+    }
+    fn now_serial(&self) -> f64 {
+        self.now
+    }
+    fn random(&mut self) -> f64 {
+        // xorshift64*, as the engine's own.
+        let mut x = self.rng;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.rng = x;
+        (x.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+/// Brings the engine up to date with the workbook and gives it: it is made
+/// when there is none, the cells written since are taken over, and what
+/// depends on them is calculated again (all: every formula).
+fn engine(b: &Book, all: bool) -> RefMut<'_, Engine> {
+    let mut slot = b.calc.borrow_mut();
+    let mut touched = b.touched.borrow_mut();
+    let mut all = all || touched.all;
+    if touched.all {
+        *slot = None;
+    }
+    let mut keys = Vec::new();
+    if let Some(e) = slot.as_mut() {
+        match e.take_in(b, &touched) {
+            Some(k) => keys = k,
+            // The copy does not match the workbook any more.
+            None => (*slot, all) = (None, true),
         }
     }
-    match crit {
-        V::Num(n) => v.num().map(|x| x == *n).unwrap_or(false),
-        _ => v.text().map(|t| t.eq_ignore_ascii_case(&c)).unwrap_or(false),
+    let made = slot.is_none();
+    if made {
+        let mut e = Engine::build(b);
+        keys = std::mem::take(&mut e.fresh);
+        match e.take_in(b, &touched) {
+            Some(k) => keys.extend(k),
+            None => all = true,
+        }
+        *slot = Some(Box::new(e));
     }
+    let any = made || touched.any();
+    *touched = Touched::default();
+    drop(touched);
+    let mut e = RefMut::map(slot, |s| &mut **s.as_mut().expect("the engine was just made"));
+    e.calc.fixed_now = Some(now_serial());
+    // LENB and the like count bytes as the Excel of the language does.
+    gridcraft_functions::set_dbcs(i18n::current().excel.dbcs);
+    if all {
+        let e = &mut *e;
+        e.calc.recalc_all(&mut e.wb);
+    } else if any {
+        // Also calculates the formulas that change on their own (NOW, RAND, OFFSET).
+        let e = &mut *e;
+        e.calc.cells_changed(&mut e.wb, &keys);
+    }
+    e
 }
 
-fn call(name: &str, args: Vec<V>) -> V {
-    // Functions newer than Excel 2007 are saved as _xlfn.NAME.
-    let name = name.strip_prefix("_XLFN.").unwrap_or(name);
-    let r = (|| -> std::result::Result<V, String> {
-        let arg = |i: usize| args.get(i).cloned().unwrap_or(V::Empty);
-        Ok(match name {
-            "SUM" => V::Num(nums(&args)?.iter().sum()),
-            "AVERAGE" => {
-                let n = nums(&args)?;
-                if n.is_empty() {
-                    return Err("#DIV/0!".into());
-                }
-                V::Num(n.iter().sum::<f64>() / n.len() as f64)
+/// What the engine gives a formula on a circular reference, and those that
+/// read one (Excel shows 0 and warns; the engine does not iterate).
+fn circular(v: &Value) -> bool {
+    *v == Value::Error(CellError::Circ)
+}
+
+/// Whether a sheet has a formula.
+fn has_formulas(b: &Book) -> bool {
+    b.wb.sheet_collection().iter().any(|ws| ws.cells().iter().any(|c| c.is_formula()))
+}
+
+/// Saves what the engine worked out as the values of the workbook's cells:
+/// the results of the formulas and the cells array formulas fill. Returns how
+/// many cells changed.
+fn store(b: &mut Book) -> usize {
+    let Book { wb, calc, .. } = b;
+    let Some(e) = calc.get_mut().as_deref_mut() else { return 0 };
+    let Engine { wb: model, areas, .. } = e;
+    let mut changed = 0;
+    for (si, sh) in model.sheets.iter().enumerate() {
+        let Ok(ws) = wb.sheet_mut(si) else { continue };
+        for (at, cell) in sh.cells.iter() {
+            if cell.formula.is_none() {
+                continue;
             }
-            "MIN" => V::Num(nums(&args)?.into_iter().reduce(f64::min).unwrap_or(0.0)),
-            "MAX" => V::Num(nums(&args)?.into_iter().reduce(f64::max).unwrap_or(0.0)),
-            "COUNT" => V::Num(args.iter().flat_map(|a| a.flat()).filter(|v| matches!(v, V::Num(_))).count() as f64),
-            "COUNTA" => V::Num(args.iter().flat_map(|a| a.flat()).filter(|v| !matches!(v, V::Empty)).count() as f64),
-            "PRODUCT" => V::Num(nums(&args)?.iter().product()),
-            "ROUND" => V::Num(round_to(arg(0).num()?, arg(1).num()?, 0)),
-            "ROUNDUP" => V::Num(round_to(arg(0).num()?, arg(1).num()?, 1)),
-            "ROUNDDOWN" | "TRUNC" => V::Num(round_to(arg(0).num()?, arg(1).num()?, 2)),
-            "INT" => V::Num(arg(0).num()?.floor()),
-            "ABS" => V::Num(arg(0).num()?.abs()),
-            "MOD" => {
-                let (a, b) = (arg(0).num()?, arg(1).num()?);
-                if b == 0.0 {
-                    return Err("#DIV/0!".into());
-                }
-                V::Num(a - b * (a / b).floor())
+            // A circular reference has no result: the saved value stays.
+            if circular(&cell.value) {
+                continue;
             }
-            "SQRT" => V::Num(arg(0).num()?.sqrt()),
-            "POWER" => V::Num(arg(0).num()?.powf(arg(1).num()?)),
-            "IF" => {
-                if arg(0).truthy()? {
-                    if args.len() > 1 { arg(1) } else { V::Bool(true) }
-                } else if args.len() > 2 {
-                    arg(2)
+            let c = ws.cell_mut(coord(at));
+            if c.is_formula() && !same(c.raw_value(), &cell.value) {
+                set_result(c, &cell.value);
+                changed += 1;
+            }
+        }
+        for (at, v) in &sh.spill {
+            if circular(v) {
+                continue;
+            }
+            let c = ws.cell_mut(coord(*at));
+            if !c.is_formula() && !same(c.raw_value(), v) {
+                set_plain(c, v);
+                changed += 1;
+            }
+        }
+        // What an array no longer fills is emptied, and the formula's own
+        // note of its area follows.
+        let Some(areas) = areas.get_mut(si) else { continue };
+        for (first, old) in areas.iter() {
+            let new = sh.spill_ranges.get(first).copied().unwrap_or(RangeRef::cell(*first));
+            if new == *old {
+                continue;
+            }
+            for at in old.iter().filter(|p| !new.contains(*p) && !sh.cells.has(*p) && !sh.spill.contains_key(p)) {
+                if let Some(c) = ws.cell(coord(at))
+                    && !c.is_formula()
+                    && !c.raw_value().is_empty()
+                {
+                    ws.cell_mut(coord(at)).cell_value_mut().set_blank();
+                    changed += 1;
+                }
+            }
+        }
+        let firsts: HashSet<CellRef> = areas.keys().chain(sh.spill_ranges.keys()).copied().collect();
+        for first in firsts {
+            let new = sh.spill_ranges.get(&first).copied().unwrap_or(RangeRef::cell(first));
+            if areas.get(&first) == Some(&new) {
+                continue;
+            }
+            let c = ws.cell_mut(coord(first));
+            if let Some(mut f) = c.formula_obj().filter(|f| *f.formula_type() == CellFormulaValues::Array).cloned() {
+                f.set_reference(new.a1());
+                c.cell_value_mut().set_formula_obj(f);
+            }
+        }
+        *areas = sh.spill_ranges.clone();
+    }
+    changed
+}
+
+// ---- book.calculate() ----
+
+/// A formula that kept its saved value.
+pub(crate) struct Skipped {
+    pub sheet: String,
+    pub address: String,
+    pub formula: String,
+    pub skip: Skip,
+}
+
+pub(crate) struct Summary {
+    /// Formulas the engine worked out.
+    pub formulas: usize,
+    /// Cells whose saved value changed.
+    pub changed: usize,
+    pub skipped: Vec<Skipped>,
+}
+
+/// Calculates every formula of the workbook and saves the results in its cells.
+pub(crate) fn calculate(b: &mut Book) -> Summary {
+    let (formulas, skipped) = {
+        let e = engine(b, true);
+        let mut skipped: BTreeMap<(usize, u32, u32), Skip> = e.skipped.clone();
+        let mut formulas = 0;
+        for (si, sh) in e.wb.sheets.iter().enumerate() {
+            for (at, c) in sh.cells.iter().filter(|(_, c)| c.formula.is_some()) {
+                if circular(&c.value) {
+                    skipped.insert((si, at.row, at.col), Skip::Circular);
                 } else {
-                    V::Bool(false)
+                    formulas += 1;
                 }
             }
-            "IFERROR" => match arg(0) {
-                V::Err(_) => arg(1),
-                v => v,
-            },
-            "IFNA" => match arg(0) {
-                V::Err(e) if e == "#N/A" => arg(1),
-                v => v,
-            },
-            "MATCH" => {
-                let kind = if args.len() > 2 { arg(2).num()? } else { 1.0 };
-                V::Num(lookup(&arg(0), &arg(1).flat(), kind)? as f64 + 1.0)
-            }
-            "INDEX" => {
-                let rows = match arg(0) {
-                    V::Range(r) => r,
-                    v => vec![vec![v]],
-                };
-                let (mut r, mut c) = (arg(1).num()? as usize, if args.len() > 2 { arg(2).num()? as usize } else { 0 });
-                // INDEX(A1:E1, 3): the third of a single row.
-                if args.len() <= 2 && rows.len() == 1 {
-                    (r, c) = (1, r);
-                }
-                let c = c.max(1);
-                match rows.get(r.wrapping_sub(1)).and_then(|row| row.get(c - 1)) {
-                    Some(v) if r >= 1 => v.clone(),
-                    _ => return Err("#REF!".into()),
-                }
-            }
-            "VLOOKUP" | "HLOOKUP" => {
-                let rows = match arg(1) {
-                    V::Range(r) => r,
-                    v => vec![vec![v]],
-                };
-                let n = arg(2).num()? as usize;
-                let approx = if args.len() > 3 { arg(3).truthy()? } else { true };
-                let v = name == "VLOOKUP";
-                let keys: Vec<V> = if v { rows.iter().map(|r| r.first().cloned().unwrap_or(V::Empty)).collect() } else { rows.first().cloned().unwrap_or_default() };
-                let i = lookup(&arg(0), &keys, if approx { 1.0 } else { 0.0 })?;
-                let got = if v { rows.get(i).and_then(|r| r.get(n.wrapping_sub(1))) } else { rows.get(n.wrapping_sub(1)).and_then(|r| r.get(i)) };
-                match got {
-                    Some(x) if n >= 1 => x.clone(),
-                    _ => return Err("#REF!".into()),
-                }
-            }
-            "XLOOKUP" => {
-                // Exact matches only (match_mode and search_mode are not used).
-                match lookup(&arg(0), &arg(1).flat(), 0.0) {
-                    Err(e) if e == "#N/A" && args.len() > 3 && !matches!(arg(3), V::Empty) => arg(3),
-                    Err(e) => return Err(e),
-                    Ok(i) => {
-                        let ret = match arg(2) {
-                            V::Range(r) => r,
-                            v => vec![vec![v]],
-                        };
-                        // A lookup column gives the row i of the result, a lookup row its column i.
-                        let column = match arg(1) {
-                            V::Range(r) => r.len() > 1 || r.first().is_some_and(|x| x.len() == 1),
-                            _ => true,
-                        };
-                        let got = if column {
-                            ret.get(i).map(|r| if r.len() == 1 { r[0].clone() } else { V::Range(vec![r.clone()]) })
-                        } else {
-                            ret.first().and_then(|r| r.get(i)).cloned()
-                        };
-                        got.ok_or_else(|| "#VALUE!".to_string())?
-                    }
-                }
-            }
-            "AND" => V::Bool(args.iter().flat_map(|a| a.flat()).filter(|v| !matches!(v, V::Empty)).map(|v| v.truthy()).collect::<std::result::Result<Vec<_>, _>>()?.iter().all(|b| *b)),
-            "OR" => V::Bool(args.iter().flat_map(|a| a.flat()).filter(|v| !matches!(v, V::Empty)).map(|v| v.truthy()).collect::<std::result::Result<Vec<_>, _>>()?.iter().any(|b| *b)),
-            "NOT" => V::Bool(!arg(0).truthy()?),
-            "LEN" => V::Num(arg(0).text()?.chars().count() as f64),
-            "UPPER" => V::Str(arg(0).text()?.to_uppercase()),
-            "LOWER" => V::Str(arg(0).text()?.to_lowercase()),
-            "TRIM" => V::Str(arg(0).text()?.split_whitespace().collect::<Vec<_>>().join(" ")),
-            "LEFT" => {
-                let n = if args.len() > 1 { arg(1).num()? as usize } else { 1 };
-                V::Str(arg(0).text()?.chars().take(n).collect())
-            }
-            "RIGHT" => {
-                let n = if args.len() > 1 { arg(1).num()? as usize } else { 1 };
-                let s: Vec<char> = arg(0).text()?.chars().collect();
-                V::Str(s[s.len().saturating_sub(n)..].iter().collect())
-            }
-            "MID" => {
-                let s: Vec<char> = arg(0).text()?.chars().collect();
-                let st = (arg(1).num()? as usize).max(1) - 1;
-                let n = arg(2).num()? as usize;
-                V::Str(s.iter().skip(st).take(n).collect())
-            }
-            "CONCAT" | "CONCATENATE" => {
-                let mut s = String::new();
-                for a in &args {
-                    for v in a.flat() {
-                        s.push_str(&v.text()?);
-                    }
-                }
-                V::Str(s)
-            }
-            "SUMIF" | "COUNTIF" | "AVERAGEIF" => {
-                let range = arg(0).flat();
-                let crit = arg(1);
-                let sum_range = if args.len() > 2 { arg(2).flat() } else { range.clone() };
-                let mut total = 0.0;
-                let mut count = 0.0;
-                for (i, v) in range.iter().enumerate() {
-                    if matches(v, &crit) {
-                        count += 1.0;
-                        if let Some(V::Num(n)) = sum_range.get(i) {
-                            total += n;
-                        }
-                    }
-                }
-                match name {
-                    "COUNTIF" => V::Num(count),
-                    "SUMIF" => V::Num(total),
-                    _ if count == 0.0 => return Err("#DIV/0!".into()),
-                    _ => V::Num(total / count),
-                }
-            }
-            _ => return Err("#NAME?".into()),
+        }
+        (formulas, skipped)
+    };
+    let changed = store(b);
+    let skipped = skipped
+        .into_iter()
+        .filter_map(|((si, row, col), skip)| {
+            let ws = b.wb.sheet(si).ok()?;
+            let formula = ws.cell((col + 1, row + 1)).map(|c| c.formula().to_string()).unwrap_or_default();
+            Some(Skipped { sheet: ws.name().to_string(), address: CellRef::new(row, col).a1(), formula: format!("={}", formula.trim_start_matches('=')), skip })
         })
-    })();
-    r.unwrap_or_else(V::Err)
+        .collect();
+    Summary { formulas, changed, skipped }
 }
+
+/// Before the workbook is printed: the formulas that depend on what scripts
+/// wrote (and those without a saved value, and NOW and the like) are
+/// calculated and their results saved, so that the pages show them.
+pub(crate) fn refresh(b: &mut Book) {
+    if b.calc.borrow().is_none() && !has_formulas(b) {
+        return;
+    }
+    drop(engine(b, false));
+    store(b);
+}
+
+// ---- cell.calc() and the values the print layout asks for ----
 
 /// A value worked out for conditional formatting (xlsx_cond.rs).
 #[derive(Clone, Debug, PartialEq)]
@@ -661,122 +867,92 @@ pub enum CalcVal {
     Err,
 }
 
-impl From<V> for CalcVal {
-    fn from(v: V) -> CalcVal {
-        match v {
-            V::Num(n) => CalcVal::Num(n),
-            V::Str(s) => CalcVal::Str(s),
-            V::Bool(b) => CalcVal::Bool(b),
-            V::Empty => CalcVal::Empty,
-            V::Err(_) | V::Image(_) => CalcVal::Err,
-            V::Range(r) => r.into_iter().next().and_then(|row| row.into_iter().next()).map(CalcVal::from).unwrap_or(CalcVal::Empty),
+impl From<Value> for CalcVal {
+    fn from(v: Value) -> CalcVal {
+        match v.scalar() {
+            Value::Number(n) => CalcVal::Num(n),
+            Value::Text(s) => CalcVal::Str(s.to_string()),
+            Value::Bool(b) => CalcVal::Bool(b),
+            Value::Empty => CalcVal::Empty,
+            _ => CalcVal::Err,
         }
     }
 }
 
-/// A formula tokenized once, to be worked out for many cells (eval_at).
-pub struct Prepared(Vec<Tok>);
+/// A formula read once, to be worked out for many cells (eval_at).
+pub struct Prepared(Expr);
 
 pub fn prepare(formula: &str) -> Option<Prepared> {
-    tokenize(formula.trim().trim_start_matches('=')).ok().map(Prepared)
+    let body = formula.trim();
+    let body = fmla::from_file(body.strip_prefix('=').unwrap_or(body));
+    gridcraft_formula::parse(&body).ok().map(Prepared)
 }
 
-/// Moves the relative parts of a reference ("A1", "$A1", "Sheet1!B2:C3",
-/// "A:A") by dc columns and dr rows.
-fn shift_ref(r: &str, dc: i64, dr: i64) -> String {
-    let (prefix, body) = match r.rsplit_once('!') {
-        Some((s, b)) => (format!("{s}!"), b),
-        None => (String::new(), r),
-    };
-    let part = |p: &str| -> String {
-        let b = p.as_bytes();
-        let mut i = 0;
-        let col_abs = b.first() == Some(&b'$');
-        if col_abs {
-            i += 1;
-        }
-        let cs = i;
-        while i < b.len() && b[i].is_ascii_alphabetic() {
-            i += 1;
-        }
-        let col = &p[cs..i];
-        let row_abs = b.get(i) == Some(&b'$');
-        if row_abs {
-            i += 1;
-        }
-        let rs = i;
-        while i < b.len() && b[i].is_ascii_digit() {
-            i += 1;
-        }
-        let row = &p[rs..i];
-        if i != b.len() || (col.is_empty() && row.is_empty()) {
-            return p.to_string();
-        }
-        let mut out = String::new();
-        if !col.is_empty() {
-            let n = column_number(col).unwrap_or(1) as i64;
-            let n = if col_abs { n } else { n + dc };
-            if col_abs {
-                out.push('$');
-            }
-            out.push_str(&super::xlsx::column_name(n.clamp(1, 16384)).unwrap_or_default());
-        }
-        if !row.is_empty() {
-            let n: i64 = row.parse().unwrap_or(1);
-            let n = if row_abs { n } else { n + dr };
-            if row_abs {
-                out.push('$');
-            }
-            out.push_str(&n.clamp(1, 1048576).to_string());
-        }
-        out
-    };
-    let body: Vec<String> = body.split(':').map(part).collect();
-    format!("{prefix}{}", body.join(":"))
-}
-
-/// The value of a prepared formula for the cell dc columns right and dr rows
-/// below the cell it was written for (relative references move with it).
-pub fn eval_at(b: &Book, sheet: &str, f: &Prepared, dc: i64, dr: i64) -> CalcVal {
-    let toks = f.0.iter().map(|t| match t {
-        Tok::Ref(r) if dc != 0 || dr != 0 => Tok::Ref(shift_ref(r, dc, dr)),
-        t => t.clone(),
-    });
-    let mut ev = Ev { b, sheet: sheet.to_string(), toks: toks.collect(), pos: 0, depth: 0 };
-    match ev.expr() {
-        Ok(v) if ev.pos >= ev.toks.len() => v.into(),
-        _ => CalcVal::Err,
+/// The value of a prepared formula for the cell at (column, row): it was
+/// written for the cell dc columns to the left and dr rows above, and its
+/// relative references move with it.
+pub fn eval_at(b: &Book, sheet: &str, f: &Prepared, at: (u32, u32), dc: i64, dr: i64) -> CalcVal {
+    let e = engine(b, false);
+    let Some((si, _)) = e.sheet(sheet) else { return CalcVal::Err };
+    let pos = CellRef::new(at.1.saturating_sub(1), at.0.saturating_sub(1));
+    if dc == 0 && dr == 0 {
+        return e.eval_value(si, pos, &f.0).into();
     }
+    e.eval_value(si, pos, &gridcraft_formula::adjust::shift_relative(f.0.clone(), dr, dc)).into()
 }
 
 /// The value of a cell (a formula without a saved result is worked out).
 pub fn value_at(b: &Book, sheet: &str, col: u32, row: u32) -> CalcVal {
-    let mut ev = Ev { b, sheet: sheet.to_string(), toks: Vec::new(), pos: 0, depth: 0 };
-    ev.cell(sheet, col, row).map(CalcVal::from).unwrap_or(CalcVal::Err)
+    let Some(c) = b.sheet(sheet).ok().and_then(|ws| ws.cell((col, row))) else { return CalcVal::Empty };
+    if c.is_formula() && c.raw_value().is_empty() {
+        return engine(b, false).value(sheet, col, row).into();
+    }
+    value_of(c, c.is_formula()).into()
 }
 
-/// The value of the formula in the cell, as text.
+/// The value of the formula in the cell, as text: worked out now, from the
+/// cells as they are.
 pub fn calc_cell(b: &Book, sheet: &str, r: &str) -> Result<String> {
     let (col, row) = parse_ref(r)?;
     let ws = b.sheet(sheet)?;
     let Some(c) = ws.cell((col, row)) else { return Ok(String::new()) };
-    let v = if c.is_formula() {
-        let mut ev = Ev { b, sheet: sheet.to_string(), toks: tokenize(c.formula())?, pos: 0, depth: 0 };
-        let v = ev.expr()?;
-        if ev.pos < ev.toks.len() {
-            return Err(Error::msg(format!("formula: unexpected {:?}", ev.toks[ev.pos])));
-        }
-        v
-    } else {
-        let mut ev = Ev { b, sheet: sheet.to_string(), toks: Vec::new(), pos: 0, depth: 0 };
-        ev.cell(sheet, col, row)?
+    if !c.is_formula() {
+        return Ok(text_of(&value_of(c, false)));
+    }
+    let e = engine(b, false);
+    let Some((si, sh)) = e.sheet(sheet) else { return Ok(String::new()) };
+    let at = CellRef::new(row - 1, col - 1);
+    if let Some(skip) = e.skipped.get(&(si, at.row, at.col)) {
+        return match skip {
+            Skip::Syntax(m) => Err(Error::msg(format!("formula: {m}"))),
+            _ if c.raw_value().is_empty() => Ok(skip.error().to_string()),
+            _ => Ok(text_of(&sh.value(at))),
+        };
+    }
+    let v = match sh.cell(at).and_then(|c| c.formula.as_ref()) {
+        // A formula on a circular reference has no result.
+        _ if circular(&sh.value(at)) => sh.value(at),
+        // An array formula's own cell shows the first of its values.
+        Some(f) if f.array.is_none() => match f.expr_arc() {
+            Some(expr) => e.eval_value(si, at, &expr),
+            None => sh.value(at),
+        },
+        _ => sh.value(at),
     };
-    Ok(match v {
-        V::Num(n) => fmt_calc(n),
-        V::Err(e) => e,
-        V::Range(_) | V::Image(_) => "#VALUE!".into(),
-        other => other.text().unwrap_or_default(),
-    })
+    if circular(&v.scalar()) {
+        // Like the other formulas that are not calculated: the saved value.
+        return Ok(if c.raw_value().is_empty() { Skip::Circular.error().to_string() } else { text_of(&value_of(c, true)) });
+    }
+    Ok(text_of(&v))
+}
+
+/// A value as cell.calc() gives it: like Excel shows it in the General format.
+fn text_of(v: &Value) -> String {
+    match v.scalar() {
+        Value::Number(n) => fmt_calc(n),
+        Value::Error(e) => e.as_str().to_string(),
+        v => v.to_text().unwrap_or_default(),
+    }
 }
 
 /// The picture a cell shows: one placed in it, or what its formula gives
@@ -799,10 +975,110 @@ pub fn cell_image(b: &Book, sheet: &str, col: u32, row: u32) -> Option<usize> {
     if !c.is_formula() {
         return None;
     }
-    let mut ev = Ev { b, sheet: sheet.to_string(), toks: tokenize(c.formula()).ok()?, pos: 0, depth: 0 };
-    match ev.expr() {
-        Ok(V::Image(i)) if ev.pos >= ev.toks.len() => Some(i),
-        _ => None,
+    let e = engine(b, false);
+    let (si, _) = e.sheet(sheet)?;
+    Pictures { e: &e, b, number: false, seen: HashMap::new() }.shown((si, CellRef::new(row - 1, col - 1)), 0)
+}
+
+/// Finds the picture a formula hands on. To the engine a picture is #VALUE!,
+/// like any formula that works with one (`=B2&""`, `=B2+1`); a formula that
+/// only passes it on (`=B2`, IF, the lookups) is told apart by working it
+/// out twice with the pictures standing in as values: once as a text and
+/// once as a number that nothing else gives. Only a formula that leaves both
+/// as they are shows the picture.
+struct Pictures<'a> {
+    e: &'a Engine,
+    b: &'a Book,
+    /// The pictures stand in as numbers (else as texts).
+    number: bool,
+    /// The formulas worked out so far.
+    seen: HashMap<(Key, bool), Value>,
+}
+
+/// Formulas that hand a picture on from one to the next.
+const MAX_PICTURE_DEPTH: usize = 32;
+
+impl Pictures<'_> {
+    const TEXT: &'static str = "\u{E000}xljs-picture:";
+    const NUMBER: f64 = 8.25e200;
+
+    fn stand_in(&self, i: usize) -> Value {
+        if self.number { Value::Number(Self::NUMBER + i as f64 * 1e186) } else { Value::text(format!("{}{i}", Self::TEXT)) }
+    }
+
+    fn picture(&self, v: &Value) -> Option<usize> {
+        let n = self.b.cell_images.images.len();
+        match v {
+            Value::Text(t) if !self.number => t.strip_prefix(Self::TEXT)?.parse().ok().filter(|i| *i < n),
+            Value::Number(x) if self.number => (0..n).find(|i| *x == Self::NUMBER + *i as f64 * 1e186),
+            _ => None,
+        }
+    }
+
+    /// The picture the formula cell shows, when both ways agree.
+    fn shown(&mut self, k: Key, depth: usize) -> Option<usize> {
+        self.number = false;
+        let text = self.formula(k, depth);
+        let as_text = self.picture(&text)?;
+        self.number = true;
+        let number = self.formula(k, depth);
+        let as_number = self.picture(&number);
+        self.number = false;
+        as_number.filter(|i| *i == as_text)
+    }
+
+    /// The value of a formula cell with the pictures standing in.
+    fn formula(&mut self, k: Key, depth: usize) -> Value {
+        if let Some(v) = self.seen.get(&(k, self.number)) {
+            return v.clone();
+        }
+        let error = Value::Error(CellError::Value);
+        let Some(expr) = self.e.wb.sheet(k.0).and_then(|s| s.cell(k.1)).and_then(|c| c.formula.as_ref()).and_then(|f| f.expr_arc()) else { return error };
+        // Until it is worked out: a formula that reads itself shows none.
+        self.seen.insert((k, self.number), error.clone());
+        let mut host = PictureHost { p: self, depth };
+        let v = Evaluator::new(&mut host, k.0, k.1).value(&expr).scalar();
+        self.seen.insert((k, self.number), v.clone());
+        v
+    }
+
+    /// A cell as a formula reads it.
+    fn cell(&mut self, sheet: usize, c: CellRef, depth: usize) -> Value {
+        let Some(sh) = self.e.wb.sheet(sheet) else { return Value::Empty };
+        let v = sh.value(c);
+        // Only a cell that is #VALUE! can be a picture.
+        if v != Value::Error(CellError::Value) {
+            return v;
+        }
+        if let Some(i) = self.b.cell_images.at(&sh.name, c.col + 1, c.row + 1) {
+            // Still the picture: a value written over it is no #VALUE!.
+            return self.stand_in(i);
+        }
+        if depth >= MAX_PICTURE_DEPTH || !sh.cell(c).is_some_and(|x| x.formula.is_some()) {
+            return v;
+        }
+        let got = self.formula((sheet, c), depth + 1);
+        if self.picture(&got).is_some() { got } else { v }
+    }
+}
+
+struct PictureHost<'p, 'a> {
+    p: &'p mut Pictures<'a>,
+    depth: usize,
+}
+
+impl Host for PictureHost<'_, '_> {
+    fn workbook(&self) -> &gm::Workbook {
+        &self.p.e.wb
+    }
+    fn cell_value(&mut self, sheet: usize, c: CellRef) -> Value {
+        self.p.cell(sheet, c, self.depth)
+    }
+    fn now_serial(&self) -> f64 {
+        now_serial()
+    }
+    fn random(&mut self) -> f64 {
+        0.5
     }
 }
 
@@ -810,47 +1086,47 @@ pub fn cell_image(b: &Book, sheet: &str, col: u32, row: u32) -> Option<usize> {
 /// `OFFSET(Sheet1!$A$1,0,0,MAX(...),7)` or a plain `Sheet1!$A$1:$G$40`
 /// (1-based: c1, r1, c2, r2). None when it is something else or out of the sheet.
 pub fn eval_area(b: &Book, sheet: &str, formula: &str) -> Option<(u32, u32, u32, u32)> {
-    let toks = tokenize(formula.trim().trim_start_matches('=')).ok()?;
-    let range = |r: &str| -> Option<(u32, u32, u32, u32)> {
-        let r = r.rsplit_once('!').map(|x| x.1).unwrap_or(r).replace('$', "").to_uppercase();
-        let (a, z) = r.split_once(':').unwrap_or((&r, &r));
-        let (c1, r1) = parse_ref(a).ok()?;
-        let (c2, r2) = parse_ref(z).ok()?;
-        Some((c1.min(c2), r1.min(r2), c1.max(c2), r1.max(r2)))
-    };
-    match toks.as_slice() {
-        [Tok::Ref(r)] => range(r),
-        [Tok::Name(n), Tok::LParen, Tok::Ref(r), Tok::Comma, ..] if n == "OFFSET" => {
-            let base = range(r)?;
-            let mut ev = Ev { b, sheet: sheet.to_string(), toks: toks.clone(), pos: 4, depth: 0 };
-            let mut nums: Vec<Option<f64>> = Vec::new();
-            loop {
-                if matches!(ev.peek(), Some(Tok::Comma) | Some(Tok::RParen)) {
-                    nums.push(None);
-                } else {
-                    nums.push(Some(ev.expr().ok()?.num().ok()?.trunc()));
-                }
-                match ev.next() {
-                    Some(Tok::Comma) => continue,
-                    Some(Tok::RParen) => break,
-                    _ => return None,
-                }
-            }
-            if ev.pos != toks.len() || nums.len() < 2 || nums.len() > 4 {
-                return None;
-            }
-            let at = |i: usize| nums.get(i).copied().flatten();
-            let c1 = base.0 as f64 + at(1).unwrap_or(0.0);
-            let r1 = base.1 as f64 + at(0).unwrap_or(0.0);
-            let h = at(2).unwrap_or((base.3 - base.1 + 1) as f64);
-            let w = at(3).unwrap_or((base.2 - base.0 + 1) as f64);
-            if c1 < 1.0 || r1 < 1.0 || h < 1.0 || w < 1.0 || c1 + w - 1.0 > 16384.0 || r1 + h - 1.0 > 1048576.0 {
-                return None;
-            }
-            Some((c1 as u32, r1 as u32, (c1 + w - 1.0) as u32, (r1 + h - 1.0) as u32))
-        }
-        _ => None,
+    let f = prepare(formula)?;
+    let e = engine(b, false);
+    let (si, _) = e.sheet(sheet)?;
+    let Ev::R(areas) = e.eval(si, CellRef::new(0, 0), &f.0) else { return None };
+    let [a] = areas.as_slice() else { return None };
+    let r = a.range;
+    if r.is_full_rows() || r.is_full_cols() || !r.end.is_valid() {
+        return None;
     }
+    Some((r.start.col + 1, r.start.row + 1, r.end.col + 1, r.end.row + 1))
+}
+
+// ---- formulas as files spell them ----
+
+/// A formula a script wrote, as the file has to hold it: Excel reads the
+/// functions newer than Excel 2007 only with their prefix (`_xlfn.XLOOKUP`)
+/// and shows #NAME? without it. Formulas that need nothing stay as written.
+pub fn formula_to_file(text: &str) -> String {
+    let body = text.strip_prefix('=').unwrap_or(text);
+    let Ok(e) = gridcraft_formula::parse(body) else { return body.to_string() };
+    let mut differs = false;
+    e.walk(&mut |x| {
+        differs |= match x {
+            Expr::Call(name, _) => name == "LET" || name == "LAMBDA" || gridcraft_xlsx_formulas::tables::file_function_name(name).is_some(),
+            Expr::Unary(gridcraft_formula::UnOp::Spill | gridcraft_formula::UnOp::At | gridcraft_formula::UnOp::Trim(_), _) => true,
+            Expr::Struct(_) => true,
+            _ => false,
+        }
+    });
+    // A prefix the script wrote itself is kept by the rewrite too.
+    if differs { fmla::text_to_file(body) } else { body.to_string() }
+}
+
+/// A formula of the file as Excel shows it (and scripts write it): without
+/// the prefixes.
+pub fn formula_from_file(text: &str) -> String {
+    let body = text.strip_prefix('=').unwrap_or(text);
+    if !body.to_ascii_lowercase().contains("_xl") {
+        return body.to_string();
+    }
+    fmla::from_file(body)
 }
 
 /// A computed number as text (no binary noise: 15 significant digits).
@@ -860,3 +1136,6 @@ fn fmt_calc(n: f64) -> String {
     let r: f64 = format!("{v:.15}").parse().unwrap_or(v);
     fmt_num(super::numfmt::general(r).parse().unwrap_or(r))
 }
+
+#[cfg(test)]
+mod tests;

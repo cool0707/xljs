@@ -1,0 +1,19 @@
+# Vendored from GridCraft (https://github.com/storytold/gridcraft); see ../README.md.
+[package]
+name = "gridcraft-core"
+version = "0.19.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "GridCraft core types: cell addresses, values, errors, date serials"
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+serde = { version = "1", features = ["derive", "rc"] }
+thiserror = "2"
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["float_roundtrip"] }

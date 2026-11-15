@@ -2319,14 +2319,22 @@ pub(super) fn install(n: &super::N) {
     // xlsxPrintHtml(book, optionsJSON) -> JSON { html, charts: [{ sheet, index }], pages }
     n.set("xlsxPrintHtml", |h, a| {
         let o: PrintOptions = serde_json::from_str(&a.str(1)).map_err(|e| a.throw(&crate::Error::from(e)))?;
-        let out = super::xlsx::with_book(h, a, |b| workbook_html(b, &o).map_err(|e| a.throw(&e)))?;
+        let out = super::xlsx::with_book(h, a, |b| {
+            // The pages show what the formulas give now, not what was saved
+            // before the script wrote its values.
+            super::xlsx_calc::refresh(b);
+            workbook_html(b, &o).map_err(|e| a.throw(&e))
+        })?;
         a.ret(serde_json::json!({ "html": out.html, "charts": out.charts, "pages": out.pages }).to_string())
     });
     // xlsxPrintPages(book, optionsJSON) -> JSON [{ sheet, pages, across, down, scale, areas: [{ range, across, down, pages }] }]
     n.set("xlsxPrintPages", |h, a| {
         let mut o: PrintOptions = serde_json::from_str(&a.str(1)).map_err(|e| a.throw(&crate::Error::from(e)))?;
         o.layout_only = true;
-        let out = super::xlsx::with_book(h, a, |b| workbook_html(b, &o).map_err(|e| a.throw(&e)))?;
+        let out = super::xlsx::with_book(h, a, |b| {
+            super::xlsx_calc::refresh(b);
+            workbook_html(b, &o).map_err(|e| a.throw(&e))
+        })?;
         a.ret(serde_json::to_string(&out.sheets).map_err(|e| a.throw(&crate::Error::from(e)))?)
     });
 }

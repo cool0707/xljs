@@ -255,11 +255,15 @@ ok(got[0] === img2 && got[1] === img1, "saved by Excel (vm) and saved without vm
 ok(got[2] === img1 && got[3] === img2 && got[4] === img3 && got[5] === img2 && got[6] === img1, "formulas written by the script: =, IF, XLOOKUP, VLOOKUP, INDEX");
 ok(refs.toHtml().includes(">#VALUE!<"), "a picture used as text is #VALUE!");
 equal(refs.cell("C2").calc(), "#VALUE!");
-// A value written over a picture is no picture, also where it is referred to.
+// A value written over a picture is no picture, also where it is referred to:
+// the formulas are calculated again for the pages, those Excel saved with
+// the picture too (D3 here, A2 on the other sheet).
 ci.sheets[0].setValue("B3", "売り切れ");
-ok(ci.sheets[0].toHtml().includes(">売り切れ<") && srcs(ci.sheets[0].toHtml()).length === 4, "overwritten picture");
+ok(ci.sheets[0].toHtml().includes(">売り切れ<") && srcs(ci.sheets[0].toHtml()).length === 3, "overwritten picture");
+equal(ci.sheets[0].cell("D3").value, "売り切れ", "the result is stored in the cell");
 got = srcs(refs.toHtml()).map((x) => x.src);
-ok(refs.toHtml().includes(">売り切れ<") && got.length === 5, "formulas that refer to it show the value");
+ok(refs.toHtml().includes(">売り切れ<") && got.length === 4, "formulas that refer to it show the value");
+equal(refs.cell("A2").value, "売り切れ");
 await ci.toPdf("cellimages.pdf");
 
 await xljs.htmlToPdf("<h1>こんにちは</h1>", "hello.pdf", { paper: "A5", landscape: true });

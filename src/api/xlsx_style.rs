@@ -534,7 +534,7 @@ fn has_style(st: &Style) -> bool {
 pub fn apply_style(b: &mut Book, sheet: &str, r: &str, sp: &StyleSpec, replace: bool) -> Result<()> {
     let (c1, r1, c2, r2) = parse_range(r)?;
     let df = b.default_font.clone();
-    let ws = b.sheet_mut(sheet)?;
+    let ws = b.layout_mut(sheet)?;
     for row in r1..=r2 {
         for col in c1..=c2 {
             let sides = sp.sides_for(col, row, c1, r1, c2, r2);
@@ -785,7 +785,7 @@ pub(super) fn install(n: &N) {
             if !(0.0..=409.0).contains(&ht) {
                 return Err(a.throw(&Error::msg("the height of the row must be less than or equal to 409 points")));
             }
-            let ws = b.sheet_mut(&sheet).map_err(|e| a.throw(&e))?;
+            let ws = b.layout_mut(&sheet).map_err(|e| a.throw(&e))?;
             let rd = ws.row_dimension_mut(row as u32);
             rd.set_height(ht);
             rd.set_custom_height(true);
@@ -813,7 +813,7 @@ pub(super) fn install(n: &N) {
 
 fn freeze(b: &mut Book, sheet: &str, r: &str) -> Result<()> {
     use umya_spreadsheet::structs::{Pane, PaneStateValues, PaneValues, SheetView};
-    let ws = b.sheet_mut(sheet)?;
+    let ws = b.layout_mut(sheet)?;
     let views = ws.sheet_views_mut().sheet_view_list_mut();
     if views.is_empty() {
         views.push(SheetView::default());

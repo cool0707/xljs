@@ -46,6 +46,14 @@ rusqlite = { version = "0.41", features = ["bundled", "backup", "column_decltype
 lopdf = { version = "0.46", default-features = false }
 ttf-parser = "0.25"
 subsetter = { version = "0.2", default-features = false }
+# The formula engine (vendor/gridcraft/README.md): parser, function library,
+# dependency graph and recalculation, from GridCraft with xljs's changes.
+gridcraft-core = { path = "vendor/gridcraft/core" }
+gridcraft-formula = { path = "vendor/gridcraft/formula" }
+gridcraft-functions = { path = "vendor/gridcraft/functions" }
+gridcraft-model = { path = "vendor/gridcraft/model" }
+gridcraft-calc = { path = "vendor/gridcraft/calc" }
+gridcraft-xlsx-formulas = { path = "vendor/gridcraft/xlsx-formulas" }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62", features = [
@@ -86,6 +94,29 @@ webview2-com = "0.39"
 [build-dependencies]
 embed-resource = "3"
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+
+# The vendored crates are members so that their own tests run from here
+# (cargo test -p gridcraft-calc); `cargo test --lib` still tests xljs only.
+[workspace]
+members = ["vendor/gridcraft/*"]
+
+# The formula engine recurses deeply (a formula nests up to 256 levels) and
+# measures its stack use: like GridCraft's own builds, it is optimized in
+# debug builds too, where unoptimized frames would be several times larger.
+[profile.dev.package.gridcraft-core]
+opt-level = 2
+[profile.dev.package.gridcraft-formula]
+opt-level = 2
+[profile.dev.package.gridcraft-functions]
+opt-level = 2
+[profile.dev.package.gridcraft-numfmt]
+opt-level = 2
+[profile.dev.package.gridcraft-model]
+opt-level = 2
+[profile.dev.package.gridcraft-calc]
+opt-level = 2
+[profile.dev.package.gridcraft-xlsx-formulas]
+opt-level = 2
 
 [profile.release]
 opt-level = "s"

@@ -1,0 +1,257 @@
+use super::*;
+use crate::testutil::lock_lang;
+
+/// testdata/xlsx/make_calc.py
+fn book() -> Book {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/testdata/xlsx/calc.xlsx");
+    super::super::xlsx::open_bytes(&std::fs::read(path).unwrap(), path.into()).unwrap()
+}
+
+fn raw(b: &Book, sheet: &str, r: &str) -> String {
+    let (col, row) = parse_ref(r).unwrap();
+    b.sheet(sheet).unwrap().cell((col, row)).map(|c| c.raw_value().to_string()).unwrap_or_default()
+}
+
+fn num(b: &Book, sheet: &str, r: &str) -> f64 {
+    raw(b, sheet, r).parse().unwrap_or(f64::NAN)
+}
+
+fn set(b: &mut Book, sheet: &str, r: &str, v: f64) {
+    let (col, row) = parse_ref(r).unwrap();
+    b.cell_mut(sheet, col, row).unwrap().set_value_number(v);
+}
+
+fn formula(b: &mut Book, sheet: &str, r: &str, f: &str) {
+    let (col, row) = parse_ref(r).unwrap();
+    let c = b.cell_mut(sheet, col, row).unwrap();
+    c.cell_value_mut().set_blank();
+    c.set_formula(formula_to_file(f));
+}
+
+/// Every formula of the 数式 sheet gives the value beside it (the ones
+/// LibreOffice gives for the same workbook).
+#[test]
+fn formulas_give_the_values_of_excel() {
+    let _l = lock_lang("ja");
+    let mut b = book();
+    let sum = calculate(&mut b);
+    assert!(sum.formulas > 200, "{} formulas", sum.formulas);
+    let ws = b.sheet("数式").unwrap();
+    let mut checked = 0;
+    for row in 1..=ws.highest_row() {
+        let text = raw(&b, "数式", &format!("A{row}"));
+        let (got, want) = (ws.cell((2, row)).unwrap().raw_value(), ws.cell((3, row)).unwrap().raw_value());
+        let same = match (got, want) {
+            (CellRawValue::Numeric(a), CellRawValue::Numeric(b)) => (a - b).abs() <= 1e-9 * b.abs().max(1.0),
+            (a, b) => a.to_string() == b.to_string(),
+        };
+        assert!(same, "row {row}: {text} gave {got:?}, not {want:?}");
+        checked += 1;
+    }
+    assert!(checked >= 139, "{checked} formulas checked");
+}
+
+#[test]
+fn names_tables_and_shared_formulas() {
+    let _l = lock_lang("ja");
+    let mut b = book();
+    calculate(&mut b);
+    // A name of the sheet, read on that sheet.
+    assert_eq!(num(&b, "データ", "I1"), 281.0);
+    // The calculated column and the formulas that name the table's columns.
+    assert_eq!(num(&b, "表", "D2"), 100.0);
+    assert_eq!(num(&b, "表", "D6"), 2500.0);
+    assert_eq!(num(&b, "表", "F1"), 5500.0);
+    assert_eq!(num(&b, "表", "F2"), 3.0);
+    assert_eq!(num(&b, "表", "F3"), 4.0);
+    assert_eq!(num(&b, "表", "F4"), 5.0);
+    // A shared formula moves with each of its cells; absolute rows stay.
+    for (i, want) in [110.0, 440.0, 990.0, 1760.0, 2750.0].iter().enumerate() {
+        assert!((num(&b, "共有", &format!("C{}", i + 2)) - want).abs() < 1e-9, "C{}", i + 2);
+    }
+    assert!((num(&b, "共有", "D6") - 6050.0).abs() < 1e-9);
+}
+
+#[test]
+fn array_formulas_fill_their_cells() {
+    let _l = lock_lang("ja");
+    let mut b = book();
+    calculate(&mut b);
+    // Entered over C1:C5 with Ctrl+Shift+Enter.
+    assert_eq!((1..=5).map(|r| num(&b, "配列", &format!("C{r}"))).collect::<Vec<_>>(), [10.0, 40.0, 90.0, 160.0, 250.0]);
+    // FILTER spills three rows, SORT five.
+    assert_eq!((1..=3).map(|r| num(&b, "配列", &format!("E{r}"))).collect::<Vec<_>>(), [3.0, 4.0, 5.0]);
+    assert_eq!(raw(&b, "配列", "E4"), "");
+    assert_eq!((1..=5).map(|r| num(&b, "配列", &format!("G{r}"))).collect::<Vec<_>>(), [50.0, 40.0, 30.0, 20.0, 10.0]);
+    assert_eq!(num(&b, "配列", "I1"), 550.0);
+    assert_eq!(num(&b, "配列", "I2"), 12.0);
+    // Saved without dynamic-array metadata: the value of the formula's own row.
+    assert_eq!(num(&b, "配列", "I3"), 3.0);
+    assert_eq!(num(&b, "配列", "I4"), 150.0);
+
+    // A smaller result takes back the cells it no longer fills.
+    set(&mut b, "配列", "B3", 5.0);
+    calculate(&mut b);
+    assert_eq!((1..=3).map(|r| raw(&b, "配列", &format!("E{r}"))).collect::<Vec<_>>(), ["4", "5", ""]);
+    assert_eq!(num(&b, "配列", "I2"), 9.0);
+    assert_eq!(num(&b, "配列", "C3"), 15.0);
+}
+
+/// What the engine cannot work out keeps the result Excel saved, and so does
+/// what depends on it until something else it reads changes.
+#[test]
+fn formulas_it_cannot_calculate_keep_their_values() {
+    let _l = lock_lang("ja");
+    let mut b = book();
+    let sum = calculate(&mut b);
+    let reasons: Vec<(String, &str, Option<&str>)> = sum.skipped.iter().filter(|s| s.sheet == "保存値").map(|s| (s.address.clone(), s.skip.reason(), s.skip.name())).collect();
+    assert_eq!(reasons, [("B1".to_string(), "function", Some("MYFUNC")), ("B2".into(), "external", None), ("B3".into(), "name", Some("未定義の名前")), ("B4".into(), "function", Some("PHONETIC"))]);
+    assert_eq!(sum.skipped.iter().find(|s| s.address == "B1").map(|s| (s.formula.as_str(), s.skip.message())), Some(("=MYFUNC(A1)", "関数 MYFUNC は計算できません".to_string())));
+    assert_eq!([raw(&b, "保存値", "B1"), raw(&b, "保存値", "B2"), raw(&b, "保存値", "B3"), raw(&b, "保存値", "B4")], ["123", "42", "7", "ゴ"]);
+    // The formulas are still there.
+    assert!(b.sheet("保存値").unwrap().cell((2, 1)).unwrap().is_formula());
+    // What reads them is calculated from the saved values.
+    assert_eq!(num(&b, "保存値", "C1"), 128.0);
+    assert_eq!(num(&b, "保存値", "C2"), 84.0);
+    // calculate() works every formula out: also the one whose saved result was off.
+    assert_eq!(num(&b, "保存値", "D1"), 50.0);
+    // A name of another sheet is not seen from here.
+    assert!(sum.skipped.iter().all(|s| s.sheet != "データ"));
+}
+
+/// Without calculate(), only what depends on the cells that were written is
+/// calculated again (and what has no saved result).
+#[test]
+fn only_what_changed_is_calculated_again() {
+    let _l = lock_lang("ja");
+    let mut b = book();
+    // Nothing written yet: the saved result stands, right or not.
+    refresh(&mut b);
+    assert_eq!(num(&b, "保存値", "D1"), 999.0);
+    assert_eq!(num(&b, "保存値", "C1"), 128.0);
+    // The formulas saved without a result were worked out.
+    assert_eq!(num(&b, "数式", "B1"), 64050.0);
+    set(&mut b, "保存値", "A1", 7.0);
+    assert_eq!(calc_cell(&b, "保存値", "D1").unwrap(), "70");
+    assert_eq!(calc_cell(&b, "保存値", "C1").unwrap(), "130");
+    // calc() stores nothing; the pages' refresh does.
+    assert_eq!(num(&b, "保存値", "D1"), 999.0);
+    refresh(&mut b);
+    assert_eq!(num(&b, "保存値", "D1"), 70.0);
+    assert_eq!(num(&b, "保存値", "C1"), 130.0);
+    assert_eq!(num(&b, "保存値", "C2"), 84.0);
+    // A formula written by a script, on the cells as they are now.
+    formula(&mut b, "保存値", "E1", "=SUM(A1,D1)&\"円\"");
+    assert_eq!(calc_cell(&b, "保存値", "E1").unwrap(), "77円");
+    formula(&mut b, "保存値", "E2", "=NOSUCH(1)");
+    assert_eq!(calc_cell(&b, "保存値", "E2").unwrap(), "#NAME?");
+    formula(&mut b, "保存値", "E3", "=1+");
+    assert!(calc_cell(&b, "保存値", "E3").is_err());
+    // Other changes than the content of cells: everything is calculated again.
+    b.sheet_mut("保存値").unwrap();
+    assert_eq!(calc_cell(&b, "保存値", "C1").unwrap(), "130");
+    refresh(&mut b);
+    assert_eq!(num(&b, "数式", "B1"), 64050.0);
+}
+
+#[test]
+fn the_japanese_functions_follow_the_language() {
+    let check = |f: &str, want: &str| {
+        let mut b = book();
+        formula(&mut b, "保存値", "G1", f);
+        assert_eq!(calc_cell(&b, "保存値", "G1").unwrap(), want, "{f}");
+    };
+    {
+        let _l = lock_lang("ja");
+        check("=LENB(\"東京都abc\")", "9");
+        check("=LEFTB(\"東京都\",4)", "東京");
+        check("=TEXT(DATE(2026,4,1),\"ggge年m月d日(aaa)\")", "令和8年4月1日(水)");
+        check("=ASC(\"ＡＢＣ　カタカナ\")", "ABC ｶﾀｶﾅ");
+        check("=JIS(\"ﾊﾞﾅﾅ\")", "バナナ");
+        check("=YEN(1234.5)", "¥1,235");
+    }
+    let _l = lock_lang("en");
+    check("=LENB(\"東京都abc\")", "6");
+}
+
+#[test]
+fn now_and_today_are_local_and_can_be_fixed() {
+    let _l = lock_lang("ja");
+    set_fixed_now(Some("2026-04-10T09:30:00"));
+    let mut b = book();
+    formula(&mut b, "保存値", "G1", "=TEXT(NOW(),\"yyyy/mm/dd hh:mm\")");
+    formula(&mut b, "保存値", "G2", "=TEXT(TODAY(),\"yyyy/m/d\")");
+    formula(&mut b, "保存値", "G3", "=RAND()");
+    let (now, today, rand) = (calc_cell(&b, "保存値", "G1").unwrap(), calc_cell(&b, "保存値", "G2").unwrap(), calc_cell(&b, "保存値", "G3").unwrap());
+    calculate(&mut b);
+    let stored = raw(&b, "保存値", "G1");
+    set_fixed_now(None);
+    assert_eq!((now.as_str(), today.as_str(), stored.as_str()), ("2026/04/10 09:30", "2026/4/10", "2026/04/10 09:30"));
+    assert!(rand.parse::<f64>().is_ok_and(|r| (0.0..1.0).contains(&r)), "{rand}");
+    // The clock is the computer's local time otherwise.
+    let mut b = book();
+    formula(&mut b, "保存値", "G1", "=TEXT(NOW(),\"yyyy/mm/dd hh\")");
+    let near = [chrono::Local::now(), chrono::Local::now() + chrono::Duration::seconds(5)].map(|t| t.format("%Y/%m/%d %H").to_string());
+    assert!(near.contains(&calc_cell(&b, "保存値", "G1").unwrap()));
+}
+
+#[test]
+fn formulas_get_the_prefixes_files_need() {
+    assert_eq!(formula_to_file("=SUM(A1:A3)"), "SUM(A1:A3)");
+    assert_eq!(formula_to_file("= sum( a1 , 2 )"), " sum( a1 , 2 )");
+    assert_eq!(formula_to_file("=XLOOKUP(1,A:A,B:B)"), "_xlfn.XLOOKUP(1,A:A,B:B)");
+    assert_eq!(formula_to_file("=_xlfn.XLOOKUP(1,A:A,B:B)"), "_xlfn.XLOOKUP(1,A:A,B:B)");
+    assert_eq!(formula_to_file("=IFS(A1>1,\"a\",TRUE,\"b\")&TEXTJOIN(\",\",TRUE,A1:A3)"), "_xlfn.IFS(A1>1,\"a\",TRUE,\"b\")&_xlfn.TEXTJOIN(\",\",TRUE,A1:A3)");
+    assert_eq!(formula_to_file("=FILTER(A1:A9,B1:B9>0)"), "_xlfn._xlws.FILTER(A1:A9,B1:B9>0)");
+    assert_eq!(formula_to_file("=LET(x,1,x+1)"), "_xlfn.LET(_xlpm.x,1,_xlpm.x+1)");
+    // What cannot be read is kept as it is.
+    assert_eq!(formula_to_file("=1+"), "1+");
+    assert_eq!(formula_from_file("_xlfn.XLOOKUP(1,A:A,B:B)"), "XLOOKUP(1,A:A,B:B)");
+    assert_eq!(formula_from_file("_xlfn.LET(_xlpm.x,1,_xlpm.x+1)"), "LET(x,1,x+1)");
+    assert_eq!(formula_from_file(" sum( a1 , 2 )"), " sum( a1 , 2 )");
+}
+
+#[test]
+fn print_areas_given_as_formulas() {
+    let _l = lock_lang("ja");
+    let b = book();
+    assert_eq!(eval_area(&b, "データ", "データ!$A$1:$G$41"), Some((1, 1, 7, 41)));
+    assert_eq!(eval_area(&b, "データ", "OFFSET(データ!$A$1,0,0,COUNTA(データ!$A:$A),7)"), Some((1, 1, 7, 41)));
+    assert_eq!(eval_area(&b, "データ", "OFFSET($B$2,1,1,MAX(数量列),2)"), Some((3, 3, 4, 15)));
+    assert_eq!(eval_area(&b, "データ", "SUM(1,2)"), None);
+    assert_eq!(eval_area(&b, "データ", "データ!$A:$C"), None);
+}
+
+/// Formulas for many cells (conditional formatting): the relative references move.
+#[test]
+fn prepared_formulas_move_with_the_cell() {
+    let _l = lock_lang("ja");
+    let b = book();
+    let f = prepare("=$D2>=10").unwrap();
+    let hits: Vec<u32> = (2..=41).filter(|r| eval_at(&b, "データ", &f, (1, *r), 0, *r as i64 - 2) == CalcVal::Bool(true)).collect();
+    assert_eq!(hits.len(), 12);
+    assert!(hits.iter().all(|r| value_at(&b, "データ", 4, *r) == CalcVal::Num(raw(&b, "データ", &format!("D{r}")).parse().unwrap())));
+    assert_eq!(eval_at(&b, "データ", &prepare("=ROW()+COLUMN()").unwrap(), (3, 5), 0, 0), CalcVal::Num(8.0));
+    // A formula without a saved result is worked out.
+    assert_eq!(value_at(&b, "データ", 6, 2), CalcVal::Num(1200.0));
+    assert!(prepare("=1+").is_none());
+}
+
+/// A circular reference is not calculated: it and what reads it keep their values.
+#[test]
+fn circular_references_keep_their_values() {
+    let _l = lock_lang("ja");
+    let mut b = book();
+    formula(&mut b, "保存値", "H1", "=H2+1");
+    formula(&mut b, "保存値", "H2", "=H1+A1");
+    formula(&mut b, "保存値", "H3", "=H1*2");
+    formula(&mut b, "保存値", "H4", "=A1*2");
+    b.cell_mut("保存値", 8, 3).unwrap().set_formula_result_number(8.0);
+    assert_eq!(calc_cell(&b, "保存値", "H1").unwrap(), "#VALUE!");
+    assert_eq!(calc_cell(&b, "保存値", "H3").unwrap(), "8", "the saved value");
+    let sum = calculate(&mut b);
+    let loops: Vec<(&str, &str)> = sum.skipped.iter().filter(|s| s.skip == Skip::Circular).map(|s| (s.address.as_str(), s.formula.as_str())).collect();
+    assert_eq!(loops, [("H1", "=H2+1"), ("H2", "=H1+A1"), ("H3", "=H1*2")]);
+    assert_eq!([raw(&b, "保存値", "H1"), raw(&b, "保存値", "H3"), raw(&b, "保存値", "H4")], ["", "8", "10"]);
+    assert_eq!(Skip::Circular.message(), "循環参照です（数式が自分自身の結果を参照しています）");
+}

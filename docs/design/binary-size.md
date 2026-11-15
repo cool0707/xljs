@@ -108,7 +108,21 @@ natives は機能ごとに `sqlite::install` などで登録しているので�
 - **UPX での圧縮**: 半分ほどになるが、ウイルス対策ソフトの誤検知が多く、業務の配布には向かない。
 - **umya-spreadsheet の依存を feature で外す**（暗号系・html5gum。フォークで可能）: 効果は 100KB 程度。
 
-## 4. 測り方
+## 4. 数式の計算エンジンを足したとき（2026-11）
+
+`book.calculate()` のために GridCraft の計算エンジンを取り込んだ（`vendor/gridcraft`、`docs/design/calc-design.md`）。
+
+| | Linux x64（`cargo build --release`） |
+|---|---|
+| 取り込む前 | 14.49MB |
+| 取り込んだあと | 15.94MB（+1.45MB） |
+
+- 増えるのはほぼコード。関数は名前の表（`gridcraft_functions` の登録）から関数ポインターで呼ぶので、約 490 個すべてがリンクされる。外部クレートは増えていない（`thiserror`・`log`・`sha2`・`chrono`・`serde`・`regex` は元から入っている）。
+- モデルのクレート（`gridcraft-model`）はグラフ・図形・ピボットなど計算に要らない型も持つが、使わないコードは LTO で落ちる。数式の組版（RaTeX）は取り込んでいない。
+- Windows 版（mingw・MSVC）の数字はこの環境では測っていない。コードの増え方は同じ程度のはず。
+- 減らすなら 3.2 の「機能別の軽量ランタイム」の候補になる（`xlsxCalculate`・`xlsxCalc` と印刷の前の再計算を feature で外す。条件付き書式の数式の評価も同じエンジンなので、外した版では数式の条件が効かなくなる）。金融・統計・工学の関数だけを外す案は、登録の表を feature で分ければできるが、未計測。
+
+## 5. 測り方
 
 ```
 cargo build --release --target x86_64-pc-windows-gnu

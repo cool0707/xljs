@@ -32,7 +32,7 @@
 - `require("fs")` は不要（`fs` は最初から使える xljs の API）。`process.exit()` → `exit()`、`process.argv` → `xljs.args`。
 - `book.sheets["明細"]` は無ければ `undefined`。`?? book.sheets[0]` などで備える。
 - 文字列で入っている数値は文字列で返る。合計は `Number(r.金額) || 0`（全角数字は先に `s.normalize("NFKC")`）。空欄は `null`。
-- 書いた数式（`cell.formula`）の値は Excel で開くまで計算されない。集計値は JavaScript で計算して `value` に入れる。
+- 書いた数式（`cell.formula`）・値を書き換えたあとの数式の結果は、`book.calculate()` を呼ぶと `value` に入る（呼ばなければ Excel で開くまで古いまま）。単純な集計は JavaScript で計算して `value` に入れる。
 - **日付は `dayjs` で扱う**（`Date` を直接計算しない。`new Date("2026-04-01")` は UTC、月は 0 始まり）。日付の書式がないセルの数値（`45383`）は `dayjs.fromExcel(45383)`。
 - 既定値の配列・オブジェクトは直接 `push`・変更せず `structuredClone` で複製して使う。ループの終了条件で見ている配列にループ内で `push` しない（無限ループ）。足す数は先に決めて `Array.from({ length: n }, ...)`。
 - 1 ファイルの失敗で全体を止めない（`try` / `catch` で続行し、最後に知らせる）。

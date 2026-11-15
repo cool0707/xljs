@@ -43,6 +43,11 @@ pub struct Book {
     pub table_styles: std::collections::HashMap<String, super::xlsx_table::StyleDef>,
     /// The pictures placed in cells (empty for a new workbook).
     pub cell_images: super::xlsx_cellimage::CellImages,
+    /// The formula engine's copy of the workbook (None until something is
+    /// calculated; xlsx_calc.rs).
+    pub(crate) calc: std::cell::RefCell<Option<Box<super::xlsx_calc::Engine>>>,
+    /// The cells written since the engine last calculated.
+    pub(crate) touched: std::cell::RefCell<super::xlsx_calc::Touched>,
 }
 
 pub(crate) fn zerr(e: impl std::fmt::Display) -> Error {
@@ -57,18 +62,41 @@ impl Book {
     fn new(wb: Workbook, path: String, styles_xml: Option<&[u8]>) -> Book {
         let default_font = styles_xml.and_then(first_font).unwrap_or(("Calibri".into(), 11.0));
         let date1904 = false; // see read_date1904
-        Book { wb, path, date1904, fresh: false, formulas: false, closed: false, default_font, font_changed: false, charts: None, print: Default::default(), table_styles: Default::default(), cell_images: Default::default() }
+        Book { wb, path, date1904, fresh: false, formulas: false, closed: false, default_font, font_changed: false, charts: None, print: Default::default(), table_styles: Default::default(), cell_images: Default::default(), calc: Default::default(), touched: Default::default() }
     }
 
     pub fn sheet(&self, name: &str) -> Result<&Worksheet> {
         self.wb.sheet_by_name(name).map_err(|_| Error::msg(format!("sheet {name} does not exist")))
     }
 
+    /// A sheet to change in any way. The formula engine cannot follow what
+    /// is done with it: everything is calculated again the next time. Changes
+    /// it need not know of go through layout_mut, the content of one cell
+    /// through cell_mut.
     pub fn sheet_mut(&mut self, name: &str) -> Result<&mut Worksheet> {
+        self.calc_reset();
+        self.layout_mut(name)
+    }
+
+    /// A sheet to change what no formula depends on: styles, sizes, panes.
+    pub fn layout_mut(&mut self, name: &str) -> Result<&mut Worksheet> {
         if self.fresh && name == "Sheet1" {
             self.fresh = false;
         }
         self.wb.sheet_by_name_mut(name).map_err(|_| Error::msg(format!("sheet {name} does not exist")))
+    }
+
+    /// A cell to change the value or the formula of.
+    pub fn cell_mut(&mut self, sheet: &str, col: u32, row: u32) -> Result<&mut umya_spreadsheet::Cell> {
+        self.touched.get_mut().cell(sheet, col, row);
+        Ok(self.layout_mut(sheet)?.cell_mut((col, row)))
+    }
+
+    /// The sheets changed (added, removed, renamed) or something else the
+    /// formula engine does not follow cell by cell.
+    pub fn calc_reset(&mut self) {
+        *self.calc.get_mut() = None;
+        self.touched.get_mut().everything();
     }
 
     /// The workbook as xlsx bytes.
@@ -488,8 +516,7 @@ fn date_style(code: &str) -> NumberingFormat {
 pub(crate) fn set_value(b: &mut Book, sheet: &str, r: &str, v: &Value) -> Result<()> {
     let (col, row) = parse_ref(r)?;
     let date1904 = b.date1904;
-    let ws = b.sheet_mut(sheet)?;
-    let c = ws.cell_mut((col, row));
+    let c = b.cell_mut(sheet, col, row)?;
     if nullish(v) {
         c.cell_value_mut().set_blank();
         return Ok(());
@@ -618,9 +645,11 @@ pub(super) fn install(n: &N) {
             check_sheet_name(&name).map_err(|e| a.throw(&e))?;
             if b.fresh {
                 b.fresh = false;
+                b.calc_reset();
                 b.wb.set_sheet_name(0, name.clone()).map_err(|e| a.throw(&Error::msg(e.to_string())))?;
                 return Ok(());
             }
+            b.calc_reset();
             b.wb.new_sheet(name.clone()).map_err(|e| a.throw(&Error::msg(e.to_string())))?;
             Ok(())
         })?;
@@ -632,6 +661,7 @@ pub(super) fn install(n: &N) {
             if b.wb.sheet_by_name(&name).is_err() {
                 return Err(a.throw(&Error::msg(format!("sheet {name} does not exist"))));
             }
+            b.calc_reset();
             b.wb.remove_sheet_by_name(&name).map_err(|e| a.throw(&Error::msg(e.to_string())))?;
             Ok(())
         })?;
@@ -649,6 +679,7 @@ pub(super) fn install(n: &N) {
             if b.wb.sheet_by_name(&to).is_ok() {
                 return Err(a.throw(&err!("xlsx.sheetExists", to)));
             }
+            b.calc_reset();
             b.wb.set_sheet_name(idx, to.clone()).map_err(|e| a.throw(&Error::msg(e.to_string())))?;
             if let Some(p) = b.print.remove(&from) {
                 b.print.insert(to.clone(), p);
@@ -696,17 +727,21 @@ pub(super) fn install(n: &N) {
         if f.is_empty() {
             return a.null();
         }
-        a.ret(if f.starts_with('=') { f } else { format!("={f}") })
+        a.ret(format!("={}", super::xlsx_calc::formula_from_file(&f)))
     });
     n.set("xlsxSetFormula", |h, a| {
         let (sheet, r) = (a.str(1), upper(a.str(2)));
-        let formula = a.str(3);
-        let formula = formula.strip_prefix('=').unwrap_or(&formula).to_string();
+        let formula = super::xlsx_calc::formula_to_file(&a.str(3));
         with_book(h, a, |b| {
             let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
-            let ws = b.sheet_mut(&sheet).map_err(|e| a.throw(&e))?;
-            let c = ws.cell_mut((col, row));
+            let c = b.cell_mut(&sheet, col, row).map_err(|e| a.throw(&e))?;
             c.cell_value_mut().set_blank();
+            // Not the dynamic array formula the cell may have had.
+            c.set_cell_meta_index(0);
+            if formula.trim().is_empty() {
+                // formula = null: the cell has none (and no value) any more.
+                return Ok(());
+            }
             c.set_formula(formula.clone());
             b.formulas = true;
             Ok(())
@@ -717,6 +752,22 @@ pub(super) fn install(n: &N) {
         let (sheet, r) = (a.str(1), upper(a.str(2)));
         let s = with_book(h, a, |b| super::xlsx_calc::calc_cell(b, &sheet, &r).map_err(|e| a.throw(&e)))?;
         a.ret(s)
+    });
+    // xlsxCalculate(book) -> JSON { formulas, changed, skipped: [{ sheet, address, formula, reason, name?, message }] }
+    n.set("xlsxCalculate", |h, a| {
+        let sum = with_book(h, a, |b| Ok(super::xlsx_calc::calculate(b)))?;
+        let skipped: Vec<serde_json::Value> = sum
+            .skipped
+            .iter()
+            .map(|s| {
+                let mut o = serde_json::json!({ "sheet": s.sheet, "address": s.address, "formula": s.formula, "reason": s.skip.reason(), "message": s.skip.message() });
+                if let Some(n) = s.skip.name() {
+                    o["name"] = n.into();
+                }
+                o
+            })
+            .collect();
+        a.ret(serde_json::json!({ "formulas": sum.formulas, "changed": sum.changed, "skipped": skipped }).to_string())
     });
     // xlsxReadAll(book, sheet, text) -> any[][]
     n.set("xlsxReadAll", |h, a| {
@@ -838,7 +889,7 @@ pub(crate) fn set_col_width(b: &mut Book, sheet: &str, c1: &str, c2: &str, w: f6
     if !(0.0..=255.0).contains(&w) {
         return Err(Error::msg("the width of the column must be less than or equal to 255 characters"));
     }
-    let ws = b.sheet_mut(sheet)?;
+    let ws = b.layout_mut(sheet)?;
     for c in x..=y {
         let name = column_name(c as i64)?;
         ws.column_dimension_mut(&name).set_width(w);

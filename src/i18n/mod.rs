@@ -18,6 +18,10 @@ pub(crate) use translate::os_text as translate_os_text;
 pub struct ExcelDefaults {
     #[serde(default)]
     pub font: String,
+    /// The language's Excel counts a full-width character as two bytes in
+    /// LENB, LEFTB and the other byte functions.
+    #[serde(default)]
+    pub dbcs: bool,
 }
 
 /// One language file.

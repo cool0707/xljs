@@ -13,7 +13,7 @@ pub(crate) mod numfmt;
 mod pdf;
 mod process;
 mod sqlite;
-mod xlsx_calc;
+pub(crate) mod xlsx_calc;
 mod xlsx_cellimage;
 pub(crate) mod gopath;
 pub(crate) mod js;

@@ -1,0 +1,21 @@
+# Vendored from GridCraft (https://github.com/storytold/gridcraft); see ../README.md.
+# Three files of its `gridcraft-xlsx` crate (crates/xlsx): how formulas are spelled in files and
+# how legacy formulas are read. The file reader and writer themselves are not vendored.
+[package]
+name = "gridcraft-xlsx-formulas"
+version = "0.19.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "GridCraft's formula text for xlsx files: _xlfn. prefixes and legacy (implicit intersection) formulas"
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+gridcraft-core = { path = "../core" }
+gridcraft-formula = { path = "../formula" }
+gridcraft-model = { path = "../model" }
+
+[dev-dependencies]
+gridcraft-functions = { path = "../functions" }

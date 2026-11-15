@@ -1,0 +1,14 @@
+# Vendored from GridCraft (https://github.com/storytold/gridcraft); see ../README.md.
+[package]
+name = "gridcraft-numfmt"
+version = "0.19.1"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+description = "GridCraft number formats: Excel format codes, General display, TEXT()"
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+gridcraft-core = { path = "../core" }

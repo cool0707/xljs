@@ -423,7 +423,7 @@ impl Ctx<'_> {
     fn threshold(&mut self, v: &Cfvo, nums: &[f64]) -> Option<f64> {
         let (min, max) = (*nums.first()?, *nums.last()?);
         let given = |ctx: &mut Self| -> Option<f64> {
-            v.val.trim().parse::<f64>().ok().or_else(|| prepare(&v.val).and_then(|f| num(&eval_at(ctx.b, ctx.sheet, &f, 0, 0))))
+            v.val.trim().parse::<f64>().ok().or_else(|| prepare(&v.val).and_then(|f| num(&eval_at(ctx.b, ctx.sheet, &f, (1, 1), 0, 0))))
         };
         Some(match v.kind.as_str() {
             "min" => min,
@@ -504,7 +504,7 @@ fn hits(ctx: &mut Ctx, rule: &Rule, cells: &[(u32, u32)], vals: &[CalcVal], nums
     let formulas: Vec<_> = rule.formulas.iter().map(|f| prepare(f)).collect();
     let operand = |ctx: &mut Ctx, i: usize, c: u32, r: u32| -> CalcVal {
         match formulas.get(i) {
-            Some(Some(f)) => eval_at(ctx.b, ctx.sheet, f, c as i64 - base.0 as i64, r as i64 - base.1 as i64),
+            Some(Some(f)) => eval_at(ctx.b, ctx.sheet, f, (c, r), c as i64 - base.0 as i64, r as i64 - base.1 as i64),
             _ => CalcVal::Err,
         }
     };
