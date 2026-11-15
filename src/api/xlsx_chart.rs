@@ -719,4 +719,33 @@ mod tests {
         let got: Vec<String> = [0, 1, 5, 6, 12].iter().map(|i| a.nth(*i).unwrap()).collect();
         assert_eq!(got, ["#4472C4", "#ED7D31", "#70AD47", "#264478", "#698ED0"]);
     }
+
+    /// What a sheet's charts are read as, from a workbook saved without
+    /// changes: the same as from the file it was opened from (the charts
+    /// were dropped on save before).
+    #[test]
+    fn charts_survive_a_save() {
+        let _g = crate::testutil::lock_lang("ja");
+        for (file, sheets) in [
+            ("testdata/xlsx/charts.xlsx", &["売上", "散布", "工程"][..]),
+            ("testdata/xlsx/print.xlsx", &[][..]),
+            ("testdata/book/rules.xlsx", &[][..]),
+        ] {
+            let data = std::fs::read(crate::testutil::repo_path(file)).unwrap();
+            let b = super::super::xlsx::open_bytes(&data, String::new()).unwrap();
+            let saved = super::super::xlsx::open_bytes(&b.to_bytes().unwrap(), String::new()).unwrap();
+            let names: Vec<String> = if sheets.is_empty() {
+                b.wb.sheet_collection().iter().map(|s| s.name().to_string()).collect()
+            } else {
+                sheets.iter().map(|s| s.to_string()).collect()
+            };
+            let mut count = 0;
+            for sheet in &names {
+                let before = sheet_charts(&b, sheet);
+                count += before.len();
+                assert_eq!(sheet_charts(&saved, sheet), before, "{file} {sheet}");
+            }
+            assert!(count > 0, "{file}: no charts");
+        }
+    }
 }

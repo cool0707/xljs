@@ -192,3 +192,27 @@ fn columns_book() {
     let s = text("rules.xlsx", &read_file(&repo_path("testdata/book/rules.xlsx").to_string_lossy(), &inc).unwrap(), &inc);
     assert_eq!(s, "# rules.xlsx の表の列\n\nデータが 100 行以上ある表はありません。\n\n");
 }
+
+/// Saving a workbook as it was opened keeps its data validations (with
+/// their conditions and error styles) and its charts, as this description
+/// reads them.
+#[test]
+fn rules_book_saved_as_it_was() {
+    let _l = lock_lang("ja");
+    let data = std::fs::read(repo_path("testdata/book/rules.xlsx")).unwrap();
+    let saved = crate::api::xlsx::open_bytes(&data, String::new()).unwrap().to_bytes().unwrap();
+    let inc = Include { validation: true, charts: true, ..Include::NONE };
+    let before = text("rules.xlsx", &read(&data, &inc).unwrap(), &inc);
+    let after = text("rules.xlsx", &read(&saved, &inc).unwrap(), &inc);
+    for want in [
+        "- C2:C11: 整数 1 〜 100（入力時メッセージ",
+        "- A2:A11: ユーザー設定 `=COUNTIF($A:$A,A2)=1`（空白は不可、エラー（注意））\n",
+        "- F2:F11: リスト「東京,大阪,名古屋」（エラーを表示しない）\n",
+        "- J2:J11: 日付 >= 2025/01/01（空白は不可、エラーを表示しない）\n",
+    ] {
+        assert!(before.contains(want), "want {want:?} in\n{before}");
+        assert!(after.contains(want), "want {want:?} in\n{after}");
+    }
+    let charts = |s: &str| s[s.find("# rules.xlsx のグラフ").unwrap()..].to_string();
+    assert_eq!(charts(&after), charts(&before));
+}
