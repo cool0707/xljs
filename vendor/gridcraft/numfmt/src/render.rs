@@ -173,6 +173,33 @@ pub(crate) fn render_date(sec: &Section, v: f64, sys: DateSystem) -> Option<Out>
                     DatePart::ElapsedS(n) => push_padded(text, total_ms / 1000, n),
                     DatePart::AmPm => text.push_str(if hour >= 12 { "PM" } else { "AM" }),
                     DatePart::AP(a, p) => text.push(if hour >= 12 { p } else { a }),
+                    // xljs: the Japanese parts.
+                    DatePart::Era(n) => {
+                        let (initial, name, _) = japanese_era(&dt);
+                        match n {
+                            1 => text.push_str(initial),
+                            2 => text.extend(name.chars().take(1)),
+                            _ => text.push_str(name),
+                        }
+                    }
+                    DatePart::EraYear(n, first) => {
+                        let (_, _, year) = japanese_era(&dt);
+                        if sec.calendar != Calendar::Gregorian {
+                            // Under `B2` the year stays the calendar's own.
+                            let _ = write!(text, "{:04}", date.year);
+                        } else if first && year == 1 {
+                            text.push('元');
+                        } else {
+                            push_padded(text, year, n.min(2));
+                        }
+                    }
+                    DatePart::Weekday(n) => {
+                        let day = JAPANESE_WEEKDAYS.get(dt.weekday as usize).copied().unwrap_or("");
+                        text.push_str(day);
+                        if n >= 4 {
+                            text.push_str("曜日");
+                        }
+                    }
                 }
             }
             Tok::Fill(c) => out.fill(*c),
@@ -180,6 +207,20 @@ pub(crate) fn render_date(sec: &Section, v: f64, sys: DateSystem) -> Option<Out>
         }
     }
     Some(out)
+}
+
+/// xljs: Sunday first.
+const JAPANESE_WEEKDAYS: [&str; 7] = ["日", "月", "火", "水", "木", "金", "土"];
+
+/// xljs: the Japanese eras: first day, initial, name.
+const JAPANESE_ERAS: [((i32, u32, u32), &str, &str); 5] =
+    [((1868, 9, 8), "M", "明治"), ((1912, 7, 30), "T", "大正"), ((1926, 12, 25), "S", "昭和"), ((1989, 1, 8), "H", "平成"), ((2019, 5, 1), "R", "令和")];
+
+/// xljs: the era of a date (initial, name) and the year in it. Dates before Meiji count as Meiji.
+fn japanese_era(dt: &gridcraft_core::date::DateTime) -> (&'static str, &'static str, i64) {
+    let day = (dt.year as i32, dt.month, dt.day);
+    let (start, initial, name) = JAPANESE_ERAS.iter().rev().find(|(start, _, _)| day >= *start).unwrap_or(&JAPANESE_ERAS[0]);
+    (initial, name, i64::from(dt.year as i32 - start.0 + 1))
 }
 
 /// Appends `n`, zero padded to `w` digits (at most 20) when `w` is 2 or more.

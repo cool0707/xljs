@@ -12,6 +12,10 @@ use crate::util::{
 };
 use crate::{Arg, Ctx, FnSpec, VAR};
 
+// xljs: the byte functions, ASC, JIS, YEN and DATESTRING as Japanese Excel has them.
+mod japanese;
+pub use japanese::set_dbcs;
+
 const TJ: &[bool] = &[false, true, false];
 const TB: &[bool] = &[true, false, true, true, true, false];
 const TS: &[bool] = &[true, false, false, true, true, false];
@@ -980,13 +984,13 @@ pub(crate) fn specs() -> Vec<FnSpec> {
             textjoin
         ),
         f!("LEFT", 1, 2, Text, S, "LEFT(text, [num_chars])", "Returns the first characters of a text.", left),
-        f!("LEFTB", 1, 2, Text, S, "LEFTB(text, [num_bytes])", "Byte version of LEFT (same as LEFT for single-byte text).", left),
+        f!("LEFTB", 1, 2, Text, S, "LEFTB(text, [num_bytes])", "Byte version of LEFT (same as LEFT for single-byte text).", japanese::leftb),
         f!("RIGHT", 1, 2, Text, S, "RIGHT(text, [num_chars])", "Returns the last characters of a text.", right),
-        f!("RIGHTB", 1, 2, Text, S, "RIGHTB(text, [num_bytes])", "Byte version of RIGHT (same as RIGHT for single-byte text).", right),
+        f!("RIGHTB", 1, 2, Text, S, "RIGHTB(text, [num_bytes])", "Byte version of RIGHT (same as RIGHT for single-byte text).", japanese::rightb),
         f!("MID", 3, 3, Text, S, "MID(text, start_num, num_chars)", "Returns characters from the middle of a text.", mid),
-        f!("MIDB", 3, 3, Text, S, "MIDB(text, start_num, num_bytes)", "Byte version of MID (same as MID for single-byte text).", mid),
+        f!("MIDB", 3, 3, Text, S, "MIDB(text, start_num, num_bytes)", "Byte version of MID (same as MID for single-byte text).", japanese::midb),
         f!("LEN", 1, 1, Text, S, "LEN(text)", "Counts the characters in a text.", len),
-        f!("LENB", 1, 1, Text, S, "LENB(text)", "Byte version of LEN (same as LEN for single-byte text).", len),
+        f!("LENB", 1, 1, Text, S, "LENB(text)", "Byte version of LEN (same as LEN for single-byte text).", japanese::lenb),
         f!("LOWER", 1, 1, Text, S, "LOWER(text)", "Converts text to lower case.", lower),
         f!("UPPER", 1, 1, Text, S, "UPPER(text)", "Converts text to upper case.", upper),
         f!("PROPER", 1, 1, Text, S, "PROPER(text)", "Capitalises the first letter of each word and lower-cases the rest.", proper),
@@ -1003,10 +1007,10 @@ pub(crate) fn specs() -> Vec<FnSpec> {
             substitute
         ),
         f!("REPLACE", 4, 4, Text, S, "REPLACE(old_text, start_num, num_chars, new_text)", "Replaces part of a text by position.", replace),
-        f!("REPLACEB", 4, 4, Text, S, "REPLACEB(old_text, start_num, num_bytes, new_text)", "Byte version of REPLACE.", replace),
+        f!("REPLACEB", 4, 4, Text, S, "REPLACEB(old_text, start_num, num_bytes, new_text)", "Byte version of REPLACE.", japanese::replaceb),
         f!("REPT", 2, 2, Text, S, "REPT(text, number_times)", "Repeats a text a given number of times.", rept),
         f!("FIND", 2, 3, Text, S, "FIND(find_text, within_text, [start_num])", "Finds the position of one text in another (case-sensitive).", find),
-        f!("FINDB", 2, 3, Text, S, "FINDB(find_text, within_text, [start_num])", "Byte version of FIND.", find),
+        f!("FINDB", 2, 3, Text, S, "FINDB(find_text, within_text, [start_num])", "Byte version of FIND.", japanese::findb),
         f!(
             "SEARCH",
             2,
@@ -1017,7 +1021,7 @@ pub(crate) fn specs() -> Vec<FnSpec> {
             "Finds the position of one text in another, ignoring case and allowing wildcards.",
             search
         ),
-        f!("SEARCHB", 2, 3, Text, S, "SEARCHB(find_text, within_text, [start_num])", "Byte version of SEARCH.", search),
+        f!("SEARCHB", 2, 3, Text, S, "SEARCHB(find_text, within_text, [start_num])", "Byte version of SEARCH.", japanese::searchb),
         f!("EXACT", 2, 2, Text, S, "EXACT(text1, text2)", "TRUE when two texts are identical, including case.", exact),
         f!("CHAR", 1, 1, Text, S, "CHAR(number)", "Returns the character for a code from the Windows-1252 character set.", char_fn),
         f!("CODE", 1, 1, Text, S, "CODE(text)", "Returns the Windows-1252 code of the first character of a text.", code),
@@ -1128,9 +1132,12 @@ pub(crate) fn specs() -> Vec<FnSpec> {
             "Replaces matches of a regular expression, all of them or a chosen occurrence.",
             regexreplace
         ),
-        f!("ASC", 1, 1, Text, S, "ASC(text)", "Converts full-width characters to half-width (no change for single-byte text).", identity),
-        f!("DBCS", 1, 1, Text, S, "DBCS(text)", "Converts half-width characters to full-width (no change in this locale).", identity),
-        f!("JIS", 1, 1, Text, S, "JIS(text)", "Converts half-width characters to full-width (no change in this locale).", identity),
+        f!("ASC", 1, 1, Text, S, "ASC(text)", "Converts full-width characters to half-width.", japanese::asc),
+        f!("DBCS", 1, 1, Text, S, "DBCS(text)", "Converts half-width characters to full-width.", japanese::jis),
+        f!("JIS", 1, 1, Text, S, "JIS(text)", "Converts half-width characters to full-width.", japanese::jis),
+        // xljs: Japanese Excel's own.
+        f!("YEN", 1, 2, Text, S, "YEN(number, [decimals])", "Formats a number as yen text.", japanese::yen),
+        f!("DATESTRING", 1, 1, Text, S, "DATESTRING(serial_number)", "The date in the Japanese era, as text.", japanese::datestring),
         f!("PHONETIC", 1, 1, Text, S, "PHONETIC(reference)", "Returns the phonetic (furigana) text; here the text itself.", identity),
     ]
 }

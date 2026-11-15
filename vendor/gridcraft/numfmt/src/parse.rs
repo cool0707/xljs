@@ -22,6 +22,13 @@ pub(crate) enum DatePart {
     AmPm,
     /// `A/P` with the letters as typed.
     AP(char, char),
+    /// xljs: the Japanese era, `g` (R), `gg` (令) or `ggg` (令和).
+    Era(u8),
+    /// xljs: the year in the Japanese era, `e` or `ee` (two digits). `true`: the first year of an
+    /// era shows as 元 (`[$-ja-JP-x-gannen]`).
+    EraYear(u8, bool),
+    /// xljs: the Japanese weekday, `aaa` (月) or `aaaa` (月曜日).
+    Weekday(u8),
 }
 
 impl DatePart {
@@ -31,7 +38,8 @@ impl DatePart {
     }
 
     pub(crate) fn is_calendar(self) -> bool {
-        matches!(self, DatePart::Year(_) | DatePart::Month(_) | DatePart::Day(_))
+        // xljs: the Japanese era and weekday parts need the date too.
+        matches!(self, DatePart::Year(_) | DatePart::Month(_) | DatePart::Day(_) | DatePart::Era(_) | DatePart::EraYear(..) | DatePart::Weekday(_))
     }
 }
 
@@ -417,6 +425,26 @@ fn tokenize(src: &str) -> Raw {
                 i += 7;
                 continue;
             }
+            // xljs: Japanese eras (`ggge`), written like Excel's Japanese formats.
+            'G' | 'g' => {
+                let mut n = 0usize;
+                while cs.get(i + n).is_some_and(|d| d.eq_ignore_ascii_case(&'g')) {
+                    n += 1;
+                }
+                toks.push(Tok::Date(DatePart::Era(n.min(255) as u8)));
+                i += n.max(1);
+                continue;
+            }
+            // xljs: Japanese weekdays (`aaa`, `aaaa`).
+            'A' | 'a' if starts_with_ci(&cs, i, "aaa") => {
+                let mut n = 0usize;
+                while cs.get(i + n).is_some_and(|d| d.eq_ignore_ascii_case(&'a')) {
+                    n += 1;
+                }
+                toks.push(Tok::Date(DatePart::Weekday(n.min(255) as u8)));
+                i += n.max(1);
+                continue;
+            }
             'A' | 'a' if starts_with_ci(&cs, i, "am/pm") => {
                 toks.push(Tok::Date(DatePart::AmPm));
                 i += 5;
@@ -437,7 +465,9 @@ fn tokenize(src: &str) -> Raw {
                 let n8 = n.min(255) as u8;
                 toks.push(Tok::Date(match lc {
                     'y' => DatePart::Year(n8),
-                    'e' => DatePart::Year(4),
+                    // xljs: `e` is the year in the Japanese era, as in Japanese Excel (GridCraft
+                    // reads it as the four-digit year, as English Excel shows it).
+                    'e' => DatePart::EraYear(n8, false),
                     'm' => DatePart::Month(n8),
                     'd' => DatePart::Day(n8),
                     'h' => DatePart::Hour(n8),
@@ -454,6 +484,14 @@ fn tokenize(src: &str) -> Raw {
             }
         }
         i += 1;
+    }
+    // xljs: `[$-ja-JP-x-gannen]` shows the first year of an era as 元.
+    if cs.iter().collect::<String>().to_ascii_lowercase().contains("x-gannen]") {
+        for t in raw.toks.iter_mut() {
+            if let Tok::Date(DatePart::EraYear(1, first)) = t {
+                *first = true;
+            }
+        }
     }
     // Excel keeps the date Gregorian when a `[$-401]`-style locale or currency tag comes before
     // `B2` (`B2[$-401]` is still Hijri).

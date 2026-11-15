@@ -281,7 +281,15 @@ fn dates_and_times() {
     assert_eq!(f("mmmmm", 46302.0), "O");
     assert_eq!(f("dd/mm/yyyy", 46302.0), "07/10/2026");
     assert_eq!(f("d-mmm-yy", 46302.0), "7-Oct-26");
-    assert_eq!(f("e", 46302.0), "2026");
+    // xljs: `e` is the year in the Japanese era (GridCraft: the four-digit year).
+    assert_eq!(f("e", 46302.0), "8");
+    assert_eq!(f("ggge\"年\"m\"月\"d\"日\"", 46302.0), "令和8年10月7日");
+    assert_eq!(f("[$-411]ge.m.d", 46302.0), "R8.10.7");
+    assert_eq!(f("gg ee", 43586.0), "令 01");
+    assert_eq!(f("[$-ja-JP-x-gannen]ggge\"年\"", 43586.0), "令和元年");
+    assert_eq!(f("ggge", 43585.0), "平成31");
+    assert_eq!(f("yyyy/m/d(aaa)", 46302.0), "2026/10/7(水)");
+    assert_eq!(f("aaaa", 46302.0), "水曜日");
     assert_eq!(f("YYYY-MM-DD", 46302.0), "2026-10-07");
 }
 

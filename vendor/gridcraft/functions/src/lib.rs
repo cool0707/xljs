@@ -79,6 +79,8 @@ pub(crate) mod text;
 pub(crate) mod util;
 
 pub use ets::Timeline;
+// xljs: whether the byte functions (LENB…) count as a double-byte Excel does.
+pub use text::set_dbcs;
 pub use stat::{aggregate_values, aggregate_values_k};
 
 /// An evaluated argument. Ranges arrive as `Value::Array` (blank cells = `Value::Empty`) with

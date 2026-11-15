@@ -182,6 +182,13 @@ impl Calc {
         now_serial()
     }
 
+    /// xljs: starts RAND, RANDBETWEEN and RANDARRAY from `seed` (a new `Calc` always starts from the
+    /// same state, so each run of a program would draw the same numbers).
+    pub fn seed(&mut self, seed: u64) {
+        // xorshift never leaves zero.
+        self.rng = if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed };
+    }
+
     /// Rebuilds the graph from scratch.
     pub fn rebuild(&mut self, wb: &Workbook) {
         self.graph = Graph::default();
