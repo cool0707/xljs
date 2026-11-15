@@ -3,13 +3,15 @@
 //! legacy formulas, which Excel evaluates with implicit intersection (`array_formula`).
 //!
 //! This file is xljs's: the three modules are GridCraft's as they are, and what xljs calls of
-//! their crate-private parts is exported here.
+//! their crate-private parts is exported here ([`apply_legacy`] for the formulas of a file,
+//! [`save_as`] and [`legacy_reading`] for the formulas scripts write and read).
 #![forbid(unsafe_code)]
-// The writer's half of `array_formula` (which formulas to save as dynamic arrays) has no caller here.
+// What the modules have for GridCraft's own reader (Google Sheets' dummy functions) has no caller here.
 #![allow(dead_code)]
 
 use gridcraft_core::CellRef;
-use gridcraft_model::Workbook;
+use gridcraft_formula::Expr;
+use gridcraft_model::{Formula, Workbook};
 
 mod array_formula;
 pub mod fmla;
@@ -41,4 +43,36 @@ impl Default for FunctionInfo {
 /// workbook's names and tables are in place.
 pub fn apply_legacy(wb: &mut Workbook, cells: Vec<(usize, Vec<CellRef>)>, functions: FunctionInfo) {
     array_formula::apply_legacy(wb, cells, functions);
+}
+
+/// The defined names analysed so far for [`save_as`] and [`legacy_reading`]: each is analysed once
+/// for all the formulas that refer to it. It holds as long as the workbook's names and tables do
+/// not change.
+#[derive(Default)]
+pub struct Names(array_formula::NameCache);
+
+/// How a formula entered as dynamic-array Excel reads it is written to a file.
+pub enum SaveAs {
+    /// As it is, without dynamic-array metadata: it gives one value either way.
+    Unchanged,
+    /// As this expression (the formula without the `@` legacy evaluation implies), without
+    /// dynamic-array metadata.
+    Legacy(Expr),
+    /// As an array formula with dynamic-array metadata (`cm`): legacy evaluation would differ.
+    Dynamic,
+}
+
+/// How the formula of the cell `at` is saved (the writer's half of `array_formula`).
+pub fn save_as(wb: &Workbook, sheet: usize, at: CellRef, formula: &Formula, functions: FunctionInfo, names: &mut Names) -> SaveAs {
+    match array_formula::export(wb, sheet, at, formula, functions, &mut names.0) {
+        array_formula::Export::Unchanged => SaveAs::Unchanged,
+        array_formula::Export::Legacy(e) => SaveAs::Legacy(e),
+        array_formula::Export::Dynamic => SaveAs::Dynamic,
+    }
+}
+
+/// The dynamic-array reading of a formula saved without dynamic-array metadata, as Excel shows
+/// it (with `@` where it intersects), when it differs from the formula as saved.
+pub fn legacy_reading(wb: &Workbook, sheet: usize, at: CellRef, formula: &Formula, functions: FunctionInfo, names: &mut Names) -> Option<Formula> {
+    array_formula::legacy(wb, sheet, at, formula, functions, &mut names.0)
 }

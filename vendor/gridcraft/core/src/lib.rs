@@ -6,6 +6,8 @@
 pub mod addr;
 pub mod color;
 pub mod date;
+// xljs: numbers in kanji, for the `[DBNum1]` formats and NUMBERSTRING.
+pub mod kanji;
 pub mod parse;
 pub mod region;
 pub mod value;

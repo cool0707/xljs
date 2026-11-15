@@ -12,7 +12,7 @@ use crate::util::{
 };
 use crate::{Arg, Ctx, FnSpec, VAR};
 
-// xljs: the byte functions, ASC, JIS, YEN and DATESTRING as Japanese Excel has them.
+// xljs: the byte functions, ASC, JIS, YEN, DATESTRING and NUMBERSTRING as Japanese Excel has them.
 mod japanese;
 pub use japanese::set_dbcs;
 
@@ -1138,6 +1138,7 @@ pub(crate) fn specs() -> Vec<FnSpec> {
         // xljs: Japanese Excel's own.
         f!("YEN", 1, 2, Text, S, "YEN(number, [decimals])", "Formats a number as yen text.", japanese::yen),
         f!("DATESTRING", 1, 1, Text, S, "DATESTRING(serial_number)", "The date in the Japanese era, as text.", japanese::datestring),
+        f!("NUMBERSTRING", 2, 2, Text, S, "NUMBERSTRING(number, type)", "The number in kanji (type 1, 2 or 3), as text.", japanese::numberstring),
         f!("PHONETIC", 1, 1, Text, S, "PHONETIC(reference)", "Returns the phonetic (furigana) text; here the text itself.", identity),
     ]
 }

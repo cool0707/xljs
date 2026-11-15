@@ -1255,3 +1255,76 @@ fn round_as_displayed_matches_excel() {
     assert_eq!(r("0", f64::MAX), f64::MAX);
     assert_eq!(r("0.0E+0", f64::MIN_POSITIVE), 2.2e-308);
 }
+
+// xljs: `[DBNum1]`, `[DBNum2]` and `[DBNum3]` write numbers in kanji, as Japanese Excel does.
+#[test]
+fn kanji_numbers() {
+    // General: the whole part with units.
+    assert_eq!(f("[DBNum1]G/標準", 1234.0), "千二百三十四");
+    assert_eq!(f("[DBNum1]General", 12345.0), "一万二千三百四十五");
+    assert_eq!(f("[DBNum1]", 123456.0), "十二万三千四百五十六");
+    assert_eq!(f("[DBNum1][$-411]G/標準", 987654321.0), "九億八千七百六十五万四千三百二十一");
+    assert_eq!(f("[$-ja-JP][DBNum2]G/標準", 123456.0), "壱拾弐萬参阡四百伍拾六");
+    assert_eq!(f("[DBNum2]G/標準", 987654321.0), "九億八阡七百六拾伍萬四阡参百弐拾壱");
+    assert_eq!(f("[DBNum2]", 1234.0), "壱阡弐百参拾四");
+    assert_eq!(f("[DBNum3]G/標準", 987654321.0), "９億８千７百６十５万４千３百２十１");
+    assert_eq!(f("[dbnum3]g/標準", 123456789.0), "１億２千３百４十５万６千７百８十９");
+    assert_eq!(f("[DBNum1]G/標準", 0.0), "〇");
+    assert_eq!(f("[DBNum3]G/標準", 0.0), "０");
+    assert_eq!(f("[DBNum1]G/標準", -1234.0), "-千二百三十四");
+    assert_eq!(f("[DBNum1]G/標準", 1234.5), "千二百三十四.五");
+    assert_eq!(f("[DBNum1]G/標準", 0.25), "〇.二五");
+    // General would abbreviate twelve digits; in kanji they are written out.
+    assert_eq!(f("[DBNum1]G/標準", 123456789012.0), "千二百三十四億五千六百七十八万九千十二");
+    assert_eq!(f("[DBNum1]G/標準", 1e12), "一兆");
+    assert_eq!(f("[DBNum1]G/標準\"円\"", 1500.0), "千五百円");
+    assert_eq!(f("\"金\"[DBNum2]G/標準\"円也\"", 10800.0), "金壱萬八百円也");
+    // Digit placeholders: digit by digit.
+    assert_eq!(f("[DBNum1]0", 123456789.0), "一二三四五六七八九");
+    assert_eq!(f("[DBNum1]#,##0", 12345.0), "一二,三四五");
+    assert_eq!(f("[DBNum1]0.00", 10.5), "一〇.五〇");
+    assert_eq!(f("[DBNum1]0%", 0.25), "二五%");
+    assert_eq!(f("[DBNum2]0", 12345.0), "壱弐参四伍");
+    assert_eq!(f("[DBNum3]0", 123456789.0), "１２３４５６７８９");
+    assert_eq!(f("[DBNum3]#,##0\"円\"", 1200.0), "１,２００円");
+    assert_eq!(f("[DBNum1]0", -12.0), "-一二");
+    // The digits of literal text are its own.
+    assert_eq!(f("[DBNum1]\"第1期 \"0", 12.0), "第1期 一二");
+    // Each section has its own tag.
+    assert_eq!(f("[DBNum1]0;[DBNum3]0", 12.0), "一二");
+    assert_eq!(f("[DBNum1]0;[DBNum3]0", -12.0), "１２");
+    assert_eq!(f("0;[DBNum1]G/標準", -1234.0), "千二百三十四");
+    // `[DBNum4]` (not kanji) and text are left as they are.
+    assert_eq!(f("[DBNum4]0", 12.0), "12");
+    assert_eq!(t("[DBNum1]@", "12番"), "12番");
+    // `G/標準` is General without a tag too.
+    assert_eq!(f("G/標準", 1234.5), "1234.5");
+    assert_eq!(f("G/標準\"個\"", 3.0), "3個");
+    assert_eq!(text_function(&Value::Number(1234.0), "[DBNum1]G/標準", S), Ok("千二百三十四".into()));
+    assert_eq!(text_function(&Value::from("1234"), "[DBNum2]", S), Ok("壱阡弐百参拾四".into()));
+    assert_eq!(text_function(&Value::Number(1234.0), "[DBNum1]0", S), Ok("一二三四".into()));
+}
+
+// xljs: dates with `[DBNum1]`: a four-digit year and zero-padded numbers digit by digit, the
+// others with 十; `[DBNum3]` keeps full-width digits.
+#[test]
+fn kanji_dates() {
+    assert_eq!(f("[DBNum1]yyyy\"年\"m\"月\"d\"日\"", 46302.0), "二〇二六年十月七日");
+    assert_eq!(f("[DBNum1]ggge\"年\"m\"月\"d\"日\"", 43585.0), "平成三十一年四月三十日");
+    assert_eq!(f("[DBNum1][$-411]ggge\"年\"m\"月\"d\"日\"", 46378.0), "令和八年十二月二十二日");
+    assert_eq!(f("[DBNum1][$-ja-JP-x-gannen]ggge\"年\"m\"月\"d\"日\"", 43586.0), "令和元年五月一日");
+    assert_eq!(f("[DBNum1]ggge\"年\"", 43586.0), "令和一年");
+    assert_eq!(f("[DBNum1]yyyy/mm/dd", 46302.0), "二〇二六/十/〇七");
+    assert_eq!(f("[DBNum1]yy\"年\"", 46302.0), "二十六年");
+    assert_eq!(f("[DBNum1]m\"月\"d\"日\"(aaa)", 46302.0), "十月七日(水)");
+    assert_eq!(f("[DBNum1]d-mmm", 46302.0), "七-Oct");
+    assert_eq!(f("[DBNum2]ggge\"年\"m\"月\"d\"日\"", 43585.0), "平成参拾壱年四月参拾日");
+    assert_eq!(f("[DBNum2]yyyy\"年\"", 43585.0), "弐〇壱九年");
+    assert_eq!(f("[DBNum3]yyyy\"年\"m\"月\"d\"日\"", 46378.0), "２０２６年１２月２２日");
+    assert_eq!(f("[DBNum3]ggge\"年\"mm\"月\"dd\"日\"", 46302.0), "令和８年１０月０７日");
+    assert_eq!(f("[DBNum1]h\"時\"mm\"分\"", 0.5 + 5.0 / 1440.0), "十二時〇五分");
+    assert_eq!(f("[DBNum1]h\"時\"m\"分\"s\"秒\"", 0.75 + 30.0 / 1440.0 + 45.0 / 86400.0), "十八時三十分四十五秒");
+    assert_eq!(f("[DBNum1]AM/PM h\"時\"", 0.75), "PM 六時");
+    assert_eq!(f("[DBNum1]s.00", 1.25 / 86400.0), "一.二五");
+    assert_eq!(f("[DBNum1][h]\"時間\"", 1.5), "三十六時間");
+}

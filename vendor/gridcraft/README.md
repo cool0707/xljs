@@ -35,19 +35,30 @@ Each change is marked with a comment that starts with `xljs:`.
   out with RaTeX), which is not copied: no equation is laid out. `model/src/features.rs` uses it
   under the old name; the tests of the equation cache, which need the real layout, are removed.
 - **`xlsx-formulas/`**: `src/lib.rs` is xljs's (the `FunctionInfo` type of `crates/xlsx/src/lib.rs`
-  and a public `apply_legacy`); `array_formula.rs` and `fmla.rs` are unchanged; `tables.rs` is the
-  list of functions that take the `_xlfn.` prefix, cut out of `crates/xlsx/src/tables.rs`.
+  and what xljs calls of `array_formula.rs`: `apply_legacy` for the formulas of a file, `save_as`
+  for the form a formula a script writes is saved in, `legacy_reading` for a formula as Excel
+  shows it); `fmla.rs` is unchanged and `array_formula.rs` too but for `legacy`, which is
+  `pub(crate)`; `tables.rs` is the list of functions that take the `_xlfn.` prefix, cut out of
+  `crates/xlsx/src/tables.rs`.
 - **`calc/src/recalc.rs`**: `Calc::seed`, so that `RAND()` does not draw the same numbers in
   every run.
 - **`numfmt/src/parse.rs`, `render.rs`**: the Japanese date parts: `aaa` / `aaaa` (weekday),
   `g` / `gg` / `ggg` (era), `e` / `ee` (year in the era; GridCraft read `e` as the four-digit
   year) and `[$-ja-JP-x-gannen]` (元年). One assertion of `tests.rs` follows, with new ones.
+  Numbers in kanji: a section with `[DBNum1]`, `[DBNum2]` or `[DBNum3]` writes its numbers, also
+  those of dates, as Japanese Excel does (GridCraft ignored the tag), and `G/標準` is read as the
+  General keyword, which is how Japanese Excel shows it.
+- **`core/src/kanji.rs`** (new, with `pub mod kanji` in `lib.rs`): the kanji numerals themselves
+  (一万二千三百四十五, 壱萬弐阡参百四拾伍, １万２千３百４十５, 一二三四五), for the number formats above,
+  NUMBERSTRING and what xljs's own cells show (`src/api/numfmt.rs`).
 - **`functions/src/text/japanese.rs`** (new): the byte functions (`LENB`, `LEFTB`, `RIGHTB`,
   `MIDB`, `REPLACEB`, `FINDB`, `SEARCHB`) count a full-width character as two bytes when the host
-  asks (`gridcraft_functions::set_dbcs`); `ASC`, `JIS` and `DBCS` convert the width; `YEN` and
-  `DATESTRING` are new. `functions/src/text.rs` registers them, `lib.rs` exports `set_dbcs`.
+  asks (`gridcraft_functions::set_dbcs`); `ASC`, `JIS` and `DBCS` convert the width; `YEN`,
+  `DATESTRING` and `NUMBERSTRING` are new. `functions/src/text.rs` registers them, `lib.rs`
+  exports `set_dbcs`.
 
 `NOW()` and `TODAY()` need no change: xljs gives the engine the local time (`Calc::fixed_now`).
+Iterative calculation needs none either: xljs sets `Workbook::calc` from the workbook's `calcPr`.
 
 ## Building and testing
 
@@ -66,7 +77,8 @@ overflow the stack.
 1. Check out the new GridCraft commit and copy `crates/{core,formula,functions,numfmt,model,calc}/src`
    over the directories here, and `crates/xlsx/src/{array_formula,fmla}.rs` over
    `xlsx-formulas/src/`.
-2. Put the changes above back (search the old tree for `xljs:`), and cut the list of prefixed
-   functions out of `crates/xlsx/src/tables.rs` again.
+2. Put the changes above back (search the old tree for `xljs:`; `core/src/kanji.rs`,
+   `model/src/math.rs`, `functions/src/text/japanese.rs` and `xlsx-formulas/src/lib.rs` are whole
+   files of xljs), and cut the list of prefixed functions out of `crates/xlsx/src/tables.rs` again.
 3. Compare the dependencies in GridCraft's manifests with the ones here.
 4. Run the tests above and `cargo test --lib xlsx_calc`, and note the new commit at the top.

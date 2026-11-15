@@ -4,6 +4,8 @@ use std::fmt::Write as _;
 
 use gridcraft_core::DateSystem;
 use gridcraft_core::date::{datetime_from_serial, max_serial};
+// xljs: for the `[DBNum1]` formats.
+use gridcraft_core::kanji::Kanji;
 
 use crate::calendar::Calendar;
 use crate::decimal::{decimal_digits, fixed, fixed_from_digits, format_general_fit};
@@ -86,12 +88,42 @@ pub(crate) fn render_general(sec: &Section, v: f64, width: usize) -> Out {
     let mut out = Out::default();
     for t in &sec.toks {
         match t {
-            Tok::General => out.push(&format_general_fit(v, width).unwrap_or_else(|| "#".repeat(width.clamp(1, 11)))),
+            Tok::General => match sec.kanji {
+                // xljs: `[DBNum1]G/標準` writes the number in kanji, with units.
+                Some(k) => out.push(&general_kanji(k, v, width)),
+                None => out.push(&format_general_fit(v, width).unwrap_or_else(|| "#".repeat(width.clamp(1, 11)))),
+            },
             Tok::Fill(c) => out.fill(*c),
             other => out.push_tok(other),
         }
     }
     out
+}
+
+/// xljs: a non-negative number in the General format, in kanji: the whole part with units
+/// (千二百三十四), decimals digit by digit after the point. A number General would abbreviate
+/// (twelve digits or more show as `1.23457E+11`) is written out, as far as kanji has units (京).
+fn general_kanji(k: Kanji, v: f64, width: usize) -> String {
+    let Some(text) = format_general_fit(v, width) else { return "#".repeat(width.clamp(1, 11)) };
+    if text.contains('E') && (1.0..1e20).contains(&v) {
+        return k.positional(&fixed(v, 0).0);
+    }
+    k.general(&text)
+}
+
+/// xljs: writes the number a date part just appended to `text` (from `start` on) in kanji; text
+/// parts (month names, AM/PM, the era) are left as they are.
+fn kanji_date_part(text: &mut String, start: usize, k: Kanji) {
+    let Some(tail) = text.get(start..) else { return };
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let written = match tail.strip_prefix('.') {
+        // The decimals of the seconds.
+        Some(frac) if digits(frac) => format!(".{}", k.digits(frac)),
+        None if digits(tail) => k.date_part(tail),
+        _ => return,
+    };
+    text.truncate(start);
+    text.push_str(&written);
 }
 
 /// Renders a date/time. `None` when the serial is outside the supported range.
@@ -129,6 +161,8 @@ pub(crate) fn render_date(sec: &Section, v: f64, sys: DateSystem) -> Option<Out>
         match t {
             Tok::Date(d) => {
                 let text = &mut out.text;
+                // xljs: where this part's text starts (see below).
+                let start = text.len();
                 match *d {
                     DatePart::Year(n) => {
                         let _ = if n <= 2 { write!(text, "{:02}", date.year.rem_euclid(100)) } else { write!(text, "{:04}", date.year) };
@@ -200,6 +234,10 @@ pub(crate) fn render_date(sec: &Section, v: f64, sys: DateSystem) -> Option<Out>
                             text.push_str("曜日");
                         }
                     }
+                }
+                // xljs: `[DBNum1]` writes the numbers of a date in kanji.
+                if let Some(k) = sec.kanji {
+                    kanji_date_part(text, start, k);
                 }
             }
             Tok::Fill(c) => out.fill(*c),
@@ -568,8 +606,14 @@ pub(crate) fn render_number(sec: &Section, v: f64) -> Out {
         }
     }
     let mut out = Out::default();
+    // xljs: `[DBNum1]0` writes the digits the placeholders show in kanji, one for one (literal
+    // text keeps its own digits).
+    let shown = |out: &mut Out, digits: &str| match sec.kanji {
+        Some(k) => out.push(&k.digits(digits)),
+        None => out.push(digits),
+    };
     for (i, t) in toks.iter().enumerate() {
-        out.push(parts.before(i));
+        shown(&mut out, parts.before(i));
         match t {
             Tok::Lit(s) => match parts.slots.get(i).and_then(|sl| sl.lit_spaces) {
                 Some(k) => out.text.extend(std::iter::repeat_n(' ', k)),
@@ -580,7 +624,7 @@ pub(crate) fn render_number(sec: &Section, v: f64) -> Out {
             // Every other token shows its piece. `At` (`0@`) is reachable here, `Comma`, `General`
             // and `Date` are not (analysis turns commas into literals and routes sections with
             // dates or General elsewhere); none of them is ever given a piece, so they print "".
-            _ => out.push(parts.piece(i)),
+            _ => shown(&mut out, parts.piece(i)),
         }
     }
     out.zero = zero;

@@ -446,11 +446,13 @@ fn apply(st: &mut Style, sp: &StyleSpec, sides: Option<&Sides>, default_font: &(
         }
     }
     if let Some(nf) = &sp.num_fmt {
+        // "G/標準" is General as Japanese Excel shows it.
+        let nf = super::numfmt::file_code(nf);
         if nf.is_empty() || nf.eq_ignore_ascii_case("General") {
             st.remove_number_format();
         } else {
             let mut n = NumberingFormat::default();
-            n.set_format_code(nf.clone());
+            n.set_format_code(nf.into_owned());
             st.set_number_format(n);
         }
     }

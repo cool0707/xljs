@@ -2069,7 +2069,11 @@ declare global {
     /** "thin" などで全セルの上下左右、または辺ごとの指定 */
     border?: BorderSide | BorderSpec;
     alignment?: AlignmentSpec;
-    /** "#,##0"、"yyyy/m/d"、"0.0%" などの表示形式、または組み込み番号。"General" で標準に戻す */
+    /**
+     * "#,##0"、"yyyy/m/d"、"0.0%" などの表示形式、または組み込み番号。"General" で標準に戻す。
+     * 漢数字の `[DBNum1]G/標準`（一万二千三百四十五）・`[DBNum2]`（壱萬弐阡参百四拾伍）・`[DBNum3]`（全角数字）も `text` と印刷に反映する
+     * （"G/標準" は "General" として保存する）
+     */
     numberFormat?: string | number;
     protection?: { locked?: boolean };
     bold?: boolean;
@@ -2116,8 +2120,17 @@ declare global {
     readonly text: string;
     /**
      * "=SUM(A1:A3)" のような数式。なければ null（null を代入すると数式と値を消す）。
-     * XLOOKUP・IFS・TEXTJOIN などの新しい関数も Excel に表示されるとおりに書く
-     * （ファイルに必要な接頭辞 `_xlfn.` は保存用に自動で付き、読むときは付かない）。
+     * いまの Excel のセルに入力するのと同じ数式として読み書きする。
+     *
+     * - `FILTER`・`UNIQUE`・`SORT` や `=A2:A10*2` のように複数の値を返す数式はスピルする（結果が下・右のセルに広がる。
+     *   保存したファイルを Excel で開いても同じ）。広がった値は `book.calculate()` のあと各セルの `value` で読める
+     *   （広がり先のセルの `formula` は null）。広がる先に値があると結果は `#SPILL!`（`calc()` は "#SPILL!"、`value` は "#VALUE!"）。
+     *   広がった値の上に値や数式を書くと、その数式が広げていた値は消える
+     * - 範囲のうち数式と同じ行（列）の 1 つの値だけを使うときは `@` を付ける（`=@A2:A10`）。スピルのない Excel で作った数式は、
+     *   Excel が表示するのと同じく `@` が付いて読めることがある
+     * - XLOOKUP・IFS・TEXTJOIN などの新しい関数も Excel に表示されるとおりに書く
+     *   （ファイルに必要な接頭辞 `_xlfn.` は保存用に自動で付き、読むときは付かない）
+     *
      * 書いた数式の結果は `book.calculate()` を呼ぶまで `value` に入らない（Excel で開けば計算される）
      */
     formula: string | null;
@@ -2345,7 +2358,8 @@ declare global {
     formula: string;
     /**
      * 理由。"function" = 計算できない関数（マクロ・アドインの関数、PHONETIC、CUBE 関数など）、"name" = ブックに定義されていない名前、
-     * "external" = ほかのブックへの参照、"circular" = 循環参照（その結果を参照する数式も）、"dataTable" = データテーブル（What-If 分析）、
+     * "external" = ほかのブックへの参照、"circular" = 循環参照（その結果を参照する数式も。ブックの「反復計算を行う」が有効なら計算するので出ない）、
+     * "dataTable" = データテーブル（What-If 分析）、
      * "large" = 範囲が大きすぎる配列数式、"syntax" = 読み取れない数式
      */
     reason: "function" | "name" | "external" | "circular" | "dataTable" | "large" | "syntax";

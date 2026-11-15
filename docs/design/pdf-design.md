@@ -249,5 +249,12 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
   これらを読み書きし（拡張は `Worksheet::conditional_formatting_2010_collection`。規則・データバー・アイコンセット・`cfvo` の構造体は 2007 形式と共用で、
   要素名は接頭辞を除いて読む）、空の `<dxf/>` で後ろの `dxfId` がずれるのも直した。
 
+- **配列数式とスピルする数式**: 本家は配列数式（`t="array"`）を読むが普通の数式として書き、セルのメタデータ（`cm` と `xl/metadata.xml`）は読んだ番号を持つだけで
+  書かなかった。`CellFormula` が `t="array"` と範囲（`ref`）を書き、スピルする数式かどうか（`dynamic_array`。`cm` が指す動的配列のプロパティ `XLDAPR` から読む）を持つ。
+  保存では、スピルする数式のセルに `cm` を付け、その分だけの `xl/metadata.xml`（リレーションと Content_Types も）を書く。行・列の挿入と削除で `ref` も動く。
+  値のメタデータ（`vm`。セルに置いた画像のリッチ値）は保存しない。`docs/design/calc-design.md` 4 章。
+- **計算の設定（`calcPr`）**: 本家の 4.0 系のコミットを取り込んだ（`Workbook::calculation_properties`。反復計算・手動計算・`fullCalcOnLoad` が保存で残る）。
+  データテーブルの数式の `ref` を書く修正も同じく取り込んだ。
+
 本家の版を上げるときは、`xljs` ブランチを新しいタグへ載せ替える（本家に取り込まれた修正は落とす）。どちらも取り込まれたら
 `[patch.crates-io]` を消して本家に戻す。

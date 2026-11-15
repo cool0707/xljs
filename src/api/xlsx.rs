@@ -28,7 +28,6 @@ pub struct Book {
     /// A workbook from create() whose default sheet has not been used yet;
     /// the first addSheet renames it.
     pub fresh: bool,
-    pub formulas: bool,
     pub closed: bool,
     /// The font of the Normal style (name, size).
     pub default_font: (String, f64),
@@ -48,6 +47,12 @@ pub struct Book {
     pub(crate) calc: std::cell::RefCell<Option<Box<super::xlsx_calc::Engine>>>,
     /// The cells written since the engine last calculated.
     pub(crate) touched: std::cell::RefCell<super::xlsx_calc::Touched>,
+    /// The sheets, names and tables the formulas scripts write and read
+    /// are checked against (None until one is).
+    pub(crate) shape: std::cell::RefCell<Option<Box<super::xlsx_calc::Shape>>>,
+    /// The areas the array formulas fill, by sheet name (read from the
+    /// sheet the first time a script writes into it).
+    pub(crate) areas: std::collections::HashMap<String, super::xlsx_calc::Areas>,
 }
 
 pub(crate) fn zerr(e: impl std::fmt::Display) -> Error {
@@ -62,7 +67,7 @@ impl Book {
     fn new(wb: Workbook, path: String, styles_xml: Option<&[u8]>) -> Book {
         let default_font = styles_xml.and_then(first_font).unwrap_or(("Calibri".into(), 11.0));
         let date1904 = false; // see read_date1904
-        Book { wb, path, date1904, fresh: false, formulas: false, closed: false, default_font, font_changed: false, charts: None, print: Default::default(), table_styles: Default::default(), cell_images: Default::default(), calc: Default::default(), touched: Default::default() }
+        Book { wb, path, date1904, fresh: false, closed: false, default_font, font_changed: false, charts: None, print: Default::default(), table_styles: Default::default(), cell_images: Default::default(), calc: Default::default(), touched: Default::default(), shape: Default::default(), areas: Default::default() }
     }
 
     pub fn sheet(&self, name: &str) -> Result<&Worksheet> {
@@ -86,8 +91,10 @@ impl Book {
         self.wb.sheet_by_name_mut(name).map_err(|_| Error::msg(format!("sheet {name} does not exist")))
     }
 
-    /// A cell to change the value or the formula of.
+    /// A cell to change the value or the formula of. The area of an array
+    /// formula the cell is in is given up (xlsx_calc::release_area).
     pub fn cell_mut(&mut self, sheet: &str, col: u32, row: u32) -> Result<&mut umya_spreadsheet::Cell> {
+        super::xlsx_calc::release_area(self, sheet, col, row);
         self.touched.get_mut().cell(sheet, col, row);
         Ok(self.layout_mut(sheet)?.cell_mut((col, row)))
     }
@@ -96,6 +103,8 @@ impl Book {
     /// formula engine does not follow cell by cell.
     pub fn calc_reset(&mut self) {
         *self.calc.get_mut() = None;
+        *self.shape.get_mut() = None;
+        self.areas.clear();
         self.touched.get_mut().everything();
     }
 
@@ -104,14 +113,14 @@ impl Book {
         let mut buf = Cursor::new(Vec::new());
         umya_spreadsheet::writer::xlsx::write_writer(&self.wb, &mut buf).map_err(zerr)?;
         let data = buf.into_inner();
-        if !self.formulas && !self.font_changed {
+        if !self.font_changed {
             return Ok(data);
         }
         self.postprocess(&data)
     }
 
     /// Writes what umya-spreadsheet cannot: the default font of the Normal
-    /// style and the "recalculate on load" flag.
+    /// style.
     fn postprocess(&self, data: &[u8]) -> Result<Vec<u8>> {
         let mut zr = zip::ZipArchive::new(Cursor::new(data)).map_err(zerr)?;
         let mut zw = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -120,12 +129,6 @@ impl Book {
             let name = f.name().to_string();
             let mut content = Vec::new();
             f.read_to_end(&mut content).map_err(zerr)?;
-            if name == "xl/workbook.xml" && self.formulas {
-                let s = String::from_utf8_lossy(&content);
-                content = CALC_PR.replace(&s, |c: &regex::Captures| {
-                    if c[0].contains("fullCalcOnLoad") { c[0].to_string() } else { format!("{} fullCalcOnLoad=\"1\"{}", &c[1], &c[2]) }
-                }).into_owned().into_bytes();
-            }
             if name == "xl/styles.xml" && self.font_changed {
                 content = set_first_font(&String::from_utf8_lossy(&content), &self.default_font.0, self.default_font.1).into_bytes();
             }
@@ -137,7 +140,6 @@ impl Book {
     }
 }
 
-static CALC_PR: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(<calcPr\b[^>]*?)(\s*/?>)").unwrap());
 static FONTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<fonts\b[^>]*>\s*<font\b[^>]*>(.*?)</font>").unwrap());
 static FONT_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<name\s+val="([^"]*)"\s*/>"#).unwrap());
 static FONT_SIZE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<sz\s+val="([^"]*)"\s*/>"#).unwrap());
@@ -320,7 +322,8 @@ pub fn builtin_date_fmt(id: u32) -> bool {
 /// ([h]:mm) are treated as plain numbers.
 pub fn date_format_code(code: &str) -> bool {
     let code = code.split(';').next().unwrap_or("");
-    let lower = code.to_lowercase();
+    // "G/標準" is General as Japanese Excel shows it, not the era.
+    let lower = code.to_lowercase().replace("g/標準", "");
     if lower.contains("[h") || lower.contains("[m") || lower.contains("[s") {
         return false;
     }
@@ -721,30 +724,19 @@ pub(super) fn install(n: &N) {
         let (sheet, r) = (a.str(1), upper(a.str(2)));
         let f = with_book(h, a, |b| {
             let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
-            let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
-            Ok(ws.cell((col, row)).map(|c| c.formula().to_string()).unwrap_or_default())
+            b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            Ok(super::xlsx_calc::formula_shown(b, &sheet, col, row))
         })?;
-        if f.is_empty() {
-            return a.null();
+        match f {
+            Some(f) => a.ret(format!("={f}")),
+            None => a.null(),
         }
-        a.ret(format!("={}", super::xlsx_calc::formula_from_file(&f)))
     });
     n.set("xlsxSetFormula", |h, a| {
-        let (sheet, r) = (a.str(1), upper(a.str(2)));
-        let formula = super::xlsx_calc::formula_to_file(&a.str(3));
+        let (sheet, r, formula) = (a.str(1), upper(a.str(2)), a.str(3));
         with_book(h, a, |b| {
             let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
-            let c = b.cell_mut(&sheet, col, row).map_err(|e| a.throw(&e))?;
-            c.cell_value_mut().set_blank();
-            // Not the dynamic array formula the cell may have had.
-            c.set_cell_meta_index(0);
-            if formula.trim().is_empty() {
-                // formula = null: the cell has none (and no value) any more.
-                return Ok(());
-            }
-            c.set_formula(formula.clone());
-            b.formulas = true;
-            Ok(())
+            super::xlsx_calc::set_formula(b, &sheet, col, row, &formula).map_err(|e| a.throw(&e))
         })?;
         a.undefined()
     });
