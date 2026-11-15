@@ -168,18 +168,23 @@ Excel 2010 の拡張（`extLst` の `x14:conditionalFormattings`。負の値と�
 
 ### セルに配置した画像（`src/api/xlsx_cellimage.rs`）
 
-Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は読まない（セルはエラー `#VALUE!` になる）。ブックを開いたときに読んでおく（`Book::cell_images`）。
+Excel の「セルに配置」の画像はリッチ値で、セルの値としてはエラー `#VALUE!` になる。umya-spreadsheet（フォーク）はセルの `vm` を持ち、
+リッチ値の部品を中身を見ずに読んだまま書き戻す（7 章）。`vm` がどの画像を指すかは、ブックを開いたときにここで読んでおく（`Book::cell_images`）。
 
 - セル: `<c r="B2" t="e" vm="1"><v>#VALUE!</v></c>`。`vm`（1 から）→ `xl/metadata.xml` の `valueMetadata` の `bk` → `rc t`（`XLRICHVALUE` の `metadataType`）`v`
   → `futureMetadata name="XLRICHVALUE"` の `bk` → `xlrd:rvb i` → `xl/richData/rdrichvalue.xml` の `rv`。`rv` の値はその構造（`rdrichvaluestructure.xml` の `s`）のキーの順で、
   `_rvRel:LocalImageIdentifier` が `richValueRel.xml` の `rel` の位置（→ そのリレーションの `xl/media/*`）、`Text` が代替テキスト。
   部品はブックのリレーションの種類（`sheetMetadata` `rdRichValue` `rdRichValueStructure` `richValueRel`）から探す（名前の大文字・小文字は問わない）。
 - `IMAGE("https://…")`（構造 `_webImage`）は画像がファイルにないので空欄にする（`#VALUE!` は出さない）。EMF/WMF も空欄。
-- 画像として扱うのは、開いたときに `vm` があり、いまの値がエラーのままのセル（スクリプトが値を書いたら画像ではない）。位置で持っているので、行・列の挿入・削除はずれる。
+- 画像として扱うのは、`vm`（`Cell::value_meta_index`）が画像を指し、値がエラーのままのセル（`CellImages::of`）。スクリプトが値や数式を書くと
+  `vm` を外す（`Book::cell_mut`。エラーを返す数式を書いても画像ではない）。`vm` はセルが持つので、行・列の挿入・削除では画像もセルと一緒に動く。
 - **参照するセル**: Excel は `=B2` のセルにも `vm` を付けて保存するので、それはそのまま画像（保存された結果を使う。ほかの数式と同じ）。
+  計算し直して結果が変わったら、その数式の `vm` も外す（`xlsx_calc` の `store`）。
   `vm` のない数式（スクリプトで書いた数式、`vm` を書かないツールが保存した数式）は `xlsx_calc` で評価し、結果が画像なら画像（`xlsx_calc::cell_image`）。
   計算の値 `V::Image` は参照・`IF`・`IFERROR`・`INDEX`・`VLOOKUP` / `HLOOKUP`・`XLOOKUP`（完全一致）をそのまま通り、数値・文字列として使うと `#VALUE!`（`=B2&""` など。Excel と同じ）。
-- 保存（`book.save`）では umya がリッチ値の部品を書かないので画像は消える（セルは `#VALUE!`）。
+- 保存（`book.save`）: 画像はセルに残る。umya が `vm` と `xl/metadata.xml` の値のメタデータ、リッチ値の部品（`xl/richData/*` とその画像）を書く。
+  `vm` を持つセルがなくなったブックには書かない。スクリプトで書いた `=B2` のような数式は `vm` なしで保存され、Excel が開いたときの再計算で画像になる
+  （数式を書いたブックには `fullCalcOnLoad` が付く）。画像をセルに置く API はない。
 
 ## 3. PDF にする（`Ui::print_pdf`、`src/ui/native/webview.rs`、`src/ui/web/print.html` / `print-page.js`）
 
@@ -222,7 +227,8 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
   出力に描画の XML を足す: テキストボックス・既定のスタイルの図形・吹き出し・矢印・星（回転）・矢印付きの線・破線のカギ線コネクタ（反転）・グループ・
   フリーフォーム・縦書き・非表示・印刷しない図形・雲形吹き出し・スマイル・ハート、ワードアート（影・グラデーション＋輪郭＋光彩のアーチ・輪郭だけの 2 行の波・反射の膨らみ・円・大文字と文字間隔に図形の影））、`testdata/xlsx/cellimages.xlsx`（`make_cellimages.py`。openpyxl の出力にリッチ値の部品を足す:
   セルに配置した PNG・JPEG・代替テキスト付き、同じシートと別のシートから参照するセル（`vm` あり・なし）。スクリプトで書いた `=`・`IF`・`XLOOKUP`・`VLOOKUP`・`INDEX` の参照、
-  `&` で `#VALUE!`、画像に値を上書きしたとき）、mock のログ。デバッガ経由でも同じ（`scripts_in_debugger`）。
+  `&` で `#VALUE!`、画像に値を上書きしたとき、保存して開き直しても画像が残ること）、mock のログ。デバッガ経由でも同じ（`scripts_in_debugger`）。
+- `src/api/xlsx_cellimage.rs` の単体テスト: セルの `vm` から画像を引くこと（行の挿入で一緒に動く、値を書くと外れる）、保存したファイルにリッチ値の部品が元のまま入ること、画像のセルがなくなれば書かないこと。
 - `src/ui/native/tests.rs`（Windows CI）: `print_page_draws_charts_hidden`（見えないウィンドウで縦棒とガントが描けること）、
   `print_pdf_writes_a_file`（`print.xlsx` を PDF にしてファイルができること）。
 - 見た目は Playwright の Chromium で `print.html` に偽の `chrome.webview` を付けて `init` を送り、`page.pdf({ preferCSSPageSize: true })` →
@@ -252,7 +258,13 @@ Excel の「セルに配置」の画像はリッチ値で、umya-spreadsheet は
 - **配列数式とスピルする数式**: 本家は配列数式（`t="array"`）を読むが普通の数式として書き、セルのメタデータ（`cm` と `xl/metadata.xml`）は読んだ番号を持つだけで
   書かなかった。`CellFormula` が `t="array"` と範囲（`ref`）を書き、スピルする数式かどうか（`dynamic_array`。`cm` が指す動的配列のプロパティ `XLDAPR` から読む）を持つ。
   保存では、スピルする数式のセルに `cm` を付け、その分だけの `xl/metadata.xml`（リレーションと Content_Types も）を書く。行・列の挿入と削除で `ref` も動く。
-  値のメタデータ（`vm`。セルに置いた画像のリッチ値）は保存しない。`docs/design/calc-design.md` 4 章。
+  `docs/design/calc-design.md` 4 章。
+- **セルに置いた画像などのリッチ値**: 本家はセルの値のメタデータ（`vm`）を読まず、`xl/richData` の部品も書かないので、セルに配置した画像は保存すると
+  `#VALUE!` だけになった。セルが `vm` を読んだ番号のまま持ち（`Cell::value_meta_index` / `set_value_meta_index`）、値がエラーで、その番号がリッチ値を指す間は書く。
+  `xl/metadata.xml` の `valueMetadata` は読んだ並びのまま（番号が変わらない）動的配列のプロパティと一緒に書く。リッチ値の部品（ブックのリレーションの種類が
+  `rd…`・`richValue…`・`richStyles` のもの）と、そこから参照される部品（`xl/media` の画像）は中身を見ずに持っておき、`vm` を書いたセルがあるとき（と、
+  読んだままの形で書くシートがあるとき）にリレーション・Content_Types と一緒に書き戻す。シートの画像と名前が重なった画像は別の名前で書く。
+  リッチ値の中身は見ないので、連結データ型（株価・地理）や `IMAGE` の結果も同じ仕組みで残る。`tests/cell_images.rs`。
 - **計算の設定（`calcPr`）**: 本家の 4.0 系のコミットを取り込んだ（`Workbook::calculation_properties`。反復計算・手動計算・`fullCalcOnLoad` が保存で残る）。
   データテーブルの数式の `ref` を書く修正も同じく取り込んだ。
 

@@ -92,11 +92,14 @@ impl Book {
     }
 
     /// A cell to change the value or the formula of. The area of an array
-    /// formula the cell is in is given up (xlsx_calc::release_area).
+    /// formula the cell is in is given up (xlsx_calc::release_area), and so
+    /// is the picture placed in the cell (xlsx_cellimage).
     pub fn cell_mut(&mut self, sheet: &str, col: u32, row: u32) -> Result<&mut umya_spreadsheet::Cell> {
         super::xlsx_calc::release_area(self, sheet, col, row);
         self.touched.get_mut().cell(sheet, col, row);
-        Ok(self.layout_mut(sheet)?.cell_mut((col, row)))
+        let c = self.layout_mut(sheet)?.cell_mut((col, row));
+        c.set_value_meta_index(0);
+        Ok(c)
     }
 
     /// The sheets changed (added, removed, renamed) or something else the

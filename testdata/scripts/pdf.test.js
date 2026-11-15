@@ -255,6 +255,14 @@ ok(got[0] === img2 && got[1] === img1, "saved by Excel (vm) and saved without vm
 ok(got[2] === img1 && got[3] === img2 && got[4] === img3 && got[5] === img2 && got[6] === img1, "formulas written by the script: =, IF, XLOOKUP, VLOOKUP, INDEX");
 ok(refs.toHtml().includes(">#VALUE!<"), "a picture used as text is #VALUE!");
 equal(refs.cell("C2").calc(), "#VALUE!");
+// A saved workbook keeps the pictures in the cells (the rich values are
+// written back as they were read).
+ci.save("cellimages-saved.xlsx");
+let cs = workbooks.open("cellimages-saved.xlsx");
+equal(srcs(cs.sheets[0].toHtml()).map((x) => x.src).join(), goods.map((x) => x.src).join(), "the pictures of a saved workbook");
+equal(srcs(cs.sheets[0].toHtml())[4].alt, "ぶどうの写真");
+equal(srcs(cs.sheets[1].toHtml()).map((x) => x.src).join(), got.join(), "and what refers to them");
+equal(cs.sheets[0].cell("B2").value, "#VALUE!", "a picture is #VALUE! as a value");
 // A value written over a picture is no picture, also where it is referred to:
 // the formulas are calculated again for the pages, those Excel saved with
 // the picture too (D3 here, A2 on the other sheet).
@@ -264,6 +272,21 @@ equal(ci.sheets[0].cell("D3").value, "売り切れ", "the result is stored in th
 got = srcs(refs.toHtml()).map((x) => x.src);
 ok(refs.toHtml().includes(">売り切れ<") && got.length === 4, "formulas that refer to it show the value");
 equal(refs.cell("A2").value, "売り切れ");
+// Saved again, the cell written over holds its value and the others their pictures.
+ci.sheets[0].cell("B4").formula = "=1/0";
+ci.calculate();
+ci.save("cellimages-saved.xlsx");
+cs = workbooks.open("cellimages-saved.xlsx");
+equal(cs.sheets[0].cell("B3").value, "売り切れ");
+equal(cs.sheets[0].cell("B4").value, "#DIV/0!", "an error written over a picture is no picture");
+equal(srcs(cs.sheets[0].toHtml()).map((x) => x.src).join(), [img1, img1].join(), "B2 and D2 (=B2)");
+equal(srcs(cs.sheets[1].toHtml()).map((x) => x.src).join(), [img1, img1, img1].join(), "the formulas that show B2: the saved one, = and INDEX");
+// Nothing shows a picture any more: the rich values are not written.
+cs.sheets[0].setValue("B2", null);
+cs.sheets[0].setValue("B4", null);
+cs.calculate();
+cs.save("cellimages-none.xlsx");
+equal(srcs(workbooks.open("cellimages-none.xlsx").sheets.map((x) => x.toHtml()).join()).length, 0);
 await ci.toPdf("cellimages.pdf");
 
 await xljs.htmlToPdf("<h1>こんにちは</h1>", "hello.pdf", { paper: "A5", landscape: true });

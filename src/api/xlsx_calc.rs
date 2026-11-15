@@ -841,6 +841,9 @@ fn store(b: &mut Book) -> usize {
             let c = ws.cell_mut(coord(at));
             if c.is_formula() && !same(c.raw_value(), &cell.value) {
                 set_result(c, &cell.value);
+                // The picture Excel saved as the result (`vm`) is not the
+                // result any more.
+                c.set_value_meta_index(0);
                 changed += 1;
             }
         }
@@ -1065,7 +1068,7 @@ pub fn cell_image(b: &Book, sheet: &str, col: u32, row: u32) -> Option<usize> {
     let c = b.sheet(sheet).ok()?.cell((col, row))?;
     match c.raw_value() {
         CellRawValue::Error(_) => {
-            if let Some(i) = b.cell_images.at(sheet, col, row) {
+            if let Some(i) = b.cell_images.of(c) {
                 return Some(i);
             }
         }
@@ -1150,8 +1153,7 @@ impl Pictures<'_> {
         if v != Value::Error(CellError::Value) {
             return v;
         }
-        if let Some(i) = self.b.cell_images.at(&sh.name, c.col + 1, c.row + 1) {
-            // Still the picture: a value written over it is no #VALUE!.
+        if let Some(i) = self.b.sheet(&sh.name).ok().and_then(|ws| ws.cell((c.col + 1, c.row + 1))).and_then(|x| self.b.cell_images.of(x)) {
             return self.stand_in(i);
         }
         if depth >= MAX_PICTURE_DEPTH || !sh.cell(c).is_some_and(|x| x.formula.is_some()) {
