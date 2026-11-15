@@ -265,6 +265,16 @@ Excel の「セルに配置」の画像はリッチ値で、セルの値とし�
   `rd…`・`richValue…`・`richStyles` のもの）と、そこから参照される部品（`xl/media` の画像）は中身を見ずに持っておき、`vm` を書いたセルがあるとき（と、
   読んだままの形で書くシートがあるとき）にリレーション・Content_Types と一緒に書き戻す。シートの画像と名前が重なった画像は別の名前で書く。
   リッチ値の中身は見ないので、連結データ型（株価・地理）や `IMAGE` の結果も同じ仕組みで残る。`tests/cell_images.rs`。
+- **グラフ**: 本家はグラフを自分のモデル（`ChartSpace`）に読んで書き直すので、`oneCellAnchor` に置いたグラフ（openpyxl などが作る）と
+  新しい種類のグラフ（chartEx。`mc:AlternateContent` の中）は保存で消え、モデルにあるグラフも、モデルにないもの（グラフのスタイル `style1.xml`・
+  色 `colors1.xml`、拡張など）が落ちていた。描画の中でグラフを持つアンカー（`twoCellAnchor`・`oneCellAnchor`・`absoluteAnchor`、それを囲む
+  `mc:AlternateContent`）は、読んだ XML のまま（描画のルートで宣言された名前空間を自分で宣言し直して）持ち（`KeptAnchor`）、グラフの部品と
+  そこから参照される部品（スタイル・色・データの埋め込みブック・グラフの上の図形の描画とその画像）は中身を見ずに持っておき（`kept_parts.rs`）、
+  保存でリレーション・Content_Types と一緒に書き戻す。名前が使われていれば次の空いた番号にする。`twoCellAnchor` のグラフは今までどおりモデルにも読み、
+  モデルが読んだときのままなら読んだものを、モデルで変えたらモデルから書く（`Chart::kept_unchanged`。`Debug` の表現のハッシュで比べる）。
+  行・列の挿入と削除では、アンカーの位置と系列の参照（`c:f`・`cx:f`。絶対参照も動かす）を動かす。`tests/chart_fidelity.rs`。
+- **入力規則**: 2 つの数式を持つ規則（`between`・`notBetween`）は `formula1`・`formula2` が両方落ちて条件のない規則になっていた（片方だけのときしか
+  中身を書かなかった）。`errorStyle`（停止・注意・情報）、`imeMode`、`showDropDown` を読み書きする。
 - **計算の設定（`calcPr`）**: 本家の 4.0 系のコミットを取り込んだ（`Workbook::calculation_properties`。反復計算・手動計算・`fullCalcOnLoad` が保存で残る）。
   データテーブルの数式の `ref` を書く修正も同じく取り込んだ。
 

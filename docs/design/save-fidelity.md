@@ -22,9 +22,6 @@ umya のテスト用の `aaa.xlsx`・`aaa.xlsm`）を `workbooks.open(src).save(
 
 | 優先 | 落ちるもの | 確かめたブック | 中身 |
 |---|---|---|---|
-| 高 | グラフ | `charts.xlsx`（12 個）、`rules.xlsx`（2 個）、`print.xlsx`（1 個） | `xl/charts/*` と描画のリレーションが保存後にない。3 つとも全部消えた。リファレンスには「失われることがある」とだけ書いてある |
-| 高 | 入力規則の条件 | `rules.xlsx` | 「整数・1〜100 の間」（`type="whole" operator="between"`）の `formula1`・`formula2` が両方消え、条件のない規則になる |
-| 高 | 入力規則の `errorStyle` | `rules.xlsx` | `errorStyle="warning"` が消えて既定の「停止」になる |
 | 中 | 入力規則のメッセージの文字化け | `rules.xlsx` | `error`・`errorTitle`・`prompt`・`promptTitle` が数値文字参照（`&#25968;`）で書かれていると `&amp;#25968;` と二重にエスケープされる。Excel は UTF-8 のまま書くので、openpyxl などが作ったブックで起きる |
 | 中 | 独自のテーブルスタイル | `tables.xlsx` | `styles.xml` の `tableStyles` が空になり、`defaultTableStyle`・`defaultPivotStyle` も書き換わる。印刷用には xljs が別に読む（`xlsx_table.rs`）ので PDF には出るが、保存したファイルには残らない |
 | 中 | ピボットテーブルのリレーション | `aaa.xlsx` | `xl/pivotTables/_rels/*`・`xl/pivotCache/_rels/*` がない。保存したブックのピボットが Excel で開けるかは確かめていない |
@@ -45,6 +42,6 @@ umya のテスト用の `aaa.xlsx`・`aaa.xlsm`）を `workbooks.open(src).save(
 
 ## 4. 直し方の方針
 
-- umya のフォーク（`xljs` ブランチ）で直す。モデルに足せるもの（入力規則の条件・`errorStyle`・`blackAndWhite`・`<b val="0"/>`）は読み書きを足す。
-- 中身を xljs が扱わないもの（グラフ・テーブルスタイル・埋め込み・色のパレット）は、セルに置いた画像のリッチ値と同じく、
-  読んだ部品を中身を見ずに持っておいて書き戻す（`rich_data.rs`）のが早い。グラフは参照するセル範囲が行・列の挿入で動くので、そこだけは追う必要がある。
+- umya のフォーク（`xljs` ブランチ）で直す。モデルに足せるもの（`blackAndWhite`・`<b val="0"/>`）は読み書きを足す。
+- 中身を xljs が扱わないもの（テーブルスタイル・埋め込み・色のパレット）は、セルに置いた画像のリッチ値（`rich_data.rs`）やグラフ（`kept_parts.rs`）と同じく、
+  読んだ部品を中身を見ずに持っておいて書き戻すのが早い。
