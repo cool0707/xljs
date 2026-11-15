@@ -1288,7 +1288,62 @@ pub(crate) fn formula_shown(b: &Book, sheet: &str, col: u32, row: u32) -> Option
     let Shape { wb, names } = &mut *shape;
     let Some(si) = wb.sheet_index(sheet) else { return Some(shown) };
     let at = CellRef::new(row.saturating_sub(1), col.saturating_sub(1));
-    Some(legacy_reading(wb, si, at, &formula, FUNCTIONS, names).map_or(shown, |read| read.text))
+    let shown = legacy_reading(wb, si, at, &formula, FUNCTIONS, names).map_or(shown, |read| read.text);
+    Some(this_row_shown(&shown, own_table(b, sheet, col, row).as_deref()))
+}
+
+/// The table whose data rows hold the cell.
+fn own_table(b: &Book, sheet: &str, col: u32, row: u32) -> Option<String> {
+    let ws = b.sheet(sheet).ok()?;
+    ws.tables().iter().find_map(|t| {
+        let (a, z) = t.area();
+        let inside = (a.col_num()..=z.col_num()).contains(&col) && (a.row_num() + 1..=z.row_num()).contains(&row);
+        inside.then(|| (if t.display_name().is_empty() { t.name() } else { t.display_name() }).to_string())
+    })
+}
+
+/// The references to the row of the formula in a table as Excel shows them:
+/// `果物[[#This Row],[数量]]` (as the file holds it) is `[@数量]` in the table
+/// itself and `果物[@数量]` elsewhere; `[@[単 価]]` for a name with spaces or
+/// signs, `[@[数量]:[単価]]` for several columns. Strings stay as they are.
+fn this_row_shown(text: &str, own: Option<&str>) -> String {
+    static THIS_ROW: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+        regex::Regex::new(r"(?i)([\p{L}_\\][\p{L}\p{N}_.]*)?\[\[#This Row\],\s*(\[[^\[\]]*\](?::\[[^\[\]]*\])?|[^\[\]]+)\]").unwrap()
+    });
+    if !text.to_ascii_lowercase().contains("#this row") {
+        return text.to_string();
+    }
+    let simple = |name: &str| name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.');
+    text.split('"')
+        .enumerate()
+        .map(|(i, part)| {
+            if i % 2 == 1 {
+                return part.to_string();
+            }
+            THIS_ROW
+                .replace_all(part, |c: &regex::Captures| {
+                    let table = c.get(1).map(|m| m.as_str());
+                    let cols = c[2].trim();
+                    let inner = if cols.starts_with('[') {
+                        match cols.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+                            Some(one) if !one.contains("]:[") && simple(one) => one.to_string(),
+                            _ => cols.to_string(),
+                        }
+                    } else if simple(cols) {
+                        cols.to_string()
+                    } else {
+                        format!("[{cols}]")
+                    };
+                    let prefix = match table {
+                        Some(t) if own.is_none_or(|o| !o.eq_ignore_ascii_case(t)) => t,
+                        _ => "",
+                    };
+                    format!("{prefix}[@{inner}]")
+                })
+                .into_owned()
+        })
+        .collect::<Vec<_>>()
+        .join("\"")
 }
 
 // ---- formulas as files spell them ----

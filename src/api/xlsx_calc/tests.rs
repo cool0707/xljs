@@ -394,8 +394,9 @@ fn formulas_read_as_excel_shows_them() {
     assert_eq!(shown(&b, "配列", "I3").as_deref(), Some("@A1:A5"));
     assert_eq!(shown(&b, "配列", "I1").as_deref(), Some("SUM(C1:C5)"));
     assert_eq!(shown(&b, "配列", "I4").as_deref(), Some("SUM(G1#)"));
-    // A column of the table in the row of the formula is one value: no `@` (the text is the file's).
-    assert_eq!(shown(&b, "表", "D3").as_deref(), Some("[[#This Row],数量]*[[#This Row],単価]"));
+    // A column of the table in the row of the formula is one value: no `@`
+    // more, and `[[#This Row],数量]` as Excel shows it.
+    assert_eq!(shown(&b, "表", "D3").as_deref(), Some("[@数量]*[@単価]"));
     assert_eq!(shown(&b, "表", "F1").as_deref(), Some("SUM(売上表[金額])"));
     // Array formulas work with every value as they are written.
     assert_eq!(shown(&b, "配列", "C1").as_deref(), Some("A1:A5*B1:B5"));

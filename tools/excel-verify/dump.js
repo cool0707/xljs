@@ -11,7 +11,9 @@ const base = Date.UTC(1899, 11, 30);
 function v2(v) {
   if (v instanceof Date) {
     const ms = Date.UTC(v.getFullYear(), v.getMonth(), v.getDate(), v.getHours(), v.getMinutes(), v.getSeconds(), v.getMilliseconds());
-    return { d: (ms - base) / 86400000 };
+    const days = (ms - base) / 86400000;
+    // Before 1900-03-01 Excel counts one day less (its 1900-02-29).
+    return { d: days < 61 ? days - 1 : days };
   }
   return v;
 }

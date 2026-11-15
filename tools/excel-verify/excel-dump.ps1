@@ -22,7 +22,10 @@ try {
       if ($null -eq $v -and -not $hf) { continue }
       if ($v -is [int]) { if ($errs.ContainsKey($v)) { $v = $errs[$v] } else { $v = "#ERR$v" } }
       $f = $null; if ($hf) { $f = $c.Formula2 }
-      $cells[$c.Address($false, $false)] = [ordered]@{ v = $v; f = $f; t = $c.Text; nf = $c.NumberFormat }
+      $cell = [ordered]@{ v = $v; f = $f; t = $c.Text; nf = $c.NumberFormat }
+      # Ctrl+Shift+Enter の配列数式の範囲（Excel はどのセルでも同じ数式を返す）
+      if ($hf -and $c.HasArray) { $cell.arr = $c.CurrentArray.Address($false, $false) }
+      $cells[$c.Address($false, $false)] = $cell
     }
     $sheets[$ws.Name] = [ordered]@{ dim = $ur.Address($false, $false); cells = $cells }
   }

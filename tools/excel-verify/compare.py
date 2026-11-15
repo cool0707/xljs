@@ -35,6 +35,16 @@ def fnorm(f):
     return f.replace("=@", "=") if f else None
 
 
+def same_shown(x, y, nf):
+    """What the width of the column decides: a cell filled with # (a date
+    that cannot be shown), and the spaces a * in the format repeats."""
+    if x and y and set(x) == {"#"} and set(y) == {"#"}:
+        return True
+    if "*" in nf:
+        return "".join(x.split()) == "".join(y.split())
+    return False
+
+
 bad = {k: 0 for k in what}
 n = 0
 for name, sb in b["sheets"].items():
@@ -48,16 +58,20 @@ for name, sb in b["sheets"].items():
         for w in what:
             if w == "v":
                 x, y = norm(ca.get("v")), norm(cb.get("v"))
-                ok = same(x, y)
+                # A date goes through JavaScript's Date: to the millisecond.
+                is_date = isinstance(ca.get("v"), dict) or isinstance(cb.get("v"), dict)
+                ok = same(x, y) or (is_date and isinstance(x, float) and isinstance(y, float) and abs(x - y) < 0.6 / 86400000)
             elif w == "f":
                 x, y = fnorm(ca.get("f")), fnorm(cb.get("f"))
-                ok = x == y
+                # xljs gives the formula of an array formula in its first cell only.
+                arr = cb.get("arr")
+                ok = x == y or (arr is not None and x is None and not arr.startswith(k + ":") and arr != k)
             elif w == "n":
                 x, y = ca.get("nf"), cb.get("nf")
                 ok = x == y
             else:
                 x, y = ca.get("t") or "", cb.get("t") or ""
-                ok = x == y
+                ok = x == y or same_shown(x, y, cb.get("nf") or "")
             if not ok:
                 bad[w] += 1
                 extra = f"  nf={cb.get('nf')!r}" if w == "t" else f"  {cb.get('f') or ''}"

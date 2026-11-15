@@ -1,4 +1,5 @@
 // write.js <out.xlsx>: a workbook written by xljs, for Excel to open
+// (only functions Excel 2021 has: LAMBDA, TAKE... are Microsoft 365's)
 const [out] = xljs.args;
 const book = workbooks.create();
 const s = book.addSheet("値");
@@ -35,14 +36,14 @@ f.cell("F2").formula = "=SORT(A1:A3,,-1)";
 f.cell("G1").formula = "=@A1:A10";
 f.cell("G2").formula = "=A1:A3*2";
 f.cell("G5").formula = "=値!A1*2";
-f.cell("G6").formula = "='値'!A4&\"です\"";
-f.cell("G7").formula = "=LAMBDA(x,x+1)(A1)";
+f.cell("G6").formula = "=値!A4&\"です\"";
+f.cell("G7").formula = "=SWITCH(A1,10,\"十\",\"他\")";
 f.cell("G8").formula = "=TEXT(DATE(2026,4,1),\"ggge年m月d日\")";
 f.cell("G9").formula = "=UNIQUE({1;1;2})";
 f.cell("G12").formula = "=IFERROR(1/0,\"エラー\")";
 f.cell("G13").formula = "=1/0";
 f.cell("G14").formula = "=CONCAT(\"a\",\"b\")&NUMBERVALUE(\"1.5\")";
-f.cell("G15").formula = "=TAKE(SORTBY(A1:A10,A1:A10,-1),2)";
+f.cell("G15").formula = "=SORTBY(A1:A2,A1:A2,-1)";
 f.cell("H1").formula = "=SUM(C1#)";
 book.calculate();
 

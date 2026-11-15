@@ -73,6 +73,15 @@ try {
         if (-not (ExcelDump $b "rt/$n.orig.json" @('-Manual', '-Wide'))) { "SKIP  roundtrip-$n  元のブックが Excel で開けない"; continue }
         if (-not (ExcelDump "rt/$n.xlsx" "rt/$n.saved.json" @('-Manual', '-Wide'))) { Fail "roundtrip-$n" '保存したブックが Excel で開けない'; continue }
         Check "roundtrip-$n" "rt/$n.saved.json" "rt/$n.orig.json" @('v', 'f', 't', 'n')
+        # 図形（画像・テキストボックス・ワードアート・フリーフォーム）
+        pwsh -NoProfile -File "$here/excel-shapes.ps1" $b "rt/$n.orig.shapes.txt" 2>&1 | Out-Null
+        pwsh -NoProfile -File "$here/excel-shapes.ps1" "rt/$n.xlsx" "rt/$n.saved.shapes.txt" 2>&1 | Out-Null
+        $o = @(Get-Content "rt/$n.orig.shapes.txt" -Encoding utf8)
+        if ($o.Count) {
+            $diff = Compare-Object $o @(Get-Content "rt/$n.saved.shapes.txt" -Encoding utf8)
+            $diff | Format-Table -AutoSize | Out-String -Width 300 | Set-Content -Encoding utf8 "shapes-$n.txt"
+            if ($diff) { Fail "shapes-$n" "($($o.Count) 個の図形のうち差あり) -> $OutDir\shapes-$n.txt" } else { "PASS  shapes-$n  ($($o.Count) 個の図形)" }
+        }
     }
 } finally {
     Pop-Location

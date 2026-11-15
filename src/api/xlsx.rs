@@ -317,7 +317,7 @@ pub fn from_serial(f: f64, date1904: bool) -> Option<(i32, u32, u32, u32, u32, u
 /// Built-in number format ids that display dates or times, including the
 /// Japanese locale specific ones.
 pub fn builtin_date_fmt(id: u32) -> bool {
-    matches!(id, 14..=22 | 27..=36 | 45..=47 | 50..=58)
+    matches!(id, 14..=22 | 27..=36 | 45..=47 | 50..=58 | 71..=81)
 }
 
 /// Whether a custom number format displays a date or time. Literal text,
@@ -355,7 +355,8 @@ pub fn date_format_code(code: &str) -> bool {
     }
     let out = out.replace("general", "");
     // g / e: Japanese era and era year (e is the exponent when the code has digits).
-    out.contains(['y', 'm', 'd', 'h', 's', 'g']) || (out.contains('e') && !out.contains(['0', '#', '?']))
+    // aaa / aaaa: the Japanese weekday.
+    out.contains(['y', 'm', 'd', 'h', 's', 'g']) || out.contains("aaa") || (out.contains('e') && !out.contains(['0', '#', '?']))
 }
 
 /// Whether a style's number format displays dates.
@@ -368,7 +369,8 @@ pub(crate) fn style_is_date(nf: Option<&NumberingFormat>) -> bool {
     date_format_code(nf.format_code())
 }
 
-/// The code of a built-in number format (as Japanese Excel shows them).
+/// The code of a built-in number format (as Japanese Excel shows them: checked
+/// with Excel 2021, tools/excel-verify/make_builtin.py).
 pub fn builtin_code(id: u32) -> Option<&'static str> {
     Some(match id {
         0 => "General",
@@ -376,6 +378,10 @@ pub fn builtin_code(id: u32) -> Option<&'static str> {
         2 => "0.00",
         3 => "#,##0",
         4 => "#,##0.00",
+        5 | 63 => r##""¥"#,##0;"¥"\-#,##0"##,
+        6 | 64 => r##""¥"#,##0;[Red]"¥"\-#,##0"##,
+        7 | 65 => r##""¥"#,##0.00;"¥"\-#,##0.00"##,
+        8 | 66 => r##""¥"#,##0.00;[Red]"¥"\-#,##0.00"##,
         9 => "0%",
         10 => "0.00%",
         11 => "0.00E+00",
@@ -390,6 +396,10 @@ pub fn builtin_code(id: u32) -> Option<&'static str> {
         20 => "h:mm",
         21 => "h:mm:ss",
         22 => "yyyy/m/d h:mm",
+        23 => r##""$"#,##0_);\("$"#,##0\)"##,
+        24 => r##""$"#,##0_);[Red]\("$"#,##0\)"##,
+        25 => r##""$"#,##0.00_);\("$"#,##0.00\)"##,
+        26 => r##""$"#,##0.00_);[Red]\("$"#,##0.00\)"##,
         27 | 36 | 50 | 57 => "[$-411]ge.m.d",
         28 | 29 | 51 | 54 | 58 => "[$-411]ggge\"年\"m\"月\"d\"日\"",
         30 => "m/d/yy",
@@ -398,15 +408,35 @@ pub fn builtin_code(id: u32) -> Option<&'static str> {
         33 => "h\"時\"mm\"分\"ss\"秒\"",
         34 | 52 | 55 => "yyyy\"年\"m\"月\"",
         35 | 53 | 56 => "m\"月\"d\"日\"",
-        37 => "#,##0 ;(#,##0)",
-        38 => "#,##0 ;[Red](#,##0)",
-        39 => "#,##0.00;(#,##0.00)",
-        40 => "#,##0.00;[Red](#,##0.00)",
-        45 => "mm:ss",
-        46 => "[h]:mm:ss",
-        47 => "mm:ss.0",
+        37 => r"#,##0;\-#,##0",
+        38 => r"#,##0;[Red]\-#,##0",
+        39 => r"#,##0.00;\-#,##0.00",
+        40 => r"#,##0.00;[Red]\-#,##0.00",
+        41 => r#"_ * #,##0_ ;_ * \-#,##0_ ;_ * "-"_ ;_ @_ "#,
+        42 => r#"_ "¥"* #,##0_ ;_ "¥"* \-#,##0_ ;_ "¥"* "-"_ ;_ @_ "#,
+        43 => r#"_ * #,##0.00_ ;_ * \-#,##0.00_ ;_ * "-"??_ ;_ @_ "#,
+        44 => r#"_ "¥"* #,##0.00_ ;_ "¥"* \-#,##0.00_ ;_ "¥"* "-"??_ ;_ @_ "#,
+        45 | 79 => "mm:ss",
+        46 | 80 => "[h]:mm:ss",
+        47 | 81 => "mm:ss.0",
         48 => "##0.0E+0",
         49 => "@",
+        // The ids Thai Excel shows with Thai digits are plain in Japanese Excel.
+        59 => "0",
+        60 => "0.00",
+        61 => "#,##0",
+        62 => "#,##0.00",
+        67 => "0%",
+        68 => "0.00%",
+        69 => "# ?/?",
+        70 => "# ??/??",
+        71 | 72 => "yyyy/m/d",
+        73 => "d-mmm-yy",
+        74 => "d-mmm",
+        75 => "mmm-yy",
+        76 => "h:mm",
+        77 => "h:mm:ss",
+        78 => "yyyy/m/d h:mm",
         _ => return None,
     })
 }
@@ -446,12 +476,7 @@ pub(crate) fn cell_text(b: &Book, c: &umya_spreadsheet::Cell) -> String {
         CellRawValue::Bool(v) => if *v { "TRUE".into() } else { "FALSE".into() },
         CellRawValue::Numeric(f) => {
             let nf = c.style().number_format();
-            let code = format_code(nf);
-            if style_is_date(nf)
-                && let Some(t) = from_serial(*f, b.date1904) {
-                    return super::numfmt::format_date(t, &code);
-                }
-            super::numfmt::format_number(*f, &code)
+            super::numfmt::format_serial(*f, &format_code(nf), style_is_date(nf), b.date1904)
         }
         other => other.to_string(),
     }
