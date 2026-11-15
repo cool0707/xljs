@@ -14,7 +14,7 @@ use umya_spreadsheet::structs::EnumTrait;
 use umya_spreadsheet::structs::drawing::Theme;
 use umya_spreadsheet::{Cell, CellRawValue, Color, Style, Worksheet};
 
-use super::xlsx::{Book, format_code, from_serial, style_is_date};
+use super::xlsx::{Book, format_code, style_is_date};
 use super::xlsx_chart::{Anchor, parse, resolve};
 use super::xlsx_table::{Overlay, Side};
 use crate::{Result, err};
@@ -703,12 +703,7 @@ impl<'a> Sheet<'a> {
                 }
                 None => (format_code(nf), style_is_date(nf)),
             };
-            if date
-                && let Some(t) = from_serial(f, self.b.date1904)
-            {
-                return Val::Num(f, super::numfmt::format_date(t, &code));
-            }
-            Val::Num(f, super::numfmt::format_number(f, &code))
+            Val::Num(f, super::numfmt::format_serial(f, &code, date, self.b.date1904))
         };
         match c.raw_value() {
             CellRawValue::Empty => {

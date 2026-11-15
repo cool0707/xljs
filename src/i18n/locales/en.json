@@ -918,6 +918,7 @@
     "book.col.textFmt": " (text)",
     "book.col.validation": "has input rules",
     "xlsx.invalidHandle": "not a workbook",
+    "xlsx.phoneticNotText": "the furigana are of a text: {0} has none",
     "xlsx.closed": "the workbook is closed",
     "xlsx.sheetExists": "sheet \"{0}\" already exists",
     "xlsx.noDestination": "no destination to save to",

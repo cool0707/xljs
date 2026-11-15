@@ -304,6 +304,21 @@ mod tests {
     use super::*;
     use crate::util::testutil::*;
 
+    /// What Excel 2021 gives for PHONETIC of texts without furigana (and of those with).
+    #[test]
+    fn phonetic_forms_as_excel() {
+        assert_eq!(phonetic_form("さとう", None), "サトウ");
+        assert_eq!(phonetic_form("ｽｽﾞｷ", None), "スズキ");
+        assert_eq!(phonetic_form("ｶﾞｷﾞ ｸﾞ", None), "ガギ グ");
+        assert_eq!(phonetic_form("abcＡＢＣ", None), "abcＡＢＣ");
+        assert_eq!(phonetic_form("東京", None), "東京");
+        assert_eq!(phonetic_form("タナカ", None), "タナカ");
+        assert_eq!(phonetic_form("さとうはなこ", Some("Hiragana")), "さとうはなこ");
+        assert_eq!(phonetic_form("ヤマダヴ", Some("Hiragana")), "やまだゔ");
+        assert_eq!(phonetic_form("やまだ", Some("halfwidthKatakana")), "ﾔﾏﾀﾞ");
+        assert_eq!(phonetic_form("ｽｽﾞｷ", Some("noConversion")), "ｽｽﾞｷ");
+    }
+
     /// The switch is the process's: these tests take turns.
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -393,5 +408,60 @@ mod tests {
         is_err(ev("NUMBERSTRING", vec![n(1.0), n(4.0)]), CellError::Num);
         is_err(ev("NUMBERSTRING", vec![n(1.0), n(0.0)]), CellError::Num);
         is_err(ev("NUMBERSTRING", vec![t("abc"), n(1.0)]), CellError::Value);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The furigana as PHONETIC gives them
+
+/// The text as furigana of the kind `kind` (the `type` of `phoneticPr`) show it, as Excel's
+/// PHONETIC gives it: half-width kana made full-width (a voiced mark joined to its kana), then
+/// hiragana as katakana for `fullwidthKatakana` (the default), katakana as hiragana for
+/// `Hiragana`, the kana half-width for `halfwidthKatakana`; nothing changed for `noConversion`.
+/// Letters, digits and kanji stay as they are (`abcＡＢＣ`, `東京`).
+pub fn phonetic_form(s: &str, kind: Option<&str>) -> String {
+    if kind == Some("noConversion") {
+        return s.to_string();
+    }
+    let cs = chars(s);
+    let mut full = String::with_capacity(s.len());
+    let mut i = 0;
+    while i < cs.len() {
+        let c = cs[i];
+        i += 1;
+        if ('\u{FF66}'..='\u{FF9D}').contains(&c) {
+            let pair = cs.get(i).filter(|m| matches!(**m, 'ﾞ' | 'ﾟ')).and_then(|m| {
+                let two: String = [c, *m].iter().collect();
+                KANA.iter().find(|(_, half)| *half == two)
+            });
+            match pair {
+                Some((f, _)) => {
+                    full.push(*f);
+                    i += 1;
+                }
+                None => full.push(KANA.iter().find(|(_, half)| half.chars().eq([c])).map_or(c, |(f, _)| *f)),
+            }
+        } else {
+            full.push(c);
+        }
+    }
+    let shift = |c: char, from: std::ops::RangeInclusive<char>, by: i32| {
+        if from.contains(&c) { char::from_u32((c as i32 + by) as u32).unwrap_or(c) } else { c }
+    };
+    match kind.unwrap_or("fullwidthKatakana") {
+        // ァ..ヶ (and ヽヾ) are ぁ..ゖ (ゝゞ) moved by 0x60.
+        "Hiragana" => full.chars().map(|c| shift(shift(c, 'ァ'..='ヶ', -0x60), 'ヽ'..='ヾ', -0x60)).collect(),
+        "halfwidthKatakana" => {
+            let katakana: String = full.chars().map(|c| shift(shift(c, 'ぁ'..='ゖ', 0x60), 'ゝ'..='ゞ', 0x60)).collect();
+            let mut out = String::with_capacity(katakana.len());
+            for c in katakana.chars() {
+                match KANA.iter().find(|(f, _)| *f == c) {
+                    Some((_, half)) => out.push_str(half),
+                    None => out.push(c),
+                }
+            }
+            out
+        }
+        _ => full.chars().map(|c| shift(shift(c, 'ぁ'..='ゖ', 0x60), 'ゝ'..='ゞ', 0x60)).collect(),
     }
 }

@@ -14,6 +14,7 @@ use crate::{Arg, Ctx, FnSpec, VAR};
 
 // xljs: the byte functions, ASC, JIS, YEN, DATESTRING and NUMBERSTRING as Japanese Excel has them.
 mod japanese;
+pub use japanese::phonetic_form;
 pub use japanese::set_dbcs;
 
 const TJ: &[bool] = &[false, true, false];
@@ -559,10 +560,6 @@ fn t_fn(a: &[Arg], _c: &mut dyn Ctx) -> R<Value> {
         Value::Error(e) => Err(e),
         _ => text_val(""),
     }
-}
-
-fn identity(a: &[Arg], _c: &mut dyn Ctx) -> R<Value> {
-    text_val(text(a, 0)?)
 }
 
 /// Lower-cased char sequence with one char per input char (keeps positions aligned).
@@ -1139,7 +1136,6 @@ pub(crate) fn specs() -> Vec<FnSpec> {
         f!("YEN", 1, 2, Text, S, "YEN(number, [decimals])", "Formats a number as yen text.", japanese::yen),
         f!("DATESTRING", 1, 1, Text, S, "DATESTRING(serial_number)", "The date in the Japanese era, as text.", japanese::datestring),
         f!("NUMBERSTRING", 2, 2, Text, S, "NUMBERSTRING(number, type)", "The number in kanji (type 1, 2 or 3), as text.", japanese::numberstring),
-        f!("PHONETIC", 1, 1, Text, S, "PHONETIC(reference)", "Returns the phonetic (furigana) text; here the text itself.", identity),
     ]
 }
 

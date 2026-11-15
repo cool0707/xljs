@@ -277,6 +277,24 @@ Excel の「セルに配置」の画像はリッチ値で、セルの値とし�
   中身を書かなかった）。`errorStyle`（停止・注意・情報）、`imeMode`、`showDropDown` を読み書きする。
 - **計算の設定（`calcPr`）**: 本家の 4.0 系のコミットを取り込んだ（`Workbook::calculation_properties`。反復計算・手動計算・`fullCalcOnLoad` が保存で残る）。
   データテーブルの数式の `ref` を書く修正も同じく取り込んだ。
+- **Excel で開けなくなるもの（`docs/design/excel-verify.md`）**: Excel 2021 で開いて見つけた。`tests/excel_compat.rs`。
+  - 文字列の制御文字（U+0001 など）をそのまま書き、ブック全体が Excel で開けなかった。Excel と同じく `_xHHHH_` で書き、`_xHHHH_` の形の文字列は
+    `_x005F_` で書く。読むときは戻す。ファイルの中の生の CR LF は（XML の決まりどおり）LF として読む。
+  - 空の `<a:ln w="0"/>` を開始タグとして読み、次の図形の `</a:ln>` まで読み進めていた（後ろの図形が消え、`a:ln` に塗りが 2 つ入って Excel が開けない）。
+  - 空の `<a:prstGeom prst="rect"/>`（openpyxl などが書く）を読まず、画像に `prst=""` を書いて Excel が開けなかった。
+  - ワードアートの文字の変形（`a:prstTxWarp`）・自動調整（`a:noAutofit`・`a:normAutofit`）・縦書き（`bodyPr` の `vert` ほか読まない属性）、
+    テキストボックスの印（`cNvSpPr` の `txBox`・`a:spLocks`）、フリーフォームの形（`a:custGeom`。読んだ XML のまま）が保存で落ちていた。
+  - 定義のない組み込みの表示形式（ID 5〜8・23〜26・41〜43 など。日本語版 Excel が書く）を表示形式なしとして読み、保存でそれらのスタイルが 1 つにまとめられていた。
+    ID だけの組み込みの表示形式として持つ。
+- **セル以外の機能（`docs/design/save-fidelity.md`）**: Excel 2021 に機能を入れたブックを作らせて見つけた。`tests/excel_features.rs`。
+  - 縦横比を固定しない画像を `<a:picLocks noChangeAspect="2"/>`（真偽値でない値）で書き、Excel で開けなかった（本家から）。
+  - 外部リンク・スライサーとそのキャッシュ・タイムラインとそのキャッシュ・ピボットテーブルとキャッシュ・フォームコントロールのプロパティ・カスタム XML の部品が
+    落ちていた（外部リンクとタイムラインは Excel で開けなくなった）。読んだまま持って書き戻す（`KeptRelationships`。7 章の上のグラフと同じ仕組み）。
+    ピボットはモデルに読まない（xljs は使わない）。ピボットキャッシュはブックとピボットテーブルの両方から参照されるので 1 度だけ書く。
+  - シートの読まない `ext`（スパークライン・スライサーとタイムラインの一覧）と `controls`、`styles.xml` の `tableStyles`（独自のテーブルスタイル）と `extLst`
+    （スライサー・タイムラインのスタイル）を読んだまま書き戻す。描画のスライサー・タイムラインの枠もグラフと同じく `KeptAnchor` に持つ。
+  - 行・列のグループ（`outlineLevel`・`collapsed`）、ふりがな（共有文字列の `rPh`・`phoneticPr`、セルの `ph`）、`pageSetup` のモデルにない属性
+    （`blackAndWhite`・`firstPageNumber` など）、差分書式の `<b val="0"/>`・`<i val="0"/>` が落ちていた。
 
 本家の版を上げるときは、`xljs` ブランチを新しいタグへ載せ替える（本家に取り込まれた修正は落とす）。どちらも取り込まれたら
 `[patch.crates-io]` を消して本家に戻す。

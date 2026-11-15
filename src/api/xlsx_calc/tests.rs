@@ -29,7 +29,7 @@ fn formula(b: &mut Book, sheet: &str, r: &str, f: &str) {
 }
 
 /// Every formula of the 数式 sheet gives the value beside it (the ones
-/// LibreOffice gives for the same workbook).
+/// Excel gives for the same workbook).
 #[test]
 fn formulas_give_the_values_of_excel() {
     let _l = lock_lang("ja");
@@ -105,9 +105,11 @@ fn formulas_it_cannot_calculate_keep_their_values() {
     let mut b = book();
     let sum = calculate(&mut b);
     let reasons: Vec<(String, &str, Option<&str>)> = sum.skipped.iter().filter(|s| s.sheet == "保存値").map(|s| (s.address.clone(), s.skip.reason(), s.skip.name())).collect();
-    assert_eq!(reasons, [("B1".to_string(), "function", Some("MYFUNC")), ("B2".into(), "external", None), ("B3".into(), "name", Some("未定義の名前")), ("B4".into(), "function", Some("PHONETIC"))]);
+    assert_eq!(reasons, [("B1".to_string(), "function", Some("MYFUNC")), ("B2".into(), "external", None), ("B3".into(), "name", Some("未定義の名前"))]);
     assert_eq!(sum.skipped.iter().find(|s| s.address == "B1").map(|s| (s.formula.as_str(), s.skip.message())), Some(("=MYFUNC(A1)", "関数 MYFUNC は計算できません".to_string())));
-    assert_eq!([raw(&b, "保存値", "B1"), raw(&b, "保存値", "B2"), raw(&b, "保存値", "B3"), raw(&b, "保存値", "B4")], ["123", "42", "7", "ゴ"]);
+    assert_eq!([raw(&b, "保存値", "B1"), raw(&b, "保存値", "B2"), raw(&b, "保存値", "B3")], ["123", "42", "7"]);
+    // PHONETIC of a number is empty, as in Excel (the saved "ゴ" was made up).
+    assert_eq!(raw(&b, "保存値", "B4"), "");
     // The formulas are still there.
     assert!(b.sheet("保存値").unwrap().cell((2, 1)).unwrap().is_formula());
     // What reads them is calculated from the saved values.
@@ -394,8 +396,9 @@ fn formulas_read_as_excel_shows_them() {
     assert_eq!(shown(&b, "配列", "I3").as_deref(), Some("@A1:A5"));
     assert_eq!(shown(&b, "配列", "I1").as_deref(), Some("SUM(C1:C5)"));
     assert_eq!(shown(&b, "配列", "I4").as_deref(), Some("SUM(G1#)"));
-    // A column of the table in the row of the formula is one value: no `@` (the text is the file's).
-    assert_eq!(shown(&b, "表", "D3").as_deref(), Some("[[#This Row],数量]*[[#This Row],単価]"));
+    // A column of the table in the row of the formula is one value: no `@`
+    // more, and `[[#This Row],数量]` as Excel shows it.
+    assert_eq!(shown(&b, "表", "D3").as_deref(), Some("[@数量]*[@単価]"));
     assert_eq!(shown(&b, "表", "F1").as_deref(), Some("SUM(売上表[金額])"));
     // Array formulas work with every value as they are written.
     assert_eq!(shown(&b, "配列", "C1").as_deref(), Some("A1:A5*B1:B5"));

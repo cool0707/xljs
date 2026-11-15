@@ -12,12 +12,18 @@ The sheets:
           sheet's XML here: xlsxwriter has none)
   保存値  formulas the engine leaves alone, with the results Excel saved
 
-The values in C were checked against LibreOffice, which recalculated the
-workbook (the formulas with functions it lacks -- XLOOKUP, FILTER, LET... --
-against the plain formulas they are equal to).
+The values in C were checked against Excel (Office 2021), which recalculated
+the workbook (tools/excel-verify).
+
+The formulas are stored as Excel stores them: the functions newer than Excel
+2007 with their _xlfn. prefix, LET's names with _xlpm., a spill reference
+(G1#) as _xlfn.ANCHORARRAY(G1). Without them Excel shows #NAME? or does not
+open the file at all; xlsxwriter adds the prefix to only some of them, so
+to_file() puts them in after it.
 """
 import datetime
 import os
+import re
 import zipfile
 
 import xlsxwriter
@@ -233,6 +239,8 @@ k.write("A1", 5)
 k.write_formula("B1", "=MYFUNC(A1)", None, 123)
 k.write_formula("B2", "='[other.xlsx]Sheet1'!$A$1+A1", None, 42)
 k.write_formula("B3", "=未定義の名前*2", None, 7)
+# PHONETIC is calculated (from the furigana of the texts): of a number it is
+# empty, as in Excel, whatever the saved result says.
 k.write_formula("B4", "=PHONETIC(A1)", None, "ゴ")
 # These depend on them and on A1.
 k.write_formula("C1", "=B1+A1", None, 128)
@@ -255,6 +263,19 @@ def share(xml, col, si):
         xml = xml[:a] + body[:fa] + new + body[fb + 4:] + xml[b:]
     return xml
 
+# The functions of CASES that need _xlfn. in the file and that xlsxwriter
+# leaves without it.
+FUTURE = ["MAXIFS", "MINIFS", "IFS", "TEXTJOIN", "CONCAT", "NUMBERVALUE", "DAYS", "ISOWEEKNUM",
+          "AGGREGATE", "XMATCH", "IFNA", "LET"]
+
+def to_file(xml):
+    def formula(m):
+        s = re.sub(r'(?<![\w.])(' + "|".join(FUTURE) + r')\(', r'_xlfn.\1(', m.group(2))
+        s = s.replace("_xlfn.LET(x,5,y,x*2,x+y)", "_xlfn.LET(_xlpm.x,5,_xlpm.y,_xlpm.x*2,_xlpm.x+_xlpm.y)")
+        s = re.sub(r'\b([A-Z]+[0-9]+)#', r'_xlfn.ANCHORARRAY(\1)', s)
+        return m.group(1) + s + "</f>"
+    return re.sub(r'(<f(?: [^>]*)?>)([^<]*)</f>', formula, xml)
+
 tmp = PATH + ".tmp"
 with zipfile.ZipFile(PATH) as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
     names = zin.read("xl/workbook.xml").decode()
@@ -265,6 +286,8 @@ with zipfile.ZipFile(PATH) as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATE
         if item.filename == "xl/worksheets/sheet5.xml":
             xml = share(share(data.decode(), "C", 0), "D", 1)
             data = xml.encode()
+        if item.filename.startswith("xl/worksheets/sheet"):
+            data = to_file(data.decode()).encode()
         zout.writestr(item, data)
 os.replace(tmp, PATH)
 print("wrote", PATH)

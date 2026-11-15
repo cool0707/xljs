@@ -6,15 +6,18 @@ umya-spreadsheet はモデルに持っていない要素・部品を書き戻さ
 
 ## 1. 調べ方
 
-2026-11-15 に、手元のブック 14 個（`testdata/xlsx/*.xlsx`、`testdata/book/*.xlsx`、`examples/data/*.xlsx`、
-umya のテスト用の `aaa.xlsx`・`aaa.xlsm`）を `workbooks.open(src).save(dst)` で保存し、前後の zip を比べた。
+`tools/excel-verify/features.ps1`（`docs/design/excel-verify.md`）で、Excel 自身に機能を 1 つずつ入れたブックを作らせ、
+xljs で開いて保存したものについて、次の 3 つを見る。
 
-- 部品: 名前の数字を除いて数え、減ったものを出す。
-- 要素: `xl/workbook.xml`・`xl/styles.xml`・シートの XML で、保存後に 1 つもなくなった要素名を出す。
+- Excel で開けるか（修復が要るファイルは開けないものとして数える）
+- Excel から見て同じか（スパークライン・ピボットテーブル・スライサー・図形とフォームコントロール・ハイパーリンク・メモ・入力規則・条件付き書式・
+  テーブル・保護・印刷の設定・アウトライン・名前・外部リンク・カスタム XML・表示の設定・ふりがなを、COM で読んで比べる）
+- 部品と要素（`partdiff.py`。部品は名前の数字を除いて数え、要素は同じ種類の部品のどれにもなくなった要素名を出す）
 
-見ているのは「部品と要素がなくなったか」だけ。属性の値だけが変わったものは、目に入ったもの（入力規則）しか拾えていない。
-スライサー・スパークライン・フォームコントロール・外部リンク・カスタム XML などは手元のブックにないので調べていない。
-直すときは、この比較を属性まで見る形にしてテストに入れる（保存の前後で落ちてよいものの一覧を持ち、それ以外が落ちたら失敗）。
+調べている機能は `excel-make-features.ps1` の `$All`。
+
+2026-11-16 の時点で、フォームコントロール以外はすべて PASS（Excel 2021）。
+2026-11-15 に、手元のブック 14 個（`testdata/xlsx`・`testdata/book`・`examples/data`、umya の `aaa.xlsx`・`aaa.xlsm`）の部品と要素も比べた。
 
 ## 2. 落ちるもの
 
@@ -22,26 +25,26 @@ umya のテスト用の `aaa.xlsx`・`aaa.xlsm`）を `workbooks.open(src).save(
 
 | 優先 | 落ちるもの | 確かめたブック | 中身 |
 |---|---|---|---|
-| 中 | 入力規則のメッセージの文字化け | `rules.xlsx` | `error`・`errorTitle`・`prompt`・`promptTitle` が数値文字参照（`&#25968;`）で書かれていると `&amp;#25968;` と二重にエスケープされる。Excel は UTF-8 のまま書くので、openpyxl などが作ったブックで起きる |
-| 中 | 独自のテーブルスタイル | `tables.xlsx` | `styles.xml` の `tableStyles` が空になり、`defaultTableStyle`・`defaultPivotStyle` も書き換わる。印刷用には xljs が別に読む（`xlsx_table.rs`）ので PDF には出るが、保存したファイルには残らない |
-| 中 | ピボットテーブルのリレーション | `aaa.xlsx` | `xl/pivotTables/_rels/*`・`xl/pivotCache/_rels/*` がない。保存したブックのピボットが Excel で開けるかは確かめていない |
+| 中 | 入力規則のメッセージの文字化け | `rules.xlsx` | `error`・`errorTitle`・`prompt`・`promptTitle` が数値文字参照（`&#25968;`）で書かれていると `&amp;#25968;` と二重にエスケープされる。Excel は UTF-8 のまま書くので（Excel のブックでは起きないことを確かめた）、openpyxl などが作ったブックで起きる |
 | 中 | 埋め込みの Excel ワークシート | `aaa.xlsm` | `xl/embeddings/Microsoft_Excel_Worksheet*.xlsx` がない |
-| 中 | 白黒印刷 | `tables.xlsx` | `<pageSetup blackAndWhite="1"/>` が要素ごと消える（ほかに属性のない `pageSetup`） |
-| 低 | 差分書式の「太字を解除」 | `tables.xlsx` | `dxf` の `<b val="0"/>` が消える |
+| 低 | フォームコントロールの VML | `features.ps1` の `formcontrol` | `xl/drawings/vmlDrawing*.vml`・シートの `legacyDrawing`・描画の `a14:compatExt` など。Excel 2010 以降はシートの `controls` と `ctrlProps` と描画から読むので、Excel では元どおり動く（リンクするセル・リスト・値も同じ）。Excel 2007 以前や LibreOffice では見えない |
 | 低 | 色のパレット | `aaa.xlsx` ほか | `styles.xml` の `colors`（`indexedColors`・`mruColors`）。パレットを変えたブックでは、番号で指定した色が変わりうる |
-| 低 | タイムラインのスタイル | `aaa.xlsx` | `x15:timelineStyles` |
 
 ## 3. 落ちても害のないもの
 
-比較には出るが、直さなくてよい。
+比較には出るが、直さなくてよい（`partdiff.py` も数えない）。
 
 - `xl/calcChain.xml`（Excel が作り直す）。
 - 空の `definedNames`・`numFmts`・`dxfs`、既定値だけの `sheetPr`（`outlinePr`・`pageSetUpPr`）、空の `evenHeader`・`firstHeader` など。
 - インライン文字列（`<is>`）が共有文字列になる。
 - `xr:revisionPtr`・`xcalcf:calcFeatures`・`x15ac:absPath`。
+- テーマの `thm15:themeFamily`（テーマの系統の ID）、図形の `a16:creationId`（共同編集で使う ID）。
 
 ## 4. 直し方の方針
 
-- umya のフォーク（`xljs` ブランチ）で直す。モデルに足せるもの（`blackAndWhite`・`<b val="0"/>`）は読み書きを足す。
-- 中身を xljs が扱わないもの（テーブルスタイル・埋め込み・色のパレット）は、セルに置いた画像のリッチ値（`rich_data.rs`）やグラフ（`kept_parts.rs`）と同じく、
-  読んだ部品を中身を見ずに持っておいて書き戻すのが早い。
+- umya のフォークで直す。モデルに足せるもの（`outlineLevel`・`blackAndWhite`・`<b val="0"/>`・`ph`）は読み書きを足す。
+- 中身を xljs が扱わないもの（外部リンク・スライサー・タイムライン・ピボットテーブル・`ctrlProps`・カスタム XML）は、読んだ部品を中身を見ずに持っておいて
+  書き戻す（`kept_parts.rs` の `KeptRelationships`。それを参照する `workbook.xml` の `externalReferences`・`pivotCaches`・`extLst`、シートの `controls`・
+  読まない `ext` も読んだ XML のまま）。リレーションの id は `rIdKept1`… と付け直し、XML の `r:id` を書き換える。読んだ部品のルートで宣言された名前空間は、
+  書き戻す要素に宣言し直す（`xr2:uid` などが宣言なしになると Excel で開けない）。
+- 書いたあとの整合（どの `r:id` もリレーションにあるか、使った接頭辞がどれも宣言されているか）は umya の `tests/excel_features.rs` が見る。

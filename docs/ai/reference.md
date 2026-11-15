@@ -133,18 +133,19 @@
 | API | 説明 |
 |---|---|
 | `sheet.toObjects({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行番号（既定 1）。`header: 0, columns: ["A列名", ...]` で見出しなし |
-| `sheet.toArrays({ text })` | 2 次元配列（0 始まり）。`text: true` で表示形式どおりの文字列 |
-| `sheet.cell("B2")` / `sheet.cell(行, 列)` | セル（1 始まり） |
+| `sheet.toArrays({ text })` | 2 次元配列（0 始まり）。`text: true` で表示どおりの文字列 |
+| `sheet.cell("B2")` / `sheet.cell(行, 列)` | セル（1 から） |
 | `cell.value` | 値: number / string / boolean / Date / null |
 | `cell.text` | 表示どおりの文字列 |
 | `cell.formula` | `"=SUM(A1:A3)"`。無ければ `null` |
-| `sheet.getValue("B2")` / `sheet.setValue("B2", v)` | セルの値の読み書き |
+| `cell.phonetic` | ふりがな（値の後に代入） |
+| `sheet.getValue("B2")` / `sheet.setValue("B2", v)` | 値の読み書き |
 | `sheet.range("A1:C3").values` | 範囲の 2 次元配列（代入で書き込み） |
-| `sheet.rowCount` / `sheet.dimension` | 最終行 / 使用範囲（`"A1:F120"`） |
+| `sheet.rowCount` / `sheet.dimension` | 最終行 / 使用範囲 |
 | `sheet.name` | シート名（代入で変更） |
 
-- 結合セルの値は左上のセルにだけ入っている。
-- 数式セルの `value` は保存されている計算結果。数式・値を書いたら `book.calculate()` で入る（`skipped` は計算できない数式）。`cell.calc()` は数式 1 つの結果の文字列。`=FILTER(...)` はスピルする。
+- 結合セルの値は左上のセルにだけある。
+- 数式セルの `value` は保存された計算結果。書いたら `book.calculate()` で入る（`skipped` は計算できない数式）。`cell.calc()` は数式 1 つの結果。`=FILTER(...)` はスピルする。
 
 ### シートへの書き込み
 

@@ -317,7 +317,7 @@ pub fn from_serial(f: f64, date1904: bool) -> Option<(i32, u32, u32, u32, u32, u
 /// Built-in number format ids that display dates or times, including the
 /// Japanese locale specific ones.
 pub fn builtin_date_fmt(id: u32) -> bool {
-    matches!(id, 14..=22 | 27..=36 | 45..=47 | 50..=58)
+    matches!(id, 14..=22 | 27..=36 | 45..=47 | 50..=58 | 71..=81)
 }
 
 /// Whether a custom number format displays a date or time. Literal text,
@@ -355,7 +355,8 @@ pub fn date_format_code(code: &str) -> bool {
     }
     let out = out.replace("general", "");
     // g / e: Japanese era and era year (e is the exponent when the code has digits).
-    out.contains(['y', 'm', 'd', 'h', 's', 'g']) || (out.contains('e') && !out.contains(['0', '#', '?']))
+    // aaa / aaaa: the Japanese weekday.
+    out.contains(['y', 'm', 'd', 'h', 's', 'g']) || out.contains("aaa") || (out.contains('e') && !out.contains(['0', '#', '?']))
 }
 
 /// Whether a style's number format displays dates.
@@ -368,7 +369,8 @@ pub(crate) fn style_is_date(nf: Option<&NumberingFormat>) -> bool {
     date_format_code(nf.format_code())
 }
 
-/// The code of a built-in number format (as Japanese Excel shows them).
+/// The code of a built-in number format (as Japanese Excel shows them: checked
+/// with Excel 2021, tools/excel-verify/make_builtin.py).
 pub fn builtin_code(id: u32) -> Option<&'static str> {
     Some(match id {
         0 => "General",
@@ -376,6 +378,10 @@ pub fn builtin_code(id: u32) -> Option<&'static str> {
         2 => "0.00",
         3 => "#,##0",
         4 => "#,##0.00",
+        5 | 63 => r##""¥"#,##0;"¥"\-#,##0"##,
+        6 | 64 => r##""¥"#,##0;[Red]"¥"\-#,##0"##,
+        7 | 65 => r##""¥"#,##0.00;"¥"\-#,##0.00"##,
+        8 | 66 => r##""¥"#,##0.00;[Red]"¥"\-#,##0.00"##,
         9 => "0%",
         10 => "0.00%",
         11 => "0.00E+00",
@@ -390,6 +396,10 @@ pub fn builtin_code(id: u32) -> Option<&'static str> {
         20 => "h:mm",
         21 => "h:mm:ss",
         22 => "yyyy/m/d h:mm",
+        23 => r##""$"#,##0_);\("$"#,##0\)"##,
+        24 => r##""$"#,##0_);[Red]\("$"#,##0\)"##,
+        25 => r##""$"#,##0.00_);\("$"#,##0.00\)"##,
+        26 => r##""$"#,##0.00_);[Red]\("$"#,##0.00\)"##,
         27 | 36 | 50 | 57 => "[$-411]ge.m.d",
         28 | 29 | 51 | 54 | 58 => "[$-411]ggge\"年\"m\"月\"d\"日\"",
         30 => "m/d/yy",
@@ -398,15 +408,35 @@ pub fn builtin_code(id: u32) -> Option<&'static str> {
         33 => "h\"時\"mm\"分\"ss\"秒\"",
         34 | 52 | 55 => "yyyy\"年\"m\"月\"",
         35 | 53 | 56 => "m\"月\"d\"日\"",
-        37 => "#,##0 ;(#,##0)",
-        38 => "#,##0 ;[Red](#,##0)",
-        39 => "#,##0.00;(#,##0.00)",
-        40 => "#,##0.00;[Red](#,##0.00)",
-        45 => "mm:ss",
-        46 => "[h]:mm:ss",
-        47 => "mm:ss.0",
+        37 => r"#,##0;\-#,##0",
+        38 => r"#,##0;[Red]\-#,##0",
+        39 => r"#,##0.00;\-#,##0.00",
+        40 => r"#,##0.00;[Red]\-#,##0.00",
+        41 => r#"_ * #,##0_ ;_ * \-#,##0_ ;_ * "-"_ ;_ @_ "#,
+        42 => r#"_ "¥"* #,##0_ ;_ "¥"* \-#,##0_ ;_ "¥"* "-"_ ;_ @_ "#,
+        43 => r#"_ * #,##0.00_ ;_ * \-#,##0.00_ ;_ * "-"??_ ;_ @_ "#,
+        44 => r#"_ "¥"* #,##0.00_ ;_ "¥"* \-#,##0.00_ ;_ "¥"* "-"??_ ;_ @_ "#,
+        45 | 79 => "mm:ss",
+        46 | 80 => "[h]:mm:ss",
+        47 | 81 => "mm:ss.0",
         48 => "##0.0E+0",
         49 => "@",
+        // The ids Thai Excel shows with Thai digits are plain in Japanese Excel.
+        59 => "0",
+        60 => "0.00",
+        61 => "#,##0",
+        62 => "#,##0.00",
+        67 => "0%",
+        68 => "0.00%",
+        69 => "# ?/?",
+        70 => "# ??/??",
+        71 | 72 => "yyyy/m/d",
+        73 => "d-mmm-yy",
+        74 => "d-mmm",
+        75 => "mmm-yy",
+        76 => "h:mm",
+        77 => "h:mm:ss",
+        78 => "yyyy/m/d h:mm",
         _ => return None,
     })
 }
@@ -446,12 +476,7 @@ pub(crate) fn cell_text(b: &Book, c: &umya_spreadsheet::Cell) -> String {
         CellRawValue::Bool(v) => if *v { "TRUE".into() } else { "FALSE".into() },
         CellRawValue::Numeric(f) => {
             let nf = c.style().number_format();
-            let code = format_code(nf);
-            if style_is_date(nf)
-                && let Some(t) = from_serial(*f, b.date1904) {
-                    return super::numfmt::format_date(t, &code);
-                }
-            super::numfmt::format_number(*f, &code)
+            super::numfmt::format_serial(*f, &format_code(nf), style_is_date(nf), b.date1904)
         }
         other => other.to_string(),
     }
@@ -553,6 +578,43 @@ pub(crate) fn set_value(b: &mut Book, sheet: &str, r: &str, v: &Value) -> Result
         c.set_value_string(js::to_str(v));
     }
     Ok(())
+}
+
+/// The furigana of a text as PHONETIC gives them: each run's reading in
+/// place of the characters it is of (`start`..`end` in UTF-16 code units),
+/// the others as they are. None when there are no runs.
+pub(crate) fn phonetic_text(text: &str, runs: &[(u32, u32, String)]) -> Option<String> {
+    if runs.is_empty() {
+        return None;
+    }
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let mut out = String::new();
+    let mut at = 0usize;
+    for (start, end, reading) in runs {
+        let (start, end) = (*start as usize, *end as usize);
+        if start < at || end <= start || end > units.len() {
+            continue;
+        }
+        out.push_str(&String::from_utf16_lossy(&units[at..start]));
+        out.push_str(reading);
+        at = end;
+    }
+    out.push_str(&String::from_utf16_lossy(&units[at..]));
+    Some(out)
+}
+
+/// How Excel is to write furigana given as `reading`: in hiragana when they
+/// are (Excel would show them in katakana otherwise), half-width katakana
+/// likewise; None for full-width katakana, the default.
+fn phonetic_kind(reading: &str) -> Option<&'static str> {
+    let letters = || reading.chars().filter(|c| !c.is_whitespace() && !matches!(c, 'ー' | '・'));
+    if letters().all(|c| ('ぁ'..='ゟ').contains(&c)) {
+        Some("Hiragana")
+    } else if letters().all(|c| ('｡'..='ﾟ').contains(&c)) {
+        Some("halfwidthKatakana")
+    } else {
+        None
+    }
 }
 
 // ---- natives ----
@@ -740,6 +802,64 @@ pub(super) fn install(n: &N) {
         with_book(h, a, |b| {
             let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
             super::xlsx_calc::set_formula(b, &sheet, col, row, &formula).map_err(|e| a.throw(&e))
+        })?;
+        a.undefined()
+    });
+    // xlsxGetPhonetic(book, sheet, ref, show) -> the furigana as PHONETIC gives them (null when
+    // the text has none), or (show) whether they are shown.
+    n.set("xlsxGetPhonetic", |h, a| {
+        let (sheet, r, show) = (a.str(1), upper(a.str(2)), a.arg(3).as_bool().unwrap_or(false));
+        let got = with_book(h, a, |b| {
+            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            Ok(ws.cell((col, row)).map(|c| {
+                let text = phonetic_text(&c.value(), &c.cell_value().phonetic_runs());
+                // As Excel's PHONETIC gives them: in the kind of furigana of the text.
+                let kind = c.cell_value().phonetic_type();
+                (c.show_phonetic(), text.map(|t| gridcraft_functions::phonetic_form(&t, kind.as_deref())))
+            }))
+        })?;
+        match (show, got) {
+            (true, g) => a.ret(g.is_some_and(|(s, _)| s)),
+            (false, Some((_, Some(t)))) => a.ret(t),
+            (false, _) => a.null(),
+        }
+    });
+    // xlsxSetPhonetic(book, sheet, ref, reading | null) / xlsxSetShowPhonetic(book, sheet, ref, bool)
+    n.set("xlsxSetPhonetic", |h, a| {
+        let (sheet, r, v) = (a.str(1), upper(a.str(2)), a.arg(3));
+        let reading = (!js::nullish(&v)).then(|| js::to_str(&v)).filter(|s| !s.is_empty());
+        with_book(h, a, |b| {
+            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let c = b.cell_mut(&sheet, col, row).map_err(|e| a.throw(&e))?;
+            let text = match c.raw_value() {
+                CellRawValue::String(s) | CellRawValue::Lazy(s) => s.to_string(),
+                CellRawValue::RichText(t) => t.text().to_string(),
+                _ if reading.is_none() => String::new(),
+                _ => return Err(a.throw(&err!("xlsx.phoneticNotText", r.clone()))),
+            };
+            match reading {
+                Some(reading) => {
+                    let end = u32::try_from(text.encode_utf16().count()).unwrap_or(u32::MAX);
+                    let kind = phonetic_kind(&reading);
+                    c.cell_value_mut().set_phonetic_runs(&[(0, end, reading)], kind);
+                }
+                None => {
+                    c.cell_value_mut().set_phonetic_runs(&[], None);
+                }
+            }
+            // PHONETIC reads the furigana of the whole workbook.
+            b.calc_reset();
+            Ok(())
+        })?;
+        a.undefined()
+    });
+    n.set("xlsxSetShowPhonetic", |h, a| {
+        let (sheet, r, show) = (a.str(1), upper(a.str(2)), a.arg(3).as_bool().unwrap_or(false));
+        with_book(h, a, |b| {
+            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            b.cell_mut(&sheet, col, row).map_err(|e| a.throw(&e))?.set_show_phonetic(show);
+            Ok(())
         })?;
         a.undefined()
     });

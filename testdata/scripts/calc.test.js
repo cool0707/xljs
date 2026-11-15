@@ -120,7 +120,7 @@ ok(keep.toHtml().includes(">70<"), "the pages show the result of =A1*10");
 equal(keep.cell("D1").value, 70, "and it is stored");
 equal(keep.cell("C1").value, 130, "=B1+A1, from the saved 123");
 r = saved.calculate();
-equal(r.skipped.filter((s) => s.sheet === "保存値").length, 4);
+equal(r.skipped.filter((s) => s.sheet === "保存値").length, 3, "PHONETIC is calculated");
 equal(keep.cell("B1").value, 123);
 const arr = saved.sheet("配列");
 deepEqual(arr.toArrays().map((row) => row[4] ?? null), [3, 4, 5, null, null], "FILTER fills three cells");
