@@ -31,7 +31,7 @@ VBA で遅さを避けるために書かれた工夫は、目的ごと捨てて�
 | `Application.ScreenUpdating = False`、`Calculation = xlCalculationManual`、`EnableEvents = False`、`DoEvents` | 消す（画面も再計算もない） |
 | `Cells(Rows.Count, 1).End(xlUp).Row` で最終行を求めてループ | `for (const r of sheet.toObjects())`。番地が必要なら `sheet.rowCount` |
 | 列番号を定数や `Match` で求める（`colKingaku = 5`） | 見出しの名前で読む（`r.金額`） |
-| `Dictionary` / `Collection` / `VLookup` / `Match` | `Map`、配列、`Object.groupBy` |
+| VBA の中の `Dictionary` / `Collection` / `WorksheetFunction.VLookup` / `Match` | `Map`、配列、`Object.groupBy`（シートのセルに書かれた数式は次の節） |
 | 作業用シートに一時的に貼り付けて並べ替え・フィルター・重複削除 | 配列の `sort` / `filter` / `Set` |
 | `ReDim Preserve` で配列を伸ばす | `push` |
 | `Union` でまとめて削除、行を下から消すループ | 残す行を `filter` して新しいシートに書く |
@@ -47,6 +47,40 @@ out.addSheet("明細").write(rows, { table: true, columnStyles: { 金額: { form
 // 決まった書式の帳票に値を入れるなら、セルを直接書いてよい（配列にまとめなくてよい）
 tpl.cell("B3").value = customer;
 tpl.cell("F3").value = dayjs().toDate();
+```
+
+## 計算シートを使うマクロ（数式はブックに残す）
+
+見積・積算・料金表・判定表などで、「一覧の 1 行の値を計算シートの入力セルに書く → 再計算 → 結果のセルを読む（転記・印刷する）」マクロは、**シートの数式を JavaScript に訳さない**。
+xljs はブックの数式を計算できる（`book.calculate()`）。数式・率表は利用者が Excel で直す業務の知識なので、ブックに残せば、直したときにスクリプトを変えずに反映される。
+
+- 入力セルに `cell.value` で書き、`book.calculate()`（`Application.Calculate` に当たる。毎回ブック全体を計算する）のあと、結果のセルの `value`（数値などの値）や `text`（表示どおりの文字列）を読む。
+- 入力欄・結果の番地は決め打ちしない。A 列の項目名などで行を探す（利用者が行を足しても動く）。一覧の見出しと入力欄の項目名をそろえれば、どの列をどこに入れるかも書かずに済む。
+- 書き換えるのはメモリ上のブックだけ。**元のブックは保存しない**（計算シートに最後の工事の値が残るため）。結果は新しいブックに書く。
+- `book.calculate()` の `skipped` に入った数式（VBA のユーザー定義関数・アドインの関数・ほかのブックへの参照・データテーブル・PHONETIC）は計算されず、保存されていた値のまま残る。ユーザー定義関数はその計算だけを JavaScript で書き、結果を数式の代わりにセルへ入れる。`skipped` があれば利用者に知らせる。
+- 計算シートの見た目のまま 1 件ずつ出すなら、計算後のセルの値と書式（`getStyle()` を `style(s, { replace: true })`）と列幅（`getColumnWidth` / `setColumnWidth`）を新しいシートに写す（数式は写さない）。PDF なら `await calc.toPdf(p)` を 1 件ずつ（印刷の前に計算される）。
+- ゴールシーク・ソルバーは再現できない。
+
+```js
+const book = workbooks.open(file);
+const list = book.sheets["工事一覧"];
+const calc = book.sheets["計算"];
+const rowOf = (label) => Array.from({ length: calc.rowCount }, (_, i) => i + 1).find((r) => calc.getValue(r, 1) === label);
+
+const results = [];
+const skipped = new Set();
+for (const job of list.toObjects()) {
+  // 一覧の見出しと同じ項目名の行の B 列（入力欄）に入れる
+  for (const [key, value] of Object.entries(job)) {
+    const r = rowOf(key);
+    if (r) calc.cell(r, 2).value = value;
+  }
+  for (const s of book.calculate().skipped) skipped.add(`${s.sheet}!${s.address} ${s.formula}`);
+  results.push({ ...job, 工事価格: calc.cell(rowOf("工事価格"), 3).value, 工事費計: calc.cell(rowOf("工事費計"), 3).value });
+}
+if (skipped.size) alert(`計算できない数式があり、保存されていた値を使いました:\n${[...skipped].join("\n")}`);
+const out = workbooks.create();
+out.addSheet("総括").write(results, { table: true, columnStyles: { 工事価格: { format: "#,##0" }, 工事費計: { format: "#,##0" } } });
 ```
 
 ## 捨てるもの

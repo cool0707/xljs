@@ -44,7 +44,8 @@
 
 - 1 行ずつ訳さない。まず**マクロが何をしているか**を箇条書きで説明し、xljs の流儀（フォームでファイルを選ぶ → 読む → 処理 → 新しいファイルに保存）で書き直す。
 - xljs は開いている Excel を操作しない。`ThisWorkbook`・`ActiveSheet` のデータはそのブックを選ばせて読む。画面制御（`ScreenUpdating` など）は消す。
-- 対応: `MsgBox` → `alert` / `confirm`、`InputBox` → `prompt`、ユーザーフォーム → `ui.form`、ログオン中のユーザー（`Environ("USERNAME")`・`Application.UserName`）→ `ad.me()`、`Range` / `Cells` → `sheet.cell`、最終行までのループ → `sheet.toObjects()`、`Dir` → `fs.walk`、`VLookup` / `Dictionary` → `Map`、`Format` → `dayjs().format`。
+- 対応: `MsgBox` → `alert` / `confirm`、`InputBox` → `prompt`、ユーザーフォーム → `ui.form`、ログオン中のユーザー（`Environ("USERNAME")`・`Application.UserName`）→ `ad.me()`、`Range` / `Cells` → `sheet.cell`、最終行までのループ → `sheet.toObjects()`、`Dir` → `fs.walk`、VBA の中の `VLookup` / `Dictionary` → `Map`、`Format` → `dayjs().format`。
+- 計算シート（入力セルに値を入れて再計算し、結果のセルを読む）は、シートの数式を JavaScript に訳さない。入力セルに `cell.value` で書き、`book.calculate()` のあと結果のセルを読む（率や式をブックで直せば反映される）。番地は A 列の項目名などで探し、元のブックは保存しない（結果は新しいブックへ）。`skipped` の数式（VBA のユーザー定義関数など）だけ JavaScript で計算する。
 - シートのイベント、ボタン・選択範囲の操作、印刷、グラフ・ピボットの作成、他のアプリの操作は再現できない。はっきり伝えて代わりの方法を示す。PDF 出力（`ExportAsFixedFormat`）は `await book.toPdf("a.pdf")` でできる。PDF の結合・ページの削除・挿入・文字の追加は `pdf.open(p)` の `append` `insert` `removePages` `addText` `save`（リファレンス参照）。
 
 # リファレンス（要点）

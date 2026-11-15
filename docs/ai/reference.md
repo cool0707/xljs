@@ -125,7 +125,7 @@
 | `book.save()` / `book.save(p)` | 上書き保存 / 別名保存 |
 | `book.close()` | 閉じる（メモリ解放） |
 | `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | Excel で印刷したときのように PDF に書き出す（「PDF 出力」の節） |
-| `workbooks.readVBA(p)` | マクロブック（.xlsm / .xlsb など）の VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、マクロがなければ `null`。`type` は `"standard"` `"class"` `"document"`（ThisWorkbook とシート）`"form"`。`text` は全モジュールの Markdown |
+| `workbooks.readVBA(p)` | マクロブック（.xlsm / .xlsb など）の VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、マクロがなければ `null`。`type` は `"standard"` `"class"` `"document"` `"form"`。`text` は全体の Markdown |
 | `workbooks.columnName(3)` → `"C"`、`workbooks.cellName(2, 3)` → `"C2"` | 番地の変換 |
 
 ### シートの読み取り
@@ -144,7 +144,7 @@
 | `sheet.name` | シート名（代入で変更） |
 
 - 結合セルの値は左上のセルにだけ入っている。
-- 数式セルの `value` は保存されている計算結果。数式・値を書いたら `book.calculate()` で入る（`skipped` は計算できない数式）。`cell.calc()` は数式 1 つの結果の文字列。`=FILTER(...)` はスピルする。
+- 数式セルの `value` は保存されている計算結果。数式・値を書いたら `book.calculate()` で入る（`skipped` は計算できない数式）。`cell.calc()` は数式 1 つの結果の文字列。`=FILTER(...)` はスピルする。計算シート（見積・積算など）は数式を訳さず、入力セルに書いて `book.calculate()` し結果を読む（元のブックは保存しない）。
 
 ### シートへの書き込み
 
