@@ -105,9 +105,11 @@ fn formulas_it_cannot_calculate_keep_their_values() {
     let mut b = book();
     let sum = calculate(&mut b);
     let reasons: Vec<(String, &str, Option<&str>)> = sum.skipped.iter().filter(|s| s.sheet == "保存値").map(|s| (s.address.clone(), s.skip.reason(), s.skip.name())).collect();
-    assert_eq!(reasons, [("B1".to_string(), "function", Some("MYFUNC")), ("B2".into(), "external", None), ("B3".into(), "name", Some("未定義の名前")), ("B4".into(), "function", Some("PHONETIC"))]);
+    assert_eq!(reasons, [("B1".to_string(), "function", Some("MYFUNC")), ("B2".into(), "external", None), ("B3".into(), "name", Some("未定義の名前"))]);
     assert_eq!(sum.skipped.iter().find(|s| s.address == "B1").map(|s| (s.formula.as_str(), s.skip.message())), Some(("=MYFUNC(A1)", "関数 MYFUNC は計算できません".to_string())));
-    assert_eq!([raw(&b, "保存値", "B1"), raw(&b, "保存値", "B2"), raw(&b, "保存値", "B3"), raw(&b, "保存値", "B4")], ["123", "42", "7", "ゴ"]);
+    assert_eq!([raw(&b, "保存値", "B1"), raw(&b, "保存値", "B2"), raw(&b, "保存値", "B3")], ["123", "42", "7"]);
+    // PHONETIC of a number is empty, as in Excel (the saved "ゴ" was made up).
+    assert_eq!(raw(&b, "保存値", "B4"), "");
     // The formulas are still there.
     assert!(b.sheet("保存値").unwrap().cell((2, 1)).unwrap().is_formula());
     // What reads them is calculated from the saved values.

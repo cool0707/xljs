@@ -71,6 +71,7 @@ impl<'h> Evaluator<'h> {
             "INDEX" => self.index(args),
             "XLOOKUP" => self.xlookup(args),
             "CELL" => self.cell_info(args),
+            "PHONETIC" => self.phonetic(args),
             "TRIMRANGE" => self.trimrange(args),
             "SUBTOTAL" | "AGGREGATE" => self.subtotal(name, args),
             "TEXT" => {

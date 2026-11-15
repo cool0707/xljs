@@ -37,10 +37,9 @@ const FUNCTIONS: FunctionInfo = FunctionInfo {
     is_scalar_arg: |name, i| gridcraft_functions::lookup(name).is_none_or(|s| s.is_scalar_arg(i)),
 };
 
-/// Functions the engine has only a stand-in for: it would give an error (or,
-/// for PHONETIC, the text itself: the readings are not kept) where the
-/// workbook holds the value Excel worked out.
-const STAND_INS: &[&str] = &["CUBEKPIMEMBER", "CUBEMEMBER", "CUBEMEMBERPROPERTY", "CUBERANKEDMEMBER", "CUBESET", "CUBESETCOUNT", "CUBEVALUE", "FILTERXML", "PHONETIC", "WEBSERVICE"];
+/// Functions the engine has only a stand-in for: it would give an error
+/// where the workbook holds the value Excel worked out.
+const STAND_INS: &[&str] = &["CUBEKPIMEMBER", "CUBEMEMBER", "CUBEMEMBERPROPERTY", "CUBERANKEDMEMBER", "CUBESET", "CUBESETCOUNT", "CUBEVALUE", "FILTERXML", "WEBSERVICE"];
 
 /// Cells of array formula areas a workbook may have before the areas are no
 /// longer followed cell by cell (their formulas then keep their saved values).
@@ -547,6 +546,18 @@ fn outline(b: &Book) -> gm::Workbook {
     let sheets = b.wb.sheet_collection();
     let mut id = 0;
     wb.sheets = sheets.iter().map(|ws| Arc::new(layout(ws, &mut id))).collect();
+    // The furigana of the texts, for PHONETIC.
+    for ws in sheets {
+        for c in ws.cells() {
+            let runs = c.cell_value().phonetic_runs();
+            if !runs.is_empty() {
+                let runs = runs.into_iter().map(|(start, end, text)| gm::PhoneticRun { start, end, text }).collect();
+                let kind = c.cell_value().phonetic_type().filter(|k| k != "fullwidthKatakana");
+                let props = Some(gm::PhoneticProps { font_id: 1, kind, alignment: None });
+                wb.phonetics.push(gm::PhoneticString { text: c.value().to_string(), runs, props });
+            }
+        }
+    }
     // Names: those of the workbook, and those umya-spreadsheet keeps with
     // the sheet they refer to (of the sheet only when they say so).
     let mut seen: HashSet<(String, Option<usize>)> = HashSet::new();

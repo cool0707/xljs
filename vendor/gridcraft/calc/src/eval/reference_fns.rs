@@ -277,6 +277,40 @@ impl<'h> Evaluator<'h> {
         self.builtin("XLOOKUP", args)
     }
 
+    /// PHONETIC(reference): the furigana of the text of the cells (of a block, one after the
+    /// other), as Excel gives them: each run's reading in place of the characters it is of, the
+    /// characters no run covers as they are. A cell without furigana gives its text, one without
+    /// text nothing. xljs: the readings are the workbook's `phonetics`.
+    pub(super) fn phonetic(&mut self, args: &[Expr]) -> Ev {
+        if args.len() != 1 {
+            return err(CellError::Value);
+        }
+        let area = match self.eval(&args[0]) {
+            Ev::R(a) => match a.first().copied() {
+                Some(a) => a,
+                None => return err(CellError::Ref),
+            },
+            Ev::V(Value::Error(e)) => return err(e),
+            _ => return err(CellError::Value),
+        };
+        let range = self.trim_lines(&area);
+        let mut out = String::new();
+        for c in range.iter() {
+            if let Value::Text(t) = self.host.cell_value(area.sheet, c) {
+                let wb = self.host.workbook();
+                // As the kind of furigana shows them (full-width katakana when the text has none).
+                match wb.phonetics.iter().find(|p| *p.text == *t) {
+                    Some(p) => out.push_str(&gridcraft_functions::phonetic_form(
+                        &phonetic_text(&t, &p.runs),
+                        p.props.as_ref().and_then(|props| props.kind.as_deref()),
+                    )),
+                    None => out.push_str(&gridcraft_functions::phonetic_form(&t, None)),
+                }
+            }
+        }
+        Ev::V(Value::text(out))
+    }
+
     pub(super) fn cell_info(&mut self, args: &[Expr]) -> Ev {
         let kind = match self.arg_val(args, 0).map(|v| v.scalar().to_text()) {
             Some(Ok(t)) => t.to_ascii_lowercase(),
@@ -503,4 +537,23 @@ mod tests {
         let (v, _) = eval("=INDEX({1,2,3;4,5,6;7,8,9},{1,3},2)");
         assert!(matches!(&v, Value::Array(a) if a.data == vec![Value::number(2.0), Value::number(8.0)]), "{v:?}");
     }
+}
+
+/// The text with each run's reading in place of the characters it is of (`start`..`end` in UTF-16
+/// code units); runs out of order, overlapping or past the end are left out.
+pub(crate) fn phonetic_text(text: &str, runs: &[gridcraft_model::PhoneticRun]) -> String {
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let mut out = String::new();
+    let mut at = 0usize;
+    for run in runs {
+        let (start, end) = (run.start as usize, run.end as usize);
+        if start < at || end <= start || end > units.len() {
+            continue;
+        }
+        out.push_str(&String::from_utf16_lossy(&units[at..start]));
+        out.push_str(&run.text);
+        at = end;
+    }
+    out.push_str(&String::from_utf16_lossy(&units[at..]));
+    out
 }

@@ -239,6 +239,8 @@ k.write("A1", 5)
 k.write_formula("B1", "=MYFUNC(A1)", None, 123)
 k.write_formula("B2", "='[other.xlsx]Sheet1'!$A$1+A1", None, 42)
 k.write_formula("B3", "=未定義の名前*2", None, 7)
+# PHONETIC is calculated (from the furigana of the texts): of a number it is
+# empty, as in Excel, whatever the saved result says.
 k.write_formula("B4", "=PHONETIC(A1)", None, "ゴ")
 # These depend on them and on A1.
 k.write_formula("C1", "=B1+A1", None, 128)

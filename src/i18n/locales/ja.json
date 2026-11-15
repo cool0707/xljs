@@ -919,6 +919,7 @@
     "book.col.textFmt": "（文字列）",
     "book.col.validation": "入力規則あり",
     "xlsx.invalidHandle": "ブックではありません",
+    "xlsx.phoneticNotText": "ふりがなは文字列に付けます（{0} は文字列ではありません）",
     "xlsx.closed": "ブックは閉じられています",
     "xlsx.sheetExists": "シート \"{0}\" は既に存在します",
     "xlsx.noDestination": "保存先が指定されていません",

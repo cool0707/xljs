@@ -2141,6 +2141,18 @@ declare global {
      * 計算できない数式（`book.calculate()` の `skipped` を参照）は保存されている値、なければ "#NAME?" など
      */
     calc(): string;
+    /**
+     * 文字列のふりがな。Excel の PHONETIC 関数と同じく、ふりがなのない部分は元の文字のまま返す。ふりがながなければ null。
+     * 代入すると文字列全体の読みにする（ひらがなで書けば Excel もひらがなで表示する）。null で消す。
+     * ふりがなはその文字列に付く: 値を別の文字列に書き換えると消える（先に値を書いてからふりがなを付ける）。文字列でないセルに付けると例外
+     *
+     *     sheet.cell("A2").value = "山田太郎";
+     *     sheet.cell("A2").phonetic = "ヤマダタロウ";
+     *     sheet.cell("B2").formula = "=PHONETIC(A2)";   // book.calculate() で "ヤマダタロウ"
+     */
+    phonetic: string | null;
+    /** ふりがなを文字列の上に表示する（Excel の「ふりがなの表示」） */
+    showPhonetic: boolean;
     /** 書式を適用する（既存の書式にマージ） */
     style(style: CellStyle, options?: StyleOptions): this;
     /** 現在の書式（style() に渡せる形） */
@@ -2358,7 +2370,7 @@ declare global {
     /** "=MYFUNC(A1)" */
     formula: string;
     /**
-     * 理由。"function" = 計算できない関数（マクロ・アドインの関数、PHONETIC、CUBE 関数など）、"name" = ブックに定義されていない名前、
+     * 理由。"function" = 計算できない関数（マクロ・アドインの関数、CUBE 関数など）、"name" = ブックに定義されていない名前、
      * "external" = ほかのブックへの参照、"circular" = 循環参照（その結果を参照する数式も。ブックの「反復計算を行う」が有効なら計算するので出ない）、
      * "dataTable" = データテーブル（What-If 分析）、
      * "large" = 範囲が大きすぎる配列数式、"syntax" = 読み取れない数式

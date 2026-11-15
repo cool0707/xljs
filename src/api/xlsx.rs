@@ -580,6 +580,43 @@ pub(crate) fn set_value(b: &mut Book, sheet: &str, r: &str, v: &Value) -> Result
     Ok(())
 }
 
+/// The furigana of a text as PHONETIC gives them: each run's reading in
+/// place of the characters it is of (`start`..`end` in UTF-16 code units),
+/// the others as they are. None when there are no runs.
+pub(crate) fn phonetic_text(text: &str, runs: &[(u32, u32, String)]) -> Option<String> {
+    if runs.is_empty() {
+        return None;
+    }
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let mut out = String::new();
+    let mut at = 0usize;
+    for (start, end, reading) in runs {
+        let (start, end) = (*start as usize, *end as usize);
+        if start < at || end <= start || end > units.len() {
+            continue;
+        }
+        out.push_str(&String::from_utf16_lossy(&units[at..start]));
+        out.push_str(reading);
+        at = end;
+    }
+    out.push_str(&String::from_utf16_lossy(&units[at..]));
+    Some(out)
+}
+
+/// How Excel is to write furigana given as `reading`: in hiragana when they
+/// are (Excel would show them in katakana otherwise), half-width katakana
+/// likewise; None for full-width katakana, the default.
+fn phonetic_kind(reading: &str) -> Option<&'static str> {
+    let letters = || reading.chars().filter(|c| !c.is_whitespace() && !matches!(c, 'ー' | '・'));
+    if letters().all(|c| ('ぁ'..='ゟ').contains(&c)) {
+        Some("Hiragana")
+    } else if letters().all(|c| ('｡'..='ﾟ').contains(&c)) {
+        Some("halfwidthKatakana")
+    } else {
+        None
+    }
+}
+
 // ---- natives ----
 
 pub(crate) fn handle_id(v: &Value) -> Option<u64> {
@@ -765,6 +802,64 @@ pub(super) fn install(n: &N) {
         with_book(h, a, |b| {
             let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
             super::xlsx_calc::set_formula(b, &sheet, col, row, &formula).map_err(|e| a.throw(&e))
+        })?;
+        a.undefined()
+    });
+    // xlsxGetPhonetic(book, sheet, ref, show) -> the furigana as PHONETIC gives them (null when
+    // the text has none), or (show) whether they are shown.
+    n.set("xlsxGetPhonetic", |h, a| {
+        let (sheet, r, show) = (a.str(1), upper(a.str(2)), a.arg(3).as_bool().unwrap_or(false));
+        let got = with_book(h, a, |b| {
+            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            Ok(ws.cell((col, row)).map(|c| {
+                let text = phonetic_text(&c.value(), &c.cell_value().phonetic_runs());
+                // As Excel's PHONETIC gives them: in the kind of furigana of the text.
+                let kind = c.cell_value().phonetic_type();
+                (c.show_phonetic(), text.map(|t| gridcraft_functions::phonetic_form(&t, kind.as_deref())))
+            }))
+        })?;
+        match (show, got) {
+            (true, g) => a.ret(g.is_some_and(|(s, _)| s)),
+            (false, Some((_, Some(t)))) => a.ret(t),
+            (false, _) => a.null(),
+        }
+    });
+    // xlsxSetPhonetic(book, sheet, ref, reading | null) / xlsxSetShowPhonetic(book, sheet, ref, bool)
+    n.set("xlsxSetPhonetic", |h, a| {
+        let (sheet, r, v) = (a.str(1), upper(a.str(2)), a.arg(3));
+        let reading = (!js::nullish(&v)).then(|| js::to_str(&v)).filter(|s| !s.is_empty());
+        with_book(h, a, |b| {
+            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let c = b.cell_mut(&sheet, col, row).map_err(|e| a.throw(&e))?;
+            let text = match c.raw_value() {
+                CellRawValue::String(s) | CellRawValue::Lazy(s) => s.to_string(),
+                CellRawValue::RichText(t) => t.text().to_string(),
+                _ if reading.is_none() => String::new(),
+                _ => return Err(a.throw(&err!("xlsx.phoneticNotText", r.clone()))),
+            };
+            match reading {
+                Some(reading) => {
+                    let end = u32::try_from(text.encode_utf16().count()).unwrap_or(u32::MAX);
+                    let kind = phonetic_kind(&reading);
+                    c.cell_value_mut().set_phonetic_runs(&[(0, end, reading)], kind);
+                }
+                None => {
+                    c.cell_value_mut().set_phonetic_runs(&[], None);
+                }
+            }
+            // PHONETIC reads the furigana of the whole workbook.
+            b.calc_reset();
+            Ok(())
+        })?;
+        a.undefined()
+    });
+    n.set("xlsxSetShowPhonetic", |h, a| {
+        let (sheet, r, show) = (a.str(1), upper(a.str(2)), a.arg(3).as_bool().unwrap_or(false));
+        with_book(h, a, |b| {
+            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            b.cell_mut(&sheet, col, row).map_err(|e| a.throw(&e))?.set_show_phonetic(show);
+            Ok(())
         })?;
         a.undefined()
     });

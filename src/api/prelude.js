@@ -5309,6 +5309,12 @@
     /** Formula with leading "=", or null. */
     get formula() { return native.xlsxGetFormula(this._sheet._book._h, this._sheet._name, this._address); }
     set formula(f) { native.xlsxSetFormula(this._sheet._book._h, this._sheet._name, this._address, f === null || f === undefined ? "" : String(f)); }
+    /** The furigana of the text as PHONETIC gives them (null when it has none); set: the reading of the whole text. */
+    get phonetic() { return native.xlsxGetPhonetic(this._sheet._book._h, this._sheet._name, this._address, false); }
+    set phonetic(v) { native.xlsxSetPhonetic(this._sheet._book._h, this._sheet._name, this._address, v === undefined ? null : v); }
+    /** Whether the furigana are shown above the text. */
+    get showPhonetic() { return native.xlsxGetPhonetic(this._sheet._book._h, this._sheet._name, this._address, true); }
+    set showPhonetic(v) { native.xlsxSetShowPhonetic(this._sheet._book._h, this._sheet._name, this._address, !!v); }
     /** Evaluates the formula with excelize's calculation engine (subset of Excel functions). */
     calc() { return native.xlsxCalc(this._sheet._book._h, this._sheet._name, this._address); }
     /** Applies (merges) a style to the cell. */
