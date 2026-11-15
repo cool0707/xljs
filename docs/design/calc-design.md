@@ -220,7 +220,7 @@ Excel の実機で確かめられていないところ（調べのつく資料�
 
 ## 11. 検証
 
-- `testdata/xlsx/calc.xlsx`（`make_calc.py`。xlsxwriter が Excel と同じ形で配列数式・スピルの数式とメタデータを書く）: 139 個の数式とその期待値。LibreOffice に同じブックを計算させた結果と突き合わせて決めた（LibreOffice にない `XLOOKUP`・`FILTER`・`LET` などは、同じ意味の従来の数式と比べた）。配列数式・スピル・テーブル・共有数式・計算しない数式のシートもある。
+- `testdata/xlsx/calc.xlsx`（`make_calc.py`。xlsxwriter が Excel と同じ形で配列数式・スピルの数式とメタデータを書く）: 139 個の数式とその期待値。Excel（Office 2021）に同じブックを再計算させた結果と一致することを確かめてある（`tools/excel-verify`）。数式は Excel が保存する形（`_xlfn.`・`_xlpm.`・`_xlfn.ANCHORARRAY`）で入っている。配列数式・スピル・テーブル・共有数式・計算しない数式のシートもある。
 - `src/api/xlsx_calc/tests.rs`: 上のブックを使う単体テスト。差分の計算、時計、接頭辞、印刷範囲。配列数式・スピルの保存（保存したファイルの XML と、開き直したときの数式・値）、スクリプトが書いた数式のスピルと保存の形、`@` を付けた読み方、範囲への書き込み、反復計算。
 - umya のフォークの `tests/array_formula.rs`: 配列数式と動的配列のメタデータの読み書き（ほかの種類のメタデータとの混在、行・列の挿入、読んだままの形で書くシート）。
 - `testdata/scripts/calc.test.js`: スクリプトから見た動き（デバッガ経由でも流れる）。

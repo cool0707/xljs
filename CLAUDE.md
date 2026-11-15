@@ -45,6 +45,7 @@ PDF の編集（グローバルの `pdf`: 結合・ページの削除・挿入�
 | `testdata/scripts/*.test.{js,ts}` | モック UI で実行される結合テスト（`src/engine/tests.rs`）。`<name>.answers.json` がモック応答 |
 | `examples/` | サンプル。`xljs init` の d.ts と jsconfig.json で tsc の型チェックが通る状態を保つ（CI の ubuntu で検査）。試すためのデータは `examples/data/`（`tools/examples/make_data.py` で生成。構成の違いが要らないサンプルは同じファイルを使う）。配布 zip には `prompt/` と並べて `examples/` として入る |
 | `tools/gui/` | Windows 実機での GUI 自動操作・スクリーンショット（`XljsGui.psm1`、`smoke.ps1`、`stay-awake.ps1`）。`docs/design/gui-testing.md` 参照 |
+| `tools/excel-verify/` | Windows 実機の Excel（COM）で、xljs の xlsx の読み書き・数式の計算・表示形式を確かめる（`run.ps1`）。`docs/design/excel-verify.md` 参照 |
 | `docs/ai/` | AI チャット向けのプロンプトとリファレンス。`ai_docs` テストがコードブロックの構文と長さを検査 |
 | `docs/design/` | 機能ごとの設計メモ（開発者・Claude Code 向け） |
 
@@ -84,4 +85,5 @@ xljs test [--approve] script.js                           # スクリプトの�
 - Linux で Windows 版のテストを流すなら: mingw-w64 と wine を入れて `LANG=C.UTF-8 CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER=wine64 cargo test --target x86_64-pc-windows-gnu --lib`（ネイティブダイアログのテストは `xvfb-run` 付きで）。
 - CI（.github/workflows/ci.yml）: ubuntu と windows で `cargo test --lib`。Windows ではダイアログを実際に開いて閉じるテスト（`src/ui/native/tests.rs`）と WebView2 のウィンドウのテストも走る。タグ `v*` で Release に zip を添付。
 - **Windows 実機（`claude remote-control`）では GUI を自動操作・撮影して確認できる**: `cargo build` → `pwsh -File tools/gui/smoke.ps1 -MonitorOff`。ヘルパーは `tools/gui/XljsGui.psm1`（UI Automation＋ウィンドウメッセージ。入力は使わない）。手順・できること・はまりどころは `docs/design/gui-testing.md`。
-- 出力の見た目確認: LibreOffice があれば `soffice --headless --convert-to pdf` → `pdftoppm` で画像化できる。
+- **Excel との突き合わせは実機の Excel で**: `cargo build` → `pwsh -File tools/excel-verify/run.ps1`。LibreOffice は Excel が開けないファイル（`_xlfn.` のない新しい関数、`G1#` のままのスピル参照など）も開くので、互換の確認には使わない。結果と未対応の差は `docs/design/excel-verify.md`。
+- 出力の見た目確認: LibreOffice があれば `soffice --headless --convert-to pdf` → `pdftoppm` で画像化できる（見た目だけ。Excel で開けるかの確認にはならない）。

@@ -29,7 +29,7 @@ fn formula(b: &mut Book, sheet: &str, r: &str, f: &str) {
 }
 
 /// Every formula of the 数式 sheet gives the value beside it (the ones
-/// LibreOffice gives for the same workbook).
+/// Excel gives for the same workbook).
 #[test]
 fn formulas_give_the_values_of_excel() {
     let _l = lock_lang("ja");
