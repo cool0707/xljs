@@ -5810,6 +5810,25 @@
     return String(a);
   }
 
+  /** A row number, or a column number or name ("C"), for insertRows and the like. */
+  function lineNumber(v, columns, who) {
+    if (columns && typeof v === "string" && /^\s*[A-Za-z]{1,3}\s*$/.test(v)) {
+      let n = 0;
+      for (const ch of v.trim().toUpperCase()) n = n * 26 + ch.charCodeAt(0) - 64;
+      return n;
+    }
+    const n = typeof v === "string" && v.trim() !== "" ? Number(v) : v;
+    if (typeof n !== "number" || !Number.isInteger(n) || n < 1) throw new RangeError(T("xlsx.edit.badLine", who, String(v)));
+    return n;
+  }
+
+  function editLines(sheet, who, columns, at, count, insert) {
+    const n = count === undefined || count === null ? 1 : Number(count);
+    if (!Number.isInteger(n) || n < 0) throw new RangeError(T("xlsx.edit.badCount", who, String(count)));
+    native.xlsxEditLines(sheet._book._h, sheet._name, columns, lineNumber(at, columns, who), n, insert);
+    return sheet;
+  }
+
   class Worksheet {
     constructor(book, name) {
       define(this, "_book", book);
@@ -5932,6 +5951,12 @@
     toPdf(dest, options) { return printToPdf(this._book, dest, options, [this._name]); }
     get dimension() { return native.xlsxDimension(this._book._h, this._name); }
     get rowCount() { return native.xlsxRowCount(this._book._h, this._name); }
+    /** Inserts count rows before row (1-based); what refers to the cells moves with them, as in Excel. */
+    insertRows(row, count = 1) { return editLines(this, "insertRows", false, row, count, true); }
+    deleteRows(row, count = 1) { return editLines(this, "deleteRows", false, row, count, false); }
+    /** insertColumns("C", 2) or insertColumns(3, 2). */
+    insertColumns(column, count = 1) { return editLines(this, "insertColumns", true, column, count, true); }
+    deleteColumns(column, count = 1) { return editLines(this, "deleteColumns", true, column, count, false); }
     /** setColumnWidth("A", 20) or setColumnWidth("A:C", 20) */
     setColumnWidth(cols, width) {
       const [a, b] = String(cols).split(":");
@@ -6004,6 +6029,14 @@
     addSheet(name) {
       native.xlsxAddSheet(this._h, String(name));
       return new Worksheet(this, String(name));
+    }
+    /** Copies a sheet (with its formats, formulas, tables, charts...) right after it; name defaults to "名前 (2)". */
+    copySheet(sheet, name) {
+      const src = sheet instanceof Worksheet ? sheet.name : String(sheet);
+      const names = native.xlsxSheetNames(this._h);
+      const n = names.includes(src) ? src : sheetNameLike(names, src);
+      if (n === null || n === undefined) throw new Error(`sheet ${src} does not exist`);
+      return new Worksheet(this, native.xlsxCopySheet(this._h, n, name === undefined || name === null ? null : String(name), null));
     }
     removeSheet(sheet) {
       native.xlsxRemoveSheet(this._h, sheet instanceof Worksheet ? sheet.name : String(sheet));

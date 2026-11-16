@@ -2282,6 +2282,32 @@ declare global {
     /** シートのメモ（セルの順）。スレッド形式のコメントの代わりに Excel が書くメモは含まない */
     readonly notes: CellNote[];
     readonly rowCount: number;
+    /**
+     * row 行目の前に count 行（既定 1）を挿入する（Excel の「行の挿入」）。
+     * Excel と同じく、ずれたセルを参照する数式（ほかのシートの数式も。絶対参照の `$B$5` も）・名前の定義・印刷範囲・入力規則・条件付き書式・
+     * テーブル・グラフ・スパークライン・ピボットテーブルの元データ・フォームコントロールの参照も付いてくる。
+     * 範囲の途中に挿入すると範囲が広がる（`=SUM(B2:B9)` に 5 行目で挿入すると `=SUM(B2:B10)`）。
+     * 挿入した行は上の行（1 行目なら下の行）の書式と高さを引き継ぐ。
+     * 配列数式・ピボットテーブルを分ける挿入と、シートの外に値を押し出す挿入はエラー
+     *
+     *     sheet.insertRows(5);      // 5 行目の前に 1 行
+     *     sheet.insertRows(2, 3);   // 2〜4 行目に空の 3 行
+     */
+    insertRows(row: number, count?: number): this;
+    /**
+     * row 行目から count 行（既定 1）を削除して下の行を詰める（Excel の「行の削除」）。
+     * 参照の付き方は insertRows と同じで、範囲の一部を削除すると範囲が縮み（`=SUM(B2:B9)` から 5 行目を削除すると `=SUM(B2:B8)`）、
+     * 削除したセルだけを参照していた数式は `#REF!` になる。削除した行にあった結合・入力規則・条件付き書式・メモ・図形もなくなる。
+     * テーブルの見出し行だけの削除と、配列数式・ピボットテーブルの一部の削除はエラー
+     */
+    deleteRows(row: number, count?: number): this;
+    /**
+     * column 列（"C" か 3）の前に count 列（既定 1）を挿入する。参照の付き方は insertRows と同じ。
+     * 挿入した列は左の列（A 列なら右の列）の書式と幅を引き継ぐ。テーブルの途中に挿入すると、列は「列1」のような名前でテーブルに加わる
+     */
+    insertColumns(column: string | number, count?: number): this;
+    /** column 列（"C" か 3）から count 列（既定 1）を削除して右の列を詰める。参照の付き方は deleteRows と同じ。テーブルの列も削除される */
+    deleteColumns(column: string | number, count?: number): this;
     /** setColumnWidth("A", 20) / setColumnWidth("A:C", 12) */
     setColumnWidth(columns: string, width: number): this;
     getColumnWidth(column: string): number;
@@ -2469,6 +2495,15 @@ declare global {
     sheet(nameOrIndex: string | number): Worksheet | null;
     addSheet(name: string): Worksheet;
     removeSheet(sheet: string | Worksheet): void;
+    /**
+     * シートをコピーして、元のシートのすぐ後ろに置く（Excel の「移動またはコピー」の「コピーを作成する」）。
+     * name を省くと「売上 (2)」のような名前にする。値・数式・書式・列幅・結合・入力規則・条件付き書式・テーブル・グラフ・画像・図形・
+     * メモ・コメント・印刷の設定もコピーする。Excel と同じく、コピーの数式は元の数式と同じシートを参照し（`=Sheet1!A1` は Sheet1 のまま）、
+     * グラフ・スパークライン・シートの名前の定義はコピーを指す。テーブルは「売上表_2」のような名前になり、コピーの数式もそれを使う
+     *
+     *     const next = book.copySheet("4月", "5月");
+     */
+    copySheet(sheet: string | Worksheet, name?: string): Worksheet;
     /** 保存。省略時は開いたファイルに上書き */
     save(dest?: PathLike): this;
     /**

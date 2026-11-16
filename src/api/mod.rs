@@ -24,6 +24,7 @@ mod vba;
 pub(crate) mod xlsx;
 mod xlsx_chart;
 mod xlsx_cond;
+mod xlsx_edit;
 mod xlsx_outline;
 mod xlsx_print;
 mod xlsx_table;
