@@ -16,6 +16,7 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 | [`copilot/skills/xljs-network/SKILL.md`](copilot/skills/xljs-network/SKILL.md) | スキル版のリファレンス: Web API（fetch）と Active Directory | 約 3,500 字 |
 | [`copilot/skills/xljs-chart/SKILL.md`](copilot/skills/xljs-chart/SKILL.md) | スキル版のリファレンス: グラフ（ui.chart） | 約 2,900 字 |
 | [`copilot/skills/vba-port/SKILL.md`](copilot/skills/vba-port/SKILL.md) | Excel マクロ（VBA）移植用のスキル。素直な書き方への置き換え、不要なコードの省略、手順の見直しの提案 | 約 4,300 字 |
+| [`coding-agent/xljs-dev/SKILL.md`](coding-agent/xljs-dev/SKILL.md) | 開発モードを使わず、自分の AI 開発環境（Claude Code・GitHub Copilot のエージェント・Cursor など）で作るときのスキル。開発モードがしていること（履歴、モックの UI での実行とエラーの読み取り、テストの再生、exe の作成）を AI に自分で行わせる | 約 5,700 字 |
 
 配布 zip にも `prompt/` として同梱しています（このフォルダの中身がそのまま入ります）。
 
@@ -42,6 +43,17 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 ChatGPT・Gemini・Claude の「知識」には、`copilot/skills/` の 7 つの `SKILL.md` を `<フォルダ名>.txt`（`xljs-reference.txt`・`xljs-app-design.txt`・`xljs-pdf.txt`・`xljs-sqlite.txt`・`xljs-network.txt`・`xljs-chart.txt`・`vba-port.txt`）に名前を変えて入れます。指示がこの名前で呼びます。拡張子を .txt にするのは、.md だと「サポートされていないファイル形式」になることがあるためです（Gemini のスキルなど。Windows に .md の種類の登録がないと、ブラウザーがファイルの種類を空にする）。
 
 開発モード（`xljs dev`）では、これらのサービスのふつうのチャットを開くと「xljs 用のエージェント（Gem・GPT・プロジェクト）を作成しましょう」と案内が出ます。［作成用のプロンプト］で、名前・説明の例、指示のコピー、スキル・知識のファイル（チャットの画面へドラッグして添付）をまとめて表示します。
+
+## 自分の AI 開発環境で作る（開発モードを使わないとき）
+
+ファイルを読み書きしてコマンドを実行できる AI（Claude Code、VS Code の GitHub Copilot のエージェント、Cursor、Codex など）で作るときは、開発モードの代わりに `coding-agent/xljs-dev/SKILL.md` を渡します。AI が、書き換える前の履歴の保存、`xljsc check` と画面を出さない実行（`--ui=mock`）での確認、エラーの読み取り、テスト（`.xljs/tests`）の再生を自分で行うようになります（テストの承認は利用者が行います）。
+
+1. スクリプトのフォルダで `xljsc init` を実行し、型定義（`xljs.d.ts`）を置く。AI はこれで API を確かめます。
+2. スキルを置く。xljs の API はほかのスキル（`copilot/skills/` の 7 つ）が持つので、一緒に置きます。
+   - Claude Code: `.claude/skills/xljs-dev/SKILL.md`、ほかは `.claude/skills/<フォルダ名>/SKILL.md`
+   - GitHub Copilot（VS Code）: `.github/skills/` の下に同じ形で置く
+   - スキルを使えないツール: `AGENTS.md`（または `CLAUDE.md`・`.github/copilot-instructions.md`）に `prompt.md` と `xljs-dev/SKILL.md` の本文（先頭の `---` の間を除く）を貼り、`reference.md` を同じフォルダに置く
+3. `xljsc.exe` に PATH が通っていなければ、場所を AI に伝える。
 
 ## Excel マクロ（VBA）を移植する
 

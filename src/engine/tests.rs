@@ -599,7 +599,7 @@ fn md_sections(src: &str) -> (String, Vec<(String, String)>) {
 fn ai_docs() {
     let re = regex::Regex::new("(?s)```js\n(.*?)```").unwrap();
     let skills: Vec<_> = REFERENCE_SKILLS.iter().map(|n| (format!("copilot/skills/{n}/SKILL.md"), 30000)).collect();
-    let docs = [("prompt.md".to_string(), 15000), ("reference.md".into(), 0), ("copilot/instructions.md".into(), 8000), ("gemini/instructions.md".into(), 8000), ("chatgpt/instructions.md".into(), 8000), ("claude/instructions.md".into(), 8000), ("copilot/skills/vba-port/SKILL.md".into(), 30000)];
+    let docs = [("prompt.md".to_string(), 15000), ("reference.md".into(), 0), ("copilot/instructions.md".into(), 8000), ("gemini/instructions.md".into(), 8000), ("chatgpt/instructions.md".into(), 8000), ("claude/instructions.md".into(), 8000), ("copilot/skills/vba-port/SKILL.md".into(), 30000), ("coding-agent/xljs-dev/SKILL.md".into(), 30000)];
     for (name, limit) in docs.into_iter().chain(skills) {
         let src = std::fs::read_to_string(repo_path(&format!("docs/ai/{name}"))).unwrap().replace("\r\n", "\n");
         let n = src.chars().count();
