@@ -15,6 +15,9 @@ xljs で開いて保存したものについて、次の 3 つを見る。
 - 部品と要素（`partdiff.py`。部品は名前の数字を除いて数え、要素は同じ種類の部品のどれにもなくなった要素名を出す）
 
 調べている機能は `excel-make-features.ps1` の `$All`。
+スレッド形式のコメントは、COM（`CommentsThreaded`・`AddCommentThreaded`）が使える Excel でないと作れず読めない（手元の Excel では
+「VBA オブジェクト モデルは、使用している Excel のバージョンではサポートされていません」で使えない）ので `$All` にない。
+`testdata/scripts/comments.test.js` が Excel の書く形のブック（`testdata/xlsx/make_comments.py`）で見る。
 
 2026-11-16 の時点で、フォームコントロール以外はすべて PASS（Excel 2021）。
 2026-11-15 に、手元のブック 14 個（`testdata/xlsx`・`testdata/book`・`examples/data`、umya の `aaa.xlsx`・`aaa.xlsm`）の部品と要素も比べた。

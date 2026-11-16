@@ -1,6 +1,6 @@
 ---
 title: Excel
-api: Workbooks, workbooks, Workbook, Worksheet, Cell, Range, CellValue, ToObjectsOptions, WriteOptions, CalcResult, CalcSkipped, VBAProject, VBAModule
+api: Workbooks, workbooks, Workbook, Worksheet, Cell, Range, CellValue, ToObjectsOptions, WriteOptions, CalcResult, CalcSkipped, VBAProject, VBAModule, CellComment, CommentReply, CommentEntry, CommentOptions, CellNote
 ---
 
 ```js
@@ -25,6 +25,34 @@ out.save("集計.xlsx");
 - 数式は保存時に「開いたときに再計算」フラグを立てるので、Excel で開けば計算結果が表示されます。スクリプトの中で結果が必要なとき・計算済みの値をファイルに入れておきたいときは `book.calculate()`（下の「数式の計算」）。
 - xlsx / xlsm に対応しています（旧形式の .xls は不可）。マクロ、ピボットテーブルなどは読み書きの過程で失われることがあります（グラフは開いて保存しても残ります）。
 - `workbooks.readVBA(src)` はマクロブック（.xlsm / .xlsb / .xlam など）の VBA コードを、ブックを開かずに読みます。`{ name, codePage, modules: [{ name, type, code, sheet }], text }` を返し、マクロがなければ `null` です。`type` は `"standard"`（標準モジュール）・`"class"`・`"document"`（ThisWorkbook とシート）・`"form"`、`sheet` はシートのモジュールのシート名（.xlsm などで分かる場合）、`text` は `xljs vba` と同じ Markdown です。
+
+## コメントとメモ
+
+いまの Excel には、返信を付けられる**コメント**（スレッド形式のコメント）と、以前の Excel のコメントにあたる**メモ**があります。1 つのセルにはどちらか一方を付けられます。
+
+```js
+const book = workbooks.open("申請一覧.xlsx");
+const sheet = book.sheet("申請");
+
+// 読む
+for (const c of sheet.comments) {
+  console.log(c.address, c.author, c.text, c.resolved ? "（解決済み）" : "");
+  for (const r of c.replies) console.log("  返信:", r.author, r.text);
+}
+console.log(sheet.cell("A1").note);              // メモ（なければ null）
+
+// 書く
+const c = sheet.cell("D5").addComment("金額を確認してください");
+c.reply("領収書と一致しました", { author: "経理 担当" });
+c.resolved = true;                               // スレッドを解決する
+sheet.cell("A1").note = "4 月分から単価を変更";  // null で消す
+book.save();
+```
+
+- `author` を省くと作成者は `xljs.userName`（Windows のユーザー名）です。日時は書いたときの時刻になります。
+- 開いて保存しても、コメントの作成者・返信・解決済み・メンション（`@名前`）は残ります。
+- Excel はコメントの代わりのメモ（「[スレッド化されたコメント]…」）を一緒に保存し、コメントのない Excel（2019 以前）ではそれが表示されます。xljs もコメントを書き換えるたびにこのメモを作り直します。このメモは `cell.note`・`sheet.notes` には出ません。
+- Excel が付けたメモの文字列は、先頭に「作成者:」の行があります（`cell.note` にもそのまま入ります）。
 
 ## 数式の計算
 
