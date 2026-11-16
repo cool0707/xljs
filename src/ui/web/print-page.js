@@ -4,7 +4,8 @@
 // that its <div class="xljs-print-chart" data-chart="i"> stand for (a
 // ChartSpec, or { error } for a chart that cannot be drawn) and the chart
 // texts; the page puts the document in place, draws the charts and answers
-// "rendered" (the host then prints the page), or "error".
+// "rendered" (the host then prints the page), or "error". To print on a
+// printer the host then sends "pages" for each paper (see showPages).
 
 /** Waits for ms milliseconds (timers keep running in a hidden window). */
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -27,10 +28,13 @@ function place(html) {
   for (const s of document.body.querySelectorAll("script")) s.remove();
 }
 
-/** The number of chart boxes with something drawn (painted canvas pixels, or an SVG). */
-function drawnCharts() {
+/** The chart boxes of the document. */
+const chartBoxes = () => Array.from(document.querySelectorAll(".xljs-print-chart.xljs-chart"));
+
+/** The number of boxes (default: all chart boxes) with something drawn (painted canvas pixels, or an SVG). */
+function drawnCharts(boxes = chartBoxes()) {
   let n = 0;
-  for (const box of document.querySelectorAll(".xljs-print-chart.xljs-chart")) {
+  for (const box of boxes) {
     if (box.querySelector("svg")) { n++; continue; }
     const painted = Array.from(box.querySelectorAll("canvas")).some((c) => {
       try {
@@ -277,7 +281,25 @@ async function drawCharts(charts, m) {
   await wait(150);
 }
 
+/**
+ * Printing on a printer, one paper at a time: shows only the pages from..to
+ * (1-based) and answers "shown" with the group. The page numbers (&P, the
+ * counter xljs-page) go on from the hidden pages; the even pages stay the
+ * even ones (:nth-of-type counts the hidden pages).
+ */
+async function showPages(m) {
+  const pages = Array.from(document.querySelectorAll(".xljs-page"));
+  pages.forEach((p, i) => { p.style.display = i + 1 < m.from || i + 1 > m.to ? "none" : ""; });
+  document.body.style.counterReset = `xljs-page ${m.from - 1}`;
+  // Charts shown again may draw themselves anew at their size.
+  const boxes = chartBoxes().filter((b) => b.closest(".xljs-page") && b.closest(".xljs-page").style.display !== "none");
+  const end = Date.now() + 5000;
+  do await frames(2, 300); while (drawnCharts(boxes) < boxes.length && Date.now() < end);
+  host.send({ type: "shown", group: m.group });
+}
+
 host.on(async (m) => {
+  if (m.type === "pages") return showPages(m);
   if (m.type !== "init") return;
   try {
     place(m.html);

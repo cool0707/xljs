@@ -355,6 +355,7 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
     });
     let hwnd_id = Arc::new(AtomicIsize::new(0));
     let (f1, f2, h1) = (finish.clone(), finish.clone(), hwnd_id.clone());
+    let printing = job.printer.is_some();
     let job = Arc::new(job);
     let on_message: crate::ui::OnMessage = Arc::new(move |msg: String, _| {
         let hwnd = HWND(h1.load(Ordering::SeqCst) as *mut _);
@@ -375,15 +376,24 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
                 }
             }
             Some("rendered") if job.printer.is_some() => {
+                show_group(&core, job.printer.as_ref().unwrap(), 0);
+            }
+            // The page shows only the pages of group k: print them.
+            Some("shown") if job.printer.is_some() => {
                 let Some(env) = state(hwnd).and_then(|st| st.env.borrow().clone()) else {
                     f1(Err(err!("print.failed", "no environment")));
                     return close();
                 };
-                let p = job.printer.clone().unwrap_or_default();
-                let f = f1.clone();
-                print_groups(core, env, Arc::new(p), 0, Box::new(move |r| {
-                    f(r);
-                    close();
+                let p = Arc::new(job.printer.clone().unwrap_or_default());
+                let k = m.get("group").and_then(|g| g.as_u64()).unwrap_or(0) as usize;
+                let (f, next, p2) = (f1.clone(), core.clone(), p.clone());
+                print_group(&core, &env, &p, k, Box::new(move |r| {
+                    if r.is_ok() && k + 1 < p2.groups.len() {
+                        show_group(&next, &p2, k + 1);
+                    } else {
+                        f(r);
+                        close();
+                    }
                 }));
             }
             Some("rendered") => {
@@ -404,14 +414,14 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
             }
             Some("error") => {
                 let message = m.get("message").and_then(|t| t.as_str()).unwrap_or("").to_string();
-                f1(Err(err!("pdf.failed", message)));
+                f1(Err(if job.printer.is_some() { err!("print.failed", message) } else { err!("pdf.failed", message) }));
                 close();
             }
             _ => {}
         }
     });
     let on_closed: crate::ui::OnClosed = Arc::new(move || {
-        f2(Err(err!("pdf.failed", "closed")));
+        f2(Err(if printing { err!("print.closed") } else { err!("pdf.closed") }));
     });
     let o = WindowOptions {
         title: "xljs PDF".into(),
@@ -432,7 +442,8 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
             let id = h.0 as isize;
             after(PRINT_TIMEOUT, move || {
                 // Only while the job is open: the handle may name another window later.
-                if finish(Err(err!("pdf.failed", "timeout"))) {
+                let secs = PRINT_TIMEOUT.as_secs();
+                if finish(Err(if printing { err!("print.timeout", secs) } else { err!("pdf.timeout", secs) })) {
                     unsafe {
                         let _ = PostMessageW(Some(HWND(id as *mut _)), WM_CLOSE, WPARAM(0), LPARAM(0));
                     }
@@ -445,13 +456,27 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
     }
 }
 
-/// Prints the pages of job.groups[k..] one group (one paper) at a time with
+/// Asks web/print.html to show only the pages of job.groups[k] (it answers
+/// "shown" with the group, and then print_group prints them). The pages
+/// are printed one group (one paper) at a time by hiding the others rather
+/// than with the settings' PageRanges: a second Print whose range starts at
+/// page 4 or later never spools (WebView2, Microsoft Print to PDF and
+/// CubePDF alike).
+fn show_group(core: &ICoreWebView2, job: &crate::ui::PrinterJob, k: usize) {
+    let (from, to) = job.groups.get(k).map(|g| (g.from, g.to)).unwrap_or((1, 0));
+    let m = serde_json::json!({ "type": "pages", "group": k, "from": from, "to": to });
+    unsafe {
+        let _ = core.PostWebMessageAsString(&hstr(&format!("{HOST_PREFIX}{m}")));
+    }
+}
+
+/// Prints the pages the page shows (group k of job, see show_group) with
 /// ICoreWebView2_16::Print (no dialog), then calls done. The document's
 /// pages are the whole paper (PrintOptions::printer_layout), so the
 /// settings' margins are 0 and the paper is the group's.
-fn print_groups(core: ICoreWebView2, env: ICoreWebView2Environment, job: Arc<crate::ui::PrinterJob>, k: usize, done: Box<dyn FnOnce(Result<()>)>) {
+fn print_group(core: &ICoreWebView2, env: &ICoreWebView2Environment, job: &Arc<crate::ui::PrinterJob>, k: usize, done: Box<dyn FnOnce(Result<()>)>) {
     let Some(g) = job.groups.get(k).cloned() else { return done(Ok(())) };
-    let (wv, ps) = match print_settings(&core, &env, &job, &g) {
+    let (wv, ps) = match print_settings(core, env, job, &g) {
         Ok(x) => x,
         Err(e) => return done(Err(e)),
     };
@@ -462,7 +487,7 @@ fn print_groups(core: ICoreWebView2, env: ICoreWebView2Environment, job: Arc<cra
         if let Err(e) = hr {
             done(Err(err!("print.failed", e.message())));
         } else if status == COREWEBVIEW2_PRINT_STATUS_SUCCEEDED {
-            print_groups(core.clone(), env.clone(), job2.clone(), k + 1, done);
+            done(Ok(()));
         } else if status == COREWEBVIEW2_PRINT_STATUS_PRINTER_UNAVAILABLE {
             done(Err(err!("print.printerUnavailable", if job2.printer.is_empty() { "-" } else { &job2.printer })));
         } else {
@@ -478,7 +503,7 @@ fn print_groups(core: ICoreWebView2, env: ICoreWebView2Environment, job: Arc<cra
     }
 }
 
-/// The settings of print_groups for group g.
+/// The settings of print_group for group g.
 fn print_settings(core: &ICoreWebView2, env: &ICoreWebView2Environment, job: &crate::ui::PrinterJob, g: &crate::ui::PaperGroup) -> Result<(ICoreWebView2_16, ICoreWebView2PrintSettings)> {
     let wv: ICoreWebView2_16 = core.cast().map_err(|_| err!("print.oldRuntime"))?;
     let env6: ICoreWebView2Environment6 = env.cast().map_err(|_| err!("print.oldRuntime"))?;
@@ -499,7 +524,6 @@ fn print_settings(core: &ICoreWebView2, env: &ICoreWebView2Environment, job: &cr
         ps.SetScaleFactor(1.0).map_err(webview_err)?;
         ps.SetShouldPrintBackgrounds(true).map_err(webview_err)?;
         ps.SetShouldPrintHeaderAndFooter(false).map_err(webview_err)?;
-        ps2.SetPageRanges(&hstr(&format!("{}-{}", g.from, g.to))).map_err(webview_err)?;
         if !job.printer.is_empty() {
             ps2.SetPrinterName(&hstr(&job.printer)).map_err(webview_err)?;
         }
