@@ -297,8 +297,15 @@ Excel の印刷プレビューのように、ページを出して設定を変�
 ## 7. umya-spreadsheet のフォーク
 
 `Cargo.toml` の `[patch.crates-io]` で、本家（MathNya/umya-spreadsheet）の代わりにフォーク
-`cool0707/umya-spreadsheet` の `xljs` ブランチを使う。ブランチは本家の 3.1.1 のタグから切ってある（フォークの master は本家の
-4.0 系）。直したもの:
+`cool0707/umya-spreadsheet` の `excel-compat` ブランチを使う。ブランチは本家の 3.1.1 のタグから切ってある（フォークの master は本家の
+4.0 系）。
+
+フォークを直すときも `Cargo.toml` は書き換えない。フォークに xljs と同じ名前のブランチを push すれば、CI の `tools/umya-branch.sh` が
+`.cargo/config.toml` に `[patch.crates-io]` を足してそのブランチで組み立てる（設定ファイルの `[patch]` は `Cargo.toml` のものより優先される）。
+同じ名前のブランチがなければ `Cargo.lock` が固定したコミットのままで、それが `excel-compat` の先頭より古ければ警告を出す。
+フォークのブランチを `excel-compat` に取り込んだら、xljs 側で `cargo update -p umya-spreadsheet` して `Cargo.lock` を進める。
+
+直したもの:
 
 - **縮小して全体を表示（`shrinkToFit`）**: 本家の `Alignment` にこの属性がなく、読み込みでも保存でも落ちていた。
   `shrink_to_fit` / `set_shrink_to_fit` を足して styles.xml と読み書きする。xljs では `style({ alignment: { shrink: true } })` で設定し、
@@ -362,5 +369,5 @@ Excel の印刷プレビューのように、ページを出して設定を変�
   行・列の挿入と削除でコメントの位置が動かなかった。`Workbook::persons`、`ThreadedComment` の `person_id`・`parent_id`・`done`・`mentions`、`Comment::uid`。
   `tests/threaded_comments.rs`。スクリプトの `cell.comment` などは `src/api/xlsx_comment.rs`（代わりのメモを書き換えのたびに作り直す）。
 
-本家の版を上げるときは、`xljs` ブランチを新しいタグへ載せ替える（本家に取り込まれた修正は落とす）。どちらも取り込まれたら
+本家の版を上げるときは、`excel-compat` ブランチを新しいタグへ載せ替える（本家に取り込まれた修正は落とす）。どちらも取り込まれたら
 `[patch.crates-io]` を消して本家に戻す。

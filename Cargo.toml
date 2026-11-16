@@ -132,6 +132,8 @@ panic = "unwind"
 # umya-spreadsheet with fixes xljs needs (alignment shrinkToFit, inline rich
 # text, array formulas, pictures placed in cells, charts, what Excel needs to
 # open a saved workbook): a branch of the fork based on the 3.1.1 release
-# (docs/design/pdf-design.md chapter 7).
+# (docs/design/pdf-design.md chapter 7). Leave this pointing at excel-compat:
+# CI builds against the fork's branch of the same name as this branch when
+# there is one (tools/umya-branch.sh).
 [patch.crates-io]
 umya-spreadsheet = { git = "https://github.com/cool0707/umya-spreadsheet", branch = "excel-compat" }
