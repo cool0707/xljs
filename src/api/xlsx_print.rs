@@ -1206,15 +1206,7 @@ body{background:#e6e6e6;padding:12px 0}
 
 /// Lays out the sheets of a workbook (see PrintOut).
 pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
-    let names: Vec<String> = if o.sheets.is_empty() {
-        b.wb.sheet_collection()
-            .iter()
-            .map(|s| s.name().to_string())
-            .filter(|name| !b.print.get(name).is_some_and(|p| p.hidden))
-            .collect()
-    } else {
-        o.sheets.clone()
-    };
+    let names = print_names(b, o);
     let now = {
         let t = chrono::Local::now();
         (t.format("%Y/%m/%d").to_string(), t.format("%H:%M").to_string())
@@ -1310,6 +1302,90 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
         classes.css
     );
     Ok(PrintOut { html, charts, pages, sheets })
+}
+
+/// The sheets that o prints: o.sheets, or every visible sheet.
+fn print_names(b: &Book, o: &PrintOptions) -> Vec<String> {
+    if o.sheets.is_empty() {
+        b.wb.sheet_collection()
+            .iter()
+            .map(|s| s.name().to_string())
+            .filter(|name| !b.print.get(name).is_some_and(|p| p.hidden))
+            .collect()
+    } else {
+        o.sheets.clone()
+    }
+}
+
+/// The page setup a sheet prints with, the options applied (the starting
+/// values of the print preview's settings).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetSetup {
+    pub sheet: String,
+    /// The paper's name as PrintOptions::paper takes it; None for a paper
+    /// without one ("A4" when the sheet says nothing).
+    pub paper: Option<String>,
+    pub landscape: bool,
+    /// The scale in percent; None when the sheet is fitted to pages.
+    pub scale: Option<f64>,
+    /// "Fit to" pages wide / tall (0 = automatic); None with a scale.
+    pub fit_to_width: Option<u32>,
+    pub fit_to_height: Option<u32>,
+    /// Top, right, bottom, left in millimeters.
+    pub margin: [f64; 4],
+    pub grid_lines: bool,
+    pub black_and_white: bool,
+    pub center_horizontally: bool,
+}
+
+/// The name of a paperSize code (paper_code's inverse).
+pub fn paper_name(code: u32) -> Option<&'static str> {
+    Some(match code {
+        0 | 9 => "A4",
+        1 => "Letter",
+        3 => "Tabloid",
+        4 => "Ledger",
+        5 => "Legal",
+        6 => "Statement",
+        7 => "Executive",
+        8 => "A3",
+        11 => "A5",
+        12 => "B4",
+        13 => "B5",
+        14 => "Folio",
+        43 => "Postcard",
+        66 => "A2",
+        70 => "A6",
+        _ => return None,
+    })
+}
+
+/// The page setup of each sheet that o prints (see SheetSetup).
+pub fn print_setup(b: &Book, o: &PrintOptions) -> Result<Vec<SheetSetup>> {
+    let mut out = Vec::new();
+    for name in print_names(b, o) {
+        let sh = Sheet::new(b, &name)?;
+        let s = setup_of(&sh, b.print.get(&name), o)?;
+        let paper = match &o.paper {
+            Some(p) => paper_code(p).and_then(paper_name),
+            None => paper_name(sh.ws.page_setup().paper_size()),
+        };
+        let mm = |v: f64| (v / PT_MM * 10.0).round() / 10.0;
+        out.push(SheetSetup {
+            sheet: name.clone(),
+            paper: paper.map(str::to_string),
+            landscape: s.paper.0 > s.paper.1,
+            scale: s.scale.map(|v| (v * 100.0).round()),
+            fit_to_width: s.fit.map(|f| f.0),
+            fit_to_height: s.fit.map(|f| f.1),
+            margin: s.margins.map(mm),
+            grid_lines: s.grid,
+            black_and_white: o.black_and_white.unwrap_or(sh.mono),
+            center_horizontally: s.center_h,
+        });
+    }
+    Ok(out)
 }
 
 /// The rule that tightens the text (PrintOptions::condense). The em of
@@ -2321,6 +2397,12 @@ pub(super) fn install(n: &super::N) {
             workbook_html(b, &o).map_err(|e| a.throw(&e))
         })?;
         a.ret(serde_json::json!({ "html": out.html, "charts": out.charts, "pages": out.pages }).to_string())
+    });
+    // xlsxPrintSetup(book, optionsJSON) -> JSON [SheetSetup]
+    n.set("xlsxPrintSetup", |h, a| {
+        let o: PrintOptions = serde_json::from_str(&a.str(1)).map_err(|e| a.throw(&crate::Error::from(e)))?;
+        let out = super::xlsx::with_book(h, a, |b| print_setup(b, &o).map_err(|e| a.throw(&e)))?;
+        a.ret(serde_json::to_string(&out).map_err(|e| a.throw(&crate::Error::from(e)))?)
     });
     // xlsxPrintPages(book, optionsJSON) -> JSON [{ sheet, pages, across, down, scale, areas: [{ range, across, down, pages }] }]
     n.set("xlsxPrintPages", |h, a| {

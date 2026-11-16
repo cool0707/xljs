@@ -1,4 +1,4 @@
-# PDF 出力（book.toPdf / sheet.toPdf / xljs.htmlToPdf）
+# PDF 出力（book.toPdf / sheet.toPdf / xljs.htmlToPdf / printPreview）
 
 Excel がなくても、ブックを「Excel で印刷したときのページ」で PDF にする機能の設計と実装のメモ。
 シートのレイアウト（ページ分割まで）は Rust で HTML にし、WebView2 に描かせて PDF にする。
@@ -201,6 +201,30 @@ Excel の「セルに配置」の画像はリッチ値で、セルの値とし�
 5. `Page.printToPDF`（`printBackground`、`preferCSSPageSize`、余白 0 = `@page` の余白を使う）→ base64 を復号してファイルに書き、`done`、ウィンドウを閉じる。
    ページが `error` を送ったときと、途中でウィンドウが閉じたときは失敗。
 6. スクリプト側は `poster.add_pending()` で待っているので、終わるまでプロセスは終了しない。スレッドの転送（`Threaded`）は待たずに UI スレッドへ投げる。
+
+## 3.1 印刷プレビュー（`printPreview`・`toPdf` の `preview`、`web/print-preview.html` / `print-preview.js`）
+
+Excel の印刷プレビューのように、ページを出して設定を変えてもらう。確定したら変えた設定を重ねた `PrintOptions` を返す（キャンセルは `null`）。
+`toPdf(dest, { preview })` はそれを通してから PDF にする（キャンセルなら PDF を作らずに `null`）。
+
+- **出す設定**（`preview.settings`。prelude の `PREVIEW_SETTINGS`）: `sheets` `paper` `landscape` `scaling` `margin` `blackAndWhite` `gridLines`
+  `centerHorizontally` `charts` `skipBlankPages` `condense`。既定は `PREVIEW_DEFAULT`（シート・用紙・向き・拡大縮小・余白・白黒）。`sheets` はブックで印刷できるシートが 2 つ以上のときだけ。
+- **初めの値**: native の `xlsxPrintSetup(book, options)`（`xlsx_print::print_setup`）が、印刷するシートごとに `options` を当てたページ設定
+  （用紙の名前（`paper_name`。名前のない用紙は null）・向き・倍率か「次のページ数」・余白 mm・枠線・白黒・左右中央）を返す。
+  シートによって違う設定（用紙・向き・拡大縮小・余白）は「シートごとの設定」（値 `""`）から始める（向きはそのときだけセグメントではなく選択）。
+- **値**（wire）: 項目の名前と値は `PREVIEW_KEYS`（`scaling` は `"none"` `"page"` `"columns"` `"rows"` `"scale"` `"fit"`＋`scale` `fitWidth` `fitHeight`、
+  `margin` は `"normal"` `"wide"` `"narrow"` `"custom"`＋`marginTop` など。Excel の標準・広い・狭いの mm は `PREVIEW_MARGINS`）。
+  `previewOptions` は初めの値から変わった設定だけを `options` に重ねる（変えなかった設定はシートごとの設定のまま印刷される）。
+- **ネイティブ UI**: 組み込みページ `print-preview.html`（左に設定、右にページ）。設定が変わるたび（数値は入力が止まって 400ms 後）に
+  `{ type: "options", seq, values }` → prelude が `xlsxPrintHtml` とグラフ（`printCharts`）で `{ type: "layout", seq, html, charts, texts, pages }`、
+  誤り（`pdf.empty`・不正な数値・シートなし）は `layoutError`。ページは `print.html?frame` の iframe（`bridge.js` の枠のモードで
+  `postMessage` の `init` / `rendered`）に描かせ、描き終わってから前の iframe と入れ替える（古い `seq` の結果は捨てる）。
+  iframe は文書の大きさ（いちばん広いページ）にして、親が `transform: scale()` で縮める（中のグラフは用紙の大きさのまま描かれる）。
+  表示倍率は「ページ全体」（既定）・「ページ幅」・%。ページの移動は前後のボタン・PageUp/PageDown・←→。Esc でキャンセル。
+- **コンソール・mock**: ページは出さず、同じ項目を `ui.form`（`showForm`）で尋ねる（`showIf` を `hidden` に）。mock の応答は `"form"` の列。
+  テストの記録（`native.recording`）では、ネイティブの画面でも変えた値だけを `form` の応答として記録する（再生はフォームの経路）。
+- テスト: `testdata/scripts/printpreview.test.js`（`print.xlsx`。変えた設定だけが入ること、キャンセル、シートの選択、余白・倍率・空のページなど、`toPdf` の `preview`）。
+  画面は Playwright で `print-preview.html` に偽の `chrome.webview` を付けて `init` / `layout` を送って確かめた。
 
 ## 4. できないこと・違い
 

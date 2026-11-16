@@ -2296,9 +2296,17 @@ declare global {
     /**
      * Excel で印刷したときのように PDF に書き出す（WebView2 が必要。Windows のネイティブ UI のみ）。
      * 用紙・向き・余白・拡大縮小・印刷範囲・印刷タイトル・改ページ・ヘッダー/フッターはシートのページ設定に従い、options で上書きできる。
-     * 画像・図形・テキストボックス・線（Excel の既定の形すべてとフリーフォーム）とグラフ（sheet.charts で描けるもの）も描く。書き出したファイルの絶対パスを返す
+     * 画像・図形・テキストボックス・線（Excel の既定の形すべてとフリーフォーム）とグラフ（sheet.charts で描けるもの）も描く。書き出したファイルの絶対パスを返す。
+     * options.preview を付けると、書き出す前に印刷プレビュー（printPreview）を出し、キャンセルされたら何も書かずに null を返す
      */
+    toPdf(dest: PathLike, options: PrintOptions & { preview: boolean | PrintPreviewOptions }): Promise<string | null>;
     toPdf(dest: PathLike, options?: PrintOptions): Promise<string>;
+    /**
+     * Excel の印刷プレビューのように、options で印刷したときのページを画面に出し、設定（用紙・向き・拡大縮小・余白・白黒など）を変えてもらう。
+     * 出す設定は preview.settings で選ぶ。確定したら、変えた設定を options に重ねたもの（toPdf・toHtml・printPages にそのまま渡せる）を返し、キャンセルなら null。
+     * ページの表示は WebView2 が必要（Windows のネイティブ UI）。コンソール・mock ではページを出さずに、同じ設定をフォーム（ui.form）で尋ねる
+     */
+    printPreview(options?: PrintOptions, preview?: PrintPreviewOptions): Promise<PrintOptions | null>;
     /** 印刷したときのページを HTML 文書にする（グラフは空の枠。ブラウザで開くとページの区切りが見える） */
     toHtml(options?: PrintOptions): string;
     /**
@@ -2371,6 +2379,33 @@ declare global {
     title?: string;
   }
 
+  /**
+   * 印刷プレビューで変えられる設定。
+   * "sheets": 印刷するシート（ブックのみ。印刷できるシートが 2 つ以上のとき）、"paper": 用紙サイズ、"landscape": 印刷の向き、
+   * "scaling": 拡大縮小（拡大縮小なし・シートを 1 ページに・すべての列を 1 ページに・すべての行を 1 ページに・倍率・横 n × 縦 n ページ）、
+   * "margin": 余白（標準・広い・狭い・ユーザー設定）、"blackAndWhite": 白黒印刷、"gridLines": 枠線、"centerHorizontally": ページ中央（水平）、
+   * "charts": グラフを印刷、"skipBlankPages": 空のページを飛ばす、"condense": 文字の間隔を詰める
+   */
+  type PrintPreviewSetting = "sheets" | "paper" | "landscape" | "scaling" | "margin" | "blackAndWhite" | "gridLines"
+    | "centerHorizontally" | "charts" | "skipBlankPages" | "condense";
+
+  /** printPreview・toPdf の preview のオプション */
+  interface PrintPreviewOptions {
+    /**
+     * 画面に出す設定（並べた順）。既定: ["sheets", "paper", "landscape", "scaling", "margin", "blackAndWhite"]。
+     * true ですべて、false か [] で設定を出さない（ページの確認だけ）。
+     * 設定の初めの値は options を当てたシートのページ設定。利用者が変えなかった設定は options とシートの設定のまま
+     */
+    settings?: PrintPreviewSetting[] | boolean;
+    /** ウィンドウのタイトル（既定「印刷プレビュー」） */
+    title?: string;
+    /** 確定のボタンの文字（既定: toPdf では「PDF に出力」、printPreview では「OK」） */
+    ok?: string;
+    /** ウィンドウの幅・高さ（px。既定 1100 × 760） */
+    width?: number;
+    height?: number;
+  }
+
   /** xljs.htmlToPdf のオプション。HTML に @page があればそちらが優先 */
   interface HtmlPdfOptions {
     /** 用紙（CSS の size の名前: "A4" "A3" "A5" "B4" "B5" "letter" "legal"。既定 "A4"） */
@@ -2406,7 +2441,10 @@ declare global {
     toArrayBuffer(): ArrayBuffer;
     toBlob(): Blob;
     /** シート（既定: 非表示でないすべて。options.sheets で指定）を Excel で印刷したときのように 1 つの PDF に書き出す。詳しくは Worksheet.toPdf */
+    toPdf(dest: PathLike, options: PrintOptions & { preview: boolean | PrintPreviewOptions }): Promise<string | null>;
     toPdf(dest: PathLike, options?: PrintOptions): Promise<string>;
+    /** 印刷するシート（toPdf と同じ選び方）の印刷プレビューを出して設定を変えてもらう。設定 "sheets" で印刷するシートも選べる。詳しくは Worksheet.printPreview */
+    printPreview(options?: PrintOptions, preview?: PrintPreviewOptions): Promise<PrintOptions | null>;
     /** 印刷したときのページを HTML 文書にする（グラフは空の枠） */
     toHtml(options?: PrintOptions): string;
     /** 印刷するシート（toPdf と同じ選び方）ごとに、ページが横・縦にいくつに分かれるかと倍率を返す（PDF は作らない）。詳しくは Worksheet.printPages */

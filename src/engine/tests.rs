@@ -101,6 +101,12 @@ fn check_script_output(name: &str, r: &Res) -> Vec<String> {
             ],
             "mock log",
         ),
+        "printpreview.test.js" => {
+            want_in(&r.stderr, &["preview.pdf\", "], "mock log");
+            if r.stderr.contains("cancelled.pdf") {
+                fails.borrow_mut().push(format!("{name}: a cancelled preview made a PDF"));
+            }
+        }
         "fetchproxy.test.js" => want_in(
             &r.stderr,
             &[

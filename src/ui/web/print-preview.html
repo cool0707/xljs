@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>print preview</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="print-preview.css">
+</head>
+<body>
+<div id="main">
+  <aside id="side" hidden>
+    <h2 id="side-title"></h2>
+    <div id="fields"></div>
+  </aside>
+  <section id="view">
+    <header class="toolbar">
+      <button type="button" id="prev" class="small icon-btn">&#x2039;</button>
+      <span id="pageno"></span>
+      <button type="button" id="next" class="small icon-btn">&#x203a;</button>
+      <span class="spacer"></span>
+      <label for="zoom" id="zoom-label"></label>
+      <select id="zoom"></select>
+    </header>
+    <div id="pages"><div id="sheet"></div><div id="message" hidden></div></div>
+  </section>
+</div>
+<footer>
+  <span id="status" class="status"></span>
+  <button type="button" id="ok" class="primary"></button>
+  <button type="button" id="cancel"></button>
+</footer>
+<script src="bridge.js"></script>
+<script src="print-preview.js"></script>
+</body>
+</html>

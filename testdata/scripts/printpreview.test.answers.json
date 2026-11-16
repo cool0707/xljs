@@ -1,0 +1,14 @@
+{
+  "form": [
+    {},
+    {"paper": "A3"},
+    null,
+    {"scaling": "fit", "fitWidth": 2, "fitHeight": 0},
+    {"margin": "narrow", "landscape": "portrait"},
+    {"sheets": ["印刷範囲"]},
+    {"blackAndWhite": true},
+    {"margin": "custom", "marginTop": 10, "marginRight": 5, "marginBottom": 10, "marginLeft": 5, "scaling": "scale", "scale": 80, "skipBlankPages": "values", "condense": 4, "charts": false},
+    {"scaling": "page"},
+    null
+  ]
+}

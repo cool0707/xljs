@@ -4858,9 +4858,19 @@
   }
 
   async function printToPdf(book, dest, options, sheets) {
+    if (options && typeof options === "object" && options.preview !== undefined && options.preview !== null && options.preview !== false) {
+      const chosen = await printPreview(book, options, options.preview === true ? {} : options.preview, sheets, true);
+      if (!chosen) return null;
+      options = chosen;
+    }
     const layout = printLayout(book, options, sheets);
+    return printHtml(layout.html, printCharts(book, layout), dest, "toPdf()");
+  }
+
+  /** The charts of a layout for the page: [{ spec } | { error }]. */
+  function printCharts(book, layout) {
     const bySheet = new Map();
-    const charts = layout.charts.map((ref) => {
+    return layout.charts.map((ref) => {
       if (!bySheet.has(ref.sheet)) bySheet.set(ref.sheet, book.sheet(ref.sheet).charts);
       const ch = bySheet.get(ref.sheet)[ref.index];
       if (!ch) return { error: "" };
@@ -4871,7 +4881,265 @@
         return { error: T("pdf.chartUnsupported", ch.name, e.message) };
       }
     });
-    return printHtml(layout.html, charts, dest, "toPdf()");
+  }
+
+  // ---------------------------------------------------------------- print preview
+  //
+  // book.printPreview / sheet.printPreview and toPdf's preview option: the
+  // pages as they will print, with the settings the script lets the user
+  // change (as Excel's print preview). With the native UI the built-in page
+  // print-preview.html shows the pages (print.html in a frame) and sends the
+  // settings back at each change; other UIs ask the same settings as a form
+  // (ui.form) without the pages. The settings travel as "wire" values (see
+  // previewWire); only those the user changed go into the options.
+
+  const PREVIEW_SETTINGS = ["sheets", "paper", "landscape", "scaling", "margin", "blackAndWhite", "gridLines",
+    "centerHorizontally", "charts", "skipBlankPages", "condense"];
+  const PREVIEW_DEFAULT = ["sheets", "paper", "landscape", "scaling", "margin", "blackAndWhite"];
+  const PREVIEW_PAPERS = ["A3", "A4", "A5", "B4", "B5", "Letter", "Legal"];
+  /** Excel's margins (mm, top right bottom left): 標準・広い・狭い. */
+  const PREVIEW_MARGINS = { normal: [19.1, 17.8, 19.1, 17.8], wide: [25.4, 25.4, 25.4, 25.4], narrow: [19.1, 6.4, 19.1, 6.4] };
+  const MARGIN_KEYS = ["marginTop", "marginRight", "marginBottom", "marginLeft"];
+  /** The wire values of each setting. */
+  const PREVIEW_KEYS = {
+    sheets: ["sheets"], paper: ["paper"], landscape: ["landscape"], scaling: ["scaling", "scale", "fitWidth", "fitHeight"],
+    margin: ["margin", ...MARGIN_KEYS], blackAndWhite: ["blackAndWhite"], gridLines: ["gridLines"],
+    centerHorizontally: ["centerHorizontally"], charts: ["charts"], skipBlankPages: ["skipBlankPages"], condense: ["condense"],
+  };
+
+  /** The settings shown, in order (preview.settings: names, true for all, false or [] for none). */
+  function previewSettings(p) {
+    if (p.settings === undefined || p.settings === null) return PREVIEW_DEFAULT.slice();
+    if (p.settings === true) return PREVIEW_SETTINGS.slice();
+    if (p.settings === false) return [];
+    if (!Array.isArray(p.settings)) throw new TypeError(T("preview.badSettings"));
+    const out = [];
+    for (const x of p.settings) {
+      if (!PREVIEW_SETTINGS.includes(x)) throw new TypeError(T("preview.badSetting", String(x), PREVIEW_SETTINGS.join(", ")));
+      if (!out.includes(x)) out.push(x);
+    }
+    return out;
+  }
+
+  /**
+   * The settings' wire values and their fields for options (the sheets'
+   * page setup with the options applied): { wire, fields }. A select shows
+   * "as each sheet is set" ("") when the sheets printed differ.
+   */
+  function previewWire(book, base, list, sheets) {
+    const names = printOptions(book, base, sheets).sheets;
+    const setups = JSON.parse(native.xlsxPrintSetup(book._h, JSON.stringify(printOptions(book, base, sheets))));
+    const s0 = setups[0] || { paper: "A4", landscape: false, scale: 100, fitToWidth: null, fitToHeight: null,
+      margin: PREVIEW_MARGINS.normal, gridLines: false, blackAndWhite: false, centerHorizontally: false };
+    const same = (f) => setups.every((x) => JSON.stringify(f(x)) === JSON.stringify(f(s0)));
+    const perSheet = { value: "", label: T("preview.perSheet") };
+    const wire = {}, fields = [];
+    const add = (f) => fields.push(Object.assign({ label: T("preview." + f.name) }, f));
+    for (const k of list) {
+      switch (k) {
+        case "sheets": {
+          if (sheets) break; // sheet.printPreview
+          const all = JSON.parse(native.xlsxPrintPages(book._h, JSON.stringify(printOptions(book, Object.assign({}, base, { sheets: null }))))).map((x) => x.sheet);
+          if (all.length < 2) break;
+          wire.sheets = names ? names.filter((x) => all.includes(x)) : all.slice();
+          add({ name: "sheets", type: "checkboxes", options: all });
+          break;
+        }
+        case "paper": {
+          const papers = PREVIEW_PAPERS.slice();
+          if (s0.paper && !papers.includes(s0.paper)) papers.push(s0.paper);
+          const opts = papers.map((x) => ({ value: x, label: /^B\d$/.test(x) ? T("preview.jis", x) : x }));
+          if (!same((x) => x.paper) || !s0.paper) opts.unshift(perSheet);
+          wire.paper = same((x) => x.paper) && s0.paper ? s0.paper : "";
+          add({ name: "paper", type: "select", options: opts });
+          break;
+        }
+        case "landscape": {
+          const opts = [{ value: "portrait", label: T("preview.portrait") }, { value: "landscape", label: T("preview.landscapeOn") }];
+          const one = same((x) => x.landscape);
+          if (!one) opts.unshift(perSheet);
+          wire.landscape = one ? (s0.landscape ? "landscape" : "portrait") : "";
+          // Three choices do not fit side by side.
+          add({ name: "landscape", type: one ? "segmented" : "select", options: opts });
+          break;
+        }
+        case "scaling": {
+          const mode = (x) => {
+            if (x.fitToWidth === null || x.fitToWidth === undefined) return x.scale === 100 ? "none" : "scale";
+            const key = `${x.fitToWidth},${x.fitToHeight}`;
+            return key === "1,1" ? "page" : key === "1,0" ? "columns" : key === "0,1" ? "rows" : "fit";
+          };
+          const opts = [["none", T("preview.scalingNone")], ["page", T("preview.scalingPage")], ["columns", T("preview.scalingColumns")],
+            ["rows", T("preview.scalingRows")], ["scale", T("preview.scalingScale")], ["fit", T("preview.scalingFit")]].map(([value, label]) => ({ value, label }));
+          const one = same((x) => [mode(x), x.scale, x.fitToWidth, x.fitToHeight]);
+          if (!one) opts.unshift(perSheet);
+          wire.scaling = one ? mode(s0) : "";
+          wire.scale = s0.scale ?? 100;
+          wire.fitWidth = s0.fitToWidth ?? 1;
+          wire.fitHeight = s0.fitToHeight ?? 1;
+          add({ name: "scaling", type: "select", options: opts });
+          add({ name: "scale", type: "number", min: 10, max: 400, step: 1, suffix: "%", showIf: { scaling: "scale" } });
+          add({ name: "fitWidth", type: "number", min: 0, max: 999, step: 1, suffix: T("preview.pages"), showIf: { scaling: "fit" } });
+          add({ name: "fitHeight", type: "number", min: 0, max: 999, step: 1, suffix: T("preview.pages"), help: T("preview.fitHelp"), showIf: { scaling: "fit" } });
+          break;
+        }
+        case "margin": {
+          const near = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 0.15);
+          const preset = (m) => Object.keys(PREVIEW_MARGINS).find((x) => near(m, PREVIEW_MARGINS[x])) || "custom";
+          const opts = [["normal", T("preview.marginNormal")], ["wide", T("preview.marginWide")], ["narrow", T("preview.marginNarrow")],
+            ["custom", T("preview.marginCustom")]].map(([value, label]) => ({ value, label }));
+          const one = same((x) => x.margin);
+          if (!one) opts.unshift(perSheet);
+          wire.margin = one ? preset(s0.margin) : "";
+          MARGIN_KEYS.forEach((m, i) => { wire[m] = s0.margin[i]; });
+          add({ name: "margin", type: "select", options: opts });
+          for (const m of MARGIN_KEYS) add({ name: m, type: "number", min: 0, max: 100, step: 0.1, suffix: "mm", showIf: { margin: "custom" } });
+          break;
+        }
+        case "blackAndWhite": case "gridLines": case "centerHorizontally":
+          wire[k] = !!s0[k];
+          add({ name: k, type: "checkbox" });
+          break;
+        case "charts":
+          wire.charts = base.charts !== false;
+          add({ name: "charts", type: "checkbox" });
+          break;
+        case "skipBlankPages":
+          wire.skipBlankPages = base.skipBlankPages === true ? "all" : base.skipBlankPages === "values" ? "values" : "none";
+          add({ name: "skipBlankPages", type: "select", options: [["none", T("preview.skipNone")], ["all", T("preview.skipAll")], ["values", T("preview.skipValues")]].map(([value, label]) => ({ value, label })) });
+          break;
+        case "condense":
+          wire.condense = base.condense === true ? 4 : Number(base.condense) || 0;
+          add({ name: "condense", type: "number", min: 0, max: 20, step: 1, suffix: "%", help: T("preview.condenseHelp") });
+          break;
+      }
+    }
+    return { wire, fields };
+  }
+
+  /** The options of base with the settings changed from init to w. */
+  function previewOptions(base, init, w) {
+    const o = Object.assign({}, base);
+    delete o.preview;
+    const differ = (k) => JSON.stringify(w[k]) !== JSON.stringify(init[k]);
+    const changed = (s) => PREVIEW_KEYS[s].some((k) => k in init && differ(k));
+    const num = (v) => (v === "" || v === null || v === undefined ? NaN : Number(v));
+    if ("sheets" in init && changed("sheets")) {
+      o.sheets = Array.from(w.sheets || []);
+      if (!o.sheets.length) throw new TypeError(T("preview.noSheets"));
+    }
+    if (changed("paper") && w.paper) o.paper = w.paper;
+    if (changed("landscape") && w.landscape) o.landscape = w.landscape === "landscape";
+    if (changed("scaling") && w.scaling) {
+      for (const k of ["scale", "fitToWidth", "fitToHeight", "fitToPage"]) delete o[k];
+      switch (w.scaling) {
+        case "none": o.scale = 100; break;
+        case "page": o.fitToWidth = 1; o.fitToHeight = 1; break;
+        case "columns": o.fitToWidth = 1; o.fitToHeight = 0; break;
+        case "rows": o.fitToWidth = 0; o.fitToHeight = 1; break;
+        case "scale": o.scale = num(w.scale); break;
+        case "fit": o.fitToWidth = num(w.fitWidth); o.fitToHeight = num(w.fitHeight); break;
+      }
+    }
+    if (changed("margin") && w.margin) {
+      const m = w.margin === "custom" ? MARGIN_KEYS.map((k) => num(w[k])) : PREVIEW_MARGINS[w.margin];
+      if (m) o.margin = { top: m[0], right: m[1], bottom: m[2], left: m[3] };
+    }
+    for (const k of ["blackAndWhite", "gridLines", "centerHorizontally"]) if (changed(k)) o[k] = !!w[k];
+    if (changed("charts")) { if (w.charts) delete o.charts; else o.charts = false; }
+    if (changed("skipBlankPages")) {
+      if (w.skipBlankPages === "all") o.skipBlankPages = true;
+      else if (w.skipBlankPages === "values") o.skipBlankPages = "values";
+      else delete o.skipBlankPages;
+    }
+    if (changed("condense")) { const c = num(w.condense); if (c > 0) o.condense = c; else delete o.condense; }
+    return o;
+  }
+
+  /** The wire values that differ from init (a test case's answer). */
+  const previewAnswer = (init, w) => Object.fromEntries(Object.keys(init).filter((k) => JSON.stringify(w[k]) !== JSON.stringify(init[k])).map((k) => [k, w[k]]));
+
+  function previewTexts() {
+    return {
+      ok: T("preview.ok"), cancel: T("form.cancel"), pages: T("preview.pageCount"), page: T("preview.pageOf"),
+      updating: T("preview.updating"), prev: T("preview.prev"), next: T("preview.next"), zoom: T("preview.zoom"),
+      zoomPage: T("preview.zoomPage"), zoomWidth: T("preview.zoomWidth"), settings: T("preview.settingsHeading"),
+    };
+  }
+
+  /**
+   * Shows the pages that options print and lets the user change the
+   * settings; resolves to the options chosen, or null when cancelled.
+   * forPdf: the button says that a PDF is made.
+   */
+  async function printPreview(book, options, preview, sheets, forPdf) {
+    if (options !== undefined && options !== null && (typeof options !== "object" || Array.isArray(options))) throw new TypeError(T("pdf.badOptions"));
+    if (preview !== undefined && preview !== null && (typeof preview !== "object" || Array.isArray(preview))) throw new TypeError(T("preview.badPreview"));
+    const p = preview || {};
+    const base = Object.assign({}, options || {});
+    delete base.preview;
+    printOptions(book, base, sheets);
+    const list = previewSettings(p);
+    const { wire: init, fields } = previewWire(book, base, list, sheets);
+    const title = p.title === undefined || p.title === null ? T("preview.title") : String(p.title);
+    const ok = p.ok === undefined || p.ok === null ? (forPdf ? T("preview.ok") : T("form.ok")) : String(p.ok);
+    if (!native.supportsWindows) {
+      // Console and mock: the settings as a form (nothing to change: the options as given).
+      if (!fields.length) return base;
+      const values = await showForm({
+        title, submit: ok,
+        fields: fields.map((f) => {
+          const x = Object.assign({}, f, { default: init[f.name] });
+          delete x.showIf;
+          if (f.type === "number") x.label += ` (${f.suffix})`;
+          delete x.suffix;
+          if (f.showIf) x.hidden = (v) => Object.entries(f.showIf).some(([k, want]) => v[k] !== want);
+          return x;
+        }),
+      });
+      if (!values) return null;
+      return previewOptions(base, init, Object.assign({}, init, values));
+    }
+    let result = null, answered = false, current = init;
+    const page = openPage("print-preview.html", {
+      title, width: Number(p.width) || 1100, height: Number(p.height) || 760,
+    }, (m) => {
+      switch (m.type) {
+        case "ready":
+          page.send({ type: "init", texts: previewTexts(), fields, values: init, ok });
+          break;
+        case "options": {
+          current = Object.assign({}, init, m.values || {});
+          try {
+            const o = previewOptions(base, init, current);
+            const layout = printLayout(book, o, sheets);
+            page.send({ type: "layout", seq: m.seq, html: layout.html, charts: printCharts(book, layout), texts: chartTexts(), lang: native.lang, pages: layout.pages });
+          } catch (e) {
+            page.send({ type: "layoutError", seq: m.seq, message: e instanceof Error ? e.message : String(e) });
+          }
+          break;
+        }
+        case "ok":
+          try {
+            current = Object.assign({}, init, m.values || {});
+            result = previewOptions(base, init, current);
+            printOptions(book, result, sheets);
+          } catch (e) {
+            page.send({ type: "layoutError", seq: -1, message: e instanceof Error ? e.message : String(e) });
+            break;
+          }
+          answered = true;
+          if (native.recording) native.testRecord("form", JSON.stringify(previewAnswer(init, current)), "{}");
+          page.n.close();
+          break;
+        case "close":
+          page.n.close();
+          break;
+      }
+    });
+    await page.n.closed;
+    if (!answered && native.recording) native.testRecord("form", "null", "{}");
+    return answered ? result : null;
   }
 
   /** xljs.htmlToPdf: options.paper / landscape / margin (mm) become an @page rule before the document's own. */
@@ -5536,6 +5804,7 @@
     toHtml(options) { return printLayout(this._book, options, [this._name]).html; }
 
     printPages(options) { return printPages(this._book, options, [this._name])[0] ?? null; }
+    printPreview(options, preview) { return printPreview(this._book, options, preview, [this._name], false); }
     /** Writes the sheet as Excel would print it to a PDF file (WebView2); resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this._book, dest, options, [this._name]); }
     get dimension() { return native.xlsxDimension(this._book._h, this._name); }
@@ -5627,6 +5896,7 @@
     toHtml(options) { return printLayout(this, options).html; }
 
     printPages(options) { return printPages(this, options); }
+    printPreview(options, preview) { return printPreview(this, options, preview, undefined, false); }
     /** Writes the sheets (every visible one, or options.sheets) as Excel would print them to a PDF file; resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this, dest, options); }
     toArrayBuffer() { return native.xlsxToBytes(this._h); }
