@@ -2255,6 +2255,11 @@ declare global {
 
   interface Worksheet {
     readonly book: Workbook;
+    /**
+     * シートの名前。変えると、Excel で名前を変えたときと同じく、このシートを参照する数式・名前の定義・入力規則・条件付き書式・
+     * テーブルの数式・グラフ・スパークライン・ピボットテーブルの元データ・フォームコントロールも新しい名前を指すようになる
+     * （ハイパーリンクの行き先と `INDIRECT("Sheet1!A1")` のような文字列の中は変わらない）
+     */
     name: string;
     cell(address: string): Cell;
     cell(row: number, column: number): Cell;
