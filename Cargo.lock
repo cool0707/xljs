@@ -2209,7 +2209,7 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 [[package]]
 name = "umya-spreadsheet"
 version = "3.1.1"
-source = "git+https://github.com/cool0707/umya-spreadsheet?branch=ccr-42cb13f1-xt6ncu#1621ece89cdf0df57bc9698786cd194589410b73"
+source = "git+https://github.com/cool0707/umya-spreadsheet?branch=excel-compat#8bebb052f9345cb55a79e47586c9974a413ec514"
 dependencies = [
  "aes",
  "base64 0.22.1",
