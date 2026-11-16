@@ -295,6 +295,10 @@ Excel の「セルに配置」の画像はリッチ値で、セルの値とし�
     （スライサー・タイムラインのスタイル）を読んだまま書き戻す。描画のスライサー・タイムラインの枠もグラフと同じく `KeptAnchor` に持つ。
   - 行・列のグループ（`outlineLevel`・`collapsed`）、ふりがな（共有文字列の `rPh`・`phoneticPr`、セルの `ph`）、`pageSetup` のモデルにない属性
     （`blackAndWhite`・`firstPageNumber` など）、差分書式の `<b val="0"/>`・`<i val="0"/>` が落ちていた。
+- **スレッド形式のコメント**: 作成者（`xl/persons/person.xml` を読まず、空の一覧と `personId` がすべて 0 の ID を書いていた）・返信のつながり（`parentId`）・
+  解決済み（`done`）・メンション（`mentions`）と、代わりのメモの `xr:uid` が落ちていた。新しいブックに書いたときは Content_Types にコメントと作成者の部品がなかった。
+  行・列の挿入と削除でコメントの位置が動かなかった。`Workbook::persons`、`ThreadedComment` の `person_id`・`parent_id`・`done`・`mentions`、`Comment::uid`。
+  `tests/threaded_comments.rs`。スクリプトの `cell.comment` などは `src/api/xlsx_comment.rs`（代わりのメモを書き換えのたびに作り直す）。
 
 本家の版を上げるときは、`xljs` ブランチを新しいタグへ載せ替える（本家に取り込まれた修正は落とす）。どちらも取り込まれたら
 `[patch.crates-io]` を消して本家に戻す。

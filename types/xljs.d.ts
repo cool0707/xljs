@@ -2153,6 +2153,28 @@ declare global {
     phonetic: string | null;
     /** ふりがなを文字列の上に表示する（Excel の「ふりがなの表示」） */
     showPhonetic: boolean;
+    /**
+     * メモ（Excel の「メモ」。以前の Excel の「コメント」）の文字列。なければ null。
+     * 代入するとメモを付ける・書き換える（作成者は xljs.userName）。null で消す。
+     * スレッド形式のコメントがあるセルには付けられない（例外）。Excel が付けたメモは先頭に「作成者:」の行がある
+     *
+     *     sheet.cell("A1").note = "4 月分から単価を変更";
+     */
+    note: string | null;
+    /**
+     * スレッド形式のコメント（Excel の「コメント」。返信を付けられるもの）。なければ null
+     *
+     *     const c = sheet.cell("B2").comment;
+     *     if (c) console.log(c.author, c.text, c.replies.map((r) => r.text));
+     */
+    readonly comment: CellComment | null;
+    /**
+     * スレッド形式のコメントを付ける。すでにコメントかメモがあるセルでは例外（返信は comment.reply()）
+     *
+     *     const c = sheet.cell("B2").addComment("金額を確認してください");
+     *     c.reply("確認しました", { author: "経理 担当" });
+     */
+    addComment(text: string, options?: CommentOptions): CellComment;
     /** 書式を適用する（既存の書式にマージ） */
     style(style: CellStyle, options?: StyleOptions): this;
     /** 現在の書式（style() に渡せる形） */
@@ -2191,6 +2213,44 @@ declare global {
     filter?: boolean;
   }
 
+  interface CommentOptions {
+    /** 作成者の表示名（既定 xljs.userName） */
+    author?: string;
+  }
+  /** スレッド形式のコメントの 1 件（最初のコメントか返信）。読むたびにブックから読み直す。削除したあとに触ると例外 */
+  interface CommentEntry {
+    /** Excel が付けた ID（"{...}"） */
+    readonly id: string;
+    readonly cell: Cell;
+    /** 作成者の表示名 */
+    readonly author: string;
+    /** 書いた日時 */
+    readonly date: Date | null;
+    /** 本文。代入で書き換える（空にはできない） */
+    text: string;
+    /** 消す。最初のコメントなら返信ごとスレッドを消す */
+    delete(): void;
+  }
+  /** スレッド形式のコメント（スレッドの最初のコメントと返信） */
+  interface CellComment extends CommentEntry {
+    /** セル（"B2"） */
+    readonly address: string;
+    /** 解決済み（Excel の「スレッドを解決する」）。代入で切り替える */
+    resolved: boolean;
+    /** 返信（古い順） */
+    readonly replies: CommentReply[];
+    /** 返信を付ける */
+    reply(text: string, options?: CommentOptions): CommentReply;
+  }
+  interface CommentReply extends CommentEntry {}
+  interface CellNote {
+    /** セル（"A1"） */
+    address: string;
+    text: string;
+    /** 作成者（ファイルに記録された名前） */
+    author: string;
+  }
+
   interface Worksheet {
     readonly book: Workbook;
     name: string;
@@ -2210,6 +2270,10 @@ declare global {
     readonly dimension: string;
     /** シート上の Excel のグラフ（開いたときのファイルにあったもの。値は読んだ時点のセルから） */
     readonly charts: ExcelChart[];
+    /** シートのスレッド形式のコメント（セルの順。行ごとに左から） */
+    readonly comments: CellComment[];
+    /** シートのメモ（セルの順）。スレッド形式のコメントの代わりに Excel が書くメモは含まない */
+    readonly notes: CellNote[];
     readonly rowCount: number;
     /** setColumnWidth("A", 20) / setColumnWidth("A:C", 12) */
     setColumnWidth(columns: string, width: number): this;

@@ -138,27 +138,28 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 | `book.save()` / `book.save(p)` | 上書き保存 / 別名保存 |
 | `book.close()` | 閉じる（メモリ解放） |
 | `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | Excel で印刷したときのように PDF に書き出す（「PDF 出力」の節） |
-| `workbooks.readVBA(p)` | マクロブック（.xlsm / .xlsb など）の VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、マクロがなければ `null`。`type` は `"standard"` `"class"` `"document"`（ThisWorkbook とシート）`"form"`。`text` は全モジュールの Markdown |
+| `workbooks.readVBA(p)` | マクロブックの VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、なければ `null`。`type` は `"standard"` `"class"` `"document"`（シートなど）`"form"`。`text` は Markdown |
 | `workbooks.columnName(3)` → `"C"`、`workbooks.cellName(2, 3)` → `"C2"` | 番地の変換 |
 
 ### シートの読み取り
 
 | API | 説明 |
 |---|---|
-| `sheet.toObjects({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行番号（既定 1）。`header: 0, columns: ["A列名", ...]` で見出しなし |
-| `sheet.toArrays({ text })` | 2 次元配列（0 始まり）。`text: true` で表示どおりの文字列 |
+| `sheet.toObjects({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行（既定 1）。`header: 0, columns: [...]` で見出しなし |
+| `sheet.toArrays({ text })` | 2 次元配列（0 始まり）。`text: true` で表示の文字列 |
 | `sheet.cell("B2")` / `sheet.cell(行, 列)` | セル（1 から） |
 | `cell.value` | 値: number / string / boolean / Date / null |
 | `cell.text` | 表示どおりの文字列 |
-| `cell.formula` | `"=SUM(A1:A3)"`。無ければ `null` |
+| `cell.formula` | `"=SUM(A1:A3)"` か `null` |
 | `cell.phonetic` | ふりがな（値の後に代入） |
+| `cell.note` / `cell.comment` | メモ / コメント（`addComment`） |
 | `sheet.getValue("B2")` / `sheet.setValue("B2", v)` | 値の読み書き |
-| `sheet.range("A1:C3").values` | 範囲の 2 次元配列（代入で書き込み） |
-| `sheet.rowCount` / `sheet.dimension` | 最終行 / 使用範囲 |
+| `sheet.range("A1:C3").values` | 範囲の 2 次元配列（代入で書く） |
+| `sheet.rowCount` / `sheet.dimension` | 最終行 / 範囲 |
 | `sheet.name` | シート名（代入で変更） |
 
 - 結合セルの値は左上のセルにだけある。
-- 数式セルの `value` は保存された計算結果。書いたら `book.calculate()` で入る（`skipped` は計算できない数式）。`cell.calc()` は数式 1 つの結果。`=FILTER(...)` はスピルする。
+- 数式セルの `value` は保存された計算結果。書いたら `book.calculate()` で入る（`skipped` は計算できないもの）。`cell.calc()` は数式 1 つの結果。`=FILTER(...)` はスピルする。
 
 ### シートへの書き込み
 

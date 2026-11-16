@@ -15,6 +15,7 @@ mod process;
 mod sqlite;
 pub(crate) mod xlsx_calc;
 mod xlsx_cellimage;
+mod xlsx_comment;
 pub(crate) mod gopath;
 pub(crate) mod js;
 pub mod remote;
@@ -374,6 +375,7 @@ pub(crate) fn install_natives<'js>(ctx: &Ctx<'js>, host: &Rc<Host>) -> rquickjs:
     sqlite::install(&n);
     xlsx::install(&n);
     xlsx_style::install(&n);
+    xlsx_comment::install(&n);
     xlsx_print::install(&n);
     pdf::install(&n);
     vba::install(&n);

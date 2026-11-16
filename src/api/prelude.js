@@ -5293,6 +5293,53 @@
     [inspectSymbol]() { return `Range ${this._sheet._name}!${this._address}`; }
   }
 
+  /** One comment of a thread (the first or a reply), read again on each access. */
+  class CommentEntry {
+    constructor(sheet, address, id) {
+      define(this, "_sheet", sheet);
+      define(this, "_address", address);
+      define(this, "_id", id);
+    }
+    _thread() {
+      const list = JSON.parse(native.xlsxComments(this._sheet._book._h, this._sheet._name, this._address));
+      const t = list.find((t) => t.id === this._id || t.replies.some((r) => r.id === this._id));
+      if (!t) throw new Error(T("xlsx.comment.deleted"));
+      return t;
+    }
+    _data() { const t = this._thread(); return t.id === this._id ? t : t.replies.find((r) => r.id === this._id); }
+    get id() { return this._id; }
+    get cell() { return this._sheet.cell(this._address); }
+    get author() { return this._data().author; }
+    get date() { const d = this._data().date; return d === null ? null : new Date(d); }
+    get text() { return this._data().text; }
+    set text(v) { native.xlsxEditComment(this._sheet._book._h, this._sheet._name, this._id, "text", String(v ?? "")); }
+    /** Removes the comment (the first of a thread takes its replies with it). */
+    delete() { native.xlsxDeleteComment(this._sheet._book._h, this._sheet._name, this._id); }
+  }
+
+  /** The reply of a thread. */
+  class CommentReply extends CommentEntry {
+    [inspectSymbol]() { return `CommentReply ${this._sheet._name}!${this._address} ${inspect(this.text)}`; }
+  }
+
+  /** A threaded comment (Excel's "comment"): its first entry and the replies. */
+  class CellComment extends CommentEntry {
+    get address() { return this._address; }
+    get resolved() { return this._thread().resolved; }
+    set resolved(v) { native.xlsxEditComment(this._sheet._book._h, this._sheet._name, this._id, "resolved", !!v); }
+    get replies() { return this._thread().replies.map((r) => new CommentReply(this._sheet, this._address, r.id)); }
+    reply(text, opts) {
+      const id = addComment(this._sheet, this._address, this._id, text, opts);
+      return new CommentReply(this._sheet, this._address, id);
+    }
+    [inspectSymbol]() { return `CellComment ${this._sheet._name}!${this._address} ${inspect(this.text)}`; }
+  }
+
+  function addComment(sheet, address, parent, text, opts) {
+    const author = opts && opts.author != null ? String(opts.author) : native.userName;
+    return native.xlsxAddComment(sheet._book._h, sheet._name, address, parent, String(text ?? ""), author, new Date().toISOString());
+  }
+
   class Cell {
     constructor(sheet, address) {
       define(this, "_sheet", sheet);
@@ -5315,6 +5362,16 @@
     /** Whether the furigana are shown above the text. */
     get showPhonetic() { return native.xlsxGetPhonetic(this._sheet._book._h, this._sheet._name, this._address, true); }
     set showPhonetic(v) { native.xlsxSetShowPhonetic(this._sheet._book._h, this._sheet._name, this._address, !!v); }
+    /** The note (Excel's old comment), or null; set: writes it, null removes it. */
+    get note() { return native.xlsxGetNote(this._sheet._book._h, this._sheet._name, this._address); }
+    set note(v) { native.xlsxSetNote(this._sheet._book._h, this._sheet._name, this._address, v == null ? null : String(v), native.userName); }
+    /** The threaded comment of the cell, or null. */
+    get comment() {
+      const t = JSON.parse(native.xlsxComments(this._sheet._book._h, this._sheet._name, this._address))[0];
+      return t ? new CellComment(this._sheet, this._address, t.id) : null;
+    }
+    /** Starts a threaded comment on the cell. opts: { author = xljs.userName } */
+    addComment(text, opts) { return new CellComment(this._sheet, this._address, addComment(this._sheet, this._address, "", text, opts)); }
     /** Evaluates the formula with excelize's calculation engine (subset of Excel functions). */
     calc() { return native.xlsxCalc(this._sheet._book._h, this._sheet._name, this._address); }
     /** Applies (merges) a style to the cell. */
@@ -5431,6 +5488,12 @@
       return this.write(rows, Object.assign({}, opts, { start: "A" + next, header }));
     }
     /** Used range, e.g. "A1:D20". */
+    /** The threaded comments of the sheet (CellComment), in the order of the cells. */
+    get comments() {
+      return JSON.parse(native.xlsxComments(this._book._h, this._name, "")).map((t) => new CellComment(this, t.address, t.id));
+    }
+    /** The notes of the sheet ({ address, text, author }), in the order of the cells. */
+    get notes() { return JSON.parse(native.xlsxNotes(this._book._h, this._name)); }
     /** Excel's charts on the sheet (ExcelChart), in the order of the sheet's drawing. */
     get charts() {
       return JSON.parse(native.xlsxCharts(this._book._h, this._name)).map((raw) => new ExcelChart(this, reviveExcel(raw)));
