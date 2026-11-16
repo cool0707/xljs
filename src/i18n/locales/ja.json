@@ -1066,6 +1066,7 @@
     "ui.windowUnavailable": "画面（HTML ウィンドウ）は Windows のネイティブ UI でのみ表示できます（--ui=native）",
     "ui.webview2Missing": "画面の表示に必要な Microsoft Edge WebView2 ランタイムがインストールされていません。\n次のページからダウンロードしてインストールしてください:\n{0}",
     "ui.webviewError": "WebView2 のエラー: {0}",
+    "ui.webview2Busy": "WebView2 を起動できませんでした。前に実行した画面がまだ閉じきっていない可能性があります。少し待ってからもう一度実行してください（{0}）",
     "window.minimize": "最小化",
     "window.maximize": "最大化",
     "window.restore": "元に戻す（縮小）",

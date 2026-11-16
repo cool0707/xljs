@@ -103,6 +103,7 @@ impl UiThread for WinThread {
             if *done.0.lock().unwrap() {
                 drain();
                 super::finish_notifications();
+                super::webview::wait_browser_exit(super::webview::BROWSER_EXIT_WAIT);
                 let _ = DISPATCH.compare_exchange(self.hwnd, 0, Ordering::SeqCst, Ordering::SeqCst);
                 unsafe {
                     let _ = DestroyWindow(HWND(self.hwnd as *mut _));

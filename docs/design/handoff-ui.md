@@ -181,6 +181,12 @@ IProgressDialog、コピー可能なエラーダイアログ）、エクスプ�
   WebResourceRequested など足りない機能があれば `pkg/edge` を直接使うか、Wails のフォーク
   （`github.com/wailsapp/go-webview2`）を検討。**最初にこの点を調査してから設計を確定する。**
 - WebView2 ランタイムは同梱しない。未インストール時は案内（i18n メッセージ＋ダウンロード URL）を出して終了。
+- 前の実行のブラウザープロセス（同じユーザーデータフォルダ）がまだ終わっていないと、環境の作成が `CO_E_SERVER_EXEC_FAILURE`（0x80080005）か
+  `ERROR_INVALID_STATE`（0x8007139F）で失敗する（Rust 版。`src/ui/native/webview.rs`）。
+  - 作成: この 2 つのときは 0.3 秒ずつメッセージを処理しながら（ウィンドウは応答する）最大 5 秒やり直し（`create_environment`）、だめなら `ui.webview2Busy`。
+    環境とコントローラーを作る間（`embed`）は、ウィンドウの上のカーソルを砂時計付きの矢印（`IDC_APPSTARTING`。`Busy`・`WM_SETCURSOR`）にする。
+  - 終了: 作った環境の `BrowserProcessExited` を見ておき（`watch_browser`。ユーザーデータフォルダごとに 1 つ）、UI スレッドが終わるとき
+    （`thread.rs` の `serve`）に最大 2 秒待つ（`wait_browser_exit`）。ふだんは 0.3 秒ほどで終わる。
 - exe の増分見込み: WebView2 組み込み <1MB、フォーム/表の HTML/CSS/JS ≈0.2MB、エディタ/デバッガ ≈1MB。
   現状 exe ≈24MB。
 

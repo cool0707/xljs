@@ -101,12 +101,13 @@ pub(super) fn create_environment(
     user_data: &str,
     options: &ICoreWebView2EnvironmentOptions,
     handler: &ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler,
-) -> Result<(), String> {
-    let Some((dll, _)) = find_installed() else { return Err("no WebView2 runtime found".into()) };
+) -> windows::core::Result<()> {
+    let fail = |m: String| windows::core::Error::new(windows::Win32::Foundation::E_FAIL, m);
+    let Some((dll, _)) = find_installed() else { return Err(fail("no WebView2 runtime found".into())) };
     unsafe {
-        let module: HMODULE = LoadLibraryW(&hstr(&dll.to_string_lossy())).map_err(|e| format!("Loading DLL failed: {e}"))?;
+        let module: HMODULE = LoadLibraryW(&hstr(&dll.to_string_lossy())).map_err(|e| fail(format!("Loading DLL failed: {e}")))?;
         let Some(f) = GetProcAddress(module, s!("CreateWebViewEnvironmentWithOptionsInternal")) else {
-            return Err("Unable to find CreateWebViewEnvironmentWithOptionsInternal".into());
+            return Err(fail("Unable to find CreateWebViewEnvironmentWithOptionsInternal".into()));
         };
         let create: CreateFn = std::mem::transmute(f);
         // Settings from the environment must not change where the runtime
@@ -117,6 +118,6 @@ pub(super) fn create_environment(
         std::env::set_var("WEBVIEW2_RELEASE_CHANNEL_PREFERENCE", "0");
         let data = hstr(user_data);
         let hr = create(1, 0, PCWSTR(data.as_ptr()), options.as_raw(), handler.as_raw());
-        hr.ok().map_err(|e| e.to_string())
+        hr.ok()
     }
 }
