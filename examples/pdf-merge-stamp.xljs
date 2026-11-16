@@ -3,7 +3,11 @@
 // Excel や Acrobat は不要。文字のフォントは使った文字だけを PDF に埋め込む。
 let files = xljs.args.map((p) => fs.file(p));
 if (files.length === 0) {
-  files = await showOpenFilePicker({ multiple: true, types: [{ description: "PDF", accept: [".pdf"] }] });
+  files = await showOpenFilePicker({
+    title: "結合する PDF を選択（複数可。サンプル: data/資料 の中の .pdf）",
+    multiple: true,
+    types: [{ description: "PDF", accept: [".pdf"] }],
+  });
 }
 if (files.length === 0) exit();
 files.sort((a, b) => a.name.localeCompare(b.name, "ja"));

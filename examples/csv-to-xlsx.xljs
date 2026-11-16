@@ -1,6 +1,7 @@
 // CSV（Shift_JIS / UTF-8 自動判定）を選んで Excel ブックに変換する。
 // 複数選んだ場合はファイルごとにシートを分ける。
 const handles = await showOpenFilePicker({
+  title: "Excel にする CSV を選択（複数可。サンプル: data/顧客一覧.csv・商品一覧.csv）",
   multiple: true,
   types: [{ description: "CSV / TSV", accept: [".csv", ".tsv", ".txt"] }],
 });

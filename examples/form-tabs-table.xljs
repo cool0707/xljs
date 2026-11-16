@@ -12,7 +12,7 @@ const values = await ui.form({
   title: "支店別集計",
   description: "フォルダ内の Excel ファイルの「明細」シートを、選んだ支店について集計します。",
   // タブの上に常に表示する項目
-  fields: [{ name: "src", label: "集計フォルダ", type: "folder", required: true }],
+  fields: [{ name: "src", label: "集計フォルダ", type: "folder", required: true, help: "サンプル: data/売上" }],
   tabs: [
     {
       label: "入力",
@@ -37,9 +37,8 @@ const values = await ui.form({
   submit: "集計",
   async onSubmit(v, ctx) {
     const codes = new Set(v.targets.map((b) => b.支店));
-    const files = v.src.walk("*.xlsx").toArray();
-    /** @type {any[]} */
-    const rows = [];
+    const files: FileSystemFileHandle[] = v.src.walk("*.xlsx").toArray();
+    const rows: any[] = [];
     for (const h of ctx.withProgress(files)) {
       try {
         const book = workbooks.open(h);

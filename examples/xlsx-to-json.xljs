@@ -1,6 +1,9 @@
 // Excel の先頭シートを JSON（と JSON Lines）に書き出す。
 // 日付はローカル時刻（例 2026-04-01T09:00:00+09:00）で出力される。
-const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }] });
+const [h] = await showOpenFilePicker({
+  title: "JSON にするブックを選択（サンプル: data/売上 の中の .xlsx）",
+  types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }],
+});
 if (!h) exit();
 
 const rows = workbooks.open(h).sheet(0).toObjects();

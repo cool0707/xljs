@@ -21,15 +21,13 @@ if (!groups.length) {
 }
 
 /** 識別名の先頭の名前（"CN=営業部,OU=..." → "営業部"） */
-const groupName = (/** @type {string} */ dn) =>
+const groupName = (dn: string) =>
   (dn.match(/^[^=]+=((?:\\.|[^,])+)/)?.[1] ?? dn).replace(/\\(.)/g, "$1");
 
 // グループごとに 1 回だけ検索し、状態の振り分けは読んだ結果で行う（条件ごとに検索し直さない）。
 // 進捗を出し、キャンセルされたらそこで終了する。
-/** @type {Map<string, { obj: ADObject, groups: string[] }>} */
-const members = new Map();
-/** @type {string[]} */
-const truncated = [];
+const members = new Map<string, { obj: ADObject; groups: string[] }>();
+const truncated: string[] = [];
 for (const dn of ui.withProgress(groups, { title: "Active Directory を検索中", label: groupName })) {
   const found = ad.search({ type: ["user", "computer"], memberOf: dn, limit: LIMIT });
   if (found.length >= LIMIT) truncated.push(groupName(dn));
@@ -45,8 +43,7 @@ const users = all.filter((m) => m.obj.type === "user");
 const computers = all.filter((m) => m.obj.type === "computer");
 const since = dayjs().subtract(INACTIVE_DAYS, "day").toDate();
 
-/** @param {{ obj: ADObject, groups: string[] }[]} list */
-const userRows = (list) =>
+const userRows = (list: { obj: ADObject; groups: string[] }[]) =>
   list.map(({ obj: u, groups }) => ({
     名前: u.displayName || u.name,
     ログオン名: u.sAMAccountName,

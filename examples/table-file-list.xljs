@@ -1,6 +1,6 @@
 // フォルダ内のファイル一覧を表で表示し、選んだファイルの行数を数える。
 // 表は列見出しのクリックで並べ替え、上の欄で絞り込み、Ctrl+C でコピーできる。
-const dir = await showDirectoryPicker({ title: "フォルダを選択" });
+const dir = await showDirectoryPicker({ title: "CSV・テキストを探すフォルダを選択（サンプル: data）" });
 if (!dir) exit();
 
 const list = dir.walk({ glob: ["*.csv", "*.txt"] }).toArray().map((h) => {

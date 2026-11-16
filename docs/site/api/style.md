@@ -32,4 +32,4 @@ sheet.cell("A1").getStyle();   // 現在の書式を取得
 - 色は `"#RRGGBB"`・`"#RGB"`・`red` などの色名で指定します。
 - 既定では既存の書式にマージします。`{ replace: true }` を渡すと書式を置き換えます。
 - 範囲の端に引いた罫線は、隣の（書式が設定済みの）セルの接する辺にも反映するので、線が食い違いません。
-- サンプル: `examples/xlsx-style-report.js`
+- サンプル: `examples/xlsx-style-report.xljs`

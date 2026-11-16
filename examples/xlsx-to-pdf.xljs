@@ -4,7 +4,11 @@
 // 設定を変えたいときは toPdf の 2 つ目の引数で（例: { paper: "A4", landscape: true, fitToWidth: 1 }）。
 let targets = xljs.args.map((p) => fs.file(p));
 if (targets.length === 0) {
-  targets = await showOpenFilePicker({ multiple: true, types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }] });
+  targets = await showOpenFilePicker({
+    title: "PDF にするブックを選択（複数可。サンプル: data/売上レポート.xlsx）",
+    multiple: true,
+    types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }],
+  });
 }
 const created = [];
 for (const h of ui.withProgress(targets, "PDF に変換中")) {

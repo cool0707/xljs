@@ -13,7 +13,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS 受注 (
   登録者 TEXT
 )`);
 
-const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }] });
+const [h] = await showOpenFilePicker({
+  title: "取り込む受注明細のブックを選択（サンプル: data/売上 の中の .xlsx）",
+  types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }],
+});
 if (h) {
   const book = workbooks.open(h);
   const rows = (book.sheets["明細"] ?? book.sheet(0)).toObjects();

@@ -1,6 +1,9 @@
 // 工程表（作業・開始・終了・進捗・前提・金額の列）をガントチャートで表示し、
 // バーのドラッグで変えた日付をブックに書き戻す。休日はスクリプトから渡す。
-const [file] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx"] }] });
+const [file] = await showOpenFilePicker({
+  title: "工程表のブックを選択（サンプル: data/工程表.xlsx）",
+  types: [{ description: "Excel", accept: [".xlsx"] }],
+});
 if (!file) exit();
 const book = workbooks.open(file);
 const sheet = book.sheets[0];
