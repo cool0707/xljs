@@ -134,4 +134,4 @@ panic = "unwind"
 # open a saved workbook): a branch of the fork based on the 3.1.1 release
 # (docs/design/pdf-design.md chapter 7).
 [patch.crates-io]
-umya-spreadsheet = { git = "https://github.com/cool0707/umya-spreadsheet", branch = "excel-compat" }
+umya-spreadsheet = { git = "https://github.com/cool0707/umya-spreadsheet", branch = "ccr-42cb13f1-xt6ncu" }

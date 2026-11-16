@@ -2523,6 +2523,7 @@ pub(super) fn install(n: &super::N) {
             // The pages show what the formulas give now, not what was saved
             // before the script wrote its values.
             super::xlsx_calc::refresh(b);
+            b.fresh_parts();
             workbook_html(b, &o).map_err(|e| a.throw(&e))
         })?;
         a.ret(serde_json::json!({ "html": out.html, "charts": out.charts, "pages": out.pages, "papers": out.papers }).to_string())
@@ -2539,6 +2540,7 @@ pub(super) fn install(n: &super::N) {
         o.layout_only = true;
         let out = super::xlsx::with_book(h, a, |b| {
             super::xlsx_calc::refresh(b);
+            b.fresh_parts();
             workbook_html(b, &o).map_err(|e| a.throw(&e))
         })?;
         a.ret(serde_json::to_string(&out.sheets).map_err(|e| a.throw(&crate::Error::from(e)))?)

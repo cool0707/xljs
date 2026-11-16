@@ -35,6 +35,8 @@ pub struct Book {
     pub font_changed: bool,
     /// The parts of the file with its charts (None for a new workbook).
     pub charts: Option<super::xlsx_chart::ChartParts>,
+    /// The workbook changed where charts are (Book::parts_changed).
+    pub parts_stale: bool,
     /// What umya-spreadsheet does not keep of the sheets' page setup, by
     /// sheet name (empty for a new workbook).
     pub print: std::collections::HashMap<String, super::xlsx_print::RawPrint>,
@@ -67,7 +69,7 @@ impl Book {
     fn new(wb: Workbook, path: String, styles_xml: Option<&[u8]>) -> Book {
         let default_font = styles_xml.and_then(first_font).unwrap_or(("Calibri".into(), 11.0));
         let date1904 = false; // see read_date1904
-        Book { wb, path, date1904, fresh: false, closed: false, default_font, font_changed: false, charts: None, print: Default::default(), table_styles: Default::default(), cell_images: Default::default(), calc: Default::default(), touched: Default::default(), shape: Default::default(), areas: Default::default() }
+        Book { wb, path, date1904, fresh: false, closed: false, default_font, font_changed: false, charts: None, parts_stale: false, print: Default::default(), table_styles: Default::default(), cell_images: Default::default(), calc: Default::default(), touched: Default::default(), shape: Default::default(), areas: Default::default() }
     }
 
     pub fn sheet(&self, name: &str) -> Result<&Worksheet> {
@@ -109,6 +111,25 @@ impl Book {
         *self.shape.get_mut() = None;
         self.areas.clear();
         self.touched.get_mut().everything();
+    }
+
+    /// The drawings and charts moved (rows and columns inserted or deleted,
+    /// sheets copied or renamed): the parts read for them (charts) are read
+    /// again from the workbook before they are next used (fresh_parts).
+    pub fn parts_changed(&mut self) {
+        if self.charts.as_ref().is_some_and(|c| !c.files.is_empty()) {
+            self.parts_stale = true;
+        }
+    }
+
+    /// Reads the parts of the charts again when they changed.
+    pub fn fresh_parts(&mut self) {
+        if !std::mem::take(&mut self.parts_stale) {
+            return;
+        }
+        if let Ok(data) = self.to_bytes() {
+            self.charts = Some(super::xlsx_chart::ChartParts::collect(&data));
+        }
     }
 
     /// The workbook as xlsx bytes.
@@ -647,7 +668,7 @@ fn upper(s: String) -> String {
 }
 
 /// Checks a new sheet name like Excel (and excelize) do.
-fn check_sheet_name(name: &str) -> Result<()> {
+pub(crate) fn check_sheet_name(name: &str) -> Result<()> {
     if name.trim().is_empty() {
         return Err(Error::msg("the sheet name can not be blank"));
     }
@@ -692,6 +713,7 @@ pub(super) fn install(n: &N) {
         let sheet = a.str(1);
         let charts = with_book(h, a, |b| {
             b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            b.fresh_parts();
             Ok(super::xlsx_chart::sheet_charts(b, &sheet))
         })?;
         a.ret(serde_json::Value::Array(charts).to_string())
@@ -755,8 +777,24 @@ pub(super) fn install(n: &N) {
             if b.fresh && from == "Sheet1" {
                 b.fresh = false;
             }
+            b.parts_changed();
             Ok(())
         })?;
+        a.undefined()
+    });
+    n.set("xlsxCopySheet", |h, a| {
+        let (sheet, name) = (a.str(1), a.arg(2));
+        let name = (!nullish(&name)).then(|| js::to_str(&name));
+        let pos = a.arg(3);
+        let pos = (!nullish(&pos)).then(|| a.int(3).max(0) as usize);
+        let out = with_book(h, a, |b| super::xlsx_edit::copy_sheet(b, &sheet, name.as_deref(), pos).map_err(|e| a.throw(&e)))?;
+        a.ret(out)
+    });
+    n.set("xlsxEditLines", |h, a| {
+        // (book, sheet, columns, at, count, insert)
+        let sheet = a.str(1);
+        let lines = super::xlsx_edit::Lines { columns: a.arg(2).as_bool() == Some(true), at: a.int(3).clamp(0, u32::MAX as i64) as u32, count: a.int(4).clamp(0, u32::MAX as i64) as u32, insert: a.arg(5).as_bool() == Some(true) };
+        with_book(h, a, |b| super::xlsx_edit::edit_lines(b, &sheet, lines).map_err(|e| a.throw(&e)))?;
         a.undefined()
     });
     n.set("xlsxHasSheet", |h, a| {

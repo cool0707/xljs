@@ -1,6 +1,6 @@
 ---
 name: xljs-reference
-description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows 用の実行環境）の詳しい API リファレンスとレシピ。xljs のスクリプトを書く・直すときに、実行環境・ファイル・Excel（読み書き・書式）・CSV・JSON・進捗表示・入力フォーム（ui.form）・表（ui.table）・日付（dayjs）の全オプションを確かめるために使う。画面の設計とアプリモード・PDF・SQLite・fetch と Active Directory・グラフはそれぞれ別のスキル。
+description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows 用の実行環境）の API リファレンスとレシピ（実行環境・ファイル・Excel・CSV・JSON・進捗表示・ui.form・ui.table・dayjs）。スクリプトを書く・直すときにオプションを確かめる。画面の設計・アプリモード・PDF・SQLite・fetch・AD・グラフは別のスキル。
 ---
 
 # xljs API リファレンス（AI チャット向け）
@@ -21,7 +21,7 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 - ES2023 の JavaScript（`async`/`await`、トップレベル `await`、`?.`、`??`、クラス、分割代入、`Object.groupBy`、`Array.prototype.toSorted` など）。TypeScript（`.ts`）もそのまま実行できる。
 - 使えないもの: `require`、npm パッケージ、`process`、`Buffer`、Node.js の `fs`/`path` モジュール、`XMLHttpRequest`・`WebSocket`、`document`/`window`（DOM）、Excel の COM/VBA。
 - `import` は同じフォルダの自作ファイル（`import { f } from "./lib.js"`）と JSON（`import master from "./master.json"`）だけ。
-- 使えるグローバル: `console`、`setTimeout`/`setInterval`、`sleep(ms)`、`exit(code)`、`structuredClone`、`TextEncoder`/`TextDecoder`（Shift_JIS 対応）、`atob`/`btoa`、`Blob`/`File`、`fetch`（HTTP 通信。「Web API（fetch）」の節）、`URL`/`URLSearchParams`、`AbortController`、`Intl`（簡易）、数値・日付の `toLocaleString()`（日本語形式）。
+- 使えるグローバル: `console`、`setTimeout`/`setInterval`、`sleep(ms)`、`exit(code)`、`structuredClone`、`TextEncoder`/`TextDecoder`（Shift_JIS 対応）、`atob`/`btoa`、`Blob`/`File`、`fetch`（HTTP 通信）、`URL`/`URLSearchParams`、`AbortController`、`Intl`（簡易）、数値・日付の `toLocaleString()`（日本語形式）。
 - ファイル系の API は同期（`await` 不要）。`await` が必要なのはダイアログ（`showOpenFilePicker` など）、`ui.form`、`ui.table`（選択するとき）、`sleep`、`fetch`、`h.getFile()` など Promise を返すものだけ（`ui.chart` はすぐ戻る。閉じるまで待つなら `.closed`）。
 - パスを受け取る引数には、文字列のパス・ハンドル・`File` のどれでも渡せる。相対パスはカレントフォルダ基準。エクスプローラーから起動した（ダブルクリック・ドロップ）ときはスクリプトのあるフォルダ（exe ならその exe のフォルダ）がカレントフォルダになる。
 - エラーが起きると、行番号付きのエラーダイアログを表示して終了する。
@@ -118,7 +118,7 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 | `shell.openExternal(url)` | ブラウザで開く |
 | `shell.writeShortcutLink(p, [op], { target, args, cwd, description, icon, iconIndex, windowState, hotkey, runAsAdmin })` | ショートカット（.lnk。URL なら .url）を作る・編集する。op は "create"（既定）/ "update"（指定した項目だけ変更）/ "replace"。書いたパスを返す |
 | `shell.readShortcutLink(p)` | ショートカットを読む（`target` がリンク先。ほかは上と同じ項目） |
-| `await shell.run(cmd, [args], { cwd, env, window, input, timeout, encoding, onStdout, onStderr, stdout, stderr })` | プログラムを実行して終わるのを待つ。`{ exitCode, ok, stdout, stderr, timedOut, pid }` を返す（0 以外でも例外にしない）。args（配列）があれば直接起動、なければ cmd.exe /c のコマンドライン。window は "default"（コンソールはウィンドウなし）/ "hidden" / "normal" / "minimized" / "maximized"。出力は既定で受け取り、CP932 も自動で読む |
+| `await shell.run(cmd, [args], { cwd, env, window, input, timeout, encoding, onStdout, onStderr, stdout, stderr })` | プログラムを実行して終わるのを待つ。`{ exitCode, ok, stdout, stderr, timedOut, pid }` を返す（0 以外でも例外にしない）。args（配列）があれば直接起動、なければ cmd.exe /c のコマンドライン。window は "default"（コンソールはウィンドウなし）/ "hidden" / "normal" など。出力は既定で受け取り、CP932 も自動で読む |
 | `shell.runSync(cmd, [args], opts)` | run の同期版 |
 | `shell.spawn(cmd, [args], opts)` | 起動して待たない。`{ pid, running, wait(), kill(), write(s), end() }`（stdin: "pipe" で write） |
 
@@ -132,13 +132,13 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 |---|---|
 | `workbooks.open(p)` | 開く |
 | `workbooks.create({ font? })` | 新しいブック。最初の `addSheet` が既定のシートを置き換える |
-| `book.sheets[0]` / `book.sheets["名前"]` / `book.sheet(名前か番号)` | シート（無ければ `undefined` / `null`）。名前の大文字小文字・前後の空白・全角半角の違いは許す |
+| `book.sheets[0]` / `book.sheets["名前"]` / `book.sheet(名前か番号)` | シート（無ければ `undefined` / `null`）。大文字小文字・空白・全角半角の違いは許す |
 | `book.sheetNames` | シート名の配列 |
-| `book.addSheet(name)` / `book.removeSheet(name)` | 追加・削除 |
+| `book.addSheet(name)` / `book.removeSheet(name)` / `book.copySheet(sheet, name?)` | 追加・削除・コピー（元の後ろに） |
 | `book.save()` / `book.save(p)` | 上書き保存 / 別名保存 |
 | `book.close()` | 閉じる（メモリ解放） |
-| `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | Excel で印刷したときのように PDF に書き出す（「PDF 出力」の節） |
-| `workbooks.readVBA(p)` | マクロブックの VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、なければ `null`。`type` は `"standard"` `"class"` `"document"`（シートなど）`"form"`。`text` は Markdown |
+| `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | PDF に書き出す（「PDF 出力」） |
+| `workbooks.readVBA(p)` | マクロブックの VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、なければ `null`。`text` は Markdown |
 | `workbooks.columnName(3)` → `"C"`、`workbooks.cellName(2, 3)` → `"C2"` | 番地の変換 |
 
 ### シートの読み取り
@@ -168,6 +168,7 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 | `sheet.write(rows, options)` | オブジェクトの配列（見出し＋データ）か 2 次元配列を書く |
 | `sheet.append(rows, options)` | 最終行の下に追記（見出しは書かない） |
 | `cell.value = v` / `cell.formula = "=..."` | 1 セル |
+| `sheet.insertRows(row, n?)` / `deleteRows` / `insertColumns(col, n?)` / `deleteColumns` | 行・列の挿入・削除（col は "C" か 3。参照は Excel と同じく動く） |
 
 `write` のオプション:
 
