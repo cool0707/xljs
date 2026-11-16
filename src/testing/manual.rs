@@ -487,7 +487,7 @@ pub fn write_markdown(case_dir: &Path) -> Result<PathBuf> {
     let path = markdown_path(case_dir);
     let md = markdown(&made, &notes);
     write(&path, &(md.clone() + "\n"))?;
-    write(&html_path(case_dir), &html(&md, &style(case_dir, &notes, &made.accent)?, None))?;
+    write(&html_path(case_dir), &html(&md, &style(case_dir, &notes, &made.accent)?, None, &today()))?;
     Ok(path)
 }
 
@@ -542,10 +542,17 @@ fn escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
-/// Markdown as a page with the CSS. inline: the folder of the relative
-/// image paths, whose pictures then go into the page (for the PDF);
-/// None keeps the paths.
-pub fn html(md: &str, css: &str, inline: Option<&Path>) -> String {
+/// Today as the date of a manual ("2026年11月16日").
+fn today() -> String {
+    use chrono::Datelike as _;
+    let d = chrono::Local::now().date_naive();
+    t!("manual.date", d.year(), d.month(), d.day())
+}
+
+/// Markdown as a page with the CSS and the date (top right; "" = none).
+/// inline: the folder of the relative image paths, whose pictures then go
+/// into the page (for the PDF); None keeps the paths.
+pub fn html(md: &str, css: &str, inline: Option<&Path>, date: &str) -> String {
     use base64::Engine as _;
     use pulldown_cmark::{CowStr, Event, Options, Parser, Tag};
     let mut title = String::new();
@@ -586,10 +593,11 @@ pub fn html(md: &str, css: &str, inline: Option<&Path>) -> String {
     let mut body = String::new();
     pulldown_cmark::html::push_html(&mut body, events);
     format!(
-        "<!doctype html>\n<html lang=\"{}\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width\">\n<meta name=\"color-scheme\" content=\"light\">\n<title>{}</title>\n<style>\n{}\n</style>\n</head>\n<body>\n<article class=\"manual\">\n{}</article>\n</body>\n</html>\n",
+        "<!doctype html>\n<html lang=\"{}\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width\">\n<meta name=\"color-scheme\" content=\"light\">\n<title>{}</title>\n<style>\n{}\n</style>\n</head>\n<body>\n<article class=\"manual\">\n{}{}</article>\n</body>\n</html>\n",
         crate::i18n::lang(),
         escape(&title),
         css.replace("</style", "<\\/style"),
+        if date.is_empty() { String::new() } else { format!("<div class=\"manual-date\">{}</div>\n", escape(date)) },
         body
     )
 }
@@ -600,7 +608,7 @@ pub fn pdf_job(case_dir: &Path) -> Result<crate::ui::PdfJob> {
     let made = load_made(case_dir).ok_or_else(|| err!("manual.notMade"))?;
     let notes = load_notes(case_dir)?;
     let md = markdown(&made, &notes);
-    let page = html(&md, &style(case_dir, &notes, &made.accent)?, Some(&folder(case_dir)));
+    let page = html(&md, &style(case_dir, &notes, &made.accent)?, Some(&folder(case_dir)), &today());
     Ok(crate::ui::PdfJob { html: page, charts: "[]".into(), texts: "{}".into(), path: pdf_path(case_dir).to_string_lossy().into_owned() })
 }
 
@@ -795,6 +803,7 @@ mod tests {
         assert!(page.contains("<title>&lt;集計&gt; &amp; 手順</title>"), "{page}");
         assert!(page.contains("<h3>1. 「集計」画面</h3>") && page.contains(r#"<img src="images/form-1.png""#), "{page}");
         assert!(page.contains("--accent: #1261d1"), "the standard look");
+        assert!(page.contains(&format!("<article class=\"manual\">\n<div class=\"manual-date\">{}</div>", today())), "{page}");
         // A look of its own and a CSS file over it.
         notes.theme = "mincho".into();
         notes.css = "style/my.css".into();

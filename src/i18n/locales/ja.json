@@ -85,6 +85,7 @@
     "manual.made": "手順書を作りました: {0}",
     "manual.badTheme": "見た目「{0}」はありません（使えるもの: {1}）",
     "manual.pdfMade": "PDF を作りました: {0}",
+    "manual.date": "{0}年{1}月{2}日",
     "manual.defaultTitle": "{0}の手順（{1}）",
     "manual.stepsHead": "手順",
     "manual.resultsHead": "できるファイル",

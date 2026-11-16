@@ -8,3 +8,4 @@ body { font: 14px/1.7 "Yu Gothic UI", "Yu Gothic", "Meiryo", sans-serif; }
 .manual code { font-family: "BIZ UDGothic", Consolas, monospace; }
 .manual blockquote { margin: 6px 0; padding-left: 10px; border-left: 2px solid #000; }
 .manual th, .manual td { border: 1px solid #000; padding: 3px 8px; }
+.manual-date { color: #000; }

@@ -23,3 +23,4 @@ body { font: 15px/1.85 "Yu Gothic UI", "Yu Gothic", "Meiryo", "Segoe UI", system
 .manual table { margin: 10px 0; font-size: 14px; }
 .manual th, .manual td { border-bottom: 1px solid var(--line); padding: 6px 12px; text-align: left; }
 .manual th { font-weight: 700; color: var(--sub); border-bottom: 2px solid var(--line); }
+.manual-date { letter-spacing: .04em; }

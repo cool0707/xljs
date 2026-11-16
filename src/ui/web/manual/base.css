@@ -10,3 +10,5 @@ body { margin: 0; background: #fff; color: #18181b; }
 .manual h1, .manual h2, .manual h3, .manual h4 { break-after: avoid; }
 .manual table { border-collapse: collapse; }
 .manual pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The date (top right): above the title, so a long title does not run into it. */
+.manual-date { text-align: right; font-size: 12px; line-height: 1.5; margin: 0 0 6px; color: #6b7280; font-variant-numeric: tabular-nums; }
