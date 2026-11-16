@@ -162,7 +162,7 @@ xljs test --manual 月次集計 --pdf 集計.js     PDF も作る
 | `.xljs/tests/<ケース>/manual/images/` | 画面の画像（`form-1.png` など） |
 | `.xljs/tests/<ケース>/manual.json` | メモ（タイトル・はじめに・おわりに・手順ごとのメモと載せない手順）と見た目（`theme`: `standard` `simple` `mincho` `none`、`css`: CSS ファイル） |
 
-CSS では、手順書の本文が `<article class="manual">` の中にあります（見出しは `h1`〜`h3`、画像は `img`）。標準の見た目のアクセントの色は `:root { --accent: #1261d1; }` のように変えられます。右上の日付（手順書を書いた日）は `.manual-date` で、`display: none` で消せます。印刷の用紙と余白は `@page` で変えられます（既定は A4、上下 16mm・左右 14mm）。
+CSS では、手順書の本文が `<article class="manual">` の中にあります（見出しは `h1`〜`h3`、画像は `img`）。標準の見た目のアクセントの色は `:root { --accent: #1261d1; }` のように変えられます。右上にはスクリプトの `@version`（あれば。[メタデータ](metadata.md)）と日付（手順書を書いた日）が出ます。`.manual-version`・`.manual-date`（まとめて `.manual-stamp`）で、`display: none` で消せます。印刷の用紙と余白は `@page` で変えられます（既定は A4、上下 16mm・左右 14mm）。
 
 ```css
 .manual h3 { color: #b45309; }

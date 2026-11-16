@@ -7,6 +7,7 @@
 //! // @html    ui/index.html  // first page, relative to the script
 //! // @assets  ui/            // folders bundled into the exe (repeatable)
 //! // @title   売上集計ツール
+//! // @version 1.2.0          // shown on the manuals (free text)
 //! // @size    960x640
 //! // @icon    ui/app.ico     // window icon (.ico or .png), bundled too
 //! // @lang    ja
@@ -52,6 +53,9 @@ pub struct Meta {
     pub title_bar: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub lang: String,
+    /// The script's version (free text, "1.2.0"): shown on its manuals.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub version: String,
 }
 
 fn is_zero(n: &i64) -> bool {
@@ -175,6 +179,7 @@ pub fn parse(name: &str, src: &[u8]) -> Result<(Meta, Vec<String>)> {
                 m.title_bar = if v == "custom" { v } else { String::new() };
             }
             "lang" => m.lang = val,
+            "version" => m.version = val,
             _ => warnings.push(t!("meta.unknownKey", at(), format!("@{}", &c[1]))),
         }
     }

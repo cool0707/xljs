@@ -487,7 +487,7 @@ pub fn write_markdown(case_dir: &Path) -> Result<PathBuf> {
     let path = markdown_path(case_dir);
     let md = markdown(&made, &notes);
     write(&path, &(md.clone() + "\n"))?;
-    write(&html_path(case_dir), &html(&md, &style(case_dir, &notes, &made.accent)?, None, &today()))?;
+    write(&html_path(case_dir), &html(&md, &style(case_dir, &notes, &made.accent)?, None, &stamp(case_dir, &made)))?;
     Ok(path)
 }
 
@@ -549,10 +549,31 @@ fn today() -> String {
     t!("manual.date", d.year(), d.month(), d.day())
 }
 
-/// Markdown as a page with the CSS and the date (top right; "" = none).
+/// What goes at the top right of a manual: the script's version (its
+/// `@version`, read now; "" = none) and today.
+#[derive(Debug, Clone, Default)]
+pub struct Stamp {
+    pub version: String,
+    pub date: String,
+}
+
+fn stamp(case_dir: &Path, made: &Made) -> Stamp {
+    let script = root_of(case_dir).join(&made.script);
+    let version = crate::meta::parse_file(&script.to_string_lossy()).map(|(m, _)| m.version).unwrap_or_default();
+    Stamp { version, date: today() }
+}
+
+/// "1.2.0", "v1.2.0" → "バージョン 1.2.0"; other text as it is ("2026 春版").
+fn version_label(v: &str) -> String {
+    let v = v.trim();
+    let bare = v.strip_prefix(['v', 'V']).filter(|r| r.starts_with(|c: char| c.is_ascii_digit())).unwrap_or(v);
+    if bare.starts_with(|c: char| c.is_ascii_digit()) { t!("manual.version", bare) } else { v.to_string() }
+}
+
+/// Markdown as a page with the CSS and the stamp (top right).
 /// inline: the folder of the relative image paths, whose pictures then go
 /// into the page (for the PDF); None keeps the paths.
-pub fn html(md: &str, css: &str, inline: Option<&Path>, date: &str) -> String {
+pub fn html(md: &str, css: &str, inline: Option<&Path>, stamp: &Stamp) -> String {
     use base64::Engine as _;
     use pulldown_cmark::{CowStr, Event, Options, Parser, Tag};
     let mut title = String::new();
@@ -597,7 +618,16 @@ pub fn html(md: &str, css: &str, inline: Option<&Path>, date: &str) -> String {
         crate::i18n::lang(),
         escape(&title),
         css.replace("</style", "<\\/style"),
-        if date.is_empty() { String::new() } else { format!("<div class=\"manual-date\">{}</div>\n", escape(date)) },
+        {
+            let mut top = String::new();
+            if !stamp.version.trim().is_empty() {
+                top.push_str(&format!("<span class=\"manual-version\">{}</span>", escape(&version_label(&stamp.version))));
+            }
+            if !stamp.date.is_empty() {
+                top.push_str(&format!("<span class=\"manual-date\">{}</span>", escape(&stamp.date)));
+            }
+            if top.is_empty() { top } else { format!("<div class=\"manual-stamp\">{top}</div>\n") }
+        },
         body
     )
 }
@@ -608,7 +638,7 @@ pub fn pdf_job(case_dir: &Path) -> Result<crate::ui::PdfJob> {
     let made = load_made(case_dir).ok_or_else(|| err!("manual.notMade"))?;
     let notes = load_notes(case_dir)?;
     let md = markdown(&made, &notes);
-    let page = html(&md, &style(case_dir, &notes, &made.accent)?, Some(&folder(case_dir)), &today());
+    let page = html(&md, &style(case_dir, &notes, &made.accent)?, Some(&folder(case_dir)), &stamp(case_dir, &made));
     Ok(crate::ui::PdfJob { html: page, charts: "[]".into(), texts: "{}".into(), path: pdf_path(case_dir).to_string_lossy().into_owned() })
 }
 
@@ -803,7 +833,7 @@ mod tests {
         assert!(page.contains("<title>&lt;集計&gt; &amp; 手順</title>"), "{page}");
         assert!(page.contains("<h3>1. 「集計」画面</h3>") && page.contains(r#"<img src="images/form-1.png""#), "{page}");
         assert!(page.contains("--accent: #1261d1"), "the standard look");
-        assert!(page.contains(&format!("<article class=\"manual\">\n<div class=\"manual-date\">{}</div>", today())), "{page}");
+        assert!(page.contains(&format!("<article class=\"manual\">\n<div class=\"manual-stamp\"><span class=\"manual-date\">{}</span></div>", today())), "{page}");
         // A look of its own and a CSS file over it.
         notes.theme = "mincho".into();
         notes.css = "style/my.css".into();
@@ -822,6 +852,20 @@ mod tests {
         assert!(job.html.contains("src=\"data:image/png;base64,UE5H\""), "{}", job.html);
         assert!(job.html.contains("@page") && !job.html.contains("Yu Mincho"));
         assert!(job.path.ends_with("月次.pdf"));
+        // The script's @version, read when the page is written.
+        write(&root.join("集計.js"), "// ==xljs==\n// @version v1.2.0\n// ==/xljs==\n").unwrap();
+        let job = pdf_job(&dir).unwrap();
+        assert!(job.html.contains(&format!("<div class=\"manual-stamp\"><span class=\"manual-version\">バージョン 1.2.0</span><span class=\"manual-date\">{}</span></div>", today())), "{}", job.html);
+    }
+
+    #[test]
+    fn version_labels() {
+        let _g = crate::testutil::lock_lang("ja");
+        assert_eq!(version_label("1.2"), "バージョン 1.2");
+        assert_eq!(version_label("V2"), "バージョン 2");
+        assert_eq!(version_label("2026 春版"), "バージョン 2026 春版");
+        assert_eq!(version_label("初版"), "初版");
+        assert_eq!(version_label("version"), "version");
     }
 
     #[test]

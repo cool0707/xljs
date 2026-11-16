@@ -85,6 +85,7 @@
     "manual.badTheme": "no look named \"{0}\" (the looks: {1})",
     "manual.pdfMade": "Made the PDF: {0}",
     "manual.date": "{1}/{2}/{0}",
+    "manual.version": "Version {0}",
     "manual.defaultTitle": "How to use {0} ({1})",
     "manual.stepsHead": "Steps",
     "manual.resultsHead": "Files written",
