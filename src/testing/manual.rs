@@ -102,6 +102,10 @@ pub struct Made {
     /// The pictures that could not be taken (messages); with no UI to take
     /// them, the reason once.
     pub failed: Vec<String>,
+    /// The accent color of the script's forms (their `accent` option, the
+    /// light one; "" = none): the accent of the look.
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub accent: String,
 }
 
 /// A step and the pictures to take of it (the "screen" events).
@@ -299,6 +303,26 @@ pub fn steps(events: &[Value]) -> (Vec<Step>, Vec<String>) {
     (found.into_iter().map(|f| f.step).collect(), results)
 }
 
+/// The accent color of the first form with one (its init message's
+/// `accent.light`), if it is a plain CSS color.
+fn accent_of(found: &[Found]) -> String {
+    found
+        .iter()
+        .flat_map(|f| &f.screens)
+        .filter(|s| text(s, "page") == "form")
+        .map(|s| text(get(get(s, "init"), "accent"), "light").to_string())
+        .find(|c| !c.is_empty())
+        .unwrap_or_default()
+}
+
+/// A color that can go into the CSS as it is (what a form's accent option
+/// allows: themeColor in prelude.js).
+fn css_color(c: &str) -> Option<&str> {
+    let c = c.trim();
+    let ok = !c.is_empty() && c.len() <= 64 && c.chars().all(|ch| ch.is_alphanumeric() || " #_(),.%/+-".contains(ch));
+    ok.then_some(c)
+}
+
 /// The picture of a "screen" event, to save at path.
 fn shot_job(screen: &Value, path: &Path) -> Option<ShotJob> {
     let path = path.to_string_lossy().into_owned();
@@ -463,7 +487,7 @@ pub fn write_markdown(case_dir: &Path) -> Result<PathBuf> {
     let path = markdown_path(case_dir);
     let md = markdown(&made, &notes);
     write(&path, &(md.clone() + "\n"))?;
-    write(&html_path(case_dir), &html(&md, &style(case_dir, &notes)?, None))?;
+    write(&html_path(case_dir), &html(&md, &style(case_dir, &notes, &made.accent)?, None))?;
     Ok(path)
 }
 
@@ -491,8 +515,9 @@ pub fn css_path(case_dir: &Path, notes: &Notes) -> Option<PathBuf> {
     Some(if p.is_absolute() { p.to_path_buf() } else { root_of(case_dir).join(p) })
 }
 
-/// The CSS of a manual: what every look has, the look, the user's file.
-pub fn style(case_dir: &Path, notes: &Notes) -> Result<String> {
+/// The CSS of a manual: what every look has, the look, the accent color of
+/// the script's forms (the variable --accent; Made::accent), the user's file.
+pub fn style(case_dir: &Path, notes: &Notes, accent: &str) -> Result<String> {
     let theme = if notes.theme.is_empty() { "standard" } else { notes.theme.as_str() };
     if !THEMES.contains(&theme) {
         return Err(err!("manual.badTheme", theme, THEMES.join(", ")));
@@ -501,6 +526,9 @@ pub fn style(case_dir: &Path, notes: &Notes) -> Result<String> {
     let mut css = built("base").to_string();
     if theme != "none" {
         css.push_str(built(theme));
+    }
+    if let Some(c) = css_color(accent) {
+        css.push_str(&format!("\n:root {{ --accent: {c}; }}\n"));
     }
     if let Some(p) = css_path(case_dir, notes) {
         let own = std::fs::read_to_string(&p).map_err(|e| Error::path("open", p.display().to_string(), e))?;
@@ -572,7 +600,7 @@ pub fn pdf_job(case_dir: &Path) -> Result<crate::ui::PdfJob> {
     let made = load_made(case_dir).ok_or_else(|| err!("manual.notMade"))?;
     let notes = load_notes(case_dir)?;
     let md = markdown(&made, &notes);
-    let page = html(&md, &style(case_dir, &notes)?, Some(&folder(case_dir)));
+    let page = html(&md, &style(case_dir, &notes, &made.accent)?, Some(&folder(case_dir)));
     Ok(crate::ui::PdfJob { html: page, charts: "[]".into(), texts: "{}".into(), path: pdf_path(case_dir).to_string_lossy().into_owned() })
 }
 
@@ -608,7 +636,7 @@ pub fn make(path: &str, name: &str, o: &RunOptions, shooter: Option<Arc<dyn Ui>>
     let dir = folder(&case.dir);
     let images = dir.join(IMAGES);
     let _ = std::fs::remove_dir_all(&images);
-    let mut made = Made { case: case.name.clone(), script: case.script.clone(), results, ..Default::default() };
+    let mut made = Made { case: case.name.clone(), script: case.script.clone(), results, accent: accent_of(&found), ..Default::default() };
     // The pictures: step id (and a number for the second and later ones).
     let mut jobs = Vec::new();
     let mut names: Vec<Vec<String>> = Vec::new();
@@ -664,7 +692,7 @@ mod tests {
             ev(json!({"type": "field", "name": "kind", "label": "区分", "kind": "select", "options": [["a", "通常"], ["b", "至急"]]})),
             ev(json!({"type": "field", "name": "mail", "label": "メールで送る", "kind": "checkbox"})),
             ev(json!({"type": "submit", "values": {"customer": "山田商店", "kind": "b", "mail": true}})),
-            ev(json!({"type": "screen", "page": "form", "init": {"type": "init"}, "mark": {"type": "mark"}, "width": 600, "height": 400})),
+            ev(json!({"type": "screen", "page": "form", "init": {"type": "init", "accent": {"light": "#c2410c", "dark": ""}}, "mark": {"type": "mark"}, "width": 600, "height": 400})),
             ev(json!({"type": "confirm", "text": "登録しますか？", "answer": true})),
             ev(json!({"type": "screen", "page": "dialog", "kind": "confirm", "title": "受注", "text": "登録しますか？", "answer": true})),
             ev(json!({"type": "openFiles", "multiple": false, "answer": ["input/a.xlsx"]})),
@@ -687,6 +715,23 @@ mod tests {
         assert_eq!(found[3].step.text, ["［下書き］を押します。"]);
         assert_eq!(found[4].step.heading, "「受注入力」画面を閉じる");
         assert_eq!(results, ["- `out.xlsx` ができます（すでにあれば書き換わります）。"]);
+        assert_eq!(accent_of(&found), "#c2410c");
+        assert_eq!(accent_of(&[]), "");
+    }
+
+    #[test]
+    fn accent_of_the_forms() {
+        let _g = crate::testutil::lock_lang("ja");
+        let dir = std::env::temp_dir();
+        let notes = Notes::default();
+        let css = style(&dir, &notes, "rgb(194, 65, 12)").unwrap();
+        assert!(css.contains("--accent: #1261d1"));
+        assert!(css.trim_end().ends_with(":root { --accent: rgb(194, 65, 12); }"));
+        // Not a plain color: the default.
+        assert!(!style(&dir, &notes, "red; } body { x: y").unwrap().contains("red;"));
+        assert!(!style(&dir, &notes, "").unwrap().contains(":root { --accent: ;"));
+        let none = Notes { theme: "none".into(), ..Default::default() };
+        assert!(!style(&dir, &none, "").unwrap().contains("--accent"));
     }
 
     #[test]
@@ -702,6 +747,7 @@ mod tests {
             ],
             results: vec!["- `out.xlsx` ができます。".into()],
             failed: vec![],
+            accent: String::new(),
         };
         let mut notes = Notes::default();
         let md = markdown(&made, &notes);
@@ -748,7 +794,7 @@ mod tests {
         let page = std::fs::read_to_string(html_path(&dir)).unwrap();
         assert!(page.contains("<title>&lt;集計&gt; &amp; 手順</title>"), "{page}");
         assert!(page.contains("<h3>1. 「集計」画面</h3>") && page.contains(r#"<img src="images/form-1.png""#), "{page}");
-        assert!(page.contains("border-bottom: 2px solid #1261d1"), "the standard look");
+        assert!(page.contains("--accent: #1261d1"), "the standard look");
         // A look of its own and a CSS file over it.
         notes.theme = "mincho".into();
         notes.css = "style/my.css".into();
@@ -759,7 +805,7 @@ mod tests {
         let page = std::fs::read_to_string(html_path(&dir)).unwrap();
         assert!(page.contains("Yu Mincho") && !page.contains("#1261d1") && page.contains("h1 { color: red; }"), "{page}");
         notes.theme = "fancy".into();
-        assert!(style(&dir, &notes).is_err());
+        assert!(style(&dir, &notes, "").is_err());
         // The PDF has the pictures in the page.
         notes.theme = "none".into();
         save_notes(&dir, &notes).unwrap();
