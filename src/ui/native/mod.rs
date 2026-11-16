@@ -284,6 +284,10 @@ impl Ui for Native {
     fn print_pdf(&self, job: PdfJob, done: PdfDone) {
         webview::print_pdf(job, done);
     }
+
+    fn capture(&self, job: ShotJob, done: ShotDone) {
+        webview::capture(job, done);
+    }
 }
 
 /// A progress indicator (IProgressDialog).

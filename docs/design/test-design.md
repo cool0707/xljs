@@ -202,6 +202,38 @@ xljs [--ui=...] test --record <ケース名> <スクリプト> [引数...]   ふ
 - **依頼文には差分（表示用の行）だけを載せる**。`case.json`・応答・期待値のファイルの場所や書き方は載せない（AI にテストを触らせない）。
   120 行を超える分は省く。最後は実行のエラーと同じ「修正した完全なファイルを出力」。
 
+## 手順書（`--manual`）
+
+テストケースの基本の応答を、利用者向けの手順書（Markdown＋画面の画像）にする（`src/testing/manual.rs`）。
+テストの比較とは別の機能で、台本・期待値は変えない。
+
+```
+xljs test --manual <ケース> [--json] <スクリプトかフォルダ>
+```
+
+1. 基本の応答を `run::run_with(.., shots = true)` で再生する。このときだけ台本に `screen` イベントが入る:
+   - フォーム: prelude の `formPrompt` が応答を当てたあと（`onChange` のあと、`onSubmit` の前）に `native.testShot`（`TestRun::screens`）で、
+     フォームのページの最初のメッセージ（`formInit`）・大きさ（`formSize`。実行のログの分は除く）・赤で囲むもの（`mark`: 変えた項目と押したボタン）を渡す。
+     変えた項目が複数のタブにあるときはタブごとに 1 枚（ボタンは最後の 1 枚）。応答が尽きて閉じたときは［キャンセル］を囲む。
+   - `alert`・`confirm`・`prompt`・エラー: `Replay::with_shots` が題名・文面・答えを `screen` として足す（通常の台本には題名を入れていないため）。
+2. 台本から手順を作る（`manual::steps`）。手順の id は種類と回数（`form-2` はフォームへの 2 回目の応答、閉じたのも 1 回）。
+   メモと「載せない」はこの id に付けるので、スクリプトを直して作り直しても、同じ順の操作ならメモが残る。
+   フォームの手順は「次のように入力して［登録］を押します。」と変えた項目の値（選択肢はラベル、チェックボックスはオン・オフ）。
+   出力ファイル（`file`・`removed`）は「できるファイル」の節。
+3. 画像を撮る（`Ui::capture`。`ShotJob`）。Windows では見えないウィンドウ（`print_pdf` と同じ）で組み込みのページを開き、
+   `ready` に `init` と `mark` を送り、ページが赤い枠を描いて `marked` と答えたら `Page.captureScreenshot`（`clip` があればその範囲）。
+   フォームは `form.html?shot`（`form.js` の `markShot`）、確認などは `shot.html?shot`（Windows のメッセージボックスに似せた絵）。
+   共通の `shot.js` がウィンドウの題名の帯と赤い枠を描く。ネイティブの UI がない環境（Linux・コンソール）では画像なし（`failed` に理由）。
+4. `manual/steps.json`（手順と画像）と `manual/<ケース>.md` を書く。Markdown は `manual::markdown(手順, メモ)`。
+   メモ（`manual.json`）は利用者が書くもので、作り直しても消さない。メモの改行は Markdown の改行（行末の 2 つの空白）にする。
+
+開発モード: ケースの［手順書］→ `manual`（作ってあればそれを、なければ `xljs test --manual --json` を別プロセスで。`refresh` で作り直し）→
+`manual`（手順・メモ・画像・Markdown）。メモは入力のたびに `manualSave`（`manual.json` を保存し Markdown を書き直して `manual` を返す）。
+画像と Markdown は `https://app.xljs/_manual/<ケース>/...`（`DevAssets`）で `.xljs/tests/<ケース>/manual/` を読む。
+プレビューは `web/markdown.js`（見出し・段落・リスト・引用・コード・表・画像・リンク・強調。要素を組み立て、HTML は使わない）。
+
+画像にしないもの: ファイル・フォルダのピッカー（OS の画面）、`ui.table`・`ctx.table`、アプリモードの画面、通知。
+
 ## 実装の段階
 
 | 段階 | 内容 | 状態 |
@@ -212,6 +244,7 @@ xljs [--ui=...] test --record <ケース名> <スクリプト> [引数...]   ふ
 | 3b | 失敗したとき、記録した `form` と今の `form` を `form.html?preview` で並べて見せる。ケースの削除・名前の変更、パターンの編集の画面 | 未着手 |
 | 4 | 境界値の候補: フォームの項目の定義（`required` `min` `max` `maxLength`・選択肢）から機械的にパターンを作る（`xljs test --suggest`、開発モードの［境界値のパターンを追加］）。パターン・ケースの削除 | 実装済み |
 | 4b | AI に増やさせる: 項目の定義だけを渡し、`variants` に足す分だけを受け取って取り込む（追加のみ）。`pattern`・日付の境界値 | 未着手 |
+| 6 | 手順書: ケースの操作から Markdown と赤い枠付きの画面の画像（`--manual`、開発モードの［手順書］、メモ、プレビュー） | 実装済み（画像はブラウザで `form.html?shot`・`shot.html?shot` を確認。Windows 実機の WebView2 での撮影はまだ） |
 | 5 | `ad.me()` の記録、`fetch` の記録と再生、セルの上書き（`"cells": { "input/売上.xlsx": { "明細!E2": "abc" } }`）、アプリモードの操作の記録 | 未着手 |
 
 ## テスト

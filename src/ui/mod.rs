@@ -209,6 +209,27 @@ pub struct PdfJob {
 /// Called once with the outcome of Ui::print_pdf, on any thread.
 pub type PdfDone = Box<dyn FnOnce(Result<()>) + Send>;
 
+/// A picture of a built-in page for a manual (Ui::capture): the page gets
+/// init and then mark, puts red boxes around what mark names and answers
+/// "marked"; the window's client area is then saved as a PNG file.
+#[derive(Clone, Default)]
+pub struct ShotJob {
+    /// The built-in page, with its query ("form.html?shot", "shot.html").
+    pub page: String,
+    /// The page's first message (JSON).
+    pub init: String,
+    /// What to put in red boxes (JSON, { type: "mark", ... }).
+    pub mark: String,
+    /// The size of the page in logical pixels.
+    pub width: i64,
+    pub height: i64,
+    /// The PNG file to write.
+    pub path: String,
+}
+
+/// Called once with the outcome of Ui::capture, on any thread.
+pub type ShotDone = Box<dyn FnOnce(Result<()>) + Send>;
+
 /// The environment variable that overrides the WebView2 user data folder
 /// (default %LOCALAPPDATA%\xljs\WebView2).
 pub const WEBVIEW2_DATA_ENV: &str = "XLJS_WEBVIEW2_DATA";
@@ -272,6 +293,12 @@ pub trait Ui: Send + Sync {
     /// before. UIs without WebView2 fail.
     fn print_pdf(&self, _job: PdfJob, done: PdfDone) {
         done(Err(crate::err!("pdf.unavailable")))
+    }
+    /// Saves a picture of a built-in page (WebView2, without showing it)
+    /// and calls done when the file is written or it failed. It may return
+    /// before. UIs without WebView2 fail.
+    fn capture(&self, _job: ShotJob, done: ShotDone) {
+        done(Err(crate::err!("manual.noShots")))
     }
     /// Asks for a user name and a password (Basic authentication of a
     /// proxy or a site); None when cancelled or when the UI cannot.

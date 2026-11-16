@@ -93,12 +93,27 @@ pub struct Replay {
     t: Transcript,
     answers: Mutex<HashMap<String, VecDeque<Value>>>,
     abort: Arc<AtomicBool>,
+    /// Making a manual: the dialogs are told with their titles as "screen"
+    /// events (see testing::manual).
+    shots: bool,
 }
 
 impl Replay {
     pub fn new(t: &Transcript, answers: &super::Answers, abort: Arc<AtomicBool>) -> Replay {
         let answers = answers.iter().map(|(k, v)| (k.clone(), v.iter().cloned().collect())).collect();
-        Replay { t: t.clone(), answers: Mutex::new(answers), abort }
+        Replay { t: t.clone(), answers: Mutex::new(answers), abort, shots: false }
+    }
+
+    /// Tells the dialogs as "screen" events too (making a manual).
+    pub fn with_shots(mut self) -> Replay {
+        self.shots = true;
+        self
+    }
+
+    fn screen(&self, kind: &str, title: &str, text: &str, answer: Value) {
+        if self.shots {
+            self.t.push(json!({ "type": "screen", "page": "dialog", "kind": kind, "title": title, "text": text, "answer": answer }));
+        }
     }
 
     fn next(&self, kind: &str) -> Next {
@@ -233,11 +248,12 @@ impl Ui for Replay {
         "mock".into()
     }
 
-    fn alert(&self, _title: &str, message: &str) {
+    fn alert(&self, title: &str, message: &str) {
         self.t.push(json!({ "type": "alert", "text": message }));
+        self.screen("alert", title, message, Value::Null);
     }
 
-    fn confirm(&self, _title: &str, message: &str) -> bool {
+    fn confirm(&self, title: &str, message: &str) -> bool {
         let v = match self.next("confirm") {
             Next::Answer(Value::Bool(b)) => b,
             Next::Answer(v) => {
@@ -251,10 +267,11 @@ impl Ui for Replay {
             }
         };
         self.t.push(json!({ "type": "confirm", "text": message, "answer": v }));
+        self.screen("confirm", title, message, v.into());
         v
     }
 
-    fn prompt(&self, _title: &str, message: &str, def: &str) -> Option<String> {
+    fn prompt(&self, title: &str, message: &str, def: &str) -> Option<String> {
         let v = match self.next("prompt") {
             Next::Answer(Value::String(s)) => Some(s),
             Next::Answer(v) => {
@@ -273,6 +290,7 @@ impl Ui for Replay {
         }
         e["answer"] = json!(v);
         self.t.push(e);
+        self.screen("prompt", title, message, json!(v));
         v
     }
 
@@ -329,8 +347,9 @@ impl Ui for Replay {
         v
     }
 
-    fn show_error(&self, _title: &str, message: &str) {
+    fn show_error(&self, title: &str, message: &str) {
         self.t.push(json!({ "type": "error", "text": message }));
+        self.screen("error", title, message, Value::Null);
     }
 
     fn notify(&self, title: &str, message: &str) {

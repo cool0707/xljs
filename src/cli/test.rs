@@ -16,6 +16,8 @@ struct Args {
     new: Option<String>,
     /// --suggest: the case to add variants to.
     suggest: Option<String>,
+    /// --manual: the case to make the manual of.
+    manual: Option<String>,
     /// --record: the name of the case; the paths after the script are its arguments.
     record: Option<String>,
     paths: Vec<String>,
@@ -56,6 +58,7 @@ fn parse(args: &[String]) -> Result<Args> {
             "new" => a.new = Some(value()?),
             "record" => a.record = Some(value()?),
             "suggest" => a.suggest = Some(value()?),
+            "manual" => a.manual = Some(value()?),
             "timeout" => {
                 let v = value()?;
                 match v.parse::<f64>() {
@@ -164,6 +167,9 @@ pub(super) fn cmd_test(con: &ConsoleState, args: &[String], ui_mode: &str, answe
             Err(e) => con.fail(None, &e),
         };
     }
+    if let Some(name) = &a.manual {
+        return manual(con, name, &a.paths[0], &o, a.json);
+    }
     let json = a.json;
     let outcomes = match testing::run_all(&a.paths[0], &o, |r| {
         if !json {
@@ -190,6 +196,26 @@ pub(super) fn cmd_test(con: &ConsoleState, args: &[String], ui_mode: &str, answe
     if outcomes.iter().all(Outcome::ok) { 0 } else { 1 }
 }
 
+/// Makes the manual of a case: the pictures of the screens with the
+/// native UI when there is one.
+fn manual(con: &ConsoleState, name: &str, path: &str, o: &RunOptions, json: bool) -> i32 {
+    let shooter = if crate::ui::native_available() { crate::ui::new_native().ok() } else { None };
+    match testing::manual::make(path, name, o, shooter) {
+        Ok((made, md)) => {
+            if json {
+                println!("{}", serde_json::json!({ "manual": md.to_string_lossy(), "made": made }));
+            } else {
+                for f in &made.failed {
+                    eprintln!("{f}");
+                }
+                println!("{}", t!("manual.made", md.display()));
+            }
+            0
+        }
+        Err(e) => con.fail(None, &e),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,6 +236,8 @@ mod tests {
         let a = parse(&args(&["--record", "月次", "a.js", "--x", "in.xlsx"])).unwrap();
         assert_eq!((a.record.as_deref(), a.paths.len()), (Some("月次"), 3));
         assert_eq!(a.paths[1], "--x");
+        let a = parse(&args(&["--manual", "月次", "--json", "a.js"])).unwrap();
+        assert_eq!((a.manual.as_deref(), a.json, a.paths.len()), (Some("月次"), true, 1));
         assert!(parse(&args(&["--timeout", "0", "a.js"])).is_err());
         assert!(parse(&args(&["--only"])).is_err());
         assert!(parse(&args(&["--nope", "a.js"])).is_err());

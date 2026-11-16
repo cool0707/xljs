@@ -3275,9 +3275,11 @@
       const r = native.uiForm(JSON.stringify(spec));
       if (r === null) {
         if (seen) native.testRecord("form", "null", "{}");
+        if (native.testShots) shotForm(o, fields, wire, options, [], { kind: "cancel" });
         return result;
       }
       const answer = JSON.parse(r);
+      const edited = Object.keys(answer.$cells || {});
       const extra = {};
       if (seen && answer.$button !== null && answer.$button !== undefined) extra.$button = answer.$button;
       if (seen && answer.$cells) extra.$cells = answer.$cells;
@@ -3324,6 +3326,10 @@
         }
       }
       if (seen) recordForm(fields, wire, seen, extra);
+      if (native.testShots) {
+        const names = fields.filter((f) => edited.includes(f.name) || (f.name in answer && JSON.stringify(answer[f.name]) !== JSON.stringify(shown[f.name]))).map((f) => f.name);
+        shotForm(o, fields, wire, options, names, shotButton(o, b));
+      }
       // A toolbar button: its onClick with the values as entered; then the form again.
       if (b && b.tool) {
         const ctx = promptContext(o, fields, wire);
@@ -3372,6 +3378,34 @@
         return result;
       }
     }
+  }
+
+  /** (making a manual) The button of the form page that is the action b (none: the submit button). */
+  function shotButton(o, b) {
+    if (!b) return o.noSubmit ? null : { kind: "submit" };
+    const top = (list, name) => list.findIndex((x) => x === b || (b.path && (b.path === name(x) || b.path.startsWith(name(x) + " \u25b8 "))));
+    if (b.tool) return { kind: "tool", index: top(o.tools, (t) => t.text) };
+    return { kind: "button", index: top(o.buttons, (x) => x.label) };
+  }
+
+  /**
+   * (making a manual, native.testShots) How the form looks as answered:
+   * the form page's first message, its size and what to put in red boxes
+   * (the fields named, the button). Fields on different tabs give a picture
+   * per tab; the button is on the last one.
+   */
+  function shotForm(o, fields, wire, options, names, button) {
+    const size = formSize(o, fields, false, options); // without the room for the log of a run
+    const init = formInit(o, fields, wire);
+    const tabOf = (n) => { const f = fields.find((x) => x.name === n); return f && f.tab >= 0 ? f.tab : -1; };
+    const tabs = [...new Set(names.map(tabOf).filter((t) => t >= 0))];
+    const groups = tabs.length
+      ? tabs.map((t, k) => ({ tab: t, fields: names.filter((n) => tabOf(n) === t || (k === 0 && tabOf(n) < 0)) }))
+      : [{ tab: -1, fields: names }];
+    groups.forEach((g, k) => {
+      const mark = { type: "mark", title: o.title, tab: g.tab, fields: g.fields, button: k === groups.length - 1 ? button : null };
+      native.testShot(JSON.stringify({ page: "form", title: o.title, width: size.width, height: size.height, init, mark }));
+    });
   }
 
   /**

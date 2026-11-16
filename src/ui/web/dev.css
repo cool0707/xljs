@@ -349,3 +349,38 @@ body.drop-over iframe { pointer-events: none; }
   #chat-bar .tool.icon { padding: 0 6px; }
   #chat-bar .split-drop { padding: 0 2px; }
 }
+
+/* The manual of a test case (dev.js manual): the steps with their notes, and the Markdown shown. */
+.manual { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.manual[hidden] { display: none; }
+.manual-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.manual-edit, .manual-preview { flex: 1; overflow: auto; padding: 4px 16px 16px; }
+.manual-edit[hidden], .manual-preview[hidden] { display: none; }
+.manual-field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+.manual-field > span { font-weight: 600; }
+.manual-field textarea, .manual-step textarea { resize: vertical; font: inherit; }
+.manual-steps { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.manual-step { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; background: var(--panel); }
+.manual-step.hidden-step { opacity: .55; }
+.manual-step .step-head { display: flex; align-items: center; gap: 8px; }
+.manual-step .step-head h4 { margin: 0; flex: 1; font-size: 14px; }
+.manual-step .step-text { margin: 6px 0; }
+.manual-step .step-text p, .manual-step .step-text ul { margin: 2px 0; }
+.manual-step .shots { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+.manual-step .shots img { max-width: 260px; max-height: 180px; border: 1px solid var(--border); border-radius: 4px; cursor: zoom-in; background: #fff; }
+.manual-step textarea { width: 100%; box-sizing: border-box; }
+.md { line-height: 1.7; }
+.md h1 { font-size: 22px; margin: 12px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.md h2 { font-size: 18px; margin: 20px 0 8px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+.md h3 { font-size: 15px; margin: 16px 0 6px; }
+.md p, .md ul, .md ol, .md blockquote, .md pre { margin: 6px 0; }
+.md img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.md code { font-family: var(--mono); font-size: .92em; background: var(--subtle); padding: 1px 4px; border-radius: 3px; }
+.md pre { background: var(--panel); border: 1px solid var(--border); padding: 8px; overflow: auto; }
+.md pre code { background: none; padding: 0; }
+.md blockquote { border-left: 3px solid var(--border); padding-left: 10px; color: var(--muted); }
+.md table { border-collapse: collapse; }
+.md th, .md td { border: 1px solid var(--border); padding: 4px 8px; }
+dialog.zoom { padding: 0; border: none; background: transparent; max-width: 95vw; max-height: 95vh; cursor: zoom-out; }
+dialog.zoom::backdrop { background: rgba(0, 0, 0, .55); }
+dialog.zoom img { display: block; max-width: 95vw; max-height: 95vh; background: #fff; }

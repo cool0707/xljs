@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 use crate::{Error, Result, err, t};
 
 mod dump;
+pub mod manual;
 mod record;
 pub mod replay;
 mod run;

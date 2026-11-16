@@ -49,6 +49,10 @@ pub const DEV_PAGE: &str = "dev.html";
 /// preview.
 const PROJECT_PREFIX: &str = "_project/";
 
+/// The path under ASSET_ORIGIN that serves the manuals of the test cases
+/// (`_manual/<case>/<file>` is `.xljs/tests/<case>/manual/<file>`).
+const MANUAL_PREFIX: &str = "_manual/";
+
 /// The AI chats offered on the start of the chat pane: (name, URL, icon).
 /// The icon is a class of the bundled Font Awesome brands (dev.css colors
 /// it per service).
@@ -242,6 +246,14 @@ impl AssetFs for DevAssets {
         {
             return std::fs::read(dir.join(rest));
         }
+        if let Some(rest) = name.strip_prefix(MANUAL_PREFIX)
+            && let Some(dir) = self.dir.lock().unwrap().clone()
+            && crate::meta::assets_valid_path(rest)
+            && !rest.split('/').any(|p| p.starts_with('.'))
+            && let Some((case, file)) = rest.split_once('/')
+        {
+            return std::fs::read(crate::testing::manual::folder(&dir.join(crate::testing::TESTS_DIR).join(case)).join(file));
+        }
         Err(std::io::Error::new(std::io::ErrorKind::NotFound, name.to_string()))
     }
     fn files(&self, _root: &str) -> std::io::Result<Vec<String>> {
@@ -266,6 +278,8 @@ struct Testing {
     stderr: String,
     /// The run approves what it gives: all the cases run again afterwards.
     approve: bool,
+    /// The run makes the manual of this case (xljs test --manual).
+    manual: String,
 }
 
 struct Running {
@@ -361,6 +375,10 @@ struct Request {
     /// A test case or one of its runs ("case", "case/variant"; testApprove,
     /// testPrompt), or the name of the case to record (testRecord).
     name: String,
+    /// The notes of a manual (manualSave).
+    manual: crate::testing::manual::Notes,
+    /// Makes the manual again (manual).
+    refresh: bool,
 }
 
 /// The state of the development window.
@@ -513,9 +531,7 @@ impl Session {
             "testRecord" => self.start_record(&r.name)?,
             "testSuggest" => {
                 // Variants that try the edges of the form's fields; then all runs again.
-                if let Some(t) = self.testing.take() {
-                    t.run.kill();
-                }
+                self.stop_testing();
                 let p = self.project()?.clone();
                 let mut args = self.o.run_args.clone();
                 args.extend(["test".to_string(), "--suggest".to_string(), r.name.clone(), p.entry.to_string_lossy().into_owned()]);
@@ -523,7 +539,7 @@ impl Session {
                 self.next_run += 1;
                 self.post(json!({"type": "testsStarted", "runs": 1, "approve": false}));
                 let run = Run::start(&self.o.exe, &args, &p.dir, &[], id, self.tx.clone(), Event::Test)?;
-                self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve: true });
+                self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve: true, manual: String::new() });
             }
             "testRemove" => {
                 let p = self.project()?.clone();
@@ -541,6 +557,26 @@ impl Session {
                 let lines: Vec<String> = o["lines"].as_array().map(|a| a.iter().filter_map(|l| l.as_str().map(str::to_string)).collect()).unwrap_or_default();
                 let text = report::test_prompt(p, &r.name, o["status"].as_str().unwrap_or(""), &lines);
                 self.post(json!({"type": "copy", "what": "test", "text": text}));
+            }
+            "manual" => {
+                // The manual of a case: as made before, or made now (pictures and all).
+                let dir = self.case_dir(&r.name)?;
+                if !r.refresh && crate::testing::manual::load_made(&dir).is_some() {
+                    self.post_manual(&r.name)?;
+                } else {
+                    self.start_manual(&r.name)?;
+                }
+            }
+            "manualSave" => {
+                let dir = self.case_dir(&r.name)?;
+                crate::testing::manual::save_notes(&dir, &r.manual)?;
+                crate::testing::manual::write_markdown(&dir)?;
+                self.post_manual(&r.name)?;
+            }
+            "manualFolder" => {
+                let dir = self.case_dir(&r.name)?;
+                let md = crate::testing::manual::markdown_path(&dir);
+                self.u.show_in_folder(&[md.to_string_lossy().into_owned()])?;
             }
             "versions" => self.post_versions(&r.file),
             "version" => {
@@ -1252,9 +1288,7 @@ impl Session {
         if let Some(r) = self.running.take() {
             r.run.kill();
         }
-        if let Some(t) = self.testing.take() {
-            t.run.kill();
-        }
+        self.stop_testing();
     }
 
     // ---- test cases (crate::testing) ----
@@ -1282,9 +1316,7 @@ impl Session {
     /// A run that is still going is given up. Without cases the page is
     /// told so and nothing runs.
     fn start_tests(&mut self, only: &str, approve: bool) -> Result<()> {
-        if let Some(t) = self.testing.take() {
-            t.run.kill();
-        }
+        self.stop_testing();
         let p = self.project()?.clone();
         let cases = self.test_cases()?;
         if cases.is_empty() {
@@ -1306,7 +1338,7 @@ impl Session {
         let runs: usize = cases.iter().map(|c| 1 + c.variants.len()).sum();
         self.post(json!({"type": "testsStarted", "runs": runs, "approve": approve}));
         let run = Run::start(&self.o.exe, &args, &p.dir, &[], id, self.tx.clone(), Event::Test)?;
-        self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve });
+        self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve, manual: String::new() });
         Ok(())
     }
 
@@ -1319,6 +1351,10 @@ impl Session {
             }
             RunEvent::Exited { id, .. } => {
                 let Some(t) = self.testing.take_if(|t| t.run.id == id) else { return };
+                if !t.manual.is_empty() {
+                    self.manual_finished(&t.manual, &t.stdout, &t.stderr);
+                    return;
+                }
                 if t.approve {
                     // Show all the cases as they are now.
                     self.auto_tests();
@@ -1355,6 +1391,76 @@ impl Session {
         report["type"] = "tests".into();
         report["outcomes"] = outcomes.into();
         self.post(report);
+    }
+
+    /// Stops the run of the cases (or of a manual: the page learns it stopped).
+    fn stop_testing(&mut self) {
+        if let Some(t) = self.testing.take() {
+            t.run.kill();
+            if !t.manual.is_empty() {
+                self.post(json!({"type": "manualFailed", "case": t.manual, "message": t!("dev.manualStopped")}));
+            }
+        }
+    }
+
+    /// The folder of the script's case named name.
+    fn case_dir(&self, name: &str) -> Result<PathBuf> {
+        let name = name.trim_end_matches('/');
+        self.test_cases()?.into_iter().find(|c| c.name == name).map(|c| c.dir).ok_or_else(|| err!("test.noSuchCase", name))
+    }
+
+    /// Makes the manual of a case in another process (xljs test --manual),
+    /// which takes the pictures of the screens.
+    fn start_manual(&mut self, name: &str) -> Result<()> {
+        self.stop_testing();
+        let p = self.project()?.clone();
+        let name = name.trim_end_matches('/').to_string();
+        let mut args = self.o.run_args.clone();
+        args.extend(["test".to_string(), "--manual".to_string(), name.clone(), "--json".to_string(), p.entry.to_string_lossy().into_owned()]);
+        let id = self.next_run;
+        self.next_run += 1;
+        self.post(json!({"type": "manualStarted", "case": name}));
+        let run = Run::start(&self.o.exe, &args, &p.dir, &[], id, self.tx.clone(), Event::Test)?;
+        self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve: false, manual: name });
+        Ok(())
+    }
+
+    /// Shows the manual xljs test --manual made, or why it could not.
+    fn manual_finished(&mut self, name: &str, stdout: &str, stderr: &str) {
+        let report = stdout.lines().rev().find_map(|l| serde_json::from_str::<Value>(l).ok().filter(|v| v.get("made").is_some()));
+        if report.is_none() {
+            let message = report::last_error(stderr);
+            self.post(json!({"type": "manualFailed", "case": name, "message": if message.is_empty() { stderr.trim().to_string() } else { message }}));
+            return;
+        }
+        if let Err(e) = self.post_manual(name) {
+            self.fail(&e);
+        }
+    }
+
+    /// Tells the page the manual of a case: its steps with their notes and
+    /// pictures, and the Markdown.
+    fn post_manual(&self, name: &str) -> Result<()> {
+        use crate::testing::manual;
+        let name = name.trim_end_matches('/');
+        let dir = self.case_dir(name)?;
+        let made = manual::load_made(&dir).ok_or_else(|| err!("manual.notMade"))?;
+        let notes = manual::load_notes(&dir)?;
+        let md = manual::markdown_path(&dir);
+        let markdown = std::fs::read_to_string(&md).unwrap_or_else(|_| manual::markdown(&made, &notes));
+        // The pictures change when the manual is made again.
+        let stamp = std::fs::metadata(manual::folder(&dir).join("steps.json")).and_then(|m| m.modified()).ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis()).unwrap_or(0);
+        let steps: Vec<Value> = made.steps.iter().map(|s| {
+            let n = notes.steps.get(&s.id).cloned().unwrap_or_default();
+            json!({"id": s.id, "heading": s.heading, "text": s.text, "images": s.images, "note": n.note, "hide": n.hide})
+        }).collect();
+        self.post(json!({
+            "type": "manual", "case": name, "title": notes.title, "intro": notes.intro, "outro": notes.outro,
+            "steps": steps, "results": made.results, "failed": made.failed, "markdown": markdown,
+            "file": md.to_string_lossy(), "stamp": stamp,
+        }));
+        Ok(())
     }
 
     /// Runs the script as usual, recording the answers as a new test case

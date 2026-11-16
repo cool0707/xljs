@@ -24,7 +24,7 @@ use windows::core::{BOOL, Interface, PWSTR, w};
 
 use super::{WINDOWS, hstr, loader};
 use crate::ui::{
-    ASSET_ORIGIN, BUILTIN_PREFIX, BuiltinAssets, PdfDone, PdfJob, TITLE_BAR_HEIGHT, Window, WindowOptions, icon_image, title_bar_script,
+    ASSET_ORIGIN, BUILTIN_PREFIX, BuiltinAssets, PdfDone, PdfJob, ShotDone, ShotJob, TITLE_BAR_HEIGHT, Window, WindowOptions, icon_image, title_bar_script,
 };
 use crate::{Error, Result, err, i18n};
 
@@ -432,6 +432,97 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
         }
     }
 }
+
+/// See Ui::capture: the built-in page in a hidden window gets the job's
+/// init and mark messages, and once it answers "marked" the page is saved
+/// as a PNG file (Page.captureScreenshot).
+pub(super) fn capture(job: ShotJob, done: ShotDone) {
+    let done = Arc::new(Mutex::new(Some(done)));
+    let finish: Arc<dyn Fn(Result<()>) -> bool + Send + Sync> = Arc::new(move |r| match done.lock().unwrap().take() {
+        Some(d) => {
+            d(r);
+            true
+        }
+        None => false,
+    });
+    let hwnd_id = Arc::new(AtomicIsize::new(0));
+    let (f1, f2, h1) = (finish.clone(), finish.clone(), hwnd_id.clone());
+    let (width, height, url) = (job.width.max(200), job.height.max(100), format!("{ASSET_ORIGIN}{BUILTIN_PREFIX}{}", job.page));
+    let job = Arc::new(job);
+    let on_message: crate::ui::OnMessage = Arc::new(move |msg: String, _| {
+        let hwnd = HWND(h1.load(Ordering::SeqCst) as *mut _);
+        let Some(core) = state(hwnd).and_then(|st| st.core.borrow().clone()) else { return };
+        let Ok(m) = serde_json::from_str::<serde_json::Value>(&msg) else { return };
+        let close = move || unsafe {
+            let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+        };
+        match m.get("type").and_then(|t| t.as_str()) {
+            Some("ready") => {
+                // The light colors whatever the system's theme, as printed.
+                devtools(&core, "Emulation.setEmulatedMedia", r#"{"features":[{"name":"prefers-color-scheme","value":"light"}]}"#, |_, _| {});
+                unsafe {
+                    let _ = core.PostWebMessageAsString(&hstr(&format!("{HOST_PREFIX}{}", job.init)));
+                    let _ = core.PostWebMessageAsString(&hstr(&format!("{HOST_PREFIX}{}", job.mark)));
+                }
+            }
+            Some("marked") => {
+                let (f, path) = (f1.clone(), job.path.clone());
+                // clip: the part of the page that is the picture (CSS pixels).
+                let mut params = serde_json::json!({ "format": "png" });
+                if let Some(c) = m.get("clip").filter(|c| c.is_object()) {
+                    let n = |k: &str| c.get(k).and_then(|v| v.as_f64()).unwrap_or(0.0);
+                    params["clip"] = serde_json::json!({ "x": n("x"), "y": n("y"), "width": n("width"), "height": n("height"), "scale": 1 });
+                }
+                devtools(&core, "Page.captureScreenshot", &params.to_string(), move |hr, json| {
+                    let r = (|| -> Result<()> {
+                        hr.map_err(webview_err)?;
+                        let v: serde_json::Value = serde_json::from_str(&json)?;
+                        let data = v.get("data").and_then(|d| d.as_str()).ok_or_else(|| webview_err(&json))?;
+                        let bytes = base64::engine::general_purpose::STANDARD.decode(data).map_err(webview_err)?;
+                        std::fs::write(&path, bytes).map_err(|e| Error::Path { op: "open".into(), path: path.clone(), source: e })?;
+                        Ok(())
+                    })();
+                    f(r);
+                    close();
+                });
+            }
+            _ => {}
+        }
+    });
+    let on_closed: crate::ui::OnClosed = Arc::new(move || {
+        f2(Err(err!("manual.shotFailed", "closed")));
+    });
+    let o = WindowOptions {
+        title: "xljs".into(),
+        width,
+        height,
+        url,
+        assets: Some(Arc::new(PrintAssets)),
+        hidden: true,
+        on_message: Some(on_message),
+        on_closed: Some(on_closed),
+        ..Default::default()
+    };
+    match open_hwnd(o) {
+        Ok(h) => {
+            hwnd_id.store(h.0 as isize, Ordering::SeqCst);
+            let id = h.0 as isize;
+            after(SHOT_TIMEOUT, move || {
+                if finish(Err(err!("manual.shotFailed", "timeout"))) {
+                    unsafe {
+                        let _ = PostMessageW(Some(HWND(id as *mut _)), WM_CLOSE, WPARAM(0), LPARAM(0));
+                    }
+                }
+            });
+        }
+        Err(e) => {
+            finish(Err(e));
+        }
+    }
+}
+
+/// How long capture waits for the page.
+const SHOT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 thread_local! {
     /// The callbacks of after(), by timer.

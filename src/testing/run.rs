@@ -105,6 +105,12 @@ fn error_text(e: &Error) -> String {
 /// transcript. limit: how long the script may run JavaScript without
 /// waiting before it is stopped.
 pub fn run(case: &Case, plan: &Plan, limit: Duration, version: &str) -> Result<Vec<Value>> {
+    run_with(case, plan, limit, version, false)
+}
+
+/// Like run; with shots the transcript also tells how each form and
+/// dialog looked when it was answered ("screen" events, for a manual).
+pub fn run_with(case: &Case, plan: &Plan, limit: Duration, version: &str, shots: bool) -> Result<Vec<Value>> {
     let work = temp("case")?;
     let config = temp("config")?;
     let mut restore = Restore { cwd: None, config: std::env::var_os("XLJS_CONFIG_DIR"), dirs: vec![work.clone(), config.clone()] };
@@ -124,7 +130,8 @@ pub fn run(case: &Case, plan: &Plan, limit: Duration, version: &str) -> Result<V
 
     let t = Transcript::default();
     let abort = Arc::new(AtomicBool::new(false));
-    let replay = Arc::new(Replay::new(&t, &plan.answers, abort.clone()));
+    let replay = Replay::new(&t, &plan.answers, abort.clone());
+    let replay = Arc::new(if shots { replay.with_shots() } else { replay });
     let (out, errs) = (Lines::new(&t, "out"), Lines::new(&t, "err"));
     let o = Options {
         script_path: work.join(&case.script).to_string_lossy().into_owned(),
@@ -139,6 +146,7 @@ pub fn run(case: &Case, plan: &Plan, limit: Duration, version: &str) -> Result<V
             user_name: if case.user_name.is_empty() { USER_NAME.into() } else { case.user_name.clone() },
             computer_name: if case.computer_name.is_empty() { COMPUTER_NAME.into() } else { case.computer_name.clone() },
             abort: abort.clone(),
+            screens: shots.then(|| t.clone()),
         }),
         ..Default::default()
     };

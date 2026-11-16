@@ -433,6 +433,7 @@ fn install_core(n: &N) {
     // while a case is recorded the prelude tells the answers to forms.
     n.val("testMode", env.test.is_some());
     n.val("recording", env.record.is_some());
+    n.val("testShots", env.test.as_ref().is_some_and(|t| t.screens.is_some()));
     match &env.test {
         Some(t) => {
             n.val("computerName", t.computer_name.clone());

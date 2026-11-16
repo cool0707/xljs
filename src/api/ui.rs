@@ -123,6 +123,18 @@ pub(super) fn install(n: &N) {
         }
         a.undefined()
     });
+    // testShot(screenJSON): how a form looked when it was answered, for a
+    // manual (TestRun::screens).
+    n.set("testShot", |h, a| {
+        if let Some(t) = h.env.test.as_ref().and_then(|t| t.screens.as_ref()) {
+            let mut v: serde_json::Value = serde_json::from_str(&a.str(0)).unwrap_or_default();
+            if let Some(m) = v.as_object_mut() {
+                m.insert("type".into(), "screen".into());
+                t.push(v);
+            }
+        }
+        a.undefined()
+    });
     // testForget(kind): the last recorded answer of the kind is not one a
     // run of the case will be asked for.
     n.set("testForget", |h, a| {

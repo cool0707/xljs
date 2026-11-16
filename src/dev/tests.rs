@@ -828,3 +828,38 @@ fn test_cases_in_the_session() {
     page(&mut s, json!({"op": "testRecord", "name": "a/b"}));
     assert!(w.take("error")[0]["message"].as_str().unwrap().contains("ケース名「a/b」は使えません"));
 }
+
+/// The manual of a case: shown as made before, the notes saved with the
+/// Markdown made again, the pictures and the Markdown served to the page.
+#[test]
+fn manual_in_the_session() {
+    let _l = lock_lang("ja");
+    let dir = tempdir();
+    write(&dir, "main.js", "alert('こんにちは');\n");
+    write(&dir, ".xljs/tests/基本/case.json", r#"{"script": "main.js"}"#);
+    let main = dir.join("main.js").to_string_lossy().into_owned();
+    let (mut s, w, _rx) = session(&dir, "{}");
+    page(&mut s, json!({"op": "open", "path": main}));
+    let o = crate::testing::RunOptions { limit: Some(std::time::Duration::from_secs(20)), version: "test".into(), ..Default::default() };
+    crate::testing::manual::make(&main, "基本", &o, None).unwrap();
+
+    page(&mut s, json!({"op": "manual", "name": "基本"}));
+    let m = w.take("manual");
+    assert_eq!((&m[0]["case"], &m[0]["steps"][0]["id"]), (&json!("基本"), &json!("alert-1")));
+    assert!(m[0]["markdown"].as_str().unwrap().starts_with("# mainの手順（基本）"));
+
+    page(&mut s, json!({"op": "manualSave", "name": "基本", "manual": {"title": "あいさつ", "steps": {"alert-1": {"note": "OK を押します。"}}}}));
+    let m = w.take("manual");
+    assert_eq!(m[0]["steps"][0]["note"], "OK を押します。");
+    let md = m[0]["markdown"].as_str().unwrap();
+    assert!(md.starts_with("# あいさつ\n") && md.contains("OK を押します。"), "{md}");
+    let assets = DevAssets { dir: s.dir.clone() };
+    let served = assets.read("_manual/基本/基本.md").unwrap();
+    assert_eq!(String::from_utf8(served).unwrap().trim_end(), md.trim_end());
+    assert!(assets.read("_manual/基本/../case.json").is_err());
+    assert!(assets.read("_manual/../基本/case.json").is_err());
+
+    // An unknown case is an error.
+    page(&mut s, json!({"op": "manual", "name": "ない"}));
+    assert!(w.take("error")[0]["message"].as_str().unwrap().contains("ない"));
+}
