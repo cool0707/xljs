@@ -24,6 +24,7 @@ await xljs.htmlToPdf("<h1>報告書</h1><p>本文</p>", "報告書.pdf", { paper
 - `book.printPages(options)` / `sheet.printPages(options)`: PDF を作らずに、ページの分かれ方を返す（シートごとに `{ sheet, pages, across, down, scale, areas: [{ range, across, down, pages }] }`。`across` が横、`down` が縦のページ数、`scale` は %）。はみ出しの確認と `zoom` の調整に使う（例: `if (sheet.printPages().across > 1) await sheet.toPdf(p, { zoom: 90 })`）。
 - 値・表示形式・フォント・塗り・罫線・結合・折り返し・回転・画像・図形とテキストボックス（Excel の既定の形すべてとフリーフォーム。影・3-D は描かない）・線と矢印・グラフ（`sheet.charts` で描けるもの）を描く。条件付き書式・SmartArt・Excel 2016 以降のグラフは描かない。自動の改ページの位置は Excel と少し違うことがある。
 - `toHtml(options?)` は同じページを HTML の文字列で返す（グラフは空の枠）。
+- 印刷: `await book.print(options?)` / `sheet.print(options?)` でダイアログなしにプリンターで印刷する（ページは `toPdf` と同じ。印刷したら `true`）。プリンターの設定は `printer`（名前。`xljs.printers()` の `name`）`duplex`（`"none"` `"long"`（長辺綴じ） `"short"`）`copies` `collate` `color`（`false` で白黒）。`preview: true` で先に印刷プレビュー（プリンター・両面・部数も選べる。キャンセルなら `false`）。両面なら `mirrorMargins: true` も。
 - 印刷プレビュー: `await book.toPdf(p, { preview: true })` で書き出す前に Excel の印刷プレビューのような画面を出す（キャンセルなら `null` を返し、PDF は作らない）。出す設定は `preview: { settings: ["paper", "landscape", "scaling", "margin", "blackAndWhite"] }` のように選ぶ（ほかに `"sheets"` `"mirrorMargins"` `"gridLines"` `"centerHorizontally"` `"charts"` `"skipBlankPages"` `"condense"`。`true` ですべて、`false` で設定なし）。`await book.printPreview(options?, preview?)` / `sheet.printPreview(...)` は設定だけを選んでもらい、変えた設定を重ねた options（キャンセルは `null`）を返す。
 
 ## PDF の編集（pdf）

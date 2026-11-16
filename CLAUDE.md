@@ -8,7 +8,7 @@ Excel 未インストール環境で動くこと、日本語環境での使い�
 HTML UI・フォーム・表表示・デバッガの設計は `docs/design/handoff-ui.md`（Go 版で書かれたメモ。仕組みは同じ）を参照。
 グラフ・ガントチャート（`ui.chart`・フォームの `chart` 項目・`xljs.chart`、AG Charts / Frappe Gantt、Excel のグラフ `sheet.charts` からの変換）は `docs/design/charts-design.md`。
 SQLite（`sqlite.open`、ファイルサーバーで複数人が使う共有モード・ロックファイル・自動バックアップと変更ログ・修復、Excel 互換の SQL 関数と `db.function`）は `docs/design/sqlite-design.md`。
-PDF 出力（`book.toPdf`・`sheet.toPdf`・`xljs.htmlToPdf`。シートの印刷レイアウトを HTML にして WebView2 の `Page.printToPDF`。印刷プレビュー `printPreview`・`toPdf` の `preview` も）は `docs/design/pdf-design.md`。
+PDF 出力（`book.toPdf`・`sheet.toPdf`・`xljs.htmlToPdf`。シートの印刷レイアウトを HTML にして WebView2 の `Page.printToPDF`。印刷プレビュー `printPreview`・`toPdf` の `preview`、ダイアログなしの印刷 `book.print`（WebView2 の `Print`）も）は `docs/design/pdf-design.md`。
 PDF の編集（グローバルの `pdf`: 結合・ページの削除・挿入・回転・文字の追加。lopdf ＋ フォントのサブセット埋め込み）は `docs/design/pdf-edit.md`。
 開発モード（`xljs dev`。AI チャットの枠＝2 つ目の WebView2、ダウンロードの差分と置き換え、`.xljs/versions` の履歴、別プロセスでの実行、エラーの場所と AI への依頼文、フォームのプレビュー、CodeMirror のエディタと d.ts からの補完）は `docs/design/dev-mode.md`。
 スクリプトの自動テスト（`xljs test`。記録・再生型: `.xljs/tests/<ケース>/case.json` の応答で画面を出さずに実行し、画面に出したものと出力ファイルを承認済みの台本と比べる。AI にテストを書かせない方針と実装の段階。ケースの操作から作る手順書＝`--manual`・`Ui::capture` の画面の画像）は `docs/design/test-design.md`。

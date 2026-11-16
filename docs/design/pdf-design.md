@@ -233,6 +233,31 @@ Excel の印刷プレビューのように、ページを出して設定を変�
 - テスト: `testdata/scripts/printpreview.test.js`（`print.xlsx`。変えた設定だけが入ること、キャンセル、シートの選択、余白・倍率・空のページなど、`toPdf` の `preview`）。
   画面は Playwright で `print-preview.html` に偽の `chrome.webview` を付けて `init` / `layout` を送って確かめた。
 
+## 3.2 印刷（`book.print` / `sheet.print`、`xljs.printers`）
+
+ダイアログを出さずにプリンターで印刷する。PDF と同じ見えないウィンドウ（`print.html`）でページを描き、`rendered` のあと
+`ICoreWebView2_16::Print`（WebView2 112 以降。`ICoreWebView2PrintSettings2` でプリンター名・両面・部数・部単位・カラー・ページの範囲）を呼ぶ
+（`webview::print_groups`）。`PdfJob::printer`（`PrinterJob`）があれば印刷、なければ PDF。
+
+- **プリンター向けのレイアウト**（`PrintOptions::printer_layout`。prelude が付ける。スクリプトからは指定できない）: WebView2 の印刷は
+  設定の余白（既定 1cm）で CSS の `@page` の余白を上書きするおそれがあり、そのときは余白の箱（`@top-left` など）のヘッダー/フッターも消える。
+  そこで `@page sN{size:…;margin:0}` にし、各ページ（`section`）を用紙いっぱい（`--pw` × `--ph` − 1pt）にして余白を `padding`（偶数ページは `--mm`）に、
+  ヘッダー/フッターを `section` の中の `.xljs-hf` の箱（`::before` の `content`。位置は `--hl` `--hr` `--ht` `--hb`、左右の入れ替えは `--hl2` `--hr2`）にする（`printer_rule`・`PRINTER_CSS`）。
+  `&P` は `section` を数えるカウンター `xljs-page`、`&N` はページ数の文字列に置き換える。印刷の設定は余白 0・倍率 1・ヘッダー/フッターなし・背景あり。
+  Chromium の PDF で、本体・ヘッダー・フッターの位置が PDF 出力と同じになることを確かめた（`printer_layout` の単体テストは構造のみ）。
+- **用紙**: `xlsxPrintHtml` が `papers`（印刷するシートごとの用紙 mm と ページ数）を返し、prelude が同じ用紙の続くページを 1 つのグループにする。
+  グループごとに `MediaSize` = custom、`PageWidth` / `PageHeight`（縦向きの寸法、インチ）、`Orientation`、`PageRanges`（"3-5"）で 1 回ずつ `Print` する
+  （用紙の違うシートは別の印刷ジョブ。両面・部単位はジョブごと）。
+- **プリンターの一覧**（`Ui::printers`、`src/ui/native/printers.rs`）: `EnumPrintersW`（ローカルと接続、レベル 4）と `GetDefaultPrinterW`、
+  両面・カラーは `DeviceCapabilitiesW`（`DC_DUPLEX`・`DC_COLORDEVICE`）。mock とテストの再生は架空の 2 台（`mock::mock_printers`）。
+- **プレビュー**: `print` の `preview` は `printPreview` の `"print"` のモード（既定の設定にプリンター・両面・部数を足す、ボタンは「印刷」）。
+  両面・カラーの項目は `onlyFor: { printer: [対応するプリンター] }` で、対応しないプリンターを選ぶと無効になり、結果からも外す（`dropOff`）。
+  `toPdf` の `preview`（`"pdf"` のモード）ではプリンターの設定を出さない。
+- mock は `print("プリンター", n pages, …, duplex=…, copies=…, collate=…, color=…, [1-3 297x210, …])` をログに出す。テストの再生は `print` のイベント。
+  テストは `testdata/scripts/print.test.js`。
+- **実機で確かめていないこと**: `Print` が `MediaSize` custom と向きをどう扱うか（縦向きの寸法＋向きで合っているか）、用紙の違うグループが正しく出るか、
+  両面・部数・カラーがプリンターに届くか、印刷の設定の余白 0 が使えるか（プリンターの印刷できない領域）。
+
 ## 4. できないこと・違い
 
 - SmartArt、図形と文字の 3-D（面取り・奥行き・`scene3d`）・内側の影・ぼかし・テーマの効果（`effectRef`）・グラデーション（図形は最初の色で塗る）・パターン、

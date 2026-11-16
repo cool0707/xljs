@@ -202,8 +202,52 @@ pub struct PdfJob {
     pub charts: String,
     /// The chart texts (see the prelude's chartTexts), as JSON.
     pub texts: String,
-    /// The PDF file to write.
+    /// The PDF file to write (none when printing).
     pub path: String,
+    /// Print on a printer instead of writing a PDF (book.print).
+    pub printer: Option<PrinterJob>,
+}
+
+/// How PdfJob prints (book.print).
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+#[serde(default)]
+pub struct PrinterJob {
+    /// The printer's name ("" = the default printer).
+    pub printer: String,
+    /// "" (the printer's setting), "none", "long" (flip on the long edge) or "short".
+    pub duplex: String,
+    /// Copies (0 = 1).
+    pub copies: u32,
+    /// Print the copies a whole set at a time.
+    pub collate: Option<bool>,
+    /// false: grayscale; true: color; None: the printer's setting.
+    pub color: Option<bool>,
+    /// The pages in runs of the same paper (each run is one print job).
+    pub groups: Vec<PaperGroup>,
+    /// The name of the print job.
+    pub title: String,
+}
+
+/// Pages from..=to (1-based) printed on one paper (mm, as oriented).
+#[derive(Debug, Clone, Default, serde::Deserialize, PartialEq)]
+#[serde(default)]
+pub struct PaperGroup {
+    pub from: usize,
+    pub to: usize,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// A printer (Ui::printers).
+#[derive(Debug, Clone, Default, serde::Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrinterInfo {
+    pub name: String,
+    pub is_default: bool,
+    /// It can print on both sides.
+    pub duplex: bool,
+    /// It prints in color.
+    pub color: bool,
 }
 
 /// Called once with the outcome of Ui::print_pdf, on any thread.
@@ -291,8 +335,13 @@ pub trait Ui: Send + Sync {
     /// Writes job.html as a PDF (WebView2, without showing it) and calls
     /// done when the file is written or the job failed. It may return
     /// before. UIs without WebView2 fail.
-    fn print_pdf(&self, _job: PdfJob, done: PdfDone) {
-        done(Err(crate::err!("pdf.unavailable")))
+    fn print_pdf(&self, job: PdfJob, done: PdfDone) {
+        done(Err(if job.printer.is_some() { crate::err!("print.unavailable") } else { crate::err!("pdf.unavailable") }))
+    }
+    /// The printers of this computer, the default one first. UIs without
+    /// printers have none.
+    fn printers(&self) -> Vec<PrinterInfo> {
+        Vec::new()
     }
     /// Saves a picture of a built-in page (WebView2, without showing it)
     /// and calls done when the file is written or it failed. It may return

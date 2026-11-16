@@ -90,6 +90,9 @@ impl Ui for FakeDebugUi {
     fn print_pdf(&self, job: crate::ui::PdfJob, done: crate::ui::PdfDone) {
         self.inner.print_pdf(job, done)
     }
+    fn printers(&self) -> Vec<crate::ui::PrinterInfo> {
+        self.inner.printers()
+    }
 }
 
 struct Page {

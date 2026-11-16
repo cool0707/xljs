@@ -380,9 +380,18 @@ impl Ui for Replay {
         a.map(|a| crate::net::auth::Login { user: a.user, password: a.password })
     }
 
+    fn printers(&self) -> Vec<crate::ui::PrinterInfo> {
+        // The same on every computer, so that a case plays anywhere.
+        crate::ui::mock::mock_printers()
+    }
+
     fn print_pdf(&self, job: PdfJob, done: PdfDone) {
         // Writes nothing (there is no browser to print with).
         let pages = job.html.matches("class=\"xljs-page\"").count();
+        if let Some(p) = &job.printer {
+            self.t.push(json!({ "type": "print", "printer": p.printer, "pages": pages, "duplex": p.duplex, "copies": p.copies.max(1), "color": p.color }));
+            return done(Ok(()));
+        }
         self.t.push(json!({ "type": "pdf", "file": job.path, "pages": pages }));
         done(Ok(()))
     }

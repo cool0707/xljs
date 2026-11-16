@@ -374,6 +374,18 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
                     let _ = core.PostWebMessageAsString(&hstr(&format!("{HOST_PREFIX}{init}")));
                 }
             }
+            Some("rendered") if job.printer.is_some() => {
+                let Some(env) = state(hwnd).and_then(|st| st.env.borrow().clone()) else {
+                    f1(Err(err!("print.failed", "no environment")));
+                    return close();
+                };
+                let p = job.printer.clone().unwrap_or_default();
+                let f = f1.clone();
+                print_groups(core, env, Arc::new(p), 0, Box::new(move |r| {
+                    f(r);
+                    close();
+                }));
+            }
             Some("rendered") => {
                 let (f, path) = (f1.clone(), job.path.clone());
                 let params = r#"{"printBackground":true,"preferCSSPageSize":true,"displayHeaderFooter":false,"marginTop":0,"marginBottom":0,"marginLeft":0,"marginRight":0,"transferMode":"ReturnAsBase64"}"#;
@@ -430,6 +442,81 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
         Err(e) => {
             finish(Err(e));
         }
+    }
+}
+
+/// Prints the pages of job.groups[k..] one group (one paper) at a time with
+/// ICoreWebView2_16::Print (no dialog), then calls done. The document's
+/// pages are the whole paper (PrintOptions::printer_layout), so the
+/// settings' margins are 0 and the paper is the group's.
+fn print_groups(core: ICoreWebView2, env: ICoreWebView2Environment, job: Arc<crate::ui::PrinterJob>, k: usize, done: Box<dyn FnOnce(Result<()>)>) {
+    let Some(g) = job.groups.get(k).cloned() else { return done(Ok(())) };
+    let (wv, ps) = match print_settings(&core, &env, &job, &g) {
+        Ok(x) => x,
+        Err(e) => return done(Err(e)),
+    };
+    let done = Rc::new(RefCell::new(Some(done)));
+    let (d2, job2) = (done.clone(), job.clone());
+    let handler = PrintCompletedHandler::create(Box::new(move |hr, status| {
+        let Some(done) = d2.borrow_mut().take() else { return Ok(()) };
+        if let Err(e) = hr {
+            done(Err(err!("print.failed", e.message())));
+        } else if status == COREWEBVIEW2_PRINT_STATUS_SUCCEEDED {
+            print_groups(core.clone(), env.clone(), job2.clone(), k + 1, done);
+        } else if status == COREWEBVIEW2_PRINT_STATUS_PRINTER_UNAVAILABLE {
+            done(Err(err!("print.printerUnavailable", if job2.printer.is_empty() { "-" } else { &job2.printer })));
+        } else {
+            done(Err(err!("print.failed", format!("status {}", status.0))));
+        }
+        Ok(())
+    }));
+    if let Err(e) = unsafe { wv.Print(&ps, &handler) } {
+        // The handler is not called.
+        if let Some(done) = done.borrow_mut().take() {
+            done(Err(err!("print.failed", e.message())));
+        }
+    }
+}
+
+/// The settings of print_groups for group g.
+fn print_settings(core: &ICoreWebView2, env: &ICoreWebView2Environment, job: &crate::ui::PrinterJob, g: &crate::ui::PaperGroup) -> Result<(ICoreWebView2_16, ICoreWebView2PrintSettings)> {
+    let wv: ICoreWebView2_16 = core.cast().map_err(|_| err!("print.oldRuntime"))?;
+    let env6: ICoreWebView2Environment6 = env.cast().map_err(|_| err!("print.oldRuntime"))?;
+    unsafe {
+        let ps = env6.CreatePrintSettings().map_err(webview_err)?;
+        let ps2: ICoreWebView2PrintSettings2 = ps.cast().map_err(|_| err!("print.oldRuntime"))?;
+        let inch = |mm: f64| mm / 25.4;
+        let landscape = g.width > g.height;
+        ps.SetOrientation(if landscape { COREWEBVIEW2_PRINT_ORIENTATION_LANDSCAPE } else { COREWEBVIEW2_PRINT_ORIENTATION_PORTRAIT }).map_err(webview_err)?;
+        ps2.SetMediaSize(COREWEBVIEW2_PRINT_MEDIA_SIZE_CUSTOM).map_err(webview_err)?;
+        // The paper as portrait; the orientation turns it.
+        ps.SetPageWidth(inch(g.width.min(g.height))).map_err(webview_err)?;
+        ps.SetPageHeight(inch(g.width.max(g.height))).map_err(webview_err)?;
+        ps.SetMarginTop(0.0).map_err(webview_err)?;
+        ps.SetMarginBottom(0.0).map_err(webview_err)?;
+        ps.SetMarginLeft(0.0).map_err(webview_err)?;
+        ps.SetMarginRight(0.0).map_err(webview_err)?;
+        ps.SetScaleFactor(1.0).map_err(webview_err)?;
+        ps.SetShouldPrintBackgrounds(true).map_err(webview_err)?;
+        ps.SetShouldPrintHeaderAndFooter(false).map_err(webview_err)?;
+        ps2.SetPageRanges(&hstr(&format!("{}-{}", g.from, g.to))).map_err(webview_err)?;
+        if !job.printer.is_empty() {
+            ps2.SetPrinterName(&hstr(&job.printer)).map_err(webview_err)?;
+        }
+        ps2.SetCopies(job.copies.max(1) as i32).map_err(webview_err)?;
+        if let Some(c) = job.collate {
+            ps2.SetCollation(if c { COREWEBVIEW2_PRINT_COLLATION_COLLATED } else { COREWEBVIEW2_PRINT_COLLATION_UNCOLLATED }).map_err(webview_err)?;
+        }
+        if let Some(c) = job.color {
+            ps2.SetColorMode(if c { COREWEBVIEW2_PRINT_COLOR_MODE_COLOR } else { COREWEBVIEW2_PRINT_COLOR_MODE_GRAYSCALE }).map_err(webview_err)?;
+        }
+        match job.duplex.as_str() {
+            "none" => ps2.SetDuplex(COREWEBVIEW2_PRINT_DUPLEX_ONE_SIDED).map_err(webview_err)?,
+            "long" => ps2.SetDuplex(COREWEBVIEW2_PRINT_DUPLEX_TWO_SIDED_LONG_EDGE).map_err(webview_err)?,
+            "short" => ps2.SetDuplex(COREWEBVIEW2_PRINT_DUPLEX_TWO_SIDED_SHORT_EDGE).map_err(webview_err)?,
+            _ => {}
+        }
+        Ok((wv, ps))
     }
 }
 

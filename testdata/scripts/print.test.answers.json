@@ -1,0 +1,8 @@
+{
+  "form": [
+    {"duplex": "long", "copies": 3},
+    null,
+    {"printer": "xljs simple printer", "duplex": "long"},
+    {"copies": 5, "color": "mono"}
+  ]
+}

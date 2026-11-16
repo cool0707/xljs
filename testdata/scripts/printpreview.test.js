@@ -27,7 +27,7 @@ deepEqual(await one.printPreview({ fitToPage: true }, { settings: true }),
 deepEqual(await one.printPreview({}, { settings: ["mirrorMargins"] }), { mirrorMargins: true }, "mirror margins");
 // No settings: nothing to ask.
 deepEqual(await one.printPreview({ landscape: false }, { settings: false }), { landscape: false }, "no settings");
-await rejects(() => pb.printPreview({}, { settings: ["paper", "color"] }), /color/, "unknown setting");
+await rejects(() => pb.printPreview({}, { settings: ["paper", "colour"] }), /colour/, "unknown setting");
 await rejects(() => pb.printPreview({}, { settings: "paper" }), /settings/, "settings not an array");
 
 // 9: toPdf with a preview: the PDF with the settings chosen (the mock logs it).

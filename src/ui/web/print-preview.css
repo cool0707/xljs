@@ -22,6 +22,7 @@
 .inline > .label { flex: none; min-width: 2.5em; font-weight: normal; margin: 0; }
 .inline input { width: 96px; }
 .inline .suffix { color: var(--muted); }
+.field.off { opacity: .5; }
 .field.invalid input { border-color: var(--error); }
 .segmented { display: flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--subtle); }
 .segmented .seg { flex: 1; min-width: 0; min-height: calc(var(--control-h) - 4px); padding: 0 var(--sp-s); border: 0; border-radius: calc(var(--radius) - 2px); background: transparent; box-shadow: none; color: var(--muted); }

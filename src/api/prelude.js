@@ -1657,6 +1657,7 @@
     env: (name) => native.getenv(String(name)),
     inspect,
     htmlToPdf: (html, dest, options) => htmlToPdf(html, dest, options),
+    printers: () => JSON.parse(native.printers()),
   };
   defineGlobal("xljs", xljsObj);
   defineGlobal("exit", xljsObj.exit);
@@ -4860,7 +4861,7 @@
 
   async function printToPdf(book, dest, options, sheets) {
     if (options && typeof options === "object" && options.preview !== undefined && options.preview !== null && options.preview !== false) {
-      const chosen = await printPreview(book, options, options.preview === true ? {} : options.preview, sheets, true);
+      const chosen = await printPreview(book, options, options.preview === true ? {} : options.preview, sheets, "pdf");
       if (!chosen) return null;
       options = chosen;
     }
@@ -4895,7 +4896,7 @@
   // previewWire); only those the user changed go into the options.
 
   const PREVIEW_SETTINGS = ["sheets", "paper", "landscape", "scaling", "margin", "mirrorMargins", "blackAndWhite", "gridLines",
-    "centerHorizontally", "charts", "skipBlankPages", "condense"];
+    "centerHorizontally", "charts", "skipBlankPages", "condense", "printer", "duplex", "copies", "color"];
   const PREVIEW_DEFAULT = ["sheets", "paper", "landscape", "scaling", "margin", "blackAndWhite"];
   const PREVIEW_PAPERS = ["A3", "A4", "A5", "B4", "B5", "Letter", "Legal"];
   /** Excel's margins (mm, top right bottom left): 標準・広い・狭い. */
@@ -4906,18 +4907,26 @@
     sheets: ["sheets"], paper: ["paper"], landscape: ["landscape"], scaling: ["scaling", "scale", "fitWidth", "fitHeight"],
     margin: ["margin", ...MARGIN_KEYS], mirrorMargins: ["mirrorMargins"], blackAndWhite: ["blackAndWhite"], gridLines: ["gridLines"],
     centerHorizontally: ["centerHorizontally"], charts: ["charts"], skipBlankPages: ["skipBlankPages"], condense: ["condense"],
+    printer: ["printer"], duplex: ["duplex"], copies: ["copies"], color: ["color"],
   };
+  /** The printer's settings (book.print and its preview). */
+  const PRINTER_SETTINGS = ["printer", "duplex", "copies", "color"];
 
-  /** The settings shown, in order (preview.settings: names, true for all, false or [] for none). */
-  function previewSettings(p) {
-    if (p.settings === undefined || p.settings === null) return PREVIEW_DEFAULT.slice();
-    if (p.settings === true) return PREVIEW_SETTINGS.slice();
+  /**
+   * The settings shown, in order (preview.settings: names, true for all,
+   * false or [] for none). mode "print": the printer's too by default;
+   * "pdf": never the printer's.
+   */
+  function previewSettings(p, mode) {
+    const all = mode === "pdf" ? PREVIEW_SETTINGS.filter((x) => !PRINTER_SETTINGS.includes(x)) : PREVIEW_SETTINGS;
+    if (p.settings === undefined || p.settings === null) return mode === "print" ? [...PREVIEW_DEFAULT, "printer", "duplex", "copies"] : PREVIEW_DEFAULT.slice();
+    if (p.settings === true) return all.slice();
     if (p.settings === false) return [];
     if (!Array.isArray(p.settings)) throw new TypeError(T("preview.badSettings"));
     const out = [];
     for (const x of p.settings) {
       if (!PREVIEW_SETTINGS.includes(x)) throw new TypeError(T("preview.badSetting", String(x), PREVIEW_SETTINGS.join(", ")));
-      if (!out.includes(x)) out.push(x);
+      if (!out.includes(x) && all.includes(x)) out.push(x);
     }
     return out;
   }
@@ -4935,6 +4944,14 @@
     const same = (f) => setups.every((x) => JSON.stringify(f(x)) === JSON.stringify(f(s0)));
     const perSheet = { value: "", label: T("preview.perSheet") };
     const wire = {}, fields = [];
+    // The printers (only asked when a printer's setting is shown).
+    let printers = null, fixed = null;
+    if (list.some((k) => PRINTER_SETTINGS.includes(k))) {
+      printers = JSON.parse(native.printers());
+      fixed = printers.find((x) => x.name === base.printer) || printers.find((x) => x.isDefault) || printers[0] || null;
+    }
+    // The printers that can (cap: "duplex" / "color"): only them, or the printer fixed without the setting "printer".
+    const can = (cap) => list.includes("printer") ? { printer: printers.filter((x) => x[cap]).map((x) => x.name) } : null;
     const add = (f) => fields.push(Object.assign({ label: T("preview." + f.name) }, f));
     for (const k of list) {
       switch (k) {
@@ -5013,6 +5030,29 @@
           wire.skipBlankPages = base.skipBlankPages === true ? "all" : base.skipBlankPages === "values" ? "values" : "none";
           add({ name: "skipBlankPages", type: "select", options: [["none", T("preview.skipNone")], ["all", T("preview.skipAll")], ["values", T("preview.skipValues")]].map(([value, label]) => ({ value, label })) });
           break;
+        case "printer":
+          if (!printers.length) break;
+          wire.printer = fixed.name;
+          add({ name: "printer", type: "select", options: printers.map((x) => ({ value: x.name, label: x.isDefault ? T("print.defaultPrinter", x.name) : x.name })) });
+          break;
+        case "duplex": {
+          if (!printers.length || (!list.includes("printer") && !fixed.duplex)) break;
+          const d = printDuplex(base.duplex);
+          wire.duplex = d || "none";
+          add({ name: "duplex", type: "select", onlyFor: can("duplex"),
+            options: [["none", T("print.duplexNone")], ["long", T("print.duplexLong")], ["short", T("print.duplexShort")]].map(([value, label]) => ({ value, label })) });
+          break;
+        }
+        case "copies":
+          wire.copies = base.copies === undefined || base.copies === null ? 1 : Number(base.copies);
+          add({ name: "copies", type: "number", min: 1, max: 999, step: 1, suffix: T("print.copiesUnit") });
+          break;
+        case "color":
+          if (!printers.length || (!list.includes("printer") && !fixed.color)) break;
+          wire.color = base.color === false ? "mono" : "color";
+          add({ name: "color", type: "segmented", onlyFor: can("color"),
+            options: [{ value: "color", label: T("print.color") }, { value: "mono", label: T("print.mono") }] });
+          break;
         case "condense":
           wire.condense = base.condense === true ? 4 : Number(base.condense) || 0;
           add({ name: "condense", type: "number", min: 0, max: 20, step: 1, suffix: "%", help: T("preview.condenseHelp") });
@@ -5058,6 +5098,16 @@
       else delete o.skipBlankPages;
     }
     if (changed("condense")) { const c = num(w.condense); if (c > 0) o.condense = c; else delete o.condense; }
+    if (changed("printer")) o.printer = w.printer;
+    if (changed("duplex")) o.duplex = w.duplex;
+    if (changed("copies")) o.copies = num(w.copies);
+    if (changed("color")) o.color = w.color === "color";
+    return o;
+  }
+
+  /** Leaves out of o the printer's settings that the printer chosen cannot do (fields' onlyFor). */
+  function dropOff(o, fields, w) {
+    for (const f of fields) if (f.onlyFor && Object.entries(f.onlyFor).some(([k, ok]) => !ok.includes(w[k]))) delete o[f.name];
     return o;
   }
 
@@ -5077,17 +5127,17 @@
    * settings; resolves to the options chosen, or null when cancelled.
    * forPdf: the button says that a PDF is made.
    */
-  async function printPreview(book, options, preview, sheets, forPdf) {
+  async function printPreview(book, options, preview, sheets, mode) {
     if (options !== undefined && options !== null && (typeof options !== "object" || Array.isArray(options))) throw new TypeError(T("pdf.badOptions"));
     if (preview !== undefined && preview !== null && (typeof preview !== "object" || Array.isArray(preview))) throw new TypeError(T("preview.badPreview"));
     const p = preview || {};
     const base = Object.assign({}, options || {});
     delete base.preview;
     printOptions(book, base, sheets);
-    const list = previewSettings(p);
+    const list = previewSettings(p, mode);
     const { wire: init, fields } = previewWire(book, base, list, sheets);
     const title = p.title === undefined || p.title === null ? T("preview.title") : String(p.title);
-    const ok = p.ok === undefined || p.ok === null ? (forPdf ? T("preview.ok") : T("form.ok")) : String(p.ok);
+    const ok = p.ok === undefined || p.ok === null ? (mode === "pdf" ? T("preview.ok") : mode === "print" ? T("print.ok") : T("form.ok")) : String(p.ok);
     if (!native.supportsWindows) {
       // Console and mock: the settings as a form (nothing to change: the options as given).
       if (!fields.length) return base;
@@ -5096,14 +5146,17 @@
         fields: fields.map((f) => {
           const x = Object.assign({}, f, { default: init[f.name] });
           delete x.showIf;
+          delete x.onlyFor;
           if (f.type === "number") x.label += ` (${f.suffix})`;
           delete x.suffix;
           if (f.showIf) x.hidden = (v) => Object.entries(f.showIf).some(([k, want]) => v[k] !== want);
+          if (f.onlyFor) x.disabled = (v) => Object.entries(f.onlyFor).some(([k, ok]) => !ok.includes(v[k]));
           return x;
         }),
       });
       if (!values) return null;
-      return previewOptions(base, init, Object.assign({}, init, values));
+      const w = Object.assign({}, init, values);
+      return dropOff(previewOptions(base, init, w), fields, w);
     }
     let result = null, answered = false, current = init;
     const page = openPage("print-preview.html", {
@@ -5127,7 +5180,7 @@
         case "ok":
           try {
             current = Object.assign({}, init, m.values || {});
-            result = previewOptions(base, init, current);
+            result = dropOff(previewOptions(base, init, current), fields, current);
             printOptions(book, result, sheets);
           } catch (e) {
             page.send({ type: "layoutError", seq: -1, message: e instanceof Error ? e.message : String(e) });
@@ -5145,6 +5198,70 @@
     await page.n.closed;
     if (!answered && native.recording) native.testRecord("form", "null", "{}");
     return answered ? result : null;
+  }
+
+  // ---------------------------------------------------------------- printing
+  //
+  // book.print / sheet.print: the pages of toPdf laid out for a printer
+  // (printerLayout: the margins, header and footer inside the pages) and
+  // printed without a dialog (Ui::print_pdf with a PrinterJob: WebView2's
+  // Print, one job per run of pages on the same paper).
+
+  /** "none" / "long" / "short" of options.duplex (true: "long", false: "none"); undefined for the printer's setting. */
+  function printDuplex(v) {
+    if (v === undefined || v === null) return undefined;
+    if (v === true) return "long";
+    if (v === false) return "none";
+    if (v === "none" || v === "long" || v === "short") return v;
+    throw new TypeError(T("print.badDuplex", String(v)));
+  }
+
+  /** The PrinterJob of options (without the groups). */
+  function printerJob(o) {
+    const job = { printer: "", duplex: printDuplex(o.duplex) || "", copies: 1 };
+    if (o.printer !== undefined && o.printer !== null && o.printer !== "") {
+      job.printer = String(o.printer);
+      const all = JSON.parse(native.printers());
+      if (all.length && !all.some((x) => x.name === job.printer)) {
+        throw new TypeError(T("print.noPrinter", job.printer, all.map((x) => x.name).join(", ")));
+      }
+    }
+    if (o.copies !== undefined && o.copies !== null) {
+      const c = Number(o.copies);
+      if (!(c >= 1 && c <= 999) || c !== Math.floor(c)) throw new TypeError(T("pdf.badNumber", "copies"));
+      job.copies = c;
+    }
+    if (o.collate !== undefined && o.collate !== null) job.collate = !!o.collate;
+    if (o.color !== undefined && o.color !== null) job.color = !!o.color;
+    return job;
+  }
+
+  /** book.print / sheet.print: true when printed, false when the preview was cancelled. */
+  async function printBook(book, options, sheets) {
+    if (options !== undefined && options !== null && (typeof options !== "object" || Array.isArray(options))) throw new TypeError(T("pdf.badOptions"));
+    options = options || {};
+    if (options.preview !== undefined && options.preview !== null && options.preview !== false) {
+      const chosen = await printPreview(book, options, options.preview === true ? {} : options.preview, sheets, "print");
+      if (!chosen) return false;
+      options = chosen;
+    }
+    const job = printerJob(options);
+    const po = Object.assign(printOptions(book, options, sheets), { printerLayout: true });
+    const layout = JSON.parse(native.xlsxPrintHtml(book._h, JSON.stringify(po)));
+    // Runs of pages on the same paper.
+    job.groups = [];
+    let page = 1;
+    for (const p of layout.papers) {
+      if (!p.pages) continue;
+      const last = job.groups[job.groups.length - 1];
+      if (last && last.width === p.width && last.height === p.height) last.to += p.pages;
+      else job.groups.push({ from: page, to: page + p.pages - 1, width: p.width, height: p.height });
+      page += p.pages;
+    }
+    job.title = po.title || book.path || "";
+    const err = await native.pdfPrint(layout.html, JSON.stringify(printCharts(book, layout)), JSON.stringify(chartTexts()), "", JSON.stringify(job));
+    if (err) throw new Error(err);
+    return true;
   }
 
   /** xljs.htmlToPdf: options.paper / landscape / margin (mm) become an @page rule before the document's own. */
@@ -5809,7 +5926,8 @@
     toHtml(options) { return printLayout(this._book, options, [this._name]).html; }
 
     printPages(options) { return printPages(this._book, options, [this._name])[0] ?? null; }
-    printPreview(options, preview) { return printPreview(this._book, options, preview, [this._name], false); }
+    printPreview(options, preview) { return printPreview(this._book, options, preview, [this._name]); }
+    print(options) { return printBook(this._book, options, [this._name]); }
     /** Writes the sheet as Excel would print it to a PDF file (WebView2); resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this._book, dest, options, [this._name]); }
     get dimension() { return native.xlsxDimension(this._book._h, this._name); }
@@ -5901,7 +6019,8 @@
     toHtml(options) { return printLayout(this, options).html; }
 
     printPages(options) { return printPages(this, options); }
-    printPreview(options, preview) { return printPreview(this, options, preview, undefined, false); }
+    printPreview(options, preview) { return printPreview(this, options, preview, undefined); }
+    print(options) { return printBook(this, options); }
     /** Writes the sheets (every visible one, or options.sheets) as Excel would print them to a PDF file; resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this, dest, options); }
     toArrayBuffer() { return native.xlsxToBytes(this._h); }

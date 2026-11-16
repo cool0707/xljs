@@ -38,7 +38,12 @@ function changed(now) {
   clearTimeout(timer);
   for (const f of fields) {
     const box = document.querySelector(`[data-field="${f.name}"]`);
-    if (box) box.hidden = !visible(f);
+    if (!box) continue;
+    box.hidden = !visible(f);
+    // onlyFor: { name: [values] }: off unless the values allow it (duplex and color of the printer).
+    const off = !!f.onlyFor && Object.entries(f.onlyFor).some(([k, ok]) => !ok.includes(values[k]));
+    box.classList.toggle("off", off);
+    for (const c of box.querySelectorAll("input, select, button")) c.disabled = off;
   }
   if (now) layout(); else timer = setTimeout(layout, 400);
 }

@@ -244,6 +244,7 @@ fn print_pdf_writes_a_file() {
             charts: r#"[{"spec":{"type":"column","data":[{"a":"x","b":1},{"a":"y","b":2}]}}]"#.into(),
             texts: "{}".into(),
             path: path.to_string_lossy().into_owned(),
+            printer: None,
         },
         Box::new(move |r| *r2.lock().unwrap() = Some(r)),
     );
