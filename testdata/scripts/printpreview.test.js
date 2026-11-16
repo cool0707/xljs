@@ -23,6 +23,8 @@ deepEqual(await one.printPreview({}, { settings: ["blackAndWhite", "gridLines", 
 deepEqual(await one.printPreview({ fitToPage: true }, { settings: true }),
   { margin: { top: 10, right: 5, bottom: 10, left: 5 }, scale: 80, skipBlankPages: "values", condense: 4, charts: false },
   "custom margins, scale, blank pages, condense, charts");
+// Mirrored margins for printing on both sides.
+deepEqual(await one.printPreview({}, { settings: ["mirrorMargins"] }), { mirrorMargins: true }, "mirror margins");
 // No settings: nothing to ask.
 deepEqual(await one.printPreview({ landscape: false }, { settings: false }), { landscape: false }, "no settings");
 await rejects(() => pb.printPreview({}, { settings: ["paper", "color"] }), /color/, "unknown setting");

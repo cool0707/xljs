@@ -202,6 +202,13 @@ Excel の「セルに配置」の画像はリッチ値で、セルの値とし�
    ページが `error` を送ったときと、途中でウィンドウが閉じたときは失敗。
 6. スクリプト側は `poster.add_pending()` で待っているので、終わるまでプロセスは終了しない。スレッドの転送（`Threaded`）は待たずに UI スレッドへ投げる。
 
+## 3.0 左右の余白の入れ替え（`mirrorMargins`）
+
+両面印刷用に、偶数ページの左右の余白を入れ替える。ページの幅は変わらないのでページの分け方はそのまま。
+`page_rule` がシートの名前付きページに `@page sN:left{margin-left:R;margin-right:L}` を足す（文書は右ページから始まるので、偶数ページが `:left`。
+Chromium の `printToPDF` は名前付きページと `:left` の組み合わせを守る。Playwright の `page.pdf` で確かめた）。数え方は文書全体の通し番号。
+画面（`@media screen`。プレビューと `toHtml`）では、ページの `style` の `--mm`（入れ替えた余白）を `.xljs-page:nth-of-type(even)` が使う。
+
 ## 3.1 印刷プレビュー（`printPreview`・`toPdf` の `preview`、`web/print-preview.html` / `print-preview.js`）
 
 Excel の印刷プレビューのように、ページを出して設定を変えてもらう。確定したら変えた設定を重ねた `PrintOptions` を返す（キャンセルは `null`）。

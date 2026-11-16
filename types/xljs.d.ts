@@ -2361,6 +2361,11 @@ declare global {
     blackAndWhite?: boolean;
     /** ページの左右中央に配置する */
     centerHorizontally?: boolean;
+    /**
+     * 偶数ページの左右の余白を入れ替える（両面印刷で綴じしろを内側にそろえる。Word の「見開きページ」）。
+     * 1 ページ目（奇数ページ）は margin のとおり。ページの数え方は PDF 全体の通し番号（シートが変わっても続く）
+     */
+    mirrorMargins?: boolean;
     /** false でグラフを描かない */
     charts?: boolean;
     /**
@@ -2383,10 +2388,10 @@ declare global {
    * 印刷プレビューで変えられる設定。
    * "sheets": 印刷するシート（ブックのみ。印刷できるシートが 2 つ以上のとき）、"paper": 用紙サイズ、"landscape": 印刷の向き、
    * "scaling": 拡大縮小（拡大縮小なし・シートを 1 ページに・すべての列を 1 ページに・すべての行を 1 ページに・倍率・横 n × 縦 n ページ）、
-   * "margin": 余白（標準・広い・狭い・ユーザー設定）、"blackAndWhite": 白黒印刷、"gridLines": 枠線、"centerHorizontally": ページ中央（水平）、
+   * "margin": 余白（標準・広い・狭い・ユーザー設定）、"mirrorMargins": 偶数ページで左右の余白を入れ替える、"blackAndWhite": 白黒印刷、"gridLines": 枠線、"centerHorizontally": ページ中央（水平）、
    * "charts": グラフを印刷、"skipBlankPages": 空のページを飛ばす、"condense": 文字の間隔を詰める
    */
-  type PrintPreviewSetting = "sheets" | "paper" | "landscape" | "scaling" | "margin" | "blackAndWhite" | "gridLines"
+  type PrintPreviewSetting = "sheets" | "paper" | "landscape" | "scaling" | "margin" | "mirrorMargins" | "blackAndWhite" | "gridLines"
     | "centerHorizontally" | "charts" | "skipBlankPages" | "condense";
 
   /** printPreview・toPdf の preview のオプション */

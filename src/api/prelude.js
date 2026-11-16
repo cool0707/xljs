@@ -4826,6 +4826,7 @@
     if (o.blackAndWhite !== undefined && o.blackAndWhite !== null) r.blackAndWhite = !!o.blackAndWhite;
     if (o.centerHorizontally !== undefined && o.centerHorizontally !== null) r.centerHorizontally = !!o.centerHorizontally;
     if (o.charts === false) r.charts = false;
+    if (o.mirrorMargins !== undefined && o.mirrorMargins !== null) r.mirrorMargins = !!o.mirrorMargins;
     if (o.condense !== undefined && o.condense !== null && o.condense !== false) {
       const c = o.condense === true ? 4 : Number(o.condense);
       if (!(c >= 0 && c <= 20)) throw new TypeError(T("pdf.badNumber", "condense"));
@@ -4893,7 +4894,7 @@
   // (ui.form) without the pages. The settings travel as "wire" values (see
   // previewWire); only those the user changed go into the options.
 
-  const PREVIEW_SETTINGS = ["sheets", "paper", "landscape", "scaling", "margin", "blackAndWhite", "gridLines",
+  const PREVIEW_SETTINGS = ["sheets", "paper", "landscape", "scaling", "margin", "mirrorMargins", "blackAndWhite", "gridLines",
     "centerHorizontally", "charts", "skipBlankPages", "condense"];
   const PREVIEW_DEFAULT = ["sheets", "paper", "landscape", "scaling", "margin", "blackAndWhite"];
   const PREVIEW_PAPERS = ["A3", "A4", "A5", "B4", "B5", "Letter", "Legal"];
@@ -4903,7 +4904,7 @@
   /** The wire values of each setting. */
   const PREVIEW_KEYS = {
     sheets: ["sheets"], paper: ["paper"], landscape: ["landscape"], scaling: ["scaling", "scale", "fitWidth", "fitHeight"],
-    margin: ["margin", ...MARGIN_KEYS], blackAndWhite: ["blackAndWhite"], gridLines: ["gridLines"],
+    margin: ["margin", ...MARGIN_KEYS], mirrorMargins: ["mirrorMargins"], blackAndWhite: ["blackAndWhite"], gridLines: ["gridLines"],
     centerHorizontally: ["centerHorizontally"], charts: ["charts"], skipBlankPages: ["skipBlankPages"], condense: ["condense"],
   };
 
@@ -5000,6 +5001,10 @@
           wire[k] = !!s0[k];
           add({ name: k, type: "checkbox" });
           break;
+        case "mirrorMargins":
+          wire.mirrorMargins = base.mirrorMargins === true;
+          add({ name: "mirrorMargins", type: "checkbox", help: T("preview.mirrorMarginsHelp") });
+          break;
         case "charts":
           wire.charts = base.charts !== false;
           add({ name: "charts", type: "checkbox" });
@@ -5045,7 +5050,7 @@
       const m = w.margin === "custom" ? MARGIN_KEYS.map((k) => num(w[k])) : PREVIEW_MARGINS[w.margin];
       if (m) o.margin = { top: m[0], right: m[1], bottom: m[2], left: m[3] };
     }
-    for (const k of ["blackAndWhite", "gridLines", "centerHorizontally"]) if (changed(k)) o[k] = !!w[k];
+    for (const k of ["blackAndWhite", "gridLines", "centerHorizontally", "mirrorMargins"]) if (changed(k)) o[k] = !!w[k];
     if (changed("charts")) { if (w.charts) delete o.charts; else o.charts = false; }
     if (changed("skipBlankPages")) {
       if (w.skipBlankPages === "all") o.skipBlankPages = true;

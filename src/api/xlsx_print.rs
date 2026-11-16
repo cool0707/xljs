@@ -136,6 +136,9 @@ pub struct PrintOptions {
     /// size per character (negative letter-spacing), for text that prints
     /// wider than Excel shows it on screen. None or 0 = as the font is.
     pub condense: Option<f64>,
+    /// Swap the left and right margins of the even pages (for printing on
+    /// both sides; the first page is a right-hand page).
+    pub mirror_margins: Option<bool>,
     /// Only work out how the pages are cut (PrintOut::sheets); no HTML.
     #[serde(skip)]
     pub layout_only: bool,
@@ -526,6 +529,8 @@ struct Setup {
     grid: bool,
     center_h: bool,
     center_v: bool,
+    /// The even pages have the left and right margins swapped.
+    mirror: bool,
 }
 
 struct Sheet<'a> {
@@ -1201,6 +1206,7 @@ body{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-variant-emoj
 @media screen{
 body{background:#e6e6e6;padding:12px 0}
 .xljs-page{width:var(--pw);height:var(--ph);padding:var(--m);margin:0 auto 12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.xljs-page:nth-of-type(even){padding:var(--mm,var(--m))}
 }
 "#;
 
@@ -1453,6 +1459,7 @@ fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setu
         grid: o.grid_lines.unwrap_or(raw.grid_lines),
         center_h: o.center_horizontally.unwrap_or(sh.ws.print_options().horizontal_centered()),
         center_v: sh.ws.print_options().vertical_centered(),
+        mirror: o.mirror_margins == Some(true),
     })
 }
 
@@ -1481,6 +1488,10 @@ fn page_rule(name: &str, sh: &Sheet, s: &Setup, file: &str, dir: &str, now: &(St
         }
     }
     css.push_str("}\n");
+    // The even pages are left-hand pages (the document starts on the right).
+    if s.mirror && r != l {
+        let _ = writeln!(css, "@page {name}:left{{margin-left:{}pt;margin-right:{}pt}}", n(r), n(l));
+    }
     css
 }
 
@@ -1538,8 +1549,10 @@ fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, St
     };
     let Some(out) = out else { return (cut, scale) };
     let [mt, mr, mb, ml] = s.margins;
+    // On screen the even pages take --mm (BASE_CSS).
+    let mirror = if s.mirror { format!(";--mm:{}pt {}pt {}pt {}pt", n(mt), n(ml), n(mb), n(mr)) } else { String::new() };
     let style = format!(
-        "page:{page};--w:{}pt;--h:{}pt;--pw:{}pt;--ph:{}pt;--m:{}pt {}pt {}pt {}pt;align-items:{};justify-content:{}",
+        "page:{page};--w:{}pt;--h:{}pt;--pw:{}pt;--ph:{}pt;--m:{}pt {}pt {}pt {}pt;align-items:{};justify-content:{}{mirror}",
         n(avail_w),
         n(avail_h - 1.0),
         n(s.paper.0),

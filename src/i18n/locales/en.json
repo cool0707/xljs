@@ -1259,6 +1259,8 @@
     "preview.marginRight": "Right",
     "preview.marginBottom": "Bottom",
     "preview.marginLeft": "Left",
+    "preview.mirrorMargins": "Mirror margins (double-sided)",
+    "preview.mirrorMarginsHelp": "Even pages swap the left and right margins",
     "preview.blackAndWhite": "Black and white",
     "preview.gridLines": "Print gridlines",
     "preview.centerHorizontally": "Center on page horizontally",

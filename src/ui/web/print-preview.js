@@ -71,7 +71,8 @@ function fieldBox(f) {
     case "checkbox": {
       const input = el("input", { type: "checkbox", id: "f-" + f.name, checked: !!values[f.name] });
       input.addEventListener("change", () => { values[f.name] = input.checked; changed(true); });
-      return el("div", { className: "field" }, el("label", { className: "check" }, input, el("span", { textContent: f.label })));
+      return el("div", { className: "field" }, el("label", { className: "check" }, input, el("span", { textContent: f.label })),
+        f.help ? el("div", { className: "help", textContent: f.help }) : null);
     }
     case "checkboxes": {
       const list = el("div", { className: "checks" });

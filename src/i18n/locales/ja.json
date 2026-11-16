@@ -1260,6 +1260,8 @@
     "preview.marginRight": "右",
     "preview.marginBottom": "下",
     "preview.marginLeft": "左",
+    "preview.mirrorMargins": "左右の余白を偶数ページで入れ替える（両面印刷用）",
+    "preview.mirrorMarginsHelp": "奇数ページは設定どおり、偶数ページは左右を逆にする",
     "preview.blackAndWhite": "白黒印刷",
     "preview.gridLines": "枠線を印刷",
     "preview.centerHorizontally": "ページ中央（水平）",

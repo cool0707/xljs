@@ -147,6 +147,11 @@ equal(pps.map((x) => x.sheet).join(","), "一覧,印刷範囲", "printPages: the
 equal(pps.reduce((n, x) => n + x.pages, 0), pages(ph), "printPages: the same pages as toHtml");
 equal(pps[0].across, 1, "printPages: fit to 1 page wide");
 equal(pps[1].areas[0].range, "B2:D10", "printPages: the print area");
+// Mirrored margins: the even pages (left-hand pages) swap the left and right margins, on paper and on screen.
+const mm = pb.toHtml({ mirrorMargins: true, margin: { left: 30, right: 10 } });
+ok(/@page s0:left\{margin-left:28\.346pt;margin-right:85\.039pt\}/.test(mm), "the left-hand pages' margins: " + mm.match(/@page s0:left[^}]*\}/));
+ok(mm.includes("--mm:") && mm.includes(".xljs-page:nth-of-type(even){padding:var(--mm,var(--m))}"), "the even pages on screen");
+ok(!ph.includes(":left{"), "not mirrored by default");
 await pb.toPdf("print.pdf");
 
 // Table styles, black and white, print areas by formulas (testdata/xlsx/make_tables.py).
