@@ -295,6 +295,12 @@ Excel の「セルに配置」の画像はリッチ値で、セルの値とし�
     （スライサー・タイムラインのスタイル）を読んだまま書き戻す。描画のスライサー・タイムラインの枠もグラフと同じく `KeptAnchor` に持つ。
   - 行・列のグループ（`outlineLevel`・`collapsed`）、ふりがな（共有文字列の `rPh`・`phoneticPr`、セルの `ph`）、`pageSetup` のモデルにない属性
     （`blackAndWhite`・`firstPageNumber` など）、差分書式の `<b val="0"/>`・`<i val="0"/>` が落ちていた。
+- **シートの名前の変更**: 本家の `Workbook::set_sheet_name` は名前を変えるだけで、そのシートを参照する数式などは古い名前のままだった
+  （シートの名前の定義だけは、どのシートを指していてもそのシートに書き換えていた）。Excel と同じく、セルの数式・名前の定義・入力規則（2010 の拡張も）・
+  条件付き書式（`cfvo` も）・テーブルの計算列・ピボットテーブルの元データと、読んだまま持っている部品（グラフの `c:f`・`cx:f`、スパークラインなど
+  シートの `ext` の `xm:f`、フォームコントロールの `fmlaLink`・`fmlaRange`、ピボットキャッシュの `worksheetSource` の `sheet`）の参照を書き換える
+  （`helper/sheet_rename.rs`。名前は大文字小文字を区別せずに比べ、必要なら引用符で囲む。外部のブックへの参照・文字列の中・ハイパーリンクは変えない）。
+  2010 の入力規則の数式（`xm:f`）は読んだ文字のまま持つ（アドレスとして読み直すと `OFFSET(...)` などが崩れた）。`tests/rename_sheet.rs`。
 - **スレッド形式のコメント**: 作成者（`xl/persons/person.xml` を読まず、空の一覧と `personId` がすべて 0 の ID を書いていた）・返信のつながり（`parentId`）・
   解決済み（`done`）・メンション（`mentions`）と、代わりのメモの `xr:uid` が落ちていた。新しいブックに書いたときは Content_Types にコメントと作成者の部品がなかった。
   行・列の挿入と削除でコメントの位置が動かなかった。`Workbook::persons`、`ThreadedComment` の `person_id`・`parent_id`・`done`・`mentions`、`Comment::uid`。

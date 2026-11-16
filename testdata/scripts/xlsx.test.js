@@ -49,7 +49,14 @@ const s3 = wb.addSheet("tmp");
 s3.append([{ x: 1 }]);
 s3.append([{ x: 2 }]);
 deepEqual(s3.toObjects(), [{ x: 1 }, { x: 2 }]);
+// Renaming a sheet renames the references to it, as in Excel.
+ws.cell("G1").formula = "=SUM(tmp!A2:A3)+LEN(\"tmp!A1\")";
+s3.name = "tmp 2";
+equal(ws.cell("G1").formula, "=SUM('tmp 2'!A2:A3)+LEN(\"tmp!A1\")");
+equal(ws.cell("G1").calc(), "9");
 s3.name = "renamed";
+equal(ws.cell("G1").formula, "=SUM(renamed!A2:A3)+LEN(\"tmp!A1\")");
+ws.cell("G1").value = null;
 deepEqual(wb.sheetNames, ["売上", "集計", "renamed"]);
 wb.removeSheet("renamed");
 throws(() => wb.addSheet("集計"), /既に存在/);

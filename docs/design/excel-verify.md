@@ -10,6 +10,7 @@ xljs の xlsx の扱いは、それまで LibreOffice との突き合わせで�
 cargo build
 pwsh -File tools/excel-verify/run.ps1        # 各項目の PASS / FAIL。差の詳細は %TEMP%\xljs-excel-verify\*.txt
 pwsh -File tools/excel-verify/features.ps1   # セル以外の機能を 1 つずつ（docs/design/save-fidelity.md）。-Features sparkline,pivot で絞れる
+pwsh -File tools/excel-verify/rename.ps1     # シートの名前の変更で、そのシートへの参照が Excel と同じく付いてくるか
 ```
 
 | ファイル | 役割 |
@@ -24,6 +25,7 @@ pwsh -File tools/excel-verify/features.ps1   # セル以外の機能を 1 つず
 | `write.js` | xljs でいろいろ書いたブック |
 | `open-test.ps1` | Excel で開けるかだけを見る（開けないファイルは修復のダイアログを出さずに失敗する） |
 | `features.ps1` | セル以外の機能を 1 つずつ入れたブックを Excel に作らせ（`excel-make-features.ps1`）、xljs で保存したものを、開けるか・Excel から見て同じか（`excel-features.ps1`）・部品と要素（`partdiff.py`）で比べる |
+| `rename.ps1` | 別のシートを参照するものを一通り置いたブックを Excel に作らせ（`excel-make-rename.ps1`）、Excel と xljs で同じシートの名前を変えて保存し、Excel から見て同じかを比べる |
 
 項目は、数式の計算（`calc`・`calc-saved`）、Excel が作ったブックの読み込み（`read`・`builtin-formats`）、xljs が書いたブック（`write`・`write-recalc`）、
 開いてそのまま保存したブックと元のブックの比較（`roundtrip-*`。セルと図形 `shapes-*`）。
@@ -41,6 +43,9 @@ Excel の COM から読む `Text` は列幅で変わる（`####`、桁の切り�
 - **読み込み**: Excel が作ったブックの値・数式・表示（標準の表示、組み込みと独自の表示形式、和暦、漢数字、経過時間、分数）が Excel と同じ。
 - **書き込み**: 値・数式（`_xlfn.`・`_xlpm.`・`ANCHORARRAY`・動的配列のメタデータ）・結合・フォント・塗り・配置・罫線・表示形式・列幅・行の高さ・
   ウィンドウ枠の固定・フィルター・既定フォント（游ゴシック）が Excel で意図どおりに見える。テーブルの `[@数量]` を書いた数式も Excel がそのまま読む。
+- **シートの名前の変更**: そのシートを参照する数式・名前の定義（印刷範囲・印刷タイトルも）・入力規則・条件付き書式・スパークライン・グラフの系列・
+  ピボットテーブルの元データ・フォームコントロールのリストとリンク先が、Excel で名前を変えたときと同じになる（`rename.ps1`）。Excel と同じく、
+  ハイパーリンクの行き先と文字列の中（`INDIRECT("元!B2")`）は変わらない。
 - **往復**: `testdata/xlsx`・`testdata/book`・`examples/data` のブックと Excel が作ったブックを開いて保存しても、値・数式・表示・表示形式・図形が変わらない。
 
 ## 3. 直したもの
