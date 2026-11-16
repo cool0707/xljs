@@ -355,6 +355,7 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
     });
     let hwnd_id = Arc::new(AtomicIsize::new(0));
     let (f1, f2, h1) = (finish.clone(), finish.clone(), hwnd_id.clone());
+    let printing = job.printer.is_some();
     let job = Arc::new(job);
     let on_message: crate::ui::OnMessage = Arc::new(move |msg: String, _| {
         let hwnd = HWND(h1.load(Ordering::SeqCst) as *mut _);
@@ -375,15 +376,24 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
                 }
             }
             Some("rendered") if job.printer.is_some() => {
+                show_group(&core, job.printer.as_ref().unwrap(), 0);
+            }
+            // The page shows only the pages of group k: print them.
+            Some("shown") if job.printer.is_some() => {
                 let Some(env) = state(hwnd).and_then(|st| st.env.borrow().clone()) else {
                     f1(Err(err!("print.failed", "no environment")));
                     return close();
                 };
-                let p = job.printer.clone().unwrap_or_default();
-                let f = f1.clone();
-                print_groups(core, env, Arc::new(p), 0, Box::new(move |r| {
-                    f(r);
-                    close();
+                let p = Arc::new(job.printer.clone().unwrap_or_default());
+                let k = m.get("group").and_then(|g| g.as_u64()).unwrap_or(0) as usize;
+                let (f, next, p2) = (f1.clone(), core.clone(), p.clone());
+                print_group(&core, &env, &p, k, Box::new(move |r| {
+                    if r.is_ok() && k + 1 < p2.groups.len() {
+                        show_group(&next, &p2, k + 1);
+                    } else {
+                        f(r);
+                        close();
+                    }
                 }));
             }
             Some("rendered") => {
@@ -404,14 +414,14 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
             }
             Some("error") => {
                 let message = m.get("message").and_then(|t| t.as_str()).unwrap_or("").to_string();
-                f1(Err(err!("pdf.failed", message)));
+                f1(Err(if job.printer.is_some() { err!("print.failed", message) } else { err!("pdf.failed", message) }));
                 close();
             }
             _ => {}
         }
     });
     let on_closed: crate::ui::OnClosed = Arc::new(move || {
-        f2(Err(err!("pdf.failed", "closed")));
+        f2(Err(if printing { err!("print.closed") } else { err!("pdf.closed") }));
     });
     let o = WindowOptions {
         title: "xljs PDF".into(),
@@ -432,7 +442,8 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
             let id = h.0 as isize;
             after(PRINT_TIMEOUT, move || {
                 // Only while the job is open: the handle may name another window later.
-                if finish(Err(err!("pdf.failed", "timeout"))) {
+                let secs = PRINT_TIMEOUT.as_secs();
+                if finish(Err(if printing { err!("print.timeout", secs) } else { err!("pdf.timeout", secs) })) {
                     unsafe {
                         let _ = PostMessageW(Some(HWND(id as *mut _)), WM_CLOSE, WPARAM(0), LPARAM(0));
                     }
@@ -445,13 +456,27 @@ pub(super) fn print_pdf(job: PdfJob, done: PdfDone) {
     }
 }
 
-/// Prints the pages of job.groups[k..] one group (one paper) at a time with
+/// Asks web/print.html to show only the pages of job.groups[k] (it answers
+/// "shown" with the group, and then print_group prints them). The pages
+/// are printed one group (one paper) at a time by hiding the others rather
+/// than with the settings' PageRanges: a second Print whose range starts at
+/// page 4 or later never spools (WebView2, Microsoft Print to PDF and
+/// CubePDF alike).
+fn show_group(core: &ICoreWebView2, job: &crate::ui::PrinterJob, k: usize) {
+    let (from, to) = job.groups.get(k).map(|g| (g.from, g.to)).unwrap_or((1, 0));
+    let m = serde_json::json!({ "type": "pages", "group": k, "from": from, "to": to });
+    unsafe {
+        let _ = core.PostWebMessageAsString(&hstr(&format!("{HOST_PREFIX}{m}")));
+    }
+}
+
+/// Prints the pages the page shows (group k of job, see show_group) with
 /// ICoreWebView2_16::Print (no dialog), then calls done. The document's
 /// pages are the whole paper (PrintOptions::printer_layout), so the
 /// settings' margins are 0 and the paper is the group's.
-fn print_groups(core: ICoreWebView2, env: ICoreWebView2Environment, job: Arc<crate::ui::PrinterJob>, k: usize, done: Box<dyn FnOnce(Result<()>)>) {
+fn print_group(core: &ICoreWebView2, env: &ICoreWebView2Environment, job: &Arc<crate::ui::PrinterJob>, k: usize, done: Box<dyn FnOnce(Result<()>)>) {
     let Some(g) = job.groups.get(k).cloned() else { return done(Ok(())) };
-    let (wv, ps) = match print_settings(&core, &env, &job, &g) {
+    let (wv, ps) = match print_settings(core, env, job, &g) {
         Ok(x) => x,
         Err(e) => return done(Err(e)),
     };
@@ -462,7 +487,7 @@ fn print_groups(core: ICoreWebView2, env: ICoreWebView2Environment, job: Arc<cra
         if let Err(e) = hr {
             done(Err(err!("print.failed", e.message())));
         } else if status == COREWEBVIEW2_PRINT_STATUS_SUCCEEDED {
-            print_groups(core.clone(), env.clone(), job2.clone(), k + 1, done);
+            done(Ok(()));
         } else if status == COREWEBVIEW2_PRINT_STATUS_PRINTER_UNAVAILABLE {
             done(Err(err!("print.printerUnavailable", if job2.printer.is_empty() { "-" } else { &job2.printer })));
         } else {
@@ -478,7 +503,7 @@ fn print_groups(core: ICoreWebView2, env: ICoreWebView2Environment, job: Arc<cra
     }
 }
 
-/// The settings of print_groups for group g.
+/// The settings of print_group for group g.
 fn print_settings(core: &ICoreWebView2, env: &ICoreWebView2Environment, job: &crate::ui::PrinterJob, g: &crate::ui::PaperGroup) -> Result<(ICoreWebView2_16, ICoreWebView2PrintSettings)> {
     let wv: ICoreWebView2_16 = core.cast().map_err(|_| err!("print.oldRuntime"))?;
     let env6: ICoreWebView2Environment6 = env.cast().map_err(|_| err!("print.oldRuntime"))?;
@@ -499,7 +524,6 @@ fn print_settings(core: &ICoreWebView2, env: &ICoreWebView2Environment, job: &cr
         ps.SetScaleFactor(1.0).map_err(webview_err)?;
         ps.SetShouldPrintBackgrounds(true).map_err(webview_err)?;
         ps.SetShouldPrintHeaderAndFooter(false).map_err(webview_err)?;
-        ps2.SetPageRanges(&hstr(&format!("{}-{}", g.from, g.to))).map_err(webview_err)?;
         if !job.printer.is_empty() {
             ps2.SetPrinterName(&hstr(&job.printer)).map_err(webview_err)?;
         }
@@ -697,22 +721,148 @@ pub(super) fn take_pwstr(p: PWSTR) -> String {
     }
 }
 
+/// How long create_environment tries again while the browser process of an
+/// earlier run is still shutting down.
+const BROWSER_BUSY_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// How long the end of a run waits for the browser processes to exit (see
+/// wait_browser_exit).
+pub(super) const BROWSER_EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Errors of creating an environment while the browser process of an
+/// earlier run with the same user data folder is still shutting down:
+/// CO_E_SERVER_EXEC_FAILURE and HRESULT_FROM_WIN32(ERROR_INVALID_STATE).
+fn browser_busy(e: &windows::core::Error) -> bool {
+    matches!(e.code().0 as u32, 0x8008_0005 | 0x8007_139F)
+}
+
+/// Creates the environment of the user data folder, trying again for
+/// BROWSER_BUSY_WAIT while an earlier run's browser process is in the way
+/// (the messages are served meanwhile, see Busy).
+fn create_environment(folder: &str, options: &ICoreWebView2EnvironmentOptions) -> Result<ICoreWebView2Environment> {
+    let start = std::time::Instant::now();
+    loop {
+        let r = (|| -> windows::core::Result<Option<ICoreWebView2Environment>> {
+            let (tx, rx) = mpsc::channel();
+            let handler = CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(move |hr: windows::core::Result<()>, env| {
+                let _ = tx.send(hr.map(|_| env));
+                Ok(())
+            }));
+            loader::create_environment(folder, options, &handler)?;
+            wait_with_pump(rx).map_err(|e| windows::core::Error::new(E_FAIL, e.to_string()))?
+        })();
+        match r {
+            Ok(Some(env)) => {
+                watch_browser(folder, &env);
+                return Ok(env);
+            }
+            Ok(None) => return Err(webview_err("no environment")),
+            Err(e) if browser_busy(&e) && start.elapsed() < BROWSER_BUSY_WAIT => serve_for(std::time::Duration::from_millis(300)),
+            Err(e) if browser_busy(&e) => return Err(err!("ui.webview2Busy", format!("0x{:08X}", e.code().0 as u32))),
+            Err(e) => return Err(webview_err(e)),
+        }
+    }
+}
+
+/// Serves the thread's messages for d (the windows stay responsive).
+fn serve_for(d: std::time::Duration) {
+    let end = std::time::Instant::now() + d;
+    unsafe {
+        loop {
+            let mut m = MSG::default();
+            while PeekMessageW(&mut m, None, 0, 0, PM_REMOVE).as_bool() {
+                let _ = TranslateMessage(&m);
+                DispatchMessageW(&m);
+            }
+            let left = end.saturating_duration_since(std::time::Instant::now());
+            if left.is_zero() {
+                return;
+            }
+            let _ = windows::Win32::UI::WindowsAndMessaging::MsgWaitForMultipleObjects(None, false, left.as_millis() as u32, QS_ALLINPUT);
+        }
+    }
+}
+
+thread_local! {
+    /// While above 0 the windows show the busy cursor (see Busy).
+    static BUSY: Cell<u32> = const { Cell::new(0) };
+    /// An environment of each user data folder used by this run, with
+    /// whether its browser process has exited (see wait_browser_exit).
+    static BROWSERS: RefCell<Vec<(String, ICoreWebView2Environment, Rc<Cell<bool>>)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// The busy cursor (the arrow with the spinning circle) over the windows
+/// while the value lives: starting WebView2 may take seconds.
+struct Busy;
+
+impl Busy {
+    fn new() -> Busy {
+        BUSY.with(|b| b.set(b.get() + 1));
+        unsafe {
+            let _ = SetCursor(LoadCursorW(None, IDC_APPSTARTING).ok());
+        }
+        Busy
+    }
+}
+
+impl Drop for Busy {
+    fn drop(&mut self) {
+        BUSY.with(|b| b.set(b.get().saturating_sub(1)));
+        // The cursor where it is now, at once rather than at the next move.
+        let mut p = POINT::default();
+        unsafe {
+            if GetCursorPos(&mut p).is_ok() {
+                let _ = SetCursorPos(p.x, p.y);
+            }
+        }
+    }
+}
+
+/// Notes when the browser process of env's user data folder exits.
+fn watch_browser(folder: &str, env: &ICoreWebView2Environment) {
+    if BROWSERS.with(|b| b.borrow().iter().any(|(f, _, exited)| f == folder && !exited.get())) {
+        return;
+    }
+    let Ok(env5) = env.cast::<ICoreWebView2Environment5>() else { return };
+    let exited = Rc::new(Cell::new(false));
+    let e2 = exited.clone();
+    let mut token = 0i64;
+    let handler = BrowserProcessExitedEventHandler::create(Box::new(move |_, _| {
+        e2.set(true);
+        Ok(())
+    }));
+    if unsafe { env5.add_BrowserProcessExited(&handler, &mut token) }.is_ok() {
+        BROWSERS.with(|b| {
+            let mut b = b.borrow_mut();
+            b.retain(|(f, _, _)| f != folder);
+            b.push((folder.to_string(), env.clone(), exited));
+        });
+    }
+}
+
+/// At the end of a run (all windows closed): waits up to max for the
+/// browser processes to exit, so that the next run does not find its user
+/// data folder still in use (it would fail with CO_E_SERVER_EXEC_FAILURE).
+pub(super) fn wait_browser_exit(max: std::time::Duration) {
+    let start = std::time::Instant::now();
+    let running = || BROWSERS.with(|b| b.borrow().iter().any(|(_, _, exited)| !exited.get()));
+    while running() && start.elapsed() < max {
+        serve_for(std::time::Duration::from_millis(20));
+    }
+    BROWSERS.with(|b| b.borrow_mut().clear());
+}
+
 fn embed(hwnd: HWND, st: &Rc<WinState>) -> Result<()> {
+    let _busy = Busy::new();
     unsafe {
         // The environment.
-        let (tx, rx) = mpsc::channel();
-        let handler = CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(move |hr: windows::core::Result<()>, env| {
-            let _ = tx.send(hr.map(|_| env));
-            Ok(())
-        }));
         let debugger_window = st.o.debug && st.o.isolated;
         if debugger_window {
             DEBUGGER.store(true, Ordering::SeqCst);
         }
         let (folder, debugger_profile) = data_folder();
         let options = environment_options(&folder, debugger_profile, debugger_window);
-        loader::create_environment(&folder, &options, &handler).map_err(webview_err)?;
-        let env = wait_with_pump(rx).map_err(webview_err)?.map_err(webview_err)?.ok_or_else(|| webview_err("no environment"))?;
+        let env = create_environment(&folder, &options)?;
 
         // The controller.
         let (tx, rx) = mpsc::channel();
@@ -1127,6 +1277,12 @@ unsafe extern "system" fn wnd_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam:
         let controller = st.controller.borrow().clone();
         match msg {
             WM_NCCALCSIZE if st.o.custom_title_bar && wparam.0 != 0 => return unsafe { nc_calc_size(hwnd, wparam, lparam) },
+            WM_SETCURSOR if BUSY.with(|b| b.get()) > 0 && (lparam.0 & 0xFFFF) as u32 == HTCLIENT => {
+                unsafe {
+                    let _ = SetCursor(LoadCursorW(None, IDC_APPSTARTING).ok());
+                }
+                return LRESULT(1);
+            }
             WM_SIZE => {
                 if let Some(c) = &controller
                     && wparam.0 as u32 != SIZE_MINIMIZED

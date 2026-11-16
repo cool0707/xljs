@@ -246,8 +246,12 @@ Excel の印刷プレビューのように、ページを出して設定を変�
   `&P` は `section` を数えるカウンター `xljs-page`、`&N` はページ数の文字列に置き換える。印刷の設定は余白 0・倍率 1・ヘッダー/フッターなし・背景あり。
   Chromium の PDF で、本体・ヘッダー・フッターの位置が PDF 出力と同じになることを確かめた（`printer_layout` の単体テストは構造のみ）。
 - **用紙**: `xlsxPrintHtml` が `papers`（印刷するシートごとの用紙 mm と ページ数）を返し、prelude が同じ用紙の続くページを 1 つのグループにする。
-  グループごとに `MediaSize` = custom、`PageWidth` / `PageHeight`（縦向きの寸法、インチ）、`Orientation`、`PageRanges`（"3-5"）で 1 回ずつ `Print` する
+  グループごとに `MediaSize` = custom、`PageWidth` / `PageHeight`（縦向きの寸法、インチ）、`Orientation` で 1 回ずつ `Print` する
   （用紙の違うシートは別の印刷ジョブ。両面・部単位はジョブごと）。
+  ページの範囲は `PageRanges` ではなく、ページにグループのページだけを出させて（`{ type: "pages", group, from, to }` → `print-page.js` の `showPages` が
+  ほかの `section` を `display:none` にし、`&P` のカウンターを `from - 1` から始め、出したグラフが描かれるのを待って `shown`）全部を印刷する。
+  2 回目以降の `Print` で `PageRanges` の始まりが 4 ページ目以降だと、ジョブが 0 バイトのままスプールされず完了も返らないため
+  （Microsoft Print to PDF・CubePDF とも。2026-11 に実機で確認）。偶数ページの余白は `:nth-of-type` が隠したページも数えるのでそのまま。
 - **プリンターの一覧**（`Ui::printers`、`src/ui/native/printers.rs`）: `EnumPrintersW`（ローカルと接続、レベル 4）と `GetDefaultPrinterW`、
   両面・カラーは `DeviceCapabilitiesW`（`DC_DUPLEX`・`DC_COLORDEVICE`）。mock とテストの再生は架空の 2 台（`mock::mock_printers`）。
 - **プレビュー**: `print` の `preview` は `printPreview` の `"print"` のモード（既定の設定にプリンター・両面・部数を足す、ボタンは「印刷」）。
@@ -255,8 +259,10 @@ Excel の印刷プレビューのように、ページを出して設定を変�
   `toPdf` の `preview`（`"pdf"` のモード）ではプリンターの設定を出さない。
 - mock は `print("プリンター", n pages, …, duplex=…, copies=…, collate=…, color=…, [1-3 297x210, …])` をログに出す。テストの再生は `print` のイベント。
   テストは `testdata/scripts/print.test.js`。
-- **実機で確かめていないこと**: `Print` が `MediaSize` custom と向きをどう扱うか（縦向きの寸法＋向きで合っているか）、用紙の違うグループが正しく出るか、
-  両面・部数・カラーがプリンターに届くか、印刷の設定の余白 0 が使えるか（プリンターの印刷できない領域）。
+- **実機で確かめたこと**（Microsoft Print to PDF・CubePDF）: `MediaSize` custom は縦向きの寸法＋向きで合う（A4 横・B5 縦）、用紙の違うグループが別のジョブで出る、
+  本体・ヘッダー・フッターの位置とページ番号が PDF 出力と同じ、部数・白黒（グレースケール）が届く。
+  **確かめていないこと**: 両面（両面に対応した仮想プリンターがない）、実物のプリンターの印刷できない領域と余白 0 の兼ね合い。
+- 時間切れ（`PRINT_TIMEOUT`）のときは、プリンターのキューにジョブが残ることがある（`print.timeout` がキューを見るよう案内する）。
 
 ## 4. できないこと・違い
 
