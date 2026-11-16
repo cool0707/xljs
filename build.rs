@@ -99,8 +99,9 @@ fn main() {
     g.single("PRESET_SHAPES", "src/api/preset_shapes.xml");
     g.single("PRESET_TEXT_WARPS", "src/api/preset_text_warps.xml");
     g.single("DTS", "types/xljs.d.ts");
-    // The documents for AI chats (the prompt, the reference and the skills).
-    g.dir("AI_FILES", "docs/ai", |n| n.ends_with(".md") && n != "README.md");
+    // The documents for AI chats (the prompt, the reference and the skills;
+    // not the skill for coding agents, which the exe does not offer).
+    g.dir("AI_FILES", "docs/ai", |n| n.ends_with(".md") && n != "README.md" && !n.starts_with("coding-agent/"));
     writeln!(g.out, "// {} bytes stored for {} bytes of files", g.stored, g.raw).unwrap();
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("embedded.rs");
     std::fs::write(out, g.out).unwrap();
