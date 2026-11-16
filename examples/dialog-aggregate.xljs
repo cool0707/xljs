@@ -1,6 +1,6 @@
 // フォルダ内の Excel ファイル（サブフォルダ含む）の「明細」シートを集計し、
 // 顧客ごとの件数・合計を新しいブックに書き出す。
-const dir = await showDirectoryPicker({ title: "集計するフォルダを選択" });
+const dir = await showDirectoryPicker({ title: "集計するフォルダを選択（サンプル: data/売上）" });
 if (!dir) exit();
 
 const files = dir.walk("*.xlsx").toArray();
@@ -9,8 +9,7 @@ if (files.length === 0) {
   exit();
 }
 
-/** @type {any[]} */
-const rows = [];
+const rows: any[] = [];
 const errors = [];
 // キャンセルされるとスクリプトはここで終わる（途中までの結果は保存しない）
 for (const h of ui.withProgress(files, { title: "集計中" })) {

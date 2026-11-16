@@ -43,10 +43,12 @@ jobs:
       - name: Type-check the examples
         if: runner.os == 'Linux'
         # With the d.ts and jsconfig.json that `xljs init` writes, as users get them.
+        # The examples are .xljs files (TypeScript syntax), which tsc checks as .ts.
         run: |
           ex="$RUNNER_TEMP/examples"
           cp -r examples "$ex"
           cargo run -q -- init "$ex"
+          find "$ex" -name '*.xljs' -exec sh -c 'mv "$1" "${1%.xljs}.ts"' _ {} \;
           cd "$ex" && npx -y -p typescript@6.0.2 tsc -p jsconfig.json
 
   build:

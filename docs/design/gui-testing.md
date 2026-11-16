@@ -35,7 +35,7 @@ pwsh -File tools/gui/smoke.ps1 -MonitorOff         # スモークテスト一式
 Import-Module ./tools/gui/XljsGui.psm1
 Start-XljsAwake -Minutes 30 -MonitorOff           # スリープ・ロック防止＋画面だけ消す
 Start-XljsMute                                     # 通知音を止める（利用者の要望。終わったら Stop-XljsMute）
-$p = Start-Process ./target/debug/xljs.exe -ArgumentList '--lang=ja', 'examples/form-aggregate.js' -PassThru
+$p = Start-Process ./target/debug/xljs.exe -ArgumentList '--lang=ja', 'examples/form-aggregate.xljs' -PassThru
 $w = Get-XljsWindow -ProcessId $p.Id -Name '売上集計'   # 出るまで待つ
 Show-XljsUiTree $w                                 # 何が操作できるか（種別・クラス・id・名前・パターン）
 Find-XljsElement -Root $w -AutomationId submit | Invoke-XljsElement

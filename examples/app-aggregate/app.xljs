@@ -9,7 +9,7 @@
 // フォルダ内の Excel ファイル（サブフォルダ含む）の「明細」シートを顧客ごとに集計するアプリ。
 // 画面（ui/index.html）から呼ぶ関数は export しておく（画面側は xljs.invoke や data-action で呼ぶ）。
 // 画面の表示は win.state に値を入れると data-bind の要素に反映される。
-// `xljs pack app.js` で exe にすると ui フォルダも一緒に埋め込まれる。
+// `xljs pack app.xljs` で exe にすると ui フォルダも一緒に埋め込まれる。
 
 const win = app.main;
 win.state = {
@@ -21,19 +21,15 @@ win.state = {
   done: false,
 };
 
-/** @type {FileSystemDirectoryHandle | null} */
-let folder = null;
-/** @type {FileSystemFileHandle[]} */
-let files = [];
-/** @type {any[]} */
-let rows = [];
-/** @type {{ 顧客名: string, 件数: number, 合計: number }[]} */
-let summary = [];
+let folder: FileSystemDirectoryHandle | null = null;
+let files: FileSystemFileHandle[] = [];
+let rows: any[] = [];
+let summary: { 顧客名: string; 件数: number; 合計: number }[] = [];
 let cancelled = false;
 
 /** 「フォルダを選択」ボタン */
 export async function pickFolder() {
-  const dir = await showDirectoryPicker({ title: "集計するフォルダを選択", startIn: folder ?? undefined });
+  const dir = await showDirectoryPicker({ title: "集計するフォルダを選択（サンプル: data/売上）", startIn: folder ?? undefined });
   if (dir) useFolder(dir);
 }
 
@@ -44,8 +40,7 @@ export function dropped(handles) {
   useFolder(first.kind === "directory" ? first : new FileSystemDirectoryHandle(path.dirname(first.path)));
 }
 
-/** @param {FileSystemDirectoryHandle} dir */
-function useFolder(dir) {
+function useFolder(dir: FileSystemDirectoryHandle) {
   folder = dir;
   files = dir.walk("*.xlsx").toArray();
   win.state = {

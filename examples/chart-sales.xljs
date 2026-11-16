@@ -1,6 +1,9 @@
 // Excel ブックのグラフをそのまま表示し、別のシートの表からもグラフを作る。
 // グラフの定義（ChartSpec）は ui.chart・フォームの chart 項目・画面の xljs.chart で共通。
-const [file] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }] });
+const [file] = await showOpenFilePicker({
+  title: "グラフのあるブックを選択（サンプル: data/売上レポート.xlsx）",
+  types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }],
+});
 if (!file) exit();
 const book = workbooks.open(file);
 

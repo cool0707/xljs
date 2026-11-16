@@ -54,6 +54,6 @@ ui.table(files, {
     else shell.openPath(e.row.handle);
   },
 });
-```サンプル: `examples/table-file-list.js`
+```サンプル: `examples/table-file-list.xljs`
 
 フォームと表はネイティブ UI では WebView2 のウィンドウ、コンソール（`--ui=console`）では対話入力と罫線の表で表示します。モック UI（`--ui=mock`）では応答ファイルの `"form": [{ 項目名: 値 }]`（既定値との差分。表の項目は選ぶ行の番号の配列。`null` でキャンセル）と `"table": [[0, 2]]`（選ぶ行の番号）を使います。

@@ -74,8 +74,8 @@ try {
 
     # フォルダー選択 → 進捗 → 保存ダイアログ → alert → エクスプローラー表示
     Test-Case dialog-aggregate {
-        $p = Start-Xljs @("$examples/dialog-aggregate.js")
-        $d = Get-XljsWindow -ProcessId $p.Id -Name '集計するフォルダを選択'
+        $p = Start-Xljs @("$examples/dialog-aggregate.xljs")
+        $d = Get-XljsWindow -ProcessId $p.Id -Name '集計するフォルダを選択*'
         Save-XljsScreenshot "$shots/dialog-folder.png" -Window $d | Out-Null
         Submit-XljsFileDialog $d $data
         $d = Get-XljsWindow -ProcessId $p.Id -Name '名前を付けて保存' -TimeoutSec 30
@@ -103,7 +103,7 @@ if (b.sheets["明細"].toObjects().length !== 4) exit(3);
 
     # WebView2 のフォーム。HTML 要素は UIA で id（AutomationId）付きで見え、Invoke/Value/Toggle が使える
     Test-Case form-aggregate {
-        $p = Start-Xljs @("$examples/form-aggregate.js")
+        $p = Start-Xljs @("$examples/form-aggregate.xljs")
         $f = Get-XljsWindow -ProcessId $p.Id -Name '売上集計'
         $browse = Wait-Until -What '参照 buttons' {
             $b = @($f.FindAll('Descendants', [System.Windows.Automation.Condition]::TrueCondition) | Where-Object { $_.Current.Name -eq '参照…' })
@@ -136,7 +136,7 @@ if (JSON.stringify(b.sheets["集計"].toObjects()) !== '[{"商品名":"(未設�
 
     # IProgressDialog のキャンセル（ボタンは CCPushButton）
     Test-Case progress-cancel {
-        $p = Start-Xljs @("$examples/progress-cancel.js")
+        $p = Start-Xljs @("$examples/progress-cancel.xljs")
         $d = Get-XljsWindow -ProcessId $p.Id -Name 'デモ'
         Start-Sleep 1
         Save-XljsScreenshot "$shots/progress.png" -Window $d | Out-Null

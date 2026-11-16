@@ -21,4 +21,4 @@ pdf.merge(["a.pdf", "b.pdf"], "まとめ.pdf");           // まとめて結合�
 - `addText` の置き場所は `position` で指定します: `"top-left"` `"top-center"` `"top-right"` `"center"` `"bottom-left"` `"bottom-center"` `"bottom-right"`（`"右上"` `"下中央"` `"右下"` なども可）。ページの端から `margin`（mm、既定 10。`{ x: 15, y: 8 }` で横・縦を別々に）だけ内側に置きます。細かく決めるときは `x` `y` `right` `bottom`（mm）で指定します。
 - `addText` の文字は、フォントのうち使った字だけを PDF に埋め込みます（検索・コピーできます）。フォントは `font` に名前（`"游ゴシック"` `"メイリオ"` `"ＭＳ 明朝"` など）かファイルのパスで指定し、既定は表示言語の Excel のフォント（日本語は游ゴシック）です。配列にすると文字ごとに前から順に探します。
 - ページを取り込むとき、しおり（アウトライン）・フォームの定義・ページラベルは引き継ぎません。保存した PDF は暗号化されず、電子署名は無効になります。
-- サンプル: `examples/pdf-merge-stamp.js`。仕組みは `docs/design/pdf-edit.md`
+- サンプル: `examples/pdf-merge-stamp.xljs`。仕組みは `docs/design/pdf-edit.md`
