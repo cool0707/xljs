@@ -157,6 +157,11 @@ impl Window for Rec {
 }
 
 impl Rec {
+    /// All the events posted since the last call.
+    fn take_all(&self) -> Vec<Value> {
+        std::mem::take(&mut *self.posts.lock().unwrap())
+    }
+
     /// The events of a type posted since the last call.
     fn take(&self, ty: &str) -> Vec<Value> {
         let mut p = self.posts.lock().unwrap();
@@ -862,4 +867,48 @@ fn manual_in_the_session() {
     // An unknown case is an error.
     page(&mut s, json!({"op": "manual", "name": "ない"}));
     assert!(w.take("error")[0]["message"].as_str().unwrap().contains("ない"));
+}
+
+/// The look of a manual: a built-in one and a CSS file of the user's, in the
+/// page the preview shows; the PDF is printed from it.
+#[test]
+fn manual_look_and_pdf() {
+    let _l = lock_lang("ja");
+    let dir = tempdir();
+    write(&dir, "main.js", "alert('こんにちは');\n");
+    write(&dir, ".xljs/tests/基本/case.json", r#"{"script": "main.js"}"#);
+    write(&dir, "styles/社内.css", "h1 { color: navy; }");
+    let main = dir.join("main.js").to_string_lossy().into_owned();
+    let (mut s, w, rx) = session(&dir, &serde_json::json!({"showOpenFilePicker": [[dir.join("styles/社内.css").to_string_lossy()]]}).to_string());
+    page(&mut s, json!({"op": "open", "path": main}));
+    let o = crate::testing::RunOptions { limit: Some(std::time::Duration::from_secs(20)), version: "test".into(), ..Default::default() };
+    crate::testing::manual::make(&main, "基本", &o, None).unwrap();
+
+    page(&mut s, json!({"op": "manual", "name": "基本"}));
+    let m = w.take("manual");
+    assert_eq!((&m[0]["themes"][0], &m[0]["page"], &m[0]["pdf"]), (&json!("standard"), &json!("基本.html"), &json!(false)));
+    // The CSS file chosen is kept relative to the script's folder.
+    page(&mut s, json!({"op": "manualCss", "name": "基本"}));
+    let m = w.take("manual");
+    assert_eq!(m[0]["css"], "styles/社内.css");
+    page(&mut s, json!({"op": "manualSave", "name": "基本", "manual": {"theme": "simple", "css": "styles/社内.css"}}));
+    let assets = DevAssets { dir: s.dir.clone() };
+    let html = String::from_utf8(assets.read("_manual/基本/基本.html").unwrap()).unwrap();
+    assert!(html.contains("h1 { color: navy; }") && html.contains("border: 1px solid #000") && html.contains("<h1>mainの手順（基本）</h1>"), "{html}");
+    // A file that is gone: the notes are saved, the error told.
+    w.take_all();
+    page(&mut s, json!({"op": "manualSave", "name": "基本", "manual": {"css": "styles/ない.css"}}));
+    let posts = w.take_all();
+    let of = |t: &str| posts.iter().find(|p| p["type"] == t).cloned().unwrap_or_default();
+    assert_eq!(of("manual")["css"], "styles/ない.css");
+    assert!(of("error")["message"].as_str().unwrap_or("").contains("ない.css"), "{posts:?}");
+
+    // The PDF is printed (the mock UI writes nothing) and opened.
+    page(&mut s, json!({"op": "manualSave", "name": "基本", "manual": {}}));
+    page(&mut s, json!({"op": "manualPdf", "name": "基本"}));
+    assert_eq!(w.take("manualPdfStarted").len(), 1);
+    let ev = rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+    assert!(s.event(ev));
+    let p = w.take("manualPdf");
+    assert!(p[0]["file"].as_str().unwrap().ends_with("基本.pdf") && p[0].get("error").is_none(), "{p:?}");
 }

@@ -383,7 +383,15 @@
           <button type="button" id="manual-show-preview" class="tool"><i class="ic ic-eye"></i><span data-t="manualPreview"></span></button>
           <button type="button" id="manual-refresh" class="tool" data-tip="manualRefreshTip"><i class="ic ic-rotate-cw"></i><span data-t="manualRefresh"></span></button>
           <button type="button" id="manual-copy" class="tool" data-tip="manualCopyTip"><i class="ic ic-clipboard"></i><span data-t="manualCopy"></span></button>
+          <button type="button" id="manual-pdf" class="tool" data-tip="manualPdfTip"><i class="ic ic-file"></i><span data-t="manualPdf"></span></button>
           <button type="button" id="manual-folder" class="tool"><i class="ic ic-folder-open"></i><span data-t="manualFolder"></span></button>
+        </div>
+        <div id="manual-style" class="bar manual-style">
+          <span data-t="manualStyle"></span>
+          <select id="manual-theme"></select>
+          <input type="text" id="manual-css" readonly data-tip="manualCssTip">
+          <button type="button" id="manual-css-pick" class="tool" data-tip="manualCssTip"><i class="ic ic-file-code"></i><span data-t="manualCssPick"></span></button>
+          <button type="button" id="manual-css-clear" class="tool icon" data-tip="manualCssClear"><i class="ic ic-x"></i></button>
         </div>
         <p id="manual-state" class="hint muted"></p>
         <pre id="manual-error" class="error-box" hidden></pre>
@@ -393,7 +401,8 @@
           <ol id="manual-steps" class="manual-steps"></ol>
           <label class="manual-field"><span data-t="manualOutro"></span><textarea id="manual-outro" rows="2"></textarea></label>
         </div>
-        <div id="manual-preview" class="manual-preview md" hidden></div>
+        <!-- The page of the manual (manual/<case>.html) as the PDF prints it; its scripts do not run. -->
+        <iframe id="manual-preview" class="manual-preview" sandbox="allow-same-origin" hidden></iframe>
       </section>
     </div>
 </div>

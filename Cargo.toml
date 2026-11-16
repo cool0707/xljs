@@ -46,6 +46,8 @@ rusqlite = { version = "0.41", features = ["bundled", "backup", "column_decltype
 lopdf = { version = "0.46", default-features = false }
 ttf-parser = "0.25"
 subsetter = { version = "0.2", default-features = false }
+# Markdown to HTML: the manuals of test cases (src/testing/manual.rs), for their preview and PDF.
+pulldown-cmark = { version = "0.13.6", default-features = false, features = ["html"] }
 # The formula engine (vendor/gridcraft/README.md): parser, function library,
 # dependency graph and recalculation, from GridCraft with xljs's changes.
 gridcraft-core = { path = "vendor/gridcraft/core" }

@@ -354,7 +354,11 @@ body.drop-over iframe { pointer-events: none; }
 .manual { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .manual[hidden] { display: none; }
 .manual-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.manual-edit, .manual-preview { flex: 1; overflow: auto; padding: 4px 16px 16px; }
+.manual-edit { flex: 1; overflow: auto; padding: 4px 16px 16px; }
+.manual-preview { flex: 1; min-height: 0; width: 100%; border: none; border-top: 1px solid var(--border); background: #fff; }
+.manual-style > span { flex: none; font-weight: 600; }
+.manual-style select { flex: none; }
+.manual-style input[type=text] { flex: 1; color: var(--muted); }
 .manual-edit[hidden], .manual-preview[hidden] { display: none; }
 .manual-field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
 .manual-field > span { font-weight: 600; }

@@ -187,6 +187,8 @@ pub enum Event {
     Run(RunEvent),
     /// From the process that runs the test cases (xljs test).
     Test(RunEvent),
+    /// The PDF of a case's manual is written (its path) or failed.
+    ManualPdf { case: String, result: std::result::Result<String, String> },
     Closed,
 }
 
@@ -434,6 +436,15 @@ impl Session {
             Event::Browser(b) => self.browser_event(b),
             Event::Run(r) => self.run_event(r),
             Event::Test(r) => self.test_event(r),
+            Event::ManualPdf { case, result } => match result {
+                Ok(file) => {
+                    self.post(json!({"type": "manualPdf", "case": case, "file": file, "message": t!("manual.pdfMade", file)}));
+                    if let Err(e) = self.u.open_path(&file) {
+                        self.fail(&e);
+                    }
+                }
+                Err(message) => self.post(json!({"type": "manualPdf", "case": case, "error": message})),
+            },
         }
         true
     }
@@ -570,8 +581,45 @@ impl Session {
             "manualSave" => {
                 let dir = self.case_dir(&r.name)?;
                 crate::testing::manual::save_notes(&dir, &r.manual)?;
-                crate::testing::manual::write_markdown(&dir)?;
+                // A CSS file that cannot be read: the notes are kept all the same.
+                let written = crate::testing::manual::write_markdown(&dir);
                 self.post_manual(&r.name)?;
+                written?;
+            }
+            "manualCss" => {
+                // A CSS file over the look: relative to the script's folder when it is in it.
+                let p = self.project()?.clone();
+                let dir = self.case_dir(&r.name)?;
+                let chosen = self.u.open_files(&PickerOptions {
+                    title: t!("dev.manualCssTitle"),
+                    start_in: p.dir.to_string_lossy().into_owned(),
+                    filters: vec![FileFilter { description: "CSS".into(), patterns: vec!["*.css".into()] }],
+                    ..Default::default()
+                });
+                let Some(file) = chosen.into_iter().next() else { return Ok(()) };
+                let file = PathBuf::from(file);
+                let css = match file.strip_prefix(&p.dir) {
+                    Ok(rel) => rel.to_string_lossy().replace('\\', "/"),
+                    Err(_) => file.to_string_lossy().into_owned(),
+                };
+                let mut notes = crate::testing::manual::load_notes(&dir)?;
+                notes.css = css;
+                crate::testing::manual::save_notes(&dir, &notes)?;
+                let written = crate::testing::manual::write_markdown(&dir);
+                self.post_manual(&r.name)?;
+                written?;
+            }
+            "manualPdf" => {
+                let name = r.name.trim_end_matches('/').to_string();
+                let dir = self.case_dir(&name)?;
+                let job = crate::testing::manual::pdf_job(&dir)?;
+                self.post(json!({"type": "manualPdfStarted", "case": name}));
+                let tx = self.tx.clone();
+                let file = job.path.clone();
+                self.u.print_pdf(job, Box::new(move |r| {
+                    let result = r.map(|_| file).map_err(|e| i18n::error(&e));
+                    let _ = tx.send(Event::ManualPdf { case: name, result });
+                }));
             }
             "manualFolder" => {
                 let dir = self.case_dir(&r.name)?;
@@ -1459,6 +1507,9 @@ impl Session {
             "type": "manual", "case": name, "title": notes.title, "intro": notes.intro, "outro": notes.outro,
             "steps": steps, "results": made.results, "failed": made.failed, "markdown": markdown,
             "file": md.to_string_lossy(), "stamp": stamp,
+            "theme": notes.theme, "css": notes.css, "themes": manual::THEMES,
+            "page": manual::html_path(&dir).file_name().map(|n| n.to_string_lossy().into_owned()),
+            "pdf": manual::pdf_path(&dir).is_file(),
         }));
         Ok(())
     }

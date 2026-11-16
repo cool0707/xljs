@@ -10,6 +10,9 @@
 //!   hidden steps). Kept when the manual is made again.
 //! - `manual/steps.json`: the steps of the last run (made by xljs).
 //! - `manual/<case>.md` and `manual/images/<step>.png`: the manual.
+//! - `manual/<case>.html`: the Markdown as a page with its look (a built-in
+//!   one, `web/manual/*.css`, and the user's CSS file): the preview, and
+//!   what `manual/<case>.pdf` is printed from.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -49,7 +52,18 @@ pub struct Notes {
     /// By step id ("form-1").
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub steps: BTreeMap<String, StepNote>,
+    /// The look of the page and the PDF: one of THEMES ("" = "standard").
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub theme: String,
+    /// A CSS file laid over the look (relative to the script's folder, or
+    /// absolute; "" = none).
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub css: String,
 }
+
+/// The built-in looks (web/manual/<name>.css); "none" has only what every
+/// look has (web/manual/base.css), for a CSS file of the user's own.
+pub const THEMES: &[&str] = &["standard", "simple", "mincho", "none"];
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -447,7 +461,133 @@ pub fn write_markdown(case_dir: &Path) -> Result<PathBuf> {
     let made = load_made(case_dir).ok_or_else(|| err!("manual.notMade"))?;
     let notes = load_notes(case_dir)?;
     let path = markdown_path(case_dir);
-    write(&path, &(markdown(&made, &notes) + "\n"))?;
+    let md = markdown(&made, &notes);
+    write(&path, &(md.clone() + "\n"))?;
+    write(&html_path(case_dir), &html(&md, &style(case_dir, &notes)?, None))?;
+    Ok(path)
+}
+
+/// The page of a case's manual (`manual/<case>.html`) and its PDF.
+pub fn html_path(case_dir: &Path) -> PathBuf {
+    markdown_path(case_dir).with_extension("html")
+}
+
+pub fn pdf_path(case_dir: &Path) -> PathBuf {
+    markdown_path(case_dir).with_extension("pdf")
+}
+
+/// The folder of the scripts a case's folder is in (`<root>/.xljs/tests/<case>`).
+fn root_of(case_dir: &Path) -> PathBuf {
+    case_dir.ancestors().nth(3).map(Path::to_path_buf).unwrap_or_default()
+}
+
+/// The CSS file of the notes (relative to the script's folder).
+pub fn css_path(case_dir: &Path, notes: &Notes) -> Option<PathBuf> {
+    let css = notes.css.trim();
+    if css.is_empty() {
+        return None;
+    }
+    let p = Path::new(css);
+    Some(if p.is_absolute() { p.to_path_buf() } else { root_of(case_dir).join(p) })
+}
+
+/// The CSS of a manual: what every look has, the look, the user's file.
+pub fn style(case_dir: &Path, notes: &Notes) -> Result<String> {
+    let theme = if notes.theme.is_empty() { "standard" } else { notes.theme.as_str() };
+    if !THEMES.contains(&theme) {
+        return Err(err!("manual.badTheme", theme, THEMES.join(", ")));
+    }
+    let built = |name: &str| crate::embed::find(&crate::embed::WEB_FILES, &format!("manual/{name}.css")).map(|f| f.text()).unwrap_or("");
+    let mut css = built("base").to_string();
+    if theme != "none" {
+        css.push_str(built(theme));
+    }
+    if let Some(p) = css_path(case_dir, notes) {
+        let own = std::fs::read_to_string(&p).map_err(|e| Error::path("open", p.display().to_string(), e))?;
+        css.push_str(&format!("\n/* {} */\n", notes.css.replace("*/", "")));
+        css.push_str(own.strip_prefix('\u{feff}').unwrap_or(&own));
+    }
+    Ok(css)
+}
+
+fn escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+/// Markdown as a page with the CSS. inline: the folder of the relative
+/// image paths, whose pictures then go into the page (for the PDF);
+/// None keeps the paths.
+pub fn html(md: &str, css: &str, inline: Option<&Path>) -> String {
+    use base64::Engine as _;
+    use pulldown_cmark::{CowStr, Event, Options, Parser, Tag};
+    let mut title = String::new();
+    let mut in_title = false;
+    let events = Parser::new_ext(md, Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH).map(|e| match e {
+        Event::Start(Tag::Image { link_type, dest_url, title: t, id }) => {
+            let dest = match inline {
+                Some(dir) if !dest_url.contains(':') && !dest_url.starts_with('/') => {
+                    let p = dir.join(dest_url.as_ref());
+                    match std::fs::read(&p) {
+                        Ok(data) => {
+                            let kind = match p.extension().and_then(|x| x.to_str()).map(str::to_lowercase).as_deref() {
+                                Some("jpg" | "jpeg") => "image/jpeg",
+                                Some("gif") => "image/gif",
+                                Some("svg") => "image/svg+xml",
+                                Some("webp") => "image/webp",
+                                _ => "image/png",
+                            };
+                            CowStr::from(format!("data:{kind};base64,{}", base64::engine::general_purpose::STANDARD.encode(data)))
+                        }
+                        Err(_) => dest_url,
+                    }
+                }
+                _ => dest_url,
+            };
+            Event::Start(Tag::Image { link_type, dest_url: dest, title: t, id })
+        }
+        e => {
+            match &e {
+                Event::Start(Tag::Heading { level: pulldown_cmark::HeadingLevel::H1, .. }) if title.is_empty() => in_title = true,
+                Event::End(pulldown_cmark::TagEnd::Heading(_)) => in_title = false,
+                Event::Text(t) | Event::Code(t) if in_title => title.push_str(t),
+                _ => {}
+            }
+            e
+        }
+    });
+    let mut body = String::new();
+    pulldown_cmark::html::push_html(&mut body, events);
+    format!(
+        "<!doctype html>\n<html lang=\"{}\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width\">\n<meta name=\"color-scheme\" content=\"light\">\n<title>{}</title>\n<style>\n{}\n</style>\n</head>\n<body>\n<article class=\"manual\">\n{}</article>\n</body>\n</html>\n",
+        crate::i18n::lang(),
+        escape(&title),
+        css.replace("</style", "<\\/style"),
+        body
+    )
+}
+
+/// What prints a case's manual as `manual/<case>.pdf` (Ui::print_pdf):
+/// the page with its pictures in it.
+pub fn pdf_job(case_dir: &Path) -> Result<crate::ui::PdfJob> {
+    let made = load_made(case_dir).ok_or_else(|| err!("manual.notMade"))?;
+    let notes = load_notes(case_dir)?;
+    let md = markdown(&made, &notes);
+    let page = html(&md, &style(case_dir, &notes)?, Some(&folder(case_dir)));
+    Ok(crate::ui::PdfJob { html: page, charts: "[]".into(), texts: "{}".into(), path: pdf_path(case_dir).to_string_lossy().into_owned() })
+}
+
+/// Prints a case's manual as a PDF with u (on its thread: see ui::run);
+/// returns the file.
+pub fn write_pdf(u: Arc<dyn Ui>, case_dir: &Path) -> Result<PathBuf> {
+    let job = pdf_job(case_dir)?;
+    let path = PathBuf::from(&job.path);
+    crate::ui::run(u, move |su| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        su.print_pdf(job, Box::new(move |r| {
+            let _ = tx.send(r);
+        }));
+        rx.recv().unwrap_or_else(|_| Err(err!("pdf.failed", "closed")))
+    })?;
     Ok(path)
 }
 
@@ -592,6 +732,41 @@ mod tests {
         std::fs::write(dir.join(NOTES), "{").unwrap();
         assert!(load_notes(&dir).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn page_and_pdf_of_a_manual() {
+        let _g = crate::testutil::lock_lang("ja");
+        let root = crate::testutil::tempdir();
+        let dir = root.join(".xljs/tests/月次");
+        let made = Made { case: "月次".into(), script: "集計.js".into(), steps: vec![Step { id: "form-1".into(), heading: "「集計」画面".into(), text: vec!["押します。".into()], images: vec!["images/form-1.png".into()] }], ..Default::default() };
+        write(&folder(&dir).join(STEPS), &serde_json::to_string(&made).unwrap()).unwrap();
+        write(&folder(&dir).join("images/form-1.png"), "PNG").unwrap();
+        let mut notes = Notes { title: "<集計> & 手順".into(), ..Default::default() };
+        save_notes(&dir, &notes).unwrap();
+        write_markdown(&dir).unwrap();
+        let page = std::fs::read_to_string(html_path(&dir)).unwrap();
+        assert!(page.contains("<title>&lt;集計&gt; &amp; 手順</title>"), "{page}");
+        assert!(page.contains("<h3>1. 「集計」画面</h3>") && page.contains(r#"<img src="images/form-1.png""#), "{page}");
+        assert!(page.contains("border-bottom: 2px solid #1261d1"), "the standard look");
+        // A look of its own and a CSS file over it.
+        notes.theme = "mincho".into();
+        notes.css = "style/my.css".into();
+        save_notes(&dir, &notes).unwrap();
+        assert!(write_markdown(&dir).is_err(), "the file is missing");
+        write(&root.join("style/my.css"), "h1 { color: red; }").unwrap();
+        write_markdown(&dir).unwrap();
+        let page = std::fs::read_to_string(html_path(&dir)).unwrap();
+        assert!(page.contains("Yu Mincho") && !page.contains("#1261d1") && page.contains("h1 { color: red; }"), "{page}");
+        notes.theme = "fancy".into();
+        assert!(style(&dir, &notes).is_err());
+        // The PDF has the pictures in the page.
+        notes.theme = "none".into();
+        save_notes(&dir, &notes).unwrap();
+        let job = pdf_job(&dir).unwrap();
+        assert!(job.html.contains("src=\"data:image/png;base64,UE5H\""), "{}", job.html);
+        assert!(job.html.contains("@page") && !job.html.contains("Yu Mincho"));
+        assert!(job.path.ends_with("月次.pdf"));
     }
 
     #[test]

@@ -230,7 +230,15 @@ xljs test --manual <ケース> [--json] <スクリプトかフォルダ>
 開発モード: ケースの［手順書］→ `manual`（作ってあればそれを、なければ `xljs test --manual --json` を別プロセスで。`refresh` で作り直し）→
 `manual`（手順・メモ・画像・Markdown）。メモは入力のたびに `manualSave`（`manual.json` を保存し Markdown を書き直して `manual` を返す）。
 画像と Markdown は `https://app.xljs/_manual/<ケース>/...`（`DevAssets`）で `.xljs/tests/<ケース>/manual/` を読む。
-プレビューは `web/markdown.js`（見出し・段落・リスト・引用・コード・表・画像・リンク・強調。要素を組み立て、HTML は使わない）。
+プレビューは下の「見た目と PDF」の HTML。
+
+見た目と PDF: `manual.json` の `theme`（組み込みの `web/manual/<名前>.css`。`base.css` はどれにも入る＝画像を紙に収める・見出しと画像を改ページで分けない・`@page` A4）と
+`css`（利用者の CSS ファイル。スクリプトのフォルダからの相対パスか絶対パス。見た目の後ろに足す）。
+Markdown を書くたびに、pulldown-cmark で HTML にした `manual/<ケース>.html`（CSS を `<style>` に入れる。画像は相対パス）も書く。
+開発モードのプレビューはこの HTML を `iframe`（`sandbox`。スクリプトは動かない）で見せるので、PDF と同じ見た目になる。
+PDF（`manual::pdf_job`。開発モードの［PDF］＝`manualPdf`、CLI の `--pdf`）は、画像を data URI にした同じ HTML を `Ui::print_pdf`（`print.html`）に渡す。
+CSS ファイルが読めないときは、メモは保存してエラーを出す（HTML は前のまま）。開発モードの［CSS ファイル…］（`manualCss`）はファイルを選ばせて `css` に入れる。
+編集画面の手順の文は `web/markdown.js` で表示する。
 
 画像にしないもの: ファイル・フォルダのピッカー（OS の画面）、`ui.table`・`ctx.table`、アプリモードの画面、通知。
 
