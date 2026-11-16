@@ -136,6 +136,14 @@ pub struct PrintOptions {
     /// size per character (negative letter-spacing), for text that prints
     /// wider than Excel shows it on screen. None or 0 = as the font is.
     pub condense: Option<f64>,
+    /// Swap the left and right margins of the even pages (for printing on
+    /// both sides; the first page is a right-hand page).
+    pub mirror_margins: Option<bool>,
+    /// For a printer (Ui::print_pdf with a printer): the pages have no
+    /// margins of their own; the sections are the whole paper with the
+    /// margins as padding and the header and footer inside (a printer's
+    /// settings may override the @page margins).
+    pub printer_layout: bool,
     /// Only work out how the pages are cut (PrintOut::sheets); no HTML.
     #[serde(skip)]
     pub layout_only: bool,
@@ -181,6 +189,17 @@ pub struct PrintOut {
     pub charts: Vec<ChartRef>,
     pub pages: usize,
     pub sheets: Vec<SheetPages>,
+    /// The paper of the printed sheets in order (mm, as oriented) and how
+    /// many pages each prints.
+    pub papers: Vec<SheetPaper>,
+}
+
+/// The paper of a printed sheet (PrintOut::papers).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct SheetPaper {
+    pub width: f64,
+    pub height: f64,
+    pub pages: usize,
 }
 
 /// The size of a paper in millimeters (portrait) by Excel's paperSize code
@@ -526,6 +545,10 @@ struct Setup {
     grid: bool,
     center_h: bool,
     center_v: bool,
+    /// The even pages have the left and right margins swapped.
+    mirror: bool,
+    /// PrintOptions::printer_layout.
+    printer: bool,
 }
 
 struct Sheet<'a> {
@@ -1201,20 +1224,28 @@ body{-webkit-print-color-adjust:exact;print-color-adjust:exact;font-variant-emoj
 @media screen{
 body{background:#e6e6e6;padding:12px 0}
 .xljs-page{width:var(--pw);height:var(--ph);padding:var(--m);margin:0 auto 12px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+.xljs-page:nth-of-type(even){padding:var(--mm,var(--m))}
 }
+"#;
+
+/// The pages for a printer (PrintOptions::printer_layout): each section is
+/// the whole paper with the margins as padding (the even pages' swapped,
+/// --mm), and the header and footer are boxes in it.
+const PRINTER_CSS: &str = r#"body.xljs-printer{counter-reset:xljs-page}
+.xljs-printer .xljs-page{counter-increment:xljs-page}
+@media print{
+.xljs-printer .xljs-page{width:var(--pw);height:calc(var(--ph) - 1pt);padding:var(--m)}
+.xljs-printer .xljs-page:nth-of-type(even){padding:var(--mm,var(--m))}
+}
+.xljs-hf{position:absolute;left:var(--hl);right:var(--hr);white-space:pre;line-height:normal}
+.xljs-page:nth-of-type(even)>.xljs-hf{left:var(--hl2,var(--hl));right:var(--hr2,var(--hr))}
+.xljs-hf-t{top:var(--ht)}
+.xljs-hf-b{bottom:calc(var(--hb) - 1pt)}
 "#;
 
 /// Lays out the sheets of a workbook (see PrintOut).
 pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
-    let names: Vec<String> = if o.sheets.is_empty() {
-        b.wb.sheet_collection()
-            .iter()
-            .map(|s| s.name().to_string())
-            .filter(|name| !b.print.get(name).is_some_and(|p| p.hidden))
-            .collect()
-    } else {
-        o.sheets.clone()
-    };
+    let names = print_names(b, o);
     let now = {
         let t = chrono::Local::now();
         (t.format("%Y/%m/%d").to_string(), t.format("%H:%M").to_string())
@@ -1228,6 +1259,7 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
     let mut charts = Vec::new();
     let mut pages = 0;
     let mut sheets = Vec::new();
+    let mut papers = Vec::new();
     let ids = std::cell::Cell::new(0);
     for (si, name) in names.iter().enumerate() {
         let mut sh = Sheet::new(b, name)?;
@@ -1278,10 +1310,11 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
             continue;
         }
         let page_name = format!("s{si}");
-        page_css.push_str(&page_rule(&page_name, &sh, &setup, &file, &dir, &now));
+        let (rule, hf_html) = page_rule(&page_name, &sh, &setup, &file, &dir, &now);
+        page_css.push_str(&rule);
         let mut info = SheetPages { sheet: name.clone(), pages: 0, across: 0, down: 0, scale: 100.0, areas: Vec::new() };
         for area in areas {
-            let (a, scale) = sheet_pages(&sh, &setup, area, &objects, &page_name, &mut classes, o.skip_blank_pages, if o.layout_only { None } else { Some(&mut body) });
+            let (a, scale) = sheet_pages(&sh, &setup, area, &objects, &page_name, &hf_html, &mut classes, o.skip_blank_pages, if o.layout_only { None } else { Some(&mut body) });
             pages += a.pages;
             info.pages += a.pages;
             info.across = info.across.max(a.across);
@@ -1291,10 +1324,12 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
             }
             info.areas.push(a);
         }
+        let mm = |v: f64| (v / PT_MM * 10.0).round() / 10.0;
+        papers.push(SheetPaper { width: mm(setup.paper.0), height: mm(setup.paper.1), pages: info.pages });
         sheets.push(info);
     }
     if o.layout_only {
-        return Ok(PrintOut { html: String::new(), charts, pages, sheets });
+        return Ok(PrintOut { html: String::new(), charts, pages, sheets, papers });
     }
     if pages == 0 {
         return Err(err!("pdf.empty"));
@@ -1302,14 +1337,104 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
     let title = if o.title.is_empty() { file.clone() } else { o.title.clone() };
     let lang = if crate::i18n::lang() == "ja" { "ja" } else { "en" };
     let condense = condense_css(o.condense);
+    let (page_css, body_class) = if o.printer_layout {
+        // The number of pages is known now (headers and footers with &N).
+        (format!("{PRINTER_CSS}{}", page_css.replace("counter(pages)", &format!("\"{pages}\""))), "xljs-print xljs-printer")
+    } else {
+        (page_css, "xljs-print")
+    };
     let mut html = String::with_capacity(body.len() + 4096);
     let _ = write!(
         html,
-        "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n<title>{}</title>\n<style>\n{BASE_CSS}{page_css}{}{condense}</style>\n</head>\n<body class=\"xljs-print\">\n{body}</body>\n</html>\n",
+        "<!doctype html>\n<html lang=\"{lang}\">\n<head>\n<meta charset=\"utf-8\">\n<title>{}</title>\n<style>\n{BASE_CSS}{page_css}{}{condense}</style>\n</head>\n<body class=\"{body_class}\">\n{body}</body>\n</html>\n",
         esc(&title),
         classes.css
     );
-    Ok(PrintOut { html, charts, pages, sheets })
+    Ok(PrintOut { html, charts, pages, sheets, papers })
+}
+
+/// The sheets that o prints: o.sheets, or every visible sheet.
+fn print_names(b: &Book, o: &PrintOptions) -> Vec<String> {
+    if o.sheets.is_empty() {
+        b.wb.sheet_collection()
+            .iter()
+            .map(|s| s.name().to_string())
+            .filter(|name| !b.print.get(name).is_some_and(|p| p.hidden))
+            .collect()
+    } else {
+        o.sheets.clone()
+    }
+}
+
+/// The page setup a sheet prints with, the options applied (the starting
+/// values of the print preview's settings).
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SheetSetup {
+    pub sheet: String,
+    /// The paper's name as PrintOptions::paper takes it; None for a paper
+    /// without one ("A4" when the sheet says nothing).
+    pub paper: Option<String>,
+    pub landscape: bool,
+    /// The scale in percent; None when the sheet is fitted to pages.
+    pub scale: Option<f64>,
+    /// "Fit to" pages wide / tall (0 = automatic); None with a scale.
+    pub fit_to_width: Option<u32>,
+    pub fit_to_height: Option<u32>,
+    /// Top, right, bottom, left in millimeters.
+    pub margin: [f64; 4],
+    pub grid_lines: bool,
+    pub black_and_white: bool,
+    pub center_horizontally: bool,
+}
+
+/// The name of a paperSize code (paper_code's inverse).
+pub fn paper_name(code: u32) -> Option<&'static str> {
+    Some(match code {
+        0 | 9 => "A4",
+        1 => "Letter",
+        3 => "Tabloid",
+        4 => "Ledger",
+        5 => "Legal",
+        6 => "Statement",
+        7 => "Executive",
+        8 => "A3",
+        11 => "A5",
+        12 => "B4",
+        13 => "B5",
+        14 => "Folio",
+        43 => "Postcard",
+        66 => "A2",
+        70 => "A6",
+        _ => return None,
+    })
+}
+
+/// The page setup of each sheet that o prints (see SheetSetup).
+pub fn print_setup(b: &Book, o: &PrintOptions) -> Result<Vec<SheetSetup>> {
+    let mut out = Vec::new();
+    for name in print_names(b, o) {
+        let sh = Sheet::new(b, &name)?;
+        let s = setup_of(&sh, b.print.get(&name), o)?;
+        let paper = match &o.paper {
+            Some(p) => paper_code(p).and_then(paper_name),
+            None => paper_name(sh.ws.page_setup().paper_size()),
+        };
+        let mm = |v: f64| (v / PT_MM * 10.0).round() / 10.0;
+        out.push(SheetSetup {
+            sheet: name.clone(),
+            paper: paper.map(str::to_string),
+            landscape: s.paper.0 > s.paper.1,
+            scale: s.scale.map(|v| (v * 100.0).round()),
+            fit_to_width: s.fit.map(|f| f.0),
+            fit_to_height: s.fit.map(|f| f.1),
+            margin: s.margins.map(mm),
+            grid_lines: s.grid,
+            black_and_white: o.black_and_white.unwrap_or(sh.mono),
+            center_horizontally: s.center_h,
+        });
+    }
+    Ok(out)
 }
 
 /// The rule that tightens the text (PrintOptions::condense). The em of
@@ -1377,12 +1502,19 @@ fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setu
         grid: o.grid_lines.unwrap_or(raw.grid_lines),
         center_h: o.center_horizontally.unwrap_or(sh.ws.print_options().horizontal_centered()),
         center_v: sh.ws.print_options().vertical_centered(),
+        mirror: o.mirror_margins == Some(true),
+        printer: o.printer_layout,
     })
 }
 
-/// The @page rule of a sheet: size, margins, header and footer.
-fn page_rule(name: &str, sh: &Sheet, s: &Setup, file: &str, dir: &str, now: &(String, String)) -> String {
+/// The @page rule of a sheet: size, margins, header and footer. For a
+/// printer (Setup::printer) the page has no margins and the header and
+/// footer are boxes in each section: (CSS, the boxes' HTML).
+fn page_rule(name: &str, sh: &Sheet, s: &Setup, file: &str, dir: &str, now: &(String, String)) -> (String, String) {
     let [t, r, bt, l] = s.margins;
+    if s.printer {
+        return printer_rule(name, sh, s, file, dir, now);
+    }
     let mut css = format!("@page {name}{{size:{}pt {}pt;margin:{}pt {}pt {}pt {}pt;", n(s.paper.0), n(s.paper.1), n(t), n(r), n(bt), n(l));
     let hf = sh.ws.header_footer();
     let font = format!("font-family:{};font-size:{}pt;", font_family(&sh.font.0), n(sh.font.1));
@@ -1405,13 +1537,49 @@ fn page_rule(name: &str, sh: &Sheet, s: &Setup, file: &str, dir: &str, now: &(St
         }
     }
     css.push_str("}\n");
-    css
+    // The even pages are left-hand pages (the document starts on the right).
+    if s.mirror && r != l {
+        let _ = writeln!(css, "@page {name}:left{{margin-left:{}pt;margin-right:{}pt}}", n(r), n(l));
+    }
+    (css, String::new())
+}
+
+/// page_rule for a printer: the paper without margins, and the header and
+/// footer as boxes (`.xljs-hf`) placed by the section's --hl --hr --ht --hb
+/// (PRINTER_CSS). Page numbers count the sections (counter xljs-page);
+/// counter(pages) is replaced by the number of pages at the end.
+fn printer_rule(name: &str, sh: &Sheet, s: &Setup, file: &str, dir: &str, now: &(String, String)) -> (String, String) {
+    let mut css = format!("@page {name}{{size:{}pt {}pt;margin:0}}\n", n(s.paper.0), n(s.paper.1));
+    let mut html = String::new();
+    let hf = sh.ws.header_footer();
+    let font = format!("font-family:{};font-size:{}pt;", font_family(&sh.font.0), n(sh.font.1));
+    for (text, top) in [(hf.odd_header().value(), true), (hf.odd_footer().value(), false)] {
+        if text.is_empty() {
+            continue;
+        }
+        for (i, sec) in hf_sections(text).iter().enumerate() {
+            if sec.is_empty() {
+                continue;
+            }
+            let (content, extra) = hf_content(sec, &sh.name, file, dir, now);
+            if content.is_empty() {
+                continue;
+            }
+            let pos = ["left", "center", "right"][i];
+            let edge = if top { "t" } else { "b" };
+            let class = format!("{name}-{edge}{i}");
+            let content = content.replace("counter(page)", "counter(xljs-page)");
+            let _ = writeln!(css, ".xljs-hf.{class}::before{{content:{content};text-align:{pos};{font}{extra}}}");
+            let _ = write!(html, "<div class=\"xljs-hf xljs-hf-{edge} {class}\" style=\"text-align:{pos}\"></div>");
+        }
+    }
+    (css, html)
 }
 
 /// Writes the pages of one area of a sheet (only works them out when out is
 /// None); returns how they are cut and the scale.
 #[allow(clippy::too_many_arguments)]
-fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, String)], page: &str, classes: &mut Classes, skip_blank: u8, out: Option<&mut String>) -> (AreaPages, f64) {
+fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, String)], page: &str, hf: &str, classes: &mut Classes, skip_blank: u8, out: Option<&mut String>) -> (AreaPages, f64) {
     let (c1, r1, c2, r2) = area;
     let (title_rows, title_cols) = sh.titles();
     let sum = |a: u32, b: u32, f: &dyn Fn(u32) -> f64| (a..=b).map(f).sum::<f64>();
@@ -1462,8 +1630,17 @@ fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, St
     };
     let Some(out) = out else { return (cut, scale) };
     let [mt, mr, mb, ml] = s.margins;
+    // On screen the even pages take --mm (BASE_CSS).
+    let mut mirror = if s.mirror { format!(";--mm:{}pt {}pt {}pt {}pt", n(mt), n(ml), n(mb), n(mr)) } else { String::new() };
+    if s.printer {
+        // Where the header and footer go (PRINTER_CSS).
+        let _ = write!(mirror, ";--hl:{}pt;--hr:{}pt;--ht:{}pt;--hb:{}pt", n(ml), n(mr), n(s.header), n(s.footer));
+        if s.mirror {
+            let _ = write!(mirror, ";--hl2:{}pt;--hr2:{}pt", n(mr), n(ml));
+        }
+    }
     let style = format!(
-        "page:{page};--w:{}pt;--h:{}pt;--pw:{}pt;--ph:{}pt;--m:{}pt {}pt {}pt {}pt;align-items:{};justify-content:{}",
+        "page:{page};--w:{}pt;--h:{}pt;--pw:{}pt;--ph:{}pt;--m:{}pt {}pt {}pt {}pt;align-items:{};justify-content:{}{mirror}",
         n(avail_w),
         n(avail_h - 1.0),
         n(s.paper.0),
@@ -1516,7 +1693,9 @@ fn sheet_pages(sh: &Sheet, s: &Setup, area: Area, objects: &[(Anchor, String, St
         if !objs.is_empty() {
             let _ = write!(out, "<div class=\"xljs-objs\" style=\"left:{}pt;top:{}pt;width:{}pt;height:{}pt\">{objs}</div>", n(body_x), n(body_y), n(bw), n(bh));
         }
-        out.push_str("</div>\n</section>\n");
+        out.push_str("</div>\n");
+        out.push_str(hf);
+        out.push_str("</section>\n");
     }
     (cut, scale)
 }
@@ -2301,6 +2480,32 @@ mod tests {
     }
 
     #[test]
+    fn printer_layout() {
+        let _l = crate::testutil::lock_lang("ja");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/testdata/xlsx/print.xlsx");
+        let b = super::super::xlsx::open_bytes(&std::fs::read(path).unwrap(), path.into()).unwrap();
+        let o = PrintOptions { printer_layout: true, mirror_margins: Some(true), ..Default::default() };
+        let out = workbook_html(&b, &o).unwrap();
+        if let Ok(dump) = std::env::var("XLJS_DUMP_PRINTER_HTML") {
+            std::fs::write(dump, &out.html).unwrap();
+        }
+        // The paper without margins; the margins, header and footer in the pages.
+        assert!(out.html.contains("@page s0{size:841.89pt 595.276pt;margin:0}"), "{}", &out.html[..2000]);
+        assert!(!out.html.contains("@top-left"));
+        assert!(out.html.contains("<body class=\"xljs-print xljs-printer\">"));
+        assert!(out.html.contains("class=\"xljs-hf xljs-hf-t s0-t0\""));
+        assert!(out.html.contains(".xljs-hf.s0-t0::before{content:\"売上一覧\""));
+        // &P / &N: the sections' counter and the number of pages.
+        assert!(out.html.contains(&format!("content:counter(xljs-page) \" / \" \"{}\" \" ページ\"", out.pages)), "page numbers");
+        assert!(out.html.contains(";--hl:") && out.html.contains(";--hl2:"));
+        // The papers: A4 landscape (3 pages), B5 portrait (1 page).
+        assert_eq!(out.papers, vec![SheetPaper { width: 297.0, height: 210.0, pages: 3 }, SheetPaper { width: 182.0, height: 257.0, pages: 1 }]);
+        // Not for a PDF.
+        let pdf = workbook_html(&b, &PrintOptions::default()).unwrap();
+        assert!(!pdf.html.contains("xljs-hf") && pdf.html.contains("@top-left"));
+    }
+
+    #[test]
     fn raw_page_setup() {
         let xml = br#"<worksheet><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetData><row r="1"/></sheetData><printOptions gridLines="1"/><pageSetup paperSize="9" orientation="landscape" fitToHeight="0" pageOrder="overThenDown"/></worksheet>"#;
         let r = raw_print(xml);
@@ -2320,7 +2525,13 @@ pub(super) fn install(n: &super::N) {
             super::xlsx_calc::refresh(b);
             workbook_html(b, &o).map_err(|e| a.throw(&e))
         })?;
-        a.ret(serde_json::json!({ "html": out.html, "charts": out.charts, "pages": out.pages }).to_string())
+        a.ret(serde_json::json!({ "html": out.html, "charts": out.charts, "pages": out.pages, "papers": out.papers }).to_string())
+    });
+    // xlsxPrintSetup(book, optionsJSON) -> JSON [SheetSetup]
+    n.set("xlsxPrintSetup", |h, a| {
+        let o: PrintOptions = serde_json::from_str(&a.str(1)).map_err(|e| a.throw(&crate::Error::from(e)))?;
+        let out = super::xlsx::with_book(h, a, |b| print_setup(b, &o).map_err(|e| a.throw(&e)))?;
+        a.ret(serde_json::to_string(&out).map_err(|e| a.throw(&crate::Error::from(e)))?)
     });
     // xlsxPrintPages(book, optionsJSON) -> JSON [{ sheet, pages, across, down, scale, areas: [{ range, across, down, pages }] }]
     n.set("xlsxPrintPages", |h, a| {

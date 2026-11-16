@@ -168,11 +168,31 @@ impl Ui for Mock {
         a.map(|a| crate::net::auth::Login { user: a.user, password: a.password })
     }
 
+    fn printers(&self) -> Vec<crate::ui::PrinterInfo> {
+        mock_printers()
+    }
+
     fn print_pdf(&self, job: PdfJob, done: PdfDone) {
         // Writes nothing: the log tells what would be printed.
         let pages = job.html.matches("class=\"xljs-page\"").count();
         let charts: Vec<Value> = serde_json::from_str(&job.charts).unwrap_or_default();
         let drawn = charts.iter().filter(|c| c.get("spec").is_some()).count();
+        if let Some(p) = &job.printer {
+            let groups: Vec<String> = p.groups.iter().map(|g| format!("{}-{} {}x{}", g.from, g.to, g.width, g.height)).collect();
+            self.logf(&format!(
+                "print({}, {} pages, {}/{} charts, duplex={}, copies={}, collate={}, color={}, [{}])",
+                quote(&p.printer),
+                pages,
+                drawn,
+                charts.len(),
+                if p.duplex.is_empty() { "default" } else { &p.duplex },
+                p.copies.max(1),
+                p.collate.map(|c| c.to_string()).unwrap_or_else(|| "default".into()),
+                p.color.map(|c| c.to_string()).unwrap_or_else(|| "default".into()),
+                groups.join(", ")
+            ));
+            return done(Ok(()));
+        }
         self.logf(&format!("pdf({}, {} pages, {}/{} charts)", quote(&job.path), pages, drawn, charts.len()));
         done(Ok(()))
     }
@@ -357,4 +377,13 @@ impl Window for MockWindow {
             f();
         }
     }
+}
+
+/// The printers of the mock UI (and of a test case's run): a default one
+/// that prints on both sides in color, and one that does not.
+pub fn mock_printers() -> Vec<crate::ui::PrinterInfo> {
+    vec![
+        crate::ui::PrinterInfo { name: "xljs test printer".into(), is_default: true, duplex: true, color: true },
+        crate::ui::PrinterInfo { name: "xljs simple printer".into(), is_default: false, duplex: false, color: false },
+    ]
 }

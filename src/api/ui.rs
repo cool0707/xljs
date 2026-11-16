@@ -238,8 +238,11 @@ pub(super) fn install(n: &N) {
             None => a.null(),
         }
     });
-    // pdfPrint(html, chartsJSON, textsJSON, path) -> Promise<string>: "" when
-    // the PDF is written, else the message of the error.
+    // printers() -> JSON [{ name, isDefault, duplex, color }]
+    n.set("printers", |h, a| a.ret(serde_json::to_string(&h.env.ui.printers()).unwrap_or_else(|_| "[]".into())));
+    // pdfPrint(html, chartsJSON, textsJSON, path, printerJSON?) -> Promise<string>:
+    // "" when the PDF is written (printed, with printerJSON: a PrinterJob),
+    // else the message of the error.
     n.set("pdfPrint", |h, a| {
         let ctx = a.ctx.clone();
         let (promise, resolve, _) = ctx.promise()?;
@@ -247,7 +250,11 @@ pub(super) fn install(n: &N) {
         let poster = h.poster();
         // The job keeps the event loop alive until it is done.
         poster.add_pending();
-        let job = crate::ui::PdfJob { html: a.str(0), charts: a.str(1), texts: a.str(2), path: a.str(3) };
+        let printer = match a.str(4) {
+            p if p.is_empty() => None,
+            p => Some(serde_json::from_str::<crate::ui::PrinterJob>(&p).map_err(|e| a.throw(&crate::Error::from(e)))?),
+        };
+        let job = crate::ui::PdfJob { html: a.str(0), charts: a.str(1), texts: a.str(2), path: a.str(3), printer };
         h.env.ui.print_pdf(
             job,
             Box::new(move |r| {

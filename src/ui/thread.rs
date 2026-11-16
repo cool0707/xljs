@@ -214,6 +214,9 @@ impl Ui for Threaded {
         let u = self.u.clone();
         self.t.post(Box::new(move || u.print_pdf(job, done)));
     }
+    fn printers(&self) -> Vec<crate::ui::PrinterInfo> {
+        self.on(move |u| u.printers())
+    }
     fn capture(&self, job: ShotJob, done: ShotDone) {
         let u = self.u.clone();
         self.t.post(Box::new(move || u.capture(job, done)));

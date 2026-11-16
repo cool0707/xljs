@@ -101,6 +101,30 @@ fn check_script_output(name: &str, r: &Res) -> Vec<String> {
             ],
             "mock log",
         ),
+        "print.test.js" => {
+            want_in(
+                &r.stderr,
+                &[
+                    r#"print("", 4 pages, 1/1 charts, duplex=default, copies=1, collate=default, color=default, [1-3 297x210, 4-4 182x257])"#,
+                    r#"print("xljs test printer", 4 pages, 1/1 charts, duplex=long, copies=2, collate=false, color=false, [1-3 297x210, 4-4 182x257])"#,
+                    r#"print("", 1 pages, 0/0 charts, duplex=short, copies=1, collate=default, color=default, [1-1 182x257])"#,
+                    r#"print("", 4 pages, 1/1 charts, duplex=long, copies=3, collate=default, color=default"#,
+                    r#"print("xljs simple printer", 4 pages, 1/1 charts, duplex=default, copies=1"#,
+                    "p.pdf\", ",
+                ],
+                "mock log",
+            );
+            let printed = r.stderr.matches("print(").count();
+            if printed != 5 {
+                fails.borrow_mut().push(format!("{name}: {printed} print jobs, not 5"));
+            }
+        }
+        "printpreview.test.js" => {
+            want_in(&r.stderr, &["preview.pdf\", "], "mock log");
+            if r.stderr.contains("cancelled.pdf") {
+                fails.borrow_mut().push(format!("{name}: a cancelled preview made a PDF"));
+            }
+        }
         "fetchproxy.test.js" => want_in(
             &r.stderr,
             &[

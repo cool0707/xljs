@@ -1,4 +1,4 @@
-# PDF 出力（book.toPdf / sheet.toPdf / xljs.htmlToPdf）
+# PDF 出力（book.toPdf / sheet.toPdf / xljs.htmlToPdf / printPreview）
 
 Excel がなくても、ブックを「Excel で印刷したときのページ」で PDF にする機能の設計と実装のメモ。
 シートのレイアウト（ページ分割まで）は Rust で HTML にし、WebView2 に描かせて PDF にする。
@@ -201,6 +201,62 @@ Excel の「セルに配置」の画像はリッチ値で、セルの値とし�
 5. `Page.printToPDF`（`printBackground`、`preferCSSPageSize`、余白 0 = `@page` の余白を使う）→ base64 を復号してファイルに書き、`done`、ウィンドウを閉じる。
    ページが `error` を送ったときと、途中でウィンドウが閉じたときは失敗。
 6. スクリプト側は `poster.add_pending()` で待っているので、終わるまでプロセスは終了しない。スレッドの転送（`Threaded`）は待たずに UI スレッドへ投げる。
+
+## 3.0 左右の余白の入れ替え（`mirrorMargins`）
+
+両面印刷用に、偶数ページの左右の余白を入れ替える。ページの幅は変わらないのでページの分け方はそのまま。
+`page_rule` がシートの名前付きページに `@page sN:left{margin-left:R;margin-right:L}` を足す（文書は右ページから始まるので、偶数ページが `:left`。
+Chromium の `printToPDF` は名前付きページと `:left` の組み合わせを守る。Playwright の `page.pdf` で確かめた）。数え方は文書全体の通し番号。
+画面（`@media screen`。プレビューと `toHtml`）では、ページの `style` の `--mm`（入れ替えた余白）を `.xljs-page:nth-of-type(even)` が使う。
+
+## 3.1 印刷プレビュー（`printPreview`・`toPdf` の `preview`、`web/print-preview.html` / `print-preview.js`）
+
+Excel の印刷プレビューのように、ページを出して設定を変えてもらう。確定したら変えた設定を重ねた `PrintOptions` を返す（キャンセルは `null`）。
+`toPdf(dest, { preview })` はそれを通してから PDF にする（キャンセルなら PDF を作らずに `null`）。
+
+- **出す設定**（`preview.settings`。prelude の `PREVIEW_SETTINGS`）: `sheets` `paper` `landscape` `scaling` `margin` `blackAndWhite` `gridLines`
+  `centerHorizontally` `charts` `skipBlankPages` `condense`。既定は `PREVIEW_DEFAULT`（シート・用紙・向き・拡大縮小・余白・白黒）。`sheets` はブックで印刷できるシートが 2 つ以上のときだけ。
+- **初めの値**: native の `xlsxPrintSetup(book, options)`（`xlsx_print::print_setup`）が、印刷するシートごとに `options` を当てたページ設定
+  （用紙の名前（`paper_name`。名前のない用紙は null）・向き・倍率か「次のページ数」・余白 mm・枠線・白黒・左右中央）を返す。
+  シートによって違う設定（用紙・向き・拡大縮小・余白）は「シートごとの設定」（値 `""`）から始める（向きはそのときだけセグメントではなく選択）。
+- **値**（wire）: 項目の名前と値は `PREVIEW_KEYS`（`scaling` は `"none"` `"page"` `"columns"` `"rows"` `"scale"` `"fit"`＋`scale` `fitWidth` `fitHeight`、
+  `margin` は `"normal"` `"wide"` `"narrow"` `"custom"`＋`marginTop` など。Excel の標準・広い・狭いの mm は `PREVIEW_MARGINS`）。
+  `previewOptions` は初めの値から変わった設定だけを `options` に重ねる（変えなかった設定はシートごとの設定のまま印刷される）。
+- **ネイティブ UI**: 組み込みページ `print-preview.html`（左に設定、右にページ）。設定が変わるたび（数値は入力が止まって 400ms 後）に
+  `{ type: "options", seq, values }` → prelude が `xlsxPrintHtml` とグラフ（`printCharts`）で `{ type: "layout", seq, html, charts, texts, pages }`、
+  誤り（`pdf.empty`・不正な数値・シートなし）は `layoutError`。ページは `print.html?frame` の iframe（`bridge.js` の枠のモードで
+  `postMessage` の `init` / `rendered`）に描かせ、描き終わってから前の iframe と入れ替える（古い `seq` の結果は捨てる）。
+  iframe は文書の大きさ（いちばん広いページ）にして、親が `transform: scale()` で縮める（中のグラフは用紙の大きさのまま描かれる）。
+  表示倍率は「ページ全体」（既定）・「ページ幅」・%。ページの移動は前後のボタン・PageUp/PageDown・←→。Esc でキャンセル。
+- **コンソール・mock**: ページは出さず、同じ項目を `ui.form`（`showForm`）で尋ねる（`showIf` を `hidden` に）。mock の応答は `"form"` の列。
+  テストの記録（`native.recording`）では、ネイティブの画面でも変えた値だけを `form` の応答として記録する（再生はフォームの経路）。
+- テスト: `testdata/scripts/printpreview.test.js`（`print.xlsx`。変えた設定だけが入ること、キャンセル、シートの選択、余白・倍率・空のページなど、`toPdf` の `preview`）。
+  画面は Playwright で `print-preview.html` に偽の `chrome.webview` を付けて `init` / `layout` を送って確かめた。
+
+## 3.2 印刷（`book.print` / `sheet.print`、`xljs.printers`）
+
+ダイアログを出さずにプリンターで印刷する。PDF と同じ見えないウィンドウ（`print.html`）でページを描き、`rendered` のあと
+`ICoreWebView2_16::Print`（WebView2 112 以降。`ICoreWebView2PrintSettings2` でプリンター名・両面・部数・部単位・カラー・ページの範囲）を呼ぶ
+（`webview::print_groups`）。`PdfJob::printer`（`PrinterJob`）があれば印刷、なければ PDF。
+
+- **プリンター向けのレイアウト**（`PrintOptions::printer_layout`。prelude が付ける。スクリプトからは指定できない）: WebView2 の印刷は
+  設定の余白（既定 1cm）で CSS の `@page` の余白を上書きするおそれがあり、そのときは余白の箱（`@top-left` など）のヘッダー/フッターも消える。
+  そこで `@page sN{size:…;margin:0}` にし、各ページ（`section`）を用紙いっぱい（`--pw` × `--ph` − 1pt）にして余白を `padding`（偶数ページは `--mm`）に、
+  ヘッダー/フッターを `section` の中の `.xljs-hf` の箱（`::before` の `content`。位置は `--hl` `--hr` `--ht` `--hb`、左右の入れ替えは `--hl2` `--hr2`）にする（`printer_rule`・`PRINTER_CSS`）。
+  `&P` は `section` を数えるカウンター `xljs-page`、`&N` はページ数の文字列に置き換える。印刷の設定は余白 0・倍率 1・ヘッダー/フッターなし・背景あり。
+  Chromium の PDF で、本体・ヘッダー・フッターの位置が PDF 出力と同じになることを確かめた（`printer_layout` の単体テストは構造のみ）。
+- **用紙**: `xlsxPrintHtml` が `papers`（印刷するシートごとの用紙 mm と ページ数）を返し、prelude が同じ用紙の続くページを 1 つのグループにする。
+  グループごとに `MediaSize` = custom、`PageWidth` / `PageHeight`（縦向きの寸法、インチ）、`Orientation`、`PageRanges`（"3-5"）で 1 回ずつ `Print` する
+  （用紙の違うシートは別の印刷ジョブ。両面・部単位はジョブごと）。
+- **プリンターの一覧**（`Ui::printers`、`src/ui/native/printers.rs`）: `EnumPrintersW`（ローカルと接続、レベル 4）と `GetDefaultPrinterW`、
+  両面・カラーは `DeviceCapabilitiesW`（`DC_DUPLEX`・`DC_COLORDEVICE`）。mock とテストの再生は架空の 2 台（`mock::mock_printers`）。
+- **プレビュー**: `print` の `preview` は `printPreview` の `"print"` のモード（既定の設定にプリンター・両面・部数を足す、ボタンは「印刷」）。
+  両面・カラーの項目は `onlyFor: { printer: [対応するプリンター] }` で、対応しないプリンターを選ぶと無効になり、結果からも外す（`dropOff`）。
+  `toPdf` の `preview`（`"pdf"` のモード）ではプリンターの設定を出さない。
+- mock は `print("プリンター", n pages, …, duplex=…, copies=…, collate=…, color=…, [1-3 297x210, …])` をログに出す。テストの再生は `print` のイベント。
+  テストは `testdata/scripts/print.test.js`。
+- **実機で確かめていないこと**: `Print` が `MediaSize` custom と向きをどう扱うか（縦向きの寸法＋向きで合っているか）、用紙の違うグループが正しく出るか、
+  両面・部数・カラーがプリンターに届くか、印刷の設定の余白 0 が使えるか（プリンターの印刷できない領域）。
 
 ## 4. できないこと・違い
 

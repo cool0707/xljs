@@ -36,6 +36,8 @@ declare global {
      * 画像は data: URL で埋め込む。改ページは CSS の break-before / break-after。書き出したファイルの絶対パスを返す
      */
     htmlToPdf(html: string, dest: PathLike, options?: HtmlPdfOptions): Promise<string>;
+    /** このパソコンのプリンター（既定のプリンターが先頭）。コンソールでは空、mock では 2 台の架空のプリンター */
+    printers(): PrinterInfo[];
   }
   const xljs: Xljs;
 
@@ -2296,9 +2298,24 @@ declare global {
     /**
      * Excel で印刷したときのように PDF に書き出す（WebView2 が必要。Windows のネイティブ UI のみ）。
      * 用紙・向き・余白・拡大縮小・印刷範囲・印刷タイトル・改ページ・ヘッダー/フッターはシートのページ設定に従い、options で上書きできる。
-     * 画像・図形・テキストボックス・線（Excel の既定の形すべてとフリーフォーム）とグラフ（sheet.charts で描けるもの）も描く。書き出したファイルの絶対パスを返す
+     * 画像・図形・テキストボックス・線（Excel の既定の形すべてとフリーフォーム）とグラフ（sheet.charts で描けるもの）も描く。書き出したファイルの絶対パスを返す。
+     * options.preview を付けると、書き出す前に印刷プレビュー（printPreview）を出し、キャンセルされたら何も書かずに null を返す
      */
+    toPdf(dest: PathLike, options: PrintOptions & { preview: boolean | PrintPreviewOptions }): Promise<string | null>;
     toPdf(dest: PathLike, options?: PrintOptions): Promise<string>;
+    /**
+     * Excel の印刷プレビューのように、options で印刷したときのページを画面に出し、設定（用紙・向き・拡大縮小・余白・白黒など）を変えてもらう。
+     * 出す設定は preview.settings で選ぶ。確定したら、変えた設定を options に重ねたもの（toPdf・toHtml・printPages にそのまま渡せる）を返し、キャンセルなら null。
+     * ページの表示は WebView2 が必要（Windows のネイティブ UI）。コンソール・mock ではページを出さずに、同じ設定をフォーム（ui.form）で尋ねる
+     */
+    printPreview(options?: PrintOptions & PrinterOptions, preview?: PrintPreviewOptions): Promise<(PrintOptions & PrinterOptions) | null>;
+    /**
+     * Excel の印刷のように、ダイアログを出さずにプリンターで印刷する（WebView2 が必要。Windows のネイティブ UI のみ）。
+     * ページは toPdf と同じ。プリンター・両面・部数・カラーは options（PrinterOptions）で指定し、省略すると既定のプリンターとその設定。
+     * options.preview を付けると先に印刷プレビューを出し（既定でプリンター・両面・部数も選べる）、キャンセルされたら印刷せずに false を返す。
+     * 用紙の違うシートが続くときは、用紙ごとに別の印刷ジョブになる（両面・部単位はジョブごと）
+     */
+    print(options?: PrintOptions & PrinterOptions & { preview?: boolean | PrintPreviewOptions }): Promise<boolean>;
     /** 印刷したときのページを HTML 文書にする（グラフは空の枠。ブラウザで開くとページの区切りが見える） */
     toHtml(options?: PrintOptions): string;
     /**
@@ -2353,6 +2370,11 @@ declare global {
     blackAndWhite?: boolean;
     /** ページの左右中央に配置する */
     centerHorizontally?: boolean;
+    /**
+     * 偶数ページの左右の余白を入れ替える（両面印刷で綴じしろを内側にそろえる。Word の「見開きページ」）。
+     * 1 ページ目（奇数ページ）は margin のとおり。ページの数え方は PDF 全体の通し番号（シートが変わっても続く）
+     */
+    mirrorMargins?: boolean;
     /** false でグラフを描かない */
     charts?: boolean;
     /**
@@ -2369,6 +2391,60 @@ declare global {
     condense?: boolean | number;
     /** PDF の文書のタイトル（既定: ファイル名） */
     title?: string;
+  }
+
+  /**
+   * 印刷プレビューで変えられる設定。
+   * "sheets": 印刷するシート（ブックのみ。印刷できるシートが 2 つ以上のとき）、"paper": 用紙サイズ、"landscape": 印刷の向き、
+   * "scaling": 拡大縮小（拡大縮小なし・シートを 1 ページに・すべての列を 1 ページに・すべての行を 1 ページに・倍率・横 n × 縦 n ページ）、
+   * "margin": 余白（標準・広い・狭い・ユーザー設定）、"mirrorMargins": 偶数ページで左右の余白を入れ替える、"blackAndWhite": 白黒印刷、"gridLines": 枠線、"centerHorizontally": ページ中央（水平）、
+   * "charts": グラフを印刷、"skipBlankPages": 空のページを飛ばす、"condense": 文字の間隔を詰める、
+   * "printer": プリンター、"duplex": 両面印刷（両面に対応したプリンターのときだけ選べる）、"copies": 部数、"color": カラー・白黒（カラーのプリンターのときだけ）。
+   * プリンターの設定（printer・duplex・copies・color）は print と printPreview のみ（toPdf のプレビューでは出ない）
+   */
+  type PrintPreviewSetting = "sheets" | "paper" | "landscape" | "scaling" | "margin" | "mirrorMargins" | "blackAndWhite" | "gridLines"
+    | "centerHorizontally" | "charts" | "skipBlankPages" | "condense" | "printer" | "duplex" | "copies" | "color";
+
+  /** printPreview・toPdf の preview のオプション */
+  interface PrintPreviewOptions {
+    /**
+     * 画面に出す設定（並べた順）。既定: ["sheets", "paper", "landscape", "scaling", "margin", "blackAndWhite"]（print では続けて "printer", "duplex", "copies"）。
+     * true ですべて、false か [] で設定を出さない（ページの確認だけ）。
+     * 設定の初めの値は options を当てたシートのページ設定。利用者が変えなかった設定は options とシートの設定のまま
+     */
+    settings?: PrintPreviewSetting[] | boolean;
+    /** ウィンドウのタイトル（既定「印刷プレビュー」） */
+    title?: string;
+    /** 確定のボタンの文字（既定: toPdf では「PDF に出力」、print では「印刷」、printPreview では「OK」） */
+    ok?: string;
+    /** ウィンドウの幅・高さ（px。既定 1100 × 760） */
+    width?: number;
+    height?: number;
+  }
+
+  /** print のプリンターの設定。省略した項目はプリンターの設定に従う */
+  interface PrinterOptions {
+    /** プリンターの名前（xljs.printers() の name。既定: 既定のプリンター） */
+    printer?: string;
+    /** 両面印刷: "none"（片面）、"long"（長辺を綴じる。true も同じ）、"short"（短辺を綴じる）。false は "none" */
+    duplex?: "none" | "long" | "short" | boolean;
+    /** 部数（1〜999） */
+    copies?: number;
+    /** 部単位で印刷する（1 部ずつ全ページ） */
+    collate?: boolean;
+    /** false で白黒（グレースケール）、true でカラー */
+    color?: boolean;
+  }
+
+  /** xljs.printers() の要素 */
+  interface PrinterInfo {
+    name: string;
+    /** 既定のプリンター */
+    isDefault: boolean;
+    /** 両面印刷ができる */
+    duplex: boolean;
+    /** カラーで印刷できる */
+    color: boolean;
   }
 
   /** xljs.htmlToPdf のオプション。HTML に @page があればそちらが優先 */
@@ -2406,7 +2482,12 @@ declare global {
     toArrayBuffer(): ArrayBuffer;
     toBlob(): Blob;
     /** シート（既定: 非表示でないすべて。options.sheets で指定）を Excel で印刷したときのように 1 つの PDF に書き出す。詳しくは Worksheet.toPdf */
+    toPdf(dest: PathLike, options: PrintOptions & { preview: boolean | PrintPreviewOptions }): Promise<string | null>;
     toPdf(dest: PathLike, options?: PrintOptions): Promise<string>;
+    /** 印刷するシート（toPdf と同じ選び方）の印刷プレビューを出して設定を変えてもらう。設定 "sheets" で印刷するシートも選べる。詳しくは Worksheet.printPreview */
+    printPreview(options?: PrintOptions & PrinterOptions, preview?: PrintPreviewOptions): Promise<(PrintOptions & PrinterOptions) | null>;
+    /** 印刷するシート（toPdf と同じ選び方）をプリンターで印刷する。詳しくは Worksheet.print */
+    print(options?: PrintOptions & PrinterOptions & { preview?: boolean | PrintPreviewOptions }): Promise<boolean>;
     /** 印刷したときのページを HTML 文書にする（グラフは空の枠） */
     toHtml(options?: PrintOptions): string;
     /** 印刷するシート（toPdf と同じ選び方）ごとに、ページが横・縦にいくつに分かれるかと倍率を返す（PDF は作らない）。詳しくは Worksheet.printPages */

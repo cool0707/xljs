@@ -1,0 +1,45 @@
+/* Print preview (book.printPreview, toPdf's preview): the settings on the
+   left, the pages (print.html in a frame, scaled) on the right. */
+#main { flex: 1; display: flex; min-height: 0; }
+#side {
+  flex: none;
+  width: 280px;
+  overflow: auto;
+  padding: var(--sp-l) var(--sp-l) var(--sp-xxl);
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+}
+#side h2 { margin: 0 0 var(--sp-m); font-size: 14px; font-weight: 600; color: var(--muted); }
+.field { margin-bottom: var(--sp-l); }
+.field.sub { margin: calc(var(--sp-s) - var(--sp-l)) 0 var(--sp-l); }
+.field > .label { display: block; margin-bottom: var(--sp-xs); font-weight: 600; }
+.field .help { margin-top: var(--sp-xs); font-size: 12px; line-height: 16px; color: var(--muted); }
+.field .check { display: flex; align-items: center; gap: var(--sp-s); }
+.field .checks { display: flex; flex-direction: column; gap: var(--sp-xs); max-height: 180px; overflow: auto; }
+.field .checks label { display: flex; align-items: center; gap: var(--sp-s); min-width: 0; }
+.field .checks label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inline { display: flex; align-items: center; gap: var(--sp-s); }
+.inline > .label { flex: none; min-width: 2.5em; font-weight: normal; margin: 0; }
+.inline input { width: 96px; }
+.inline .suffix { color: var(--muted); }
+.field.off { opacity: .5; }
+.field.invalid input { border-color: var(--error); }
+.segmented { display: flex; padding: 2px; gap: 2px; border-radius: var(--radius); background: var(--subtle); }
+.segmented .seg { flex: 1; min-width: 0; min-height: calc(var(--control-h) - 4px); padding: 0 var(--sp-s); border: 0; border-radius: calc(var(--radius) - 2px); background: transparent; box-shadow: none; color: var(--muted); }
+.segmented .seg:hover:not(:disabled) { background: transparent; color: var(--fg); }
+.segmented .seg.on, .segmented .seg.on:hover:not(:disabled) { background: var(--input); color: var(--fg); box-shadow: var(--shadow), 0 0 0 1px var(--border); }
+
+#view { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.toolbar { display: flex; align-items: center; gap: var(--sp-s); padding: var(--sp-s) var(--sp-l); border-bottom: 1px solid var(--border); background: var(--panel); }
+.toolbar .spacer { flex: 1; }
+.icon-btn { width: var(--control-h); padding: 0; font-size: 18px; }
+#pageno { min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+#zoom { width: 140px; }
+#zoom-label { color: var(--muted); }
+/* The paper's gray, as print.html shows its pages on screen. */
+#pages { flex: 1; position: relative; overflow: auto; background: #e6e6e6; }
+#sheet { position: relative; margin: 0 auto; }
+#sheet iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; background: #e6e6e6; }
+#sheet iframe.next { visibility: hidden; }
+#message { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: var(--sp-xxl); color: #52525b; text-align: center; white-space: pre-wrap; }
+#pages.busy #sheet { opacity: .6; transition: opacity .2s .3s; }

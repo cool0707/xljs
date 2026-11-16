@@ -8,6 +8,7 @@ mod browser;
 mod dialogs;
 mod loader;
 mod notify;
+mod printers;
 mod thread;
 mod webview;
 
@@ -283,6 +284,10 @@ impl Ui for Native {
 
     fn print_pdf(&self, job: PdfJob, done: PdfDone) {
         webview::print_pdf(job, done);
+    }
+
+    fn printers(&self) -> Vec<crate::ui::PrinterInfo> {
+        printers::list()
     }
 
     fn capture(&self, job: ShotJob, done: ShotDone) {

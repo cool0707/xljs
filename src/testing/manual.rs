@@ -639,7 +639,7 @@ pub fn pdf_job(case_dir: &Path) -> Result<crate::ui::PdfJob> {
     let notes = load_notes(case_dir)?;
     let md = markdown(&made, &notes);
     let page = html(&md, &style(case_dir, &notes, &made.accent)?, Some(&folder(case_dir)), &stamp(case_dir, &made));
-    Ok(crate::ui::PdfJob { html: page, charts: "[]".into(), texts: "{}".into(), path: pdf_path(case_dir).to_string_lossy().into_owned() })
+    Ok(crate::ui::PdfJob { html: page, charts: "[]".into(), texts: "{}".into(), path: pdf_path(case_dir).to_string_lossy().into_owned(), printer: None })
 }
 
 /// Prints a case's manual as a PDF with u (on its thread: see ui::run);
