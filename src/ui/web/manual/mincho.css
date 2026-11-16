@@ -1,0 +1,11 @@
+/* The look "明朝（文書）": a printed document: Mincho text, Gothic headings with a bar, numbered steps in a band. */
+body { font: 14.5px/1.85 "Yu Mincho", "YuMincho", "BIZ UDMincho", "MS Mincho", serif; color: #111; }
+.manual h1, .manual h2, .manual h3 { font-family: "Yu Gothic", "Meiryo", sans-serif; }
+.manual h1 { font-size: 24px; text-align: center; margin: 0 0 18px; padding: 10px 0; border-top: 3px double #333; border-bottom: 3px double #333; }
+.manual h2 { font-size: 18px; margin: 28px 0 10px; padding: 2px 0 2px 10px; border-left: 6px solid #333; }
+.manual h3 { font-size: 15px; margin: 22px 0 6px; padding: 3px 8px; background: #eee; }
+.manual p, .manual ul, .manual ol { margin: 6px 0; }
+.manual img { display: block; margin: 10px auto 14px; border: 1px solid #999; }
+.manual code { font-family: "BIZ UDGothic", "MS Gothic", monospace; font-size: .92em; }
+.manual blockquote { margin: 8px 0; padding: 4px 12px; border: 1px solid #999; }
+.manual th, .manual td { border: 1px solid #666; padding: 4px 10px; }

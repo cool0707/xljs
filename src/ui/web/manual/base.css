@@ -1,0 +1,12 @@
+/* Manuals of test cases (src/testing/manual.rs): what every look has.
+   The pictures fit the page, a picture and a heading are not split
+   across pages, and the page is A4 when printed (PDF). */
+@page { size: A4; margin: 16mm 14mm; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; background: #fff; color: #18181b; }
+.manual { max-width: 860px; margin: 0 auto; padding: 24px 28px 40px; }
+@media print { .manual { max-width: none; padding: 0; } }
+.manual img { max-width: 100%; height: auto; break-inside: avoid; }
+.manual h1, .manual h2, .manual h3, .manual h4 { break-after: avoid; }
+.manual table { border-collapse: collapse; }
+.manual pre { white-space: pre-wrap; overflow-wrap: anywhere; }

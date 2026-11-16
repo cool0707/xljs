@@ -60,8 +60,32 @@ host.on((m) => {
     case "progress": progress(m); break;
     case "log": appendLog(m.lines, m.level); break;
     case "done": finishRun(m); break;
+    case "mark": markShot(m); break;
   }
 });
+
+/**
+ * (a picture for a manual, form.html?shot) The window's title, the tab of
+ * the fields, and red boxes around the fields the user changed and the
+ * button pressed (button: { kind: "submit" | "button" | "tool" | "cancel", index }).
+ */
+function markShot(m) {
+  if (!shot.on) return;
+  shot.titleBar(m.title);
+  if (m.tab >= 0 && tabButtons[m.tab]) showTab(m.tab, false);
+  const targets = [];
+  for (const name of m.fields || []) {
+    const c = controls.get(name);
+    if (!c || c.hid) continue;
+    if (c.group && c.group.classList.contains("collapsed") && c.group.open) c.group.open();
+    targets.push(c.item ? [c.item] : [c.label, c.ctl].filter(Boolean));
+  }
+  const b = m.button || {};
+  const node = b.kind === "submit" ? $("submit") : b.kind === "button" ? extraNodes[b.index]
+    : b.kind === "tool" ? toolButtons[b.index] : b.kind === "cancel" ? $("cancel") : null;
+  if (node) targets.push([node]);
+  shot.mark(targets);
+}
 
 function init(m) {
   texts = m.texts || {};

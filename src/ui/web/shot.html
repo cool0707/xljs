@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>dialog</title>
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="icons.css">
+<style>
+  /* A message box as Windows shows confirm, alert and prompt (for manuals). */
+  body { background: transparent; overflow: hidden; }
+  #dialog { display: inline-flex; flex-direction: column; margin: 8px; min-width: 320px; max-width: 520px; background: var(--bg);
+    border: 1px solid #a1a1aa; box-shadow: 0 4px 14px rgba(0, 0, 0, .18); align-self: flex-start; }
+  .body { display: flex; gap: 14px; padding: 20px 20px 18px; }
+  .body .ic { flex: none; width: 32px; height: 32px; }
+  .body .info { color: #1261d1; }
+  .body .question { color: #1261d1; }
+  .body .error { color: #dc2626; }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; padding-top: 6px; }
+  #value { display: block; width: 100%; margin-top: 10px; box-sizing: border-box; }
+  .buttons { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; background: var(--panel); border-top: 1px solid var(--border); }
+  .buttons button { min-width: 88px; }
+</style>
+</head>
+<body>
+<div id="dialog"></div>
+<script src="bridge.js"></script>
+<script src="shot.js"></script>
+<script>
+"use strict";
+// init: { kind: "alert" | "confirm" | "prompt" | "error", title, text, value, buttons: [labels] }
+// mark: { button: the index of the button pressed (none: no box) }
+let buttons = [];
+host.on((m) => {
+  const box = document.getElementById("dialog");
+  if (m.type === "init") {
+    const icon = { alert: "ic-info info", confirm: "ic-info question", prompt: "ic-info question", error: "ic-circle-x error" }[m.kind] || "ic-info info";
+    const i = document.createElement("i");
+    i.className = "ic " + icon;
+    const text = document.createElement("div");
+    text.className = "text";
+    text.textContent = m.text || "";
+    const right = document.createElement("div");
+    right.style.flex = "1";
+    right.append(text);
+    if (m.kind === "prompt") {
+      const v = document.createElement("input");
+      v.id = "value";
+      v.type = "text";
+      v.value = m.value || "";
+      right.append(v);
+    }
+    const body = document.createElement("div");
+    body.className = "body";
+    body.append(i, right);
+    const row = document.createElement("div");
+    row.className = "buttons";
+    buttons = (m.buttons || []).map((label, k) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = label;
+      if (k === 0) b.className = "primary";
+      row.append(b);
+      return b;
+    });
+    box.replaceChildren(body, row);
+    shot.titleBar(m.title, box);
+  } else if (m.type === "mark") {
+    const targets = [];
+    if (m.input) targets.push(document.getElementById("value"));
+    if (typeof m.button === "number" && buttons[m.button]) targets.push(buttons[m.button]);
+    shot.mark(targets, box);
+  }
+});
+host.send({ type: "ready" });
+</script>
+</body>
+</html>

@@ -1,3 +1,4 @@
+use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -510,5 +511,74 @@ fn suggest_and_remove_variants() {
     assert!(remove(&path, "基本", "区分＝至急").is_err());
     remove(&path, "基本", "").unwrap();
     assert!(!c.dir.exists());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A manual from a case: the steps with the forms as they were answered
+/// (the fields changed and the button in the marks), the dialogs, the
+/// files written, and the notes in the Markdown; without a UI that can
+/// take pictures, no pictures.
+#[test]
+fn manual_of_a_case() {
+    let _g = lock_lang("ja");
+    let script = r#"
+await ui.form({
+  title: "受注入力",
+  tabs: [
+    { label: "基本", fields: [
+      { name: "customer", label: "得意先", required: true },
+      { name: "kind", label: "区分", type: "select", options: [{ value: "a", label: "通常" }, { value: "b", label: "至急" }] },
+    ] },
+    { label: "詳細", fields: [{ name: "memo", label: "備考" }] },
+  ],
+  submit: "登録",
+  onSubmit: async (v) => {
+    if (!confirm(`${v.customer} を登録しますか？`)) return;
+    fs.writeText("out.txt", v.customer + "\n");
+    alert("登録しました");
+  },
+});
+"#;
+    let case = r#"{"script": "main.js", "answers": {"form": [{"customer": "山田商店", "kind": "b", "memo": "急ぎ"}], "confirm": [true]}}"#;
+    let root = project(script, case);
+    let main = root.join("main.js").to_string_lossy().into_owned();
+    let (made, md) = manual::make(&main, "基本", &options(false), None).unwrap();
+    let ids: Vec<&str> = made.steps.iter().map(|s| s.id.as_str()).collect();
+    assert_eq!(ids, ["form-1", "confirm-1", "alert-1", "form-2"], "{made:?}");
+    assert_eq!(made.steps[0].text[0], "次のように入力して［登録］を押します。");
+    assert!(made.steps[0].text.contains(&"- **区分**: 「至急」".to_string()), "{made:?}");
+    assert!(made.steps.iter().all(|s| s.images.is_empty()));
+    assert_eq!(made.failed, [t!("manual.noShots")]);
+    assert_eq!(made.results, ["- `out.txt` ができます（すでにあれば書き換わります）。"]);
+
+    // The screens: one per tab of the fields changed, the button on the last.
+    let c = manual::find_case(&main, "基本").unwrap();
+    let events = run::run_with(&c, &c.plans()[0], Duration::from_secs(20), "test", true).unwrap();
+    let screens: Vec<&Value> = events.iter().filter(|e| text(e, "type") == "screen").collect();
+    assert_eq!(screens.len(), 5); // 2 tabs, confirm, alert, closing
+    assert_eq!(screens[0]["mark"]["fields"], json!(["customer", "kind"]));
+    assert_eq!((&screens[0]["mark"]["tab"], &screens[0]["mark"]["button"]), (&json!(0), &Value::Null));
+    assert_eq!(screens[1]["mark"]["fields"], json!(["memo"]));
+    assert_eq!(screens[1]["mark"]["button"], json!({"kind": "submit"}));
+    assert_eq!(screens[0]["init"]["type"], "init");
+    assert_eq!(screens[0]["title"], "受注入力");
+    assert_eq!((&screens[2]["page"], &screens[2]["kind"], &screens[2]["answer"]), (&json!("dialog"), &json!("confirm"), &json!(true)));
+    assert_eq!(screens[4]["mark"]["button"], json!({"kind": "cancel"}));
+    // A normal run has none.
+    let events = run::run(&c, &c.plans()[0], Duration::from_secs(20), "test").unwrap();
+    assert!(!events.iter().any(|e| text(e, "type") == "screen"));
+
+    // The notes stay when the manual is made again.
+    let mut notes = manual::load_notes(&c.dir).unwrap();
+    notes.steps.insert("form-1".into(), manual::StepNote { note: "得意先は正式名称で。".into(), hide: false });
+    notes.steps.insert("alert-1".into(), manual::StepNote { note: String::new(), hide: true });
+    manual::save_notes(&c.dir, &notes).unwrap();
+    manual::write_markdown(&c.dir).unwrap();
+    let (_, md2) = manual::make(&main, "基本", &options(false), None).unwrap();
+    assert_eq!(md, md2);
+    let text = std::fs::read_to_string(&md).unwrap();
+    assert!(text.starts_with("# mainの手順（基本）\n"), "{text}");
+    assert!(text.contains("得意先は正式名称で。") && !text.contains("登録しました"), "{text}");
+    assert!(md.ends_with("manual/基本.md") || md.ends_with("manual\\基本.md"));
     let _ = std::fs::remove_dir_all(&root);
 }

@@ -265,6 +265,51 @@ fn print_pdf_writes_a_file() {
     assert!(pdf.len() > 10_000, "PDF of {} bytes", pdf.len());
 }
 
+/// Ui::capture saves pictures of the form page and of the dialog page
+/// (Page.captureScreenshot), the dialog's cut to its box.
+#[test]
+fn capture_writes_pictures() {
+    let _l = crate::testutil::lock_lang("ja");
+    if webview2_version().is_empty() {
+        eprintln!("WebView2 runtime not installed; skipped");
+        return;
+    }
+    let dir = crate::testutil::tempdir();
+    unsafe { std::env::set_var(crate::ui::WEBVIEW2_DATA_ENV, dir.join("wv2")) };
+    let u = setup();
+    let form = r#"{"type":"init","texts":{"ok":"OK","cancel":"キャンセル"},"submit":"登録","tabs":[],"tabIcons":[],"groups":[],"buttons":[],"fields":[{"name":"a","label":"得意先","type":"text","value":"山田商店","tab":-1,"group":-1}]}"#;
+    let jobs = [
+        ShotJob { page: "form.html?shot".into(), init: form.into(), mark: r#"{"type":"mark","title":"受注","fields":["a"],"button":{"kind":"submit"}}"#.into(), width: 500, height: 260, path: dir.join("form.png").to_string_lossy().into_owned() },
+        ShotJob { page: "shot.html?shot".into(), init: r#"{"type":"init","kind":"confirm","title":"受注","text":"登録しますか？","buttons":["OK","キャンセル"]}"#.into(), mark: r#"{"type":"mark","button":0}"#.into(), width: 600, height: 420, path: dir.join("dialog.png").to_string_lossy().into_owned() },
+    ];
+    for job in jobs {
+        let path = job.path.clone();
+        let result: Arc<Mutex<Option<crate::Result<()>>>> = Default::default();
+        let r2 = result.clone();
+        u.capture(job, Box::new(move |r| *r2.lock().unwrap() = Some(r)));
+        let start = Instant::now();
+        while result.lock().unwrap().is_none() && start.elapsed() < Duration::from_secs(60) {
+            unsafe {
+                let mut m = MSG::default();
+                while PeekMessageW(&mut m, None, 0, 0, PM_REMOVE).as_bool() {
+                    let _ = TranslateMessage(&m);
+                    DispatchMessageW(&m);
+                }
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        result.lock().unwrap().take().expect("capture did not finish").unwrap();
+        let png = std::fs::read(&path).unwrap();
+        assert!(png.starts_with(b"\x89PNG"), "not a PNG");
+        // The width in the header: the dialog is cut to its box.
+        let width = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
+        if path.ends_with("dialog.png") {
+            assert!(width < 600 * 3, "dialog {width} px wide");
+        }
+        assert!(width > 100, "{width} px wide");
+    }
+}
+
 /// Serves the built-in files under BUILTIN_PREFIX.
 struct BuiltinOnly;
 

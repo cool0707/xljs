@@ -109,6 +109,9 @@ pub struct TestRun {
     /// Set by the UI when the script must stop at once (a question nobody
     /// answers): the UI natives end the script like exit() with ABORT_CODE.
     pub abort: Arc<std::sync::atomic::AtomicBool>,
+    /// Making a manual (testing::manual): the prelude tells how each form
+    /// looked when it was answered, as "screen" events of the transcript.
+    pub screens: Option<crate::testing::replay::Transcript>,
 }
 
 /// The exit code of a script stopped by TestRun::abort.

@@ -1,6 +1,7 @@
 //! `xljs test`: replays the test cases of a script (see testing) and tells
 //! which runs differ from what was approved.
 
+use std::path::Path;
 use std::time::Duration;
 
 use super::console::ConsoleState;
@@ -16,6 +17,9 @@ struct Args {
     new: Option<String>,
     /// --suggest: the case to add variants to.
     suggest: Option<String>,
+    /// --manual: the case to make the manual of; --pdf: also as a PDF.
+    manual: Option<String>,
+    pdf: bool,
     /// --record: the name of the case; the paths after the script are its arguments.
     record: Option<String>,
     paths: Vec<String>,
@@ -56,6 +60,8 @@ fn parse(args: &[String]) -> Result<Args> {
             "new" => a.new = Some(value()?),
             "record" => a.record = Some(value()?),
             "suggest" => a.suggest = Some(value()?),
+            "manual" => a.manual = Some(value()?),
+            "pdf" => a.pdf = true,
             "timeout" => {
                 let v = value()?;
                 match v.parse::<f64>() {
@@ -164,6 +170,9 @@ pub(super) fn cmd_test(con: &ConsoleState, args: &[String], ui_mode: &str, answe
             Err(e) => con.fail(None, &e),
         };
     }
+    if let Some(name) = &a.manual {
+        return manual(con, name, &a.paths[0], &o, a.json, a.pdf);
+    }
     let json = a.json;
     let outcomes = match testing::run_all(&a.paths[0], &o, |r| {
         if !json {
@@ -190,6 +199,40 @@ pub(super) fn cmd_test(con: &ConsoleState, args: &[String], ui_mode: &str, answe
     if outcomes.iter().all(Outcome::ok) { 0 } else { 1 }
 }
 
+/// Makes the manual of a case: the pictures of the screens with the
+/// native UI when there is one.
+fn manual(con: &ConsoleState, name: &str, path: &str, o: &RunOptions, json: bool, pdf: bool) -> i32 {
+    let shooter = if crate::ui::native_available() { crate::ui::new_native().ok() } else { None };
+    let (made, md) = match testing::manual::make(path, name, o, shooter.clone()) {
+        Ok(x) => x,
+        Err(e) => return con.fail(None, &e),
+    };
+    let mut pdf_file = None;
+    if pdf {
+        let dir = md.parent().and_then(Path::parent).map(Path::to_path_buf).unwrap_or_default();
+        let r = match shooter {
+            Some(u) => testing::manual::write_pdf(u, &dir),
+            None => Err(err!("pdf.unavailable")),
+        };
+        match r {
+            Ok(p) => pdf_file = Some(p),
+            Err(e) => return con.fail(None, &e),
+        }
+    }
+    if json {
+        println!("{}", serde_json::json!({ "manual": md.to_string_lossy(), "pdf": pdf_file.as_ref().map(|p| p.to_string_lossy()), "made": made }));
+    } else {
+        for f in &made.failed {
+            eprintln!("{f}");
+        }
+        println!("{}", t!("manual.made", md.display()));
+        if let Some(p) = &pdf_file {
+            println!("{}", t!("manual.pdfMade", p.display()));
+        }
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,6 +253,8 @@ mod tests {
         let a = parse(&args(&["--record", "月次", "a.js", "--x", "in.xlsx"])).unwrap();
         assert_eq!((a.record.as_deref(), a.paths.len()), (Some("月次"), 3));
         assert_eq!(a.paths[1], "--x");
+        let a = parse(&args(&["--manual", "月次", "--json", "--pdf", "a.js"])).unwrap();
+        assert_eq!((a.manual.as_deref(), a.json, a.pdf, a.paths.len()), (Some("月次"), true, true, 1));
         assert!(parse(&args(&["--timeout", "0", "a.js"])).is_err());
         assert!(parse(&args(&["--only"])).is_err());
         assert!(parse(&args(&["--nope", "a.js"])).is_err());

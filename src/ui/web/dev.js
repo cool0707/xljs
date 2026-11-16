@@ -1346,6 +1346,9 @@
         const b = el("button", { type: "button", className: "link", title: L.testsSuggestTip, textContent: L.testsSuggest, onclick: () => { tests.asked = true; send({ op: "testSuggest", name: o.case }); } });
         b.disabled = tests.running;
         head.append(b);
+        const m = el("button", { type: "button", className: "link", title: L.manualTip, textContent: L.manualOpen, onclick: () => openManual(o.case) });
+        m.disabled = tests.running || o.status === "problem";
+        head.append(m);
       }
       head.append(el("button", { type: "button", className: "link", textContent: L.testsRemove, onclick: () => send({ op: "testRemove", name: o.name }) }));
       const li = el("li", { className: "test " + o.status }, head);
@@ -1356,6 +1359,7 @@
       return li;
     }));
     updateTests();
+    if (man.open) showManual();
   }
 
   function updateTests() {
@@ -1370,6 +1374,10 @@
 
   // A script was opened: its cases are listed by running them.
   function resetTests() {
+    man.open = false;
+    man.data = null;
+    man.busy = false;
+    showManual();
     tests.outcomes = [];
     tests.open.clear();
     tests.running = false;
@@ -1394,6 +1402,175 @@
       $("tests-name").value = "";
     };
     renderTests();
+  }
+
+  // ------------------------------------------------------------ manual
+
+  // The manual of a test case (xljs test --manual, src/testing/manual.rs):
+  // the steps the case goes through, each with the user's note and the
+  // pictures of the screens, over the list of the cases. Notes are saved
+  // as they are typed (manualSave), and the Markdown comes back.
+  const man = { open: false, case: "", data: null, view: "edit", timer: 0, busy: false, printing: false, version: 0, shown: -1 };
+
+  /** The URL of a file of the manual's folder (src/dev/mod.rs MANUAL_PREFIX). */
+  const manualBase = (name) => "https://app.xljs/_manual/" + encodeURIComponent(name) + "/";
+
+  function openManual(name) {
+    save();
+    man.open = true;
+    man.case = name;
+    man.data = null;
+    showManual();
+    send({ op: "manual", name });
+  }
+
+  function closeManual() {
+    flushManual();
+    man.open = false;
+    showManual();
+  }
+
+  function showManual() {
+    for (const id of ["tests-hint", "tests-list"]) $(id).hidden = man.open || (id === "tests-hint" && (tests.outcomes.length > 0 || !$("tests-error").hidden));
+    $("panel-tests").querySelector(":scope > .bar").hidden = man.open;
+    $("manual").hidden = !man.open;
+    if (!man.open) return;
+    $("manual-name").textContent = fmt(L.manualOf, man.case);
+    $("manual-edit").hidden = man.view !== "edit" || !man.data;
+    $("manual-preview").hidden = man.view !== "preview" || !man.data;
+    $("manual-show-edit").classList.toggle("on", man.view === "edit");
+    $("manual-show-preview").classList.toggle("on", man.view === "preview");
+    for (const id of ["manual-refresh", "manual-copy", "manual-folder", "manual-show-edit", "manual-show-preview", "manual-pdf", "manual-theme", "manual-css-pick"]) $(id).disabled = man.busy || (!man.data && id !== "manual-refresh");
+    $("manual-pdf").disabled = $("manual-pdf").disabled || man.printing;
+    $("manual-css-clear").disabled = man.busy || !$("manual-css").value;
+    if (man.view === "preview" && man.data && man.shown !== man.version) loadManualPreview();
+  }
+
+  /** Shows the manual's page (as written by the last save) in the preview. */
+  function loadManualPreview() {
+    const m = man.data;
+    if (!m || !m.page) return;
+    man.shown = man.version;
+    $("manual-preview").src = manualBase(m.case) + encodeURIComponent(m.page) + "?t=" + Date.now();
+  }
+
+  function manualStarted() {
+    man.busy = true;
+    $("manual-state").textContent = L.manualMaking;
+    $("manual-state").hidden = false;
+    $("manual-error").hidden = true;
+    showManual();
+  }
+
+  function manualFailed(m) {
+    man.busy = false;
+    $("manual-state").hidden = true;
+    $("manual-error").textContent = m.message || "";
+    $("manual-error").hidden = false;
+    showManual();
+  }
+
+  function manualShown(m) {
+    if (!man.open || m.case !== man.case) return;
+    const fresh = !man.data || man.busy || man.data.stamp !== m.stamp;
+    man.busy = false;
+    man.data = m;
+    man.version++;
+    $("manual-error").hidden = true;
+    // The look: the built-in ones and the user's CSS file.
+    const themes = m.themes || [];
+    const sel = $("manual-theme");
+    if (sel.options.length !== themes.length) sel.replaceChildren(...themes.map((t) => el("option", { value: t, textContent: L["manualTheme_" + t] || t })));
+    sel.value = m.theme || themes[0] || "";
+    $("manual-css").value = m.css || "";
+    $("manual-css").placeholder = L.manualCssNone || "";
+    const failed = m.failed || [];
+    $("manual-state").textContent = failed.length ? failed.join("\n") : L.manualHint;
+    $("manual-state").hidden = false;
+    // The fields keep what is being typed; a new run fills them again.
+    if (fresh) {
+      $("manual-title").value = m.title || "";
+      $("manual-intro").value = m.intro || "";
+      $("manual-outro").value = m.outro || "";
+      renderManualSteps();
+    }
+    showManual();
+  }
+
+  function zoom(src) {
+    const d = el("dialog", { className: "zoom", onclick: () => d.remove() }, el("img", { src }));
+    document.body.append(d);
+    d.showModal();
+    d.addEventListener("close", () => d.remove());
+  }
+
+  function renderManualSteps() {
+    const m = man.data, base = manualBase(m.case);
+    $("manual-steps").replaceChildren(...m.steps.map((s) => {
+      const hide = el("input", { type: "checkbox", checked: !s.hide });
+      const num = el("span", { className: "muted" });
+      const li = el("li", { className: "manual-step" + (s.hide ? " hidden-step" : "") });
+      li.dataset.id = s.id;
+      const note = el("textarea", { rows: 2, value: s.note || "", placeholder: L.manualNoteHint });
+      note.addEventListener("input", queueManual);
+      hide.addEventListener("change", () => { li.classList.toggle("hidden-step", !hide.checked); numberSteps(); queueManual(); });
+      li.append(
+        el("div", { className: "step-head" }, num, el("h4", { textContent: s.heading }),
+          el("label", { className: "check", title: L.manualIncludeTip }, hide, " ", L.manualInclude)),
+        el("div", { className: "step-text md" }, markdown.render((s.text || []).join("\n"))),
+        el("div", { className: "shots" }, ...(s.images || []).map((p) => el("img", { src: base + p.split("/").map(encodeURIComponent).join("/") + "?t=" + m.stamp, alt: s.heading, onclick: (e) => zoom(e.target.src) }))),
+        note);
+      li.note = note;
+      li.include = hide;
+      li.num = num;
+      return li;
+    }));
+    numberSteps();
+  }
+
+  /** The numbers of the steps that are in the manual. */
+  function numberSteps() {
+    let n = 0;
+    for (const li of $("manual-steps").children) li.num.textContent = li.include.checked ? ++n + "." : "–";
+  }
+
+  /** The notes as typed. */
+  function manualNotes() {
+    const steps = {};
+    for (const li of $("manual-steps").children) {
+      const note = li.note.value, hide = !li.include.checked;
+      if (note.trim() || hide) steps[li.dataset.id] = { note, hide };
+    }
+    const theme = $("manual-theme").value;
+    return { title: $("manual-title").value, intro: $("manual-intro").value, outro: $("manual-outro").value, steps,
+      theme: theme === "standard" ? "" : theme, css: $("manual-css").value };
+  }
+
+  /** Saves the notes a moment after the last key. */
+  function queueManual() {
+    clearTimeout(man.timer);
+    man.timer = setTimeout(flushManual, 600);
+  }
+
+  function flushManual() {
+    if (!man.timer) return;
+    clearTimeout(man.timer);
+    man.timer = 0;
+    if (man.data) send({ op: "manualSave", name: man.case, manual: manualNotes() });
+  }
+
+  function initManual() {
+    $("manual-back").onclick = closeManual;
+    $("manual-show-edit").onclick = () => { man.view = "edit"; showManual(); };
+    $("manual-show-preview").onclick = () => { flushManual(); man.view = "preview"; showManual(); };
+    $("manual-refresh").onclick = () => { flushManual(); send({ op: "manual", name: man.case, refresh: true }); };
+    $("manual-folder").onclick = () => { flushManual(); send({ op: "manualFolder", name: man.case }); };
+    $("manual-copy").onclick = () => { if (man.data) copy(man.data.markdown || "", L.manualCopied); };
+    $("manual-pdf").onclick = () => { flushManual(); send({ op: "manualPdf", name: man.case }); };
+    $("manual-theme").onchange = () => { queueManual(); flushManual(); };
+    $("manual-css-pick").onclick = () => { flushManual(); send({ op: "manualCss", name: man.case }); };
+    $("manual-css-clear").onclick = () => { $("manual-css").value = ""; queueManual(); flushManual(); showManual(); };
+    for (const id of ["manual-title", "manual-intro", "manual-outro"]) $(id).addEventListener("input", queueManual);
   }
 
   function initRun() {
@@ -1912,6 +2089,21 @@
       case "runStarted": runStarted(m); updateTests(); break;
       case "testsStarted": testsStarted(); break;
       case "tests": testsDone(m); break;
+      case "manualStarted": manualStarted(); break;
+      case "manual": manualShown(m); break;
+      case "manualFailed": manualFailed(m); break;
+      case "manualPdfStarted":
+        man.printing = true;
+        status(L.manualPdfMaking);
+        showManual();
+        break;
+      case "manualPdf":
+        man.printing = false;
+        if (m.error) status(fmt(L.manualPdfFailed, m.error), "error");
+        else status(m.message, "ok");
+        if (man.data && m.case === man.case && !m.error) man.data.pdf = true;
+        showManual();
+        break;
       case "output": appendOutput(m.text, m.stream === "stderr" ? "err" : ""); break;
       case "runEnded": runEnded(m); updateTests(); break;
       case "previewForm":
@@ -1971,6 +2163,7 @@
   initPreview();
   initRun();
   initTests();
+  initManual();
   initWizard();
   initAgent();
   initTabs();
