@@ -9,3 +9,4 @@ body { font: 14.5px/1.85 "Yu Mincho", "YuMincho", "BIZ UDMincho", "MS Mincho", s
 .manual code { font-family: "BIZ UDGothic", "MS Gothic", monospace; font-size: .92em; }
 .manual blockquote { margin: 8px 0; padding: 4px 12px; border: 1px solid #999; }
 .manual th, .manual td { border: 1px solid #666; padding: 4px 10px; }
+.manual-stamp { font-size: 12.5px; color: #333; }

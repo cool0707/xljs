@@ -234,7 +234,11 @@ xljs test --manual <ケース> [--json] <スクリプトかフォルダ>
 
 見た目と PDF: `manual.json` の `theme`（組み込みの `web/manual/<名前>.css`。`base.css` はどれにも入る＝画像を紙に収める・見出しと画像を改ページで分けない・`@page` A4）と
 `css`（利用者の CSS ファイル。スクリプトのフォルダからの相対パスか絶対パス。見た目の後ろに足す）。
+アクセントの色: 標準の見た目は色を CSS 変数 `--accent`（既定は xljs の青 `#1261d1`）からだけ取り、見出しの帯・箇条書きの印・薄い塗りに使う（文字には使わないので、淡い色でも読める）。
+手順書を作るとき、最初のフォームの画面（`screen` イベントの `init.accent.light`＝フォームの `accent`）の色を `steps.json` の `accent` に覚え、
+`manual::style` が見た目の後ろに `:root { --accent: … }` として足す（CSS の色として安全な文字だけのとき）。利用者の CSS はその後ろなので、`--accent` を上書きできる。
 Markdown を書くたびに、pulldown-cmark で HTML にした `manual/<ケース>.html`（CSS を `<style>` に入れる。画像は相対パス）も書く。
+HTML には題名の上・右寄せに `<div class="manual-stamp">` を付ける（Markdown には入れない）。中身はスクリプトの `@version`（`.manual-version`。HTML・PDF を書くときにスクリプトのメタデータを読む。数字で始まれば `manual.version`＝「バージョン …」、先頭の v は取る）と日付（`.manual-date`。書いた日、`manual.date` の書式）。
 開発モードのプレビューはこの HTML を `iframe`（`sandbox`。スクリプトは動かない）で見せるので、PDF と同じ見た目になる。
 PDF（`manual::pdf_job`。開発モードの［PDF］＝`manualPdf`、CLI の `--pdf`）は、画像を data URI にした同じ HTML を `Ui::print_pdf`（`print.html`）に渡す。
 CSS ファイルが読めないときは、メモは保存してエラーを出す（HTML は前のまま）。開発モードの［CSS ファイル…］（`manualCss`）はファイルを選ばせて `css` に入れる。
