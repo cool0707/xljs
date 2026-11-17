@@ -36,7 +36,6 @@
         "api/csv",
         "api/json",
         "api/excel",
-        "api/style",
         "api/pdf-output",
         "api/pdf",
         "api/sqlite",
