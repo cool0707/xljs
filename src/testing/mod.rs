@@ -695,6 +695,53 @@ pub fn remove(path: &str, name: &str, variant: &str) -> Result<()> {
     Ok(())
 }
 
+/// Renames a case (variant "": its folder, with its manual) or one of its
+/// variants (its key in case.json and its approved result) to new.
+pub fn rename(path: &str, name: &str, variant: &str, new: &str) -> Result<()> {
+    let (root, _) = target(path)?;
+    let case = cases(&root)?.into_iter().find(|c| c.name == name).ok_or_else(|| err!("test.noSuchCase", name))?;
+    if variant.is_empty() {
+        if new == name {
+            return Ok(());
+        }
+        if bad_name(new) {
+            return Err(err!("test.badCaseName", new));
+        }
+        let to = root.join(TESTS_DIR).join(new);
+        // Only the letter case differs: the same folder on Windows.
+        if to.exists() && !new.eq_ignore_ascii_case(name) {
+            return Err(err!("test.caseExists", to.display()));
+        }
+        std::fs::rename(&case.dir, &to).map_err(|e| Error::path("rename", case.dir.display().to_string(), e))?;
+        return manual::case_renamed(&to, name);
+    }
+    if new == variant {
+        return Ok(());
+    }
+    let file = case.dir.join("case.json");
+    if bad_name(new) {
+        return Err(err!("test.badVariantName", file.display(), new));
+    }
+    let source = std::fs::read_to_string(&file).map_err(|e| Error::path("open", file.display().to_string(), e))?;
+    let mut doc: Value = serde_json::from_str(source.strip_prefix('\u{feff}').unwrap_or(&source))?;
+    let Some(variants) = doc.get_mut("variants").and_then(Value::as_object_mut).filter(|v| v.contains_key(variant)) else {
+        return Err(err!("test.noSuchCase", format!("{name}/{variant}")));
+    };
+    if variants.contains_key(new) {
+        return Err(err!("test.caseExists", format!("{name}/{new}")));
+    }
+    // The same place in the file.
+    *variants = std::mem::take(variants).into_iter().map(|(k, v)| (if k == variant { new.to_string() } else { k }, v)).collect();
+    let out = serde_json::to_string_pretty(&doc).unwrap_or_default() + "\n";
+    let from = case.expected_path(variant);
+    if from.is_file() {
+        let to = case.expected_path(new);
+        std::fs::rename(&from, &to).map_err(|e| Error::path("rename", from.display().to_string(), e))?;
+    }
+    std::fs::write(&file, out).map_err(|e| Error::path("open", file.display().to_string(), e))?;
+    Ok(())
+}
+
 /// Creates a case for script with an empty input folder and a case.json
 /// to fill in. Returns the file.
 pub fn new_case(script: &str, name: &str, today: &str) -> Result<PathBuf> {

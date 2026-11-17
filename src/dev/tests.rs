@@ -805,7 +805,7 @@ fn test_cases_in_the_session() {
         {"case": "月次", "variant": "", "status": "fail", "approved": false, "problems": [], "lines": ["- out: a", "+ out: b"], "transcript": [{"type": "out", "text": "b"}]},
         {"case": "月次", "variant": "商品別", "status": "pass", "approved": false, "problems": [], "lines": [], "transcript": []},
     ]});
-    s.tests_finished(&format!("{report}\n"), "");
+    s.tests_finished(&format!("{report}\n"), "", "");
     let t = w.take("tests");
     assert_eq!((&t[0]["fail"], &t[0]["outcomes"][0]["name"], &t[0]["outcomes"][1]["name"]), (&json!(1), &json!("月次/"), &json!("月次/商品別")));
     assert!(t[0]["outcomes"][0].get("transcript").is_none());
@@ -819,8 +819,44 @@ fn test_cases_in_the_session() {
     assert!(text.contains("```\n- out: a\n+ out: b\n```") && text.ends_with("出力してください（省略しないでください）。"), "{text}");
     assert!(!text.contains("case.json") && !text.contains("answers"), "{text}");
 
+    // One run again: what it gives replaces that run shown; the others stay.
+    let one = json!({"pass": 1, "fail": 0, "new": 0, "problem": 0, "outcomes": [
+        {"case": "月次", "variant": "", "status": "pass", "approved": false, "problems": [], "lines": [], "transcript": []},
+    ]});
+    s.tests_finished(&format!("{one}\n"), "", "月次/");
+    let t = w.take("tests");
+    assert_eq!((&t[0]["pass"], &t[0]["fail"], t[0]["outcomes"].as_array().unwrap().len()), (&json!(2), &json!(0), 2));
+    assert_eq!((&t[0]["outcomes"][0]["status"], &t[0]["outcomes"][1]["name"]), (&json!("pass"), &json!("月次/商品別")));
+    // A run that cannot start: the others shown stay.
+    s.tests_finished("", "エラー: だめです\n", "月次/商品別");
+    let all = w.take_all();
+    assert!(all[0]["type"] == "testsFailed" && all[0]["message"].as_str().unwrap().contains("だめです"), "{all:?}");
+    assert_eq!((&all[1]["type"], all[1]["outcomes"].as_array().unwrap().len()), (&json!("tests"), 2));
+
+    // Renaming a variant (its approved result along) and a case (its folder); the outcomes shown follow.
+    write(&dir, ".xljs/tests/月次/case.json", r#"{"script": "main.js", "variants": {"商品別": {}, "z": {}}}"#);
+    write(&dir, ".xljs/tests/月次/expected/商品別.jsonl", "");
+    page(&mut s, json!({"op": "testRename", "name": "月次/商品別", "rename": "店別"}));
+    let all = w.take_all();
+    assert_eq!((&all[0]["type"], &all[0]["from"], &all[0]["to"], &all[0]["case"]), (&json!("testRenamed"), &json!("月次/商品別"), &json!("月次/店別"), &json!(false)));
+    assert_eq!(all[1]["outcomes"][1]["name"], "月次/店別");
+    assert!(dir.join(".xljs/tests/月次/expected/店別.jsonl").is_file());
+    let text = std::fs::read_to_string(dir.join(".xljs/tests/月次/case.json")).unwrap();
+    assert!(text.find("店別").unwrap() < text.find("\"z\"").unwrap(), "{text}");
+    page(&mut s, json!({"op": "testRename", "name": "月次/店別", "rename": "z"}));
+    assert!(w.take("error")[0]["message"].as_str().unwrap().contains("すでにあります"));
+    page(&mut s, json!({"op": "testRename", "name": "月次/", "rename": "週次"}));
+    let all = w.take_all();
+    assert_eq!(all[0]["to"], "週次/");
+    assert_eq!((&all[1]["outcomes"][0]["name"], &all[1]["outcomes"][1]["name"], &all[1]["outcomes"][1]["case"]), (&json!("週次/"), &json!("週次/店別"), &json!("週次")));
+    assert!(dir.join(".xljs/tests/週次/case.json").is_file() && !dir.join(".xljs/tests/月次").exists());
+    page(&mut s, json!({"op": "testRename", "name": "週次/", "rename": "a/b"}));
+    assert!(w.take("error")[0]["message"].as_str().unwrap().contains("ケース名「a/b」は使えません"));
+    page(&mut s, json!({"op": "testRename", "name": "週次/", "rename": "月次"}));
+    w.take("tests");
+
     // Without a report: what kept the tests from running.
-    s.tests_finished("", "エラー: だめです\n");
+    s.tests_finished("", "エラー: だめです\n", "");
     assert!(w.take("tests")[0]["error"].as_str().unwrap().contains("だめです"));
 
     // A case cannot be recorded under a name that is taken or not a name.

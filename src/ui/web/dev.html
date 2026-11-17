@@ -361,7 +361,8 @@
     <!-- The test cases of the script (xljs test): what each run gives against
          what was approved. The AI never sees the cases, only a difference. -->
     <div id="panel-tests" class="panel">
-      <div class="bar">
+      <!-- fit: when the buttons do not fit, they show their icons only (dev.js fitBar). -->
+      <div class="bar fit">
         <span id="tests-state"></span>
         <span class="spacer"></span>
         <input type="text" id="tests-name" spellcheck="false">
@@ -375,11 +376,11 @@
       <!-- The manual of a case (xljs test --manual): the steps with a note
            each, and the Markdown it gives. Over the list of the cases. -->
       <section id="manual" class="manual" hidden>
-        <div class="bar">
+        <div class="bar fit">
           <button type="button" id="manual-back" class="tool"><i class="ic ic-arrow-left"></i><span data-t="manualBack"></span></button>
           <span id="manual-name" class="manual-name"></span>
           <span class="spacer"></span>
-          <button type="button" id="manual-show-edit" class="tool on"><i class="ic ic-text-align-start"></i><span data-t="manualEdit"></span></button>
+          <button type="button" id="manual-show-edit" class="tool on"><i class="ic ic-pencil"></i><span data-t="manualEdit"></span></button>
           <button type="button" id="manual-show-preview" class="tool"><i class="ic ic-eye"></i><span data-t="manualPreview"></span></button>
           <button type="button" id="manual-refresh" class="tool" data-tip="manualRefreshTip"><i class="ic ic-rotate-cw"></i><span data-t="manualRefresh"></span></button>
           <button type="button" id="manual-copy" class="tool" data-tip="manualCopyTip"><i class="ic ic-clipboard"></i><span data-t="manualCopy"></span></button>

@@ -282,6 +282,9 @@ struct Testing {
     approve: bool,
     /// The run makes the manual of this case (xljs test --manual).
     manual: String,
+    /// The run is of one case or run only ("case/", "case/variant"): what
+    /// it gives replaces those of the outcomes shown.
+    only: String,
 }
 
 struct Running {
@@ -361,7 +364,7 @@ struct Request {
     scale: f64,
     /// The parts of the browser pane under a menu of the page (show).
     holes: Vec<[f64; 4]>,
-    /// The new name of the file (apply).
+    /// The new name of the file (apply), of the case or variant (testRename).
     rename: String,
     /// What to copy (intro): "prompt" (the instructions alone), "script"
     /// (the current script alone) or "" (both).
@@ -537,7 +540,8 @@ impl Session {
                 // The AI's answer is in place: does the script still do what it did?
                 self.auto_tests();
             }
-            "tests" => self.start_tests("", false)?,
+            // All the cases, or one ("case/" = its own answers, "case/variant").
+            "tests" => self.start_tests(&r.name, false)?,
             "testApprove" => self.start_tests(&r.name, true)?,
             "testRecord" => self.start_record(&r.name)?,
             "testSuggest" => {
@@ -550,7 +554,7 @@ impl Session {
                 self.next_run += 1;
                 self.post(json!({"type": "testsStarted", "runs": 1, "approve": false}));
                 let run = Run::start(&self.o.exe, &args, &p.dir, &[], id, self.tx.clone(), Event::Test)?;
-                self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve: true, manual: String::new() });
+                self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve: true, manual: String::new(), only: String::new() });
             }
             "testRemove" => {
                 let p = self.project()?.clone();
@@ -561,6 +565,27 @@ impl Session {
                 }
                 crate::testing::remove(&p.entry.to_string_lossy(), case, variant)?;
                 self.auto_tests();
+            }
+            "testRename" => {
+                let p = self.project()?.clone();
+                let (case, variant) = r.name.split_once('/').unwrap_or((r.name.as_str(), ""));
+                let new = r.rename.trim();
+                crate::testing::rename(&p.entry.to_string_lossy(), case, variant, new)?;
+                // The outcomes shown take the new name; nothing needs to run again.
+                let (old, to) = if variant.is_empty() { (format!("{case}/"), format!("{new}/")) } else { (r.name.clone(), format!("{case}/{new}")) };
+                for o in &mut self.tests {
+                    let Some(m) = o.as_object_mut() else { continue };
+                    let name = m.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+                    if variant.is_empty() && m.get("case").and_then(Value::as_str) == Some(case) {
+                        m.insert("case".into(), new.into());
+                        m.insert("name".into(), format!("{new}/{}", name.split_once('/').map_or("", |x| x.1)).into());
+                    } else if name == old {
+                        m.insert("variant".into(), new.into());
+                        m.insert("name".into(), to.clone().into());
+                    }
+                }
+                self.post(json!({"type": "testRenamed", "from": old, "to": to, "case": variant.is_empty()}));
+                self.post_tests();
             }
             "testPrompt" => {
                 let p = self.project()?;
@@ -1386,7 +1411,8 @@ impl Session {
         let runs: usize = cases.iter().map(|c| 1 + c.variants.len()).sum();
         self.post(json!({"type": "testsStarted", "runs": runs, "approve": approve}));
         let run = Run::start(&self.o.exe, &args, &p.dir, &[], id, self.tx.clone(), Event::Test)?;
-        self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve, manual: String::new() });
+        let only = if approve { String::new() } else { only.to_string() };
+        self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve, manual: String::new(), only });
         Ok(())
     }
 
@@ -1408,16 +1434,23 @@ impl Session {
                     self.auto_tests();
                     return;
                 }
-                self.tests_finished(&t.stdout, &t.stderr);
+                self.tests_finished(&t.stdout, &t.stderr, &t.only);
             }
         }
     }
 
     /// Tells the page what xljs test --json gave: its report (stdout), or
     /// what kept it from running (stderr).
-    fn tests_finished(&mut self, stdout: &str, stderr: &str) {
+    fn tests_finished(&mut self, stdout: &str, stderr: &str, only: &str) {
         let report = stdout.lines().rev().find_map(|l| serde_json::from_str::<Value>(l).ok().filter(|v| v.get("outcomes").is_some()));
         let Some(mut report) = report else {
+            if !only.is_empty() {
+                // The others shown stay; what kept this one from running is told.
+                let message = report::last_error(stderr);
+                self.post(json!({"type": "testsFailed", "message": if message.is_empty() { stderr.trim().to_string() } else { message }}));
+                self.post_tests();
+                return;
+            }
             self.tests.clear();
             let message = report::last_error(stderr);
             self.post(json!({"type": "tests", "error": if message.is_empty() { stderr.trim().to_string() } else { message }}));
@@ -1435,10 +1468,38 @@ impl Session {
                 m.insert("name".into(), name.into());
             }
         }
+        if !only.is_empty() && !self.tests.is_empty() {
+            // Over the outcomes shown: the runs of the case in place, the others as they were.
+            let ran = |o: &Value| o["name"] == only || (!only.contains('/') && o["case"] == only);
+            let mut merged = Vec::new();
+            let mut fresh = Some(outcomes);
+            for o in std::mem::take(&mut self.tests) {
+                if ran(&o) {
+                    if let Some(f) = fresh.take() {
+                        merged.extend(f);
+                    }
+                } else {
+                    merged.push(o);
+                }
+            }
+            merged.extend(fresh.into_iter().flatten());
+            self.tests = merged;
+            self.post_tests();
+            return;
+        }
         self.tests = outcomes.clone();
         report["type"] = "tests".into();
         report["outcomes"] = outcomes.into();
         self.post(report);
+    }
+
+    /// Tells the page the outcomes shown (self.tests) with their counts.
+    fn post_tests(&self) {
+        let count = |s: &str| self.tests.iter().filter(|o| o["status"] == s).count();
+        self.post(json!({
+            "type": "tests", "pass": count("pass"), "fail": count("fail"), "new": count("new"), "problem": count("problem"),
+            "outcomes": self.tests,
+        }));
     }
 
     /// Stops the run of the cases (or of a manual: the page learns it stopped).
@@ -1469,7 +1530,7 @@ impl Session {
         self.next_run += 1;
         self.post(json!({"type": "manualStarted", "case": name}));
         let run = Run::start(&self.o.exe, &args, &p.dir, &[], id, self.tx.clone(), Event::Test)?;
-        self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve: false, manual: name });
+        self.testing = Some(Testing { run, stdout: String::new(), stderr: String::new(), approve: false, manual: name, only: String::new() });
         Ok(())
     }
 
