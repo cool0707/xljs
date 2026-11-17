@@ -3,16 +3,15 @@
 //! values are like (their kinds, blanks, ranges, digits, lengths, leading
 //! zeros, patterns, the values of a short list, duplicates).
 //!
-//! The tables are the Excel tables (ListObjects) of the sheet and the
-//! blocks of cells around which the rows and columns are empty (as
-//! Excel's CurrentRegion), with the header row found from the frozen
-//! panes, the filter or the cells (a row of text only).
+//! Where the tables are (Excel tables, the filter, formulas filled down,
+//! blocks of cells) and the rows of their headers: layout.rs.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use super::formula::{self, Rect};
-use crate::xml::Node;
+use super::layout;
 use super::{Sheet, Workbook, code};
+use crate::xml::Node;
 use crate::api::xlsx::{builtin_date_fmt, date_format_code, from_serial};
 use crate::t;
 
@@ -28,8 +27,6 @@ const MAX_PATTERNS: usize = 5;
 const MAX_EXAMPLES: usize = 3;
 /// The characters of a value shown.
 const MAX_TEXT: usize = 30;
-/// The rows searched for the header from the top of a block.
-const HEADER_SEARCH: u32 = 10;
 
 /// A cell's value as stored.
 #[derive(Debug, Clone)]
@@ -115,14 +112,14 @@ pub(super) fn cell(c: &Node, col: u32, row: u32) -> Option<Cell> {
 }
 
 /// The cells of a sheet by row (sorted by row and column).
-struct Grid<'a> {
-    cells: &'a [Cell],
+pub(super) struct Grid<'a> {
+    pub cells: &'a [Cell],
     /// (row, first cell, end).
-    rows: Vec<(u32, usize, usize)>,
+    pub rows: Vec<(u32, usize, usize)>,
 }
 
 impl<'a> Grid<'a> {
-    fn new(cells: &'a [Cell]) -> Grid<'a> {
+    pub fn new(cells: &'a [Cell]) -> Grid<'a> {
         let mut rows: Vec<(u32, usize, usize)> = Vec::new();
         for (i, c) in cells.iter().enumerate() {
             match rows.last_mut() {
@@ -133,7 +130,7 @@ impl<'a> Grid<'a> {
         Grid { cells, rows }
     }
 
-    fn row(&self, r: u32) -> &'a [Cell] {
+    pub fn row(&self, r: u32) -> &'a [Cell] {
         match self.rows.binary_search_by_key(&r, |x| x.0) {
             Ok(i) => &self.cells[self.rows[i].1..self.rows[i].2],
             Err(_) => &[],
@@ -141,15 +138,24 @@ impl<'a> Grid<'a> {
     }
 
     /// The cells of the row in the columns c1..=c2.
-    fn row_in(&self, r: u32, c1: u32, c2: u32) -> &'a [Cell] {
+    pub fn row_in(&self, r: u32, c1: u32, c2: u32) -> &'a [Cell] {
         let row = self.row(r);
         let a = row.partition_point(|c| c.col < c1);
         let b = row.partition_point(|c| c.col <= c2);
         &row[a..b]
     }
 
+    pub fn at(&self, r: u32, c: u32) -> Option<&'a Cell> {
+        self.row_in(r, c, c).first()
+    }
+
+    /// The last row with cells (0 without any).
+    pub fn last_row(&self) -> u32 {
+        self.rows.last().map_or(0, |r| r.0)
+    }
+
     /// The cells of the rows r1..=r2.
-    fn rows_in(&self, r1: u32, r2: u32) -> impl Iterator<Item = &'a [Cell]> + '_ {
+    pub fn rows_in(&self, r1: u32, r2: u32) -> impl Iterator<Item = &'a [Cell]> + '_ {
         let start = self.rows.partition_point(|x| x.0 < r1);
         self.rows[start..].iter().take_while(move |x| x.0 <= r2).map(|x| &self.cells[x.1..x.2])
     }
@@ -157,7 +163,7 @@ impl<'a> Grid<'a> {
 
 /// What a cell holds, for the statistics.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-enum Kind {
+pub(super) enum Kind {
     Num,
     Date,
     Time,
@@ -168,7 +174,7 @@ enum Kind {
 
 /// A distinct value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-enum Key {
+pub(super) enum Key {
     Num(u64),
     Date(u64),
     Time(u64),
@@ -177,12 +183,12 @@ enum Key {
     Err(String),
 }
 
-struct Ctx<'a> {
-    wb: &'a Workbook,
+pub(super) struct Ctx<'a> {
+    pub wb: &'a Workbook,
 }
 
 impl Ctx<'_> {
-    fn text<'b>(&'b self, v: &'b Val) -> Option<&'b str> {
+    pub fn text<'b>(&'b self, v: &'b Val) -> Option<&'b str> {
         match v {
             Val::Shared(i) => Some(self.wb.strings.get(*i as usize).map(String::as_str).unwrap_or("")),
             Val::Text(s) => Some(s),
@@ -190,17 +196,17 @@ impl Ctx<'_> {
         }
     }
 
-    fn format(&self, style: u32) -> (u32, &str) {
+    pub fn format(&self, style: u32) -> (u32, &str) {
         self.wb.formats.get(style as usize).map(|(id, c)| (*id, c.as_str())).unwrap_or((0, "General"))
     }
 
-    fn is_date(&self, style: u32) -> bool {
+    pub fn is_date(&self, style: u32) -> bool {
         let (id, code) = self.format(style);
         builtin_date_fmt(id) || date_format_code(code)
     }
 
     /// A cell's value as a key; None for a blank (an empty text too).
-    fn key(&self, c: &Cell) -> Option<Key> {
+    pub fn key(&self, c: &Cell) -> Option<Key> {
         Some(match &c.val {
             Val::Blank => return None,
             Val::Num(f) if self.is_date(c.style) => {
@@ -224,7 +230,7 @@ impl Ctx<'_> {
     }
 
     /// The text of a header cell.
-    fn header(&self, c: &Cell) -> String {
+    pub fn header(&self, c: &Cell) -> String {
         match self.key(c) {
             Some(Key::Str(s)) => one_line(&s),
             Some(k) => show(&k, self.wb.date1904),
@@ -233,7 +239,7 @@ impl Ctx<'_> {
     }
 }
 
-fn kind(k: &Key) -> Kind {
+pub(super) fn kind(k: &Key) -> Kind {
     match k {
         Key::Num(_) => Kind::Num,
         Key::Date(_) => Kind::Date,
@@ -244,7 +250,7 @@ fn kind(k: &Key) -> Kind {
     }
 }
 
-fn one_line(s: &str) -> String {
+pub(super) fn one_line(s: &str) -> String {
     s.replace("\r\n", " ").replace(['\r', '\n'], " ").trim().to_string()
 }
 
@@ -616,250 +622,49 @@ impl Stats {
     }
 }
 
-/// A table found on a sheet.
-struct Region {
-    /// The heading (the table's name or the range).
-    title: String,
-    c1: u32,
-    c2: u32,
-    /// The rows of the header (first, last).
-    header: Option<(u32, u32)>,
-    data: (u32, u32),
-    /// The names of the columns (an Excel table's).
-    names: Vec<String>,
-    /// A total row left out after the data.
-    totals: Option<u32>,
-    /// What the header was found from.
-    hint: Option<&'static str>,
-}
-
-/// Whether a row looks like a header: text only (no formulas) in at least
-/// half of the columns (two of them when there are more).
-fn header_like(cx: &Ctx, g: &Grid, r: u32, c1: u32, c2: u32) -> bool {
-    let cells = g.row_in(r, c1, c2);
-    let width = (c2 - c1 + 1) as usize;
-    let need = width.div_ceil(2).max(if width > 1 { 2 } else { 1 });
-    let mut n = 0;
-    for c in cells {
-        match cx.key(c) {
-            None => {}
-            Some(Key::Str(_)) if !c.formula => n += 1,
-            Some(_) => return false,
-        }
-    }
-    n >= need
-}
-
-/// Whether the row ends the data with totals: a label (合計, Total) or a
-/// sum over the rows above (a SUM or SUBTOTAL formula not filled from the
-/// row above).
-fn totals_row(cx: &Ctx, sh: &Sheet, g: &Grid, r: u32, c1: u32, c2: u32) -> bool {
-    const WORDS: [&str; 7] = ["合計", "総計", "小計", "計", "total", "grand total", "sum"];
-    for c in g.row_in(r, c1, c2) {
-        if !c.formula
-            && let Some(Key::Str(s)) = cx.key(c)
-        {
-            let s: String = s.chars().filter(|c| !c.is_whitespace() && *c != '\u{3000}').collect::<String>().to_lowercase();
-            if WORDS.iter().any(|w| w.replace(' ', "") == s) {
-                return true;
-            }
-        }
-    }
-    let inside = |x: &Rect, c: u32, r: u32| x.c1 <= c && c <= x.c2 && x.r1 <= r && r <= x.r2;
-    for f in sh.formulas.iter().filter(|f| !f.array) {
-        let up = f.formula.to_uppercase();
-        if !(up.contains("SUM(") || up.contains("SUBTOTAL(") || up.contains("AGGREGATE(")) {
-            continue;
-        }
-        for c in c1..=c2 {
-            if f.rects.iter().any(|x| inside(x, c, r)) && !f.rects.iter().any(|x| inside(x, c, r - 1)) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn find(p: &mut [usize], mut i: usize) -> usize {
-    while p[i] != i {
-        p[i] = p[p[i]];
-        i = p[i];
-    }
-    i
-}
-
 fn overlaps(a: &Rect, b: &Rect) -> bool {
     a.c1 <= b.c2 && b.c1 <= a.c2 && a.r1 <= b.r2 && b.r1 <= a.r2
 }
 
-/// The blocks of cells with MIN_ROWS rows or more outside the tables: the
-/// cells joined to their neighbours (diagonal ones too), and the blocks
-/// that overlap as one.
-fn blocks(g: &Grid, tables: &[Rect]) -> Vec<Rect> {
-    let cells = g.cells;
-    let free = |c: &Cell| !tables.iter().any(|t| t.c1 <= c.col && c.col <= t.c2 && t.r1 <= c.row && c.row <= t.r2);
-    let mut parent: Vec<usize> = (0..cells.len()).collect();
-    let union = |p: &mut Vec<usize>, a: usize, b: usize| {
-        let (x, y) = (find(p, a), find(p, b));
-        if x != y {
-            p[x.max(y)] = x.min(y);
-        }
-    };
-    for k in 0..g.rows.len() {
-        let (row, start, end) = g.rows[k];
-        let prev = (k > 0 && g.rows[k - 1].0 + 1 == row).then(|| g.rows[k - 1]);
-        for i in start..end {
-            if !free(&cells[i]) {
-                continue;
-            }
-            let col = cells[i].col;
-            if i > start && cells[i - 1].col + 1 == col && free(&cells[i - 1]) {
-                union(&mut parent, i, i - 1);
-            }
-            if let Some((_, ps, pe)) = prev {
-                let from = ps + cells[ps..pe].partition_point(|c| c.col + 1 < col);
-                for (j, above) in cells.iter().enumerate().take(pe).skip(from) {
-                    if above.col > col + 1 {
-                        break;
-                    }
-                    if free(above) {
-                        union(&mut parent, i, j);
-                    }
-                }
-            }
-        }
+/// The heading of a table: an Excel table's name with its range, or the
+/// range.
+pub(super) fn title(f: &layout::Found) -> String {
+    match &f.name {
+        Some(n) => t!("book.tbl.table", n, f.rect.display()),
+        None => f.rect.display(),
     }
-    let mut rects: HashMap<usize, Rect> = HashMap::new();
-    for (i, c) in cells.iter().enumerate() {
-        if !free(c) {
-            continue;
-        }
-        let root = find(&mut parent, i);
-        let r = rects.entry(root).or_insert(Rect::cell(c.col, c.row));
-        r.c1 = r.c1.min(c.col);
-        r.c2 = r.c2.max(c.col);
-        r.r1 = r.r1.min(c.row);
-        r.r2 = r.r2.max(c.row);
-    }
-    let mut all: Vec<Rect> = rects.into_values().collect();
-    all.sort();
-    // The big ones take in what overlaps them until nothing does.
-    let (mut big, mut small): (Vec<Rect>, Vec<Rect>) = all.into_iter().partition(|r| r.r2 - r.r1 + 1 >= MIN_ROWS);
-    loop {
-        let mut changed = false;
-        let mut i = 0;
-        while i < big.len() {
-            let mut j = i + 1;
-            while j < big.len() {
-                if overlaps(&big[i], &big[j]) {
-                    let o = big.remove(j);
-                    big[i] = union_rect(&big[i], &o);
-                    changed = true;
-                } else {
-                    j += 1;
-                }
-            }
-            let before = small.len();
-            let mut grown = big[i];
-            small.retain(|s| {
-                if overlaps(&grown, s) {
-                    grown = union_rect(&grown, s);
-                    false
-                } else {
-                    true
-                }
-            });
-            big[i] = grown;
-            changed |= small.len() != before;
-            i += 1;
-        }
-        if !changed {
-            break;
-        }
-    }
-    big.sort();
-    big
 }
 
-fn union_rect(a: &Rect, b: &Rect) -> Rect {
-    Rect { r1: a.r1.min(b.r1), c1: a.c1.min(b.c1), r2: a.r2.max(b.r2), c2: a.c2.max(b.c2) }
+/// Where the header and the data of a table are, and what told so (the
+/// parts of a sentence). totals is the message for a row of totals.
+pub(super) fn info(f: &layout::Found, totals: &str) -> Vec<String> {
+    let mut info = Vec::new();
+    match f.header {
+        Some((a, z)) if a == z => info.push(t!("book.tbl.header", a)),
+        Some((a, z)) => info.push(t!("book.tbl.headers", a, z)),
+        None => info.push(t!("book.tbl.noHeader")),
+    }
+    if f.rows() == 0 {
+        info.push(t!("book.tbl.noData", f.data.0));
+    } else if f.rows() == 1 {
+        info.push(t!("book.tbl.dataRow", f.data.0));
+    } else {
+        info.push(t!("book.tbl.data", f.data.0, f.data.1, f.rows()));
+    }
+    if let Some(r) = f.totals {
+        info.push(t!(totals, r));
+    }
+    if let Some(k) = f.by.key() {
+        info.push(t!("book.tbl.guess", t!(k)));
+    }
+    info
 }
 
-/// The tables of the sheet with MIN_ROWS rows of data or more.
-fn regions(cx: &Ctx, sh: &Sheet, g: &Grid) -> Vec<Region> {
-    let mut out = Vec::new();
-    for tb in &sh.tables {
-        let r1 = tb.rect.r1 + tb.header_rows;
-        let Some(r2) = tb.rect.r2.checked_sub(tb.totals_rows) else { continue };
-        if r2 < r1 || r2 - r1 + 1 < MIN_ROWS {
-            continue;
-        }
-        out.push(Region {
-            title: t!("book.tbl.table", tb.name, tb.rect.display()),
-            c1: tb.rect.c1,
-            c2: tb.rect.c2,
-            header: (tb.header_rows > 0).then_some((tb.rect.r1, r1 - 1)),
-            data: (r1, r2),
-            names: tb.columns.clone(),
-            totals: (tb.totals_rows > 0).then_some(r2 + 1),
-            hint: None,
-        });
-    }
-    let tables: Vec<Rect> = sh.tables.iter().map(|t| t.rect).collect();
-    for b in blocks(g, &tables) {
-        let (c1, c2) = (b.c1, b.c2);
-        // The last row of the header: the frozen rows, the filter's top
-        // row or the first row of text near the top.
-        let mut found = None;
-        if let Some(y) = sh.frozen
-            && b.r1 <= y
-            && y < b.r2
-        {
-            found = Some((y, "book.tbl.byFrozen"));
-        }
-        if found.is_none()
-            && let Some(f) = sh.filter
-            && b.r1 <= f.r1
-            && f.r1 < b.r2
-            && f.c1 <= c2
-            && c1 <= f.c2
-        {
-            found = Some((f.r1, "book.tbl.byFilter"));
-        }
-        let header = match found {
-            Some((last, hint)) => {
-                // Rows of text right above it are part of the header.
-                let mut first = last;
-                while first > b.r1 && header_like(cx, g, first - 1, c1, c2) && header_like(cx, g, first, c1, c2) {
-                    first -= 1;
-                }
-                Some((first, last, hint))
-            }
-            None => (b.r1..=b.r2.min(b.r1 + HEADER_SEARCH - 1)).find(|r| header_like(cx, g, *r, c1, c2)).map(|r| (r, r, "book.tbl.byLayout")),
-        };
-        let r1 = header.map_or(b.r1, |h| h.1 + 1);
-        let mut r2 = b.r2;
-        let mut totals = None;
-        if r2 > r1 && totals_row(cx, sh, g, r2, c1, c2) {
-            totals = Some(r2);
-            r2 -= 1;
-        }
-        if r2 < r1 || r2 - r1 + 1 < MIN_ROWS {
-            continue;
-        }
-        out.push(Region {
-            title: Rect { r1: header.map_or(r1, |h| h.0), c1, r2: b.r2, c2 }.display(),
-            c1,
-            c2,
-            header: header.map(|h| (h.0, h.1)),
-            data: (r1, r2),
-            names: Vec::new(),
-            totals,
-            hint: Some(header.map_or("book.tbl.byLayout", |h| h.2)),
-        });
-    }
-    out.sort_by_key(|r| (r.data.0, r.c1));
-    out
+/// The groups of columns of a table ("「得意先」B〜C 列、..."); None
+/// without any.
+pub(super) fn groups(f: &layout::Found) -> Option<String> {
+    let list: Vec<String> = f.groups.iter().map(|g| t!("book.tbl.group", short(&g.name), formula::col_name(g.c1), formula::col_name(g.c2))).collect();
+    (!list.is_empty()).then(|| t!("book.tbl.groups", list.join(&t!("vba.separator"))))
 }
 
 /// The tables of a sheet and their columns as Markdown (a heading per
@@ -867,8 +672,8 @@ fn regions(cx: &Ctx, sh: &Sheet, g: &Grid) -> Vec<Region> {
 pub(super) fn sheet_text(wb: &Workbook, sh: &Sheet) -> Option<String> {
     let cx = Ctx { wb };
     let g = Grid::new(&sh.cells);
-    let regions = regions(&cx, sh, &g);
-    if regions.is_empty() {
+    let found: Vec<layout::Found> = layout::find(&cx, sh, &g).into_iter().filter(|f| f.rows() >= MIN_ROWS).collect();
+    if found.is_empty() {
         return None;
     }
     let sep = t!("vba.separator");
@@ -876,56 +681,26 @@ pub(super) fn sheet_text(wb: &Workbook, sh: &Sheet) -> Option<String> {
     if let Some(r) = sh.cut {
         b.push_str(&format!("{}\n\n", t!("book.columnsCut", r)));
     }
-    for rg in regions {
-        b.push_str(&format!("### {}\n\n", rg.title));
-        let mut info = Vec::new();
-        match rg.header {
-            Some((a, z)) if a == z => info.push(t!("book.tbl.header", a)),
-            Some((a, z)) => info.push(t!("book.tbl.headers", a, z)),
-            None => info.push(t!("book.tbl.noHeader")),
+    for rg in found {
+        b.push_str(&format!("### {}\n\n", title(&rg)));
+        b.push_str(&format!("{}\n\n", t!("book.tbl.info", info(&rg, "book.tbl.totals").join(&sep))));
+        if let Some(groups) = groups(&rg) {
+            b.push_str(&format!("{groups}\n\n"));
         }
-        info.push(t!("book.tbl.data", rg.data.0, rg.data.1, rg.data.1 - rg.data.0 + 1));
-        if let Some(r) = rg.totals {
-            info.push(t!("book.tbl.totals", r));
-        }
-        if let Some(h) = rg.hint {
-            info.push(t!("book.tbl.guess", t!(h)));
-        }
-        b.push_str(&format!("{}\n\n", t!("book.tbl.info", info.join(&sep))));
         let width = (rg.c2 - rg.c1 + 1) as usize;
-        let mut stats: Vec<Stats> = (0..width).map(|_| Stats { rows: (rg.data.1 - rg.data.0 + 1) as usize, ..Default::default() }).collect();
+        let mut stats: Vec<Stats> = (0..width).map(|_| Stats { rows: rg.rows() as usize, ..Default::default() }).collect();
         for row in g.rows_in(rg.data.0, rg.data.1) {
             let a = row.partition_point(|c| c.col < rg.c1);
             for c in row[a..].iter().take_while(|c| c.col <= rg.c2) {
                 stats[(c.col - rg.c1) as usize].add(&cx, c);
             }
         }
-        let names: Vec<String> = (rg.c1..=rg.c2)
-            .map(|c| {
-                if let Some(n) = rg.names.get((c - rg.c1) as usize) {
-                    return one_line(n);
-                }
-                let Some((h1, h2)) = rg.header else { return String::new() };
-                let mut parts: Vec<String> = Vec::new();
-                for r in h1..=h2 {
-                    if let Some(cell) = g.row_in(r, c, c).first() {
-                        let s = cx.header(cell);
-                        if !s.is_empty() && parts.last() != Some(&s) {
-                            parts.push(s);
-                        }
-                    }
-                }
-                parts.join(" / ")
-            })
-            .collect();
-        let mut seen: HashSet<u32> = HashSet::new();
         for (i, st) in stats.iter().enumerate() {
             let c = rg.c1 + i as u32;
-            let name = &names[i];
+            let name = &rg.names[i];
             if name.is_empty() && st.kinds.is_empty() && st.formulas == 0 {
                 continue;
             }
-            seen.insert(c);
             let mut parts = st.describe(wb.date1904);
             if sh.validations.iter().any(|v| v.rects.iter().any(|x| overlaps(x, &Rect { r1: rg.data.0, c1: c, r2: rg.data.1, c2: c }))) {
                 parts.push(t!("book.col.validation"));

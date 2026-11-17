@@ -4,7 +4,11 @@ split into pieces as Excel leaves them after copying cells, and charts (a
 column chart with a line on a second axis, a pie); and columns.xlsx for
 the columns of the tables with many rows: a range with a title above its
 header and frozen panes, an Excel table, a range with a filter, ranges
-with neither and small ones that are left out.
+with neither and small ones that are left out; and layout.xlsx for where
+the tables of a sheet are: settings and totals above a table, a header
+of several rows (merged cells, names of groups of columns, an empty row
+for the buttons of the filter), formulas filled down under a row of
+totals, names of groups above an Excel table, a sheet of settings.
 
     python3 make_book.py   (needs openpyxl)
 """
@@ -14,7 +18,7 @@ import os
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, PieChart, Reference
 from openpyxl.formatting.rule import CellIsRule, ColorScaleRule, DataBarRule, FormulaRule, IconSetRule
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.workbook.defined_name import DefinedName
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.table import Table
@@ -161,3 +165,94 @@ ws.append(["名前", "値"])
 for i in range(50):
     ws.append([f"n{i}", i])
 wb.save(os.path.join(HERE, "columns.xlsx"))
+
+# Where the tables are.
+wb = Workbook()
+head = PatternFill(start_color="DDEBF7", end_color="DDEBF7", fill_type="solid")
+thin = Side(style="thin")
+box = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+# Settings and a total above the table; a header of three rows: names of
+# groups (merged cells, centered across the selection), the names, and an
+# empty row with the filter.
+ws = wb.active
+ws.title = "売上"
+ws["A1"] = "売上一覧"
+ws["A1"].font = Font(bold=True, size=14)
+ws["A3"] = "期間"
+ws["B3"] = datetime.date(2025, 4, 1)
+ws["A4"] = "担当"
+ws["B4"] = "山田"
+ws["A5"] = "合計"
+ws["D5"] = "=SUBTOTAL(9,D10:D129)"
+ws["A7"] = "日付"
+ws.merge_cells("A7:A8")
+ws["B7"] = "得意先"
+ws.merge_cells("B7:C7")
+ws["D7"] = "金額"
+ws["D7"].alignment = Alignment(horizontal="centerContinuous")
+ws["E7"].alignment = Alignment(horizontal="centerContinuous")
+ws["F7"] = "備考"
+ws.merge_cells("F7:F8")
+for c, v in zip("BCDE", ["コード", "名前", "税抜", "税込"]):
+    ws[f"{c}8"] = v
+for r in (7, 8, 9):
+    for c in "ABCDEF":
+        ws[f"{c}{r}"].fill = head
+        ws[f"{c}{r}"].border = box
+for i in range(120):
+    r = i + 10
+    ws[f"A{r}"] = datetime.date(2025, 4, 1) + datetime.timedelta(days=i % 30)
+    ws[f"B{r}"] = f"C{i % 12:03d}"
+    ws[f"C{r}"] = f"得意先{i % 12}"
+    ws[f"D{r}"] = 1000 + i * 10
+    ws[f"E{r}"] = f"=ROUND(D{r}*1.1,0)"
+ws.auto_filter.ref = "A9:F129"
+
+# No filter: a formula filled down tells the data, under a row of totals
+# right under the header; a total in the settings right above the header.
+ws = wb.create_sheet("在庫")
+ws["A1"] = "在庫表"
+ws["A2"] = "更新日"
+ws["B2"] = datetime.date(2025, 4, 1)
+ws["A3"] = "総数"
+ws["B3"] = "=SUM(C6:C40)"
+for c, v in zip("ABCDE", ["品番", "品名", "数量", "単価", "金額"]):
+    ws[f"{c}4"] = v
+    ws[f"{c}4"].fill = head
+ws["A5"] = "合計"
+ws["C5"] = "=SUM(C6:C40)"
+ws["E5"] = "=SUM(E6:E40)"
+for r in range(6, 41):
+    ws[f"A{r}"] = f"P{r:03d}"
+    ws[f"B{r}"] = f"部品{r}"
+    ws[f"C{r}"] = r
+    ws[f"D{r}"] = 50
+    ws[f"E{r}"] = f"=C{r}*D{r}"
+
+# The name of a group of columns above an Excel table.
+ws = wb.create_sheet("名簿")
+ws["B1"] = "連絡先"
+ws.merge_cells("B1:C1")
+ws.append(["氏名", "電話", "メール"])
+for i in range(5):
+    ws.append([f"社員{i}", f"03-0000-000{i}", f"u{i}@example.com"])
+ws.add_table(Table(displayName="名簿", ref="A2:C7"))
+
+# Settings: not a table.
+ws = wb.create_sheet("設定")
+for k, v in [("会社名", "サンプル商事"), ("部署", "営業部"), ("出力先", "C:\\out")]:
+    ws.append([k, v])
+
+# Nothing but the cells to tell by: settings above the header without an
+# empty row between them, the header in bold.
+ws = wb.create_sheet("予定")
+ws["A1"] = "予定表"
+ws["A2"] = "年度"
+ws["B2"] = 2025
+for c, v in zip("ABC", ["担当", "内容", "場所"]):
+    ws[f"{c}3"] = v
+    ws[f"{c}3"].font = Font(bold=True)
+for i in range(6):
+    ws.append([f"担当{i}", f"内容{i}", f"場所{i}"])
+wb.save(os.path.join(HERE, "layout.xlsx"))

@@ -13,7 +13,11 @@
 mod chart;
 mod columns;
 mod formula;
+mod layout;
+mod outline;
 mod rules;
+
+pub use outline::outline;
 
 use std::collections::{HashMap, HashSet};
 use std::io::Cursor;
@@ -116,6 +120,12 @@ struct Sheet {
     /// The range of the sheet's filter.
     filter: Option<Rect>,
     tables: Vec<columns::Table>,
+    merges: Vec<Rect>,
+    /// The empty cells with a fill, a border or centered across the
+    /// selection (what a header looks like), by row and column.
+    blanks: Vec<columns::Cell>,
+    /// The style of the rows that have one: (row, style), by row.
+    row_styles: Vec<(u32, u32)>,
 }
 
 #[derive(Debug)]
@@ -140,6 +150,8 @@ pub struct Workbook {
     strings: Vec<String>,
     /// The number format of each cell style: (id, code).
     formats: Vec<(u32, String)>,
+    /// The look of each cell style.
+    xfs: Vec<layout::Xf>,
 }
 
 /// Reads the workbook at path (what inc asks for).
@@ -174,6 +186,7 @@ pub fn read(data: &[u8], inc: &Include) -> Result<Workbook> {
         out.dxfs = s.child("dxfs").map(|d| d.children("dxf").cloned().collect()).unwrap_or_default();
         if values {
             out.formats = number_formats(&s);
+            out.xfs = layout::xfs(&s);
         }
     }
     if values {
@@ -195,7 +208,7 @@ pub fn read(data: &[u8], inc: &Include) -> Result<Workbook> {
             };
             if let Some(part) = s.attr("id").and_then(target) {
                 if let Some(data) = pkg.open(&part) {
-                    read_sheet(&data, &mut sh, values);
+                    read_sheet(&data, &mut sh, values.then_some(&out.xfs[..]));
                 }
                 sh.charts = pkg.charts(&part);
                 if values {
@@ -335,9 +348,16 @@ struct CellFormula {
     f: Node,
 }
 
-/// Reads the formulas and the rules of a worksheet (and its cells with
-/// values), streaming through its cells.
-fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
+/// Reads the formulas and the rules of a worksheet, streaming through its
+/// cells; with the styles of the workbook (xfs), its cells with values
+/// too, and what tells where its tables are (the merged cells, the empty
+/// cells that look like a header).
+fn read_sheet(data: &[u8], sh: &mut Sheet, xfs: Option<&[layout::Xf]>) {
+    let values = xfs.is_some();
+    let marked = |n: &Node| -> Option<u32> {
+        let s: u32 = n.attr("s")?.parse().ok()?;
+        xfs?.get(s as usize).is_some_and(layout::Xf::marked).then_some(s)
+    };
     let mut r = Reader::from_reader(data);
     let mut buf = Vec::new();
     let (mut row, mut col) = (0u32, 0u32);
@@ -360,6 +380,11 @@ fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
                 let n = xml::element(&e);
                 row = n.attr("r").and_then(|v| v.parse().ok()).unwrap_or(row + 1);
                 col = 0;
+                if n.flag("customFormat", false)
+                    && let Some(s) = marked(&n)
+                {
+                    sh.row_styles.push((row, s));
+                }
             }
             b"c" => {
                 let n = xml::element(&e);
@@ -367,7 +392,15 @@ fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
                     Some((c, rr)) => (col, row) = (c, rr),
                     None => col += 1,
                 }
+                let blank = |sh: &mut Sheet, n: &Node| {
+                    if sh.blanks.len() < layout::MAX_BLANKS
+                        && let Some(style) = marked(n)
+                    {
+                        sh.blanks.push(columns::Cell { row, col, style, formula: false, val: columns::Val::Blank });
+                    }
+                };
                 if empty {
+                    blank(sh, &n);
                     continue;
                 }
                 let c = xml::subtree(&mut r, n);
@@ -379,7 +412,14 @@ fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
                         sh.cut = Some(row.saturating_sub(1));
                     } else if let Some(v) = columns::cell(&c, col, row) {
                         sh.cells.push(v);
+                    } else {
+                        blank(sh, &c);
                     }
+                }
+            }
+            b"mergeCell" if values => {
+                if let Some(m) = xml::element(&e).attr("ref").and_then(formula::parse_range) {
+                    sh.merges.push(m);
                 }
             }
             b"pane" if sh.frozen.is_none() => {
@@ -401,6 +441,8 @@ fn read_sheet(data: &[u8], sh: &mut Sheet, values: bool) {
     }
     sh.formulas = formula_groups(cells);
     sh.cells.sort_by_key(|c| (c.row, c.col));
+    sh.blanks.sort_by_key(|c| (c.row, c.col));
+    sh.row_styles.sort();
     // The rules of Excel 2010 (x14) in extLst are read like the others; a
     // conditional format that only adds to one of those (a data bar's
     // details) names it by id and is left out.

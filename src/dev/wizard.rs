@@ -3,7 +3,7 @@
 //! uses it and what data it keeps, the name, what it should do, the input
 //! and output files) become the first
 //! message for the AI chat. For a port, the macros (VBA) and an outline of
-//! the workbook (sheets, first rows, formulas) go with it: by default as a
+//! the workbook (sheets, their tables, formulas) go with it: by default as a
 //! Markdown file to attach (they rarely fit in a chat's message), or in
 //! the message itself.
 
@@ -26,7 +26,8 @@ pub struct Answers {
     /// Puts the macros and the outline in the message itself rather than
     /// in a file to attach (attachment_name).
     pub inline_workbook: bool,
-    /// The first rows of each sheet put in the outline (0 = none).
+    /// The rows of data of each table put in the outline (0 = no cells
+    /// but the headers).
     pub sample_rows: u32,
     /// "yes", "no" or "auto" (up to the AI), with a description.
     pub input: String,
@@ -128,7 +129,7 @@ pub fn workbook_text(a: &Answers) -> String {
     if a.include_sheets && !a.books.is_empty() {
         s.push_str(&format!("## {}\n\n", t!("wizard.sheetsTitle")));
         for b in &a.books {
-            match crate::api::workbook_outline(b, a.sample_rows as usize) {
+            match crate::book::outline(b, a.sample_rows as usize) {
                 Ok(o) => s.push_str(&o),
                 Err(e) => s.push_str(&format!("### {}\n\n{}\n", base(b), crate::i18n::error(&e))),
             }
