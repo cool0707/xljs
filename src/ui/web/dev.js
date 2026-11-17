@@ -1295,7 +1295,9 @@
     }
     tests.outcomes = m.outcomes || [];
     const total = tests.outcomes.length, bad = (m.fail || 0) + (m.problem || 0), fresh = m.new || 0;
-    const text = !total ? "" : bad ? fmt(L.testsFailed, bad, total) : fresh ? fmt(L.testsSummaryNew, m.pass || 0, total, fresh) : fmt(L.testsSummary, m.pass || 0, total);
+    const counts = [[m.pass, L.testsCountPass], [m.fail, L.testsCountFail], [m.new, L.testsCountNew], [m.problem, L.testsCountProblem]]
+      .filter(([n]) => n > 0).map(([n, f]) => fmt(f, n)).join("、");
+    const text = !total ? "" : fmt(L.testsSummary, total, counts);
     $("tests-state").textContent = text;
     badge.hidden = !(bad || fresh);
     badge.className = bad ? "badge error" : "badge";
@@ -1339,7 +1341,7 @@
         head.append(el("span", { className: "name", textContent: o.name.replace(/\/$/, ""), title: L.testsRenameTip, ondblclick: () => startRename(o) }),
           mini("rename ic-pencil", o.variant ? L.testsRenameVariant : L.testsRenameCase, () => startRename(o), tests.running));
       }
-      head.append(mini("run ic-play", L.testsRunOne, () => { save(); tests.asked = true; send({ op: "tests", name: o.name }); }, tests.running || st.running),
+      head.append(mini("run ic-play", o.variant ? L.testsRunVariant : L.testsRunOne, () => { save(); tests.asked = true; send({ op: "tests", name: o.name }); }, tests.running || st.running),
         el("span", { className: "spacer" }));
       if (lines.length) head.append(el("button", { type: "button", className: "link", onclick: toggle, textContent: open ? L.testsHide : L.testsShow }));
       if (o.status === "fail" || o.status === "problem") {
@@ -1423,6 +1425,9 @@
     $("tests-name").disabled = busy;
     const pending = tests.outcomes.filter((o) => o.status === "new" || o.status === "fail");
     $("tests-approve-all").hidden = pending.length < 2 || pending.some((o) => o.status === "fail");
+    // The label counts the results (its tooltip, for the icon only bar, too).
+    const all = $("tests-approve-all");
+    all.lastElementChild.textContent = all.title = fmt(L.testsApproveAll || "", pending.length);
     $("tests-approve-all").disabled = busy;
   }
 
