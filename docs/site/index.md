@@ -26,7 +26,7 @@ description: JavaScript / TypeScript のスクリプトで Excel・CSV を処理
 
 実際の開発モードでは、Copilot・Gemini・ChatGPT・Claude など普段使っている AI チャットを左の枠で開きます。詳しくは[開発モード](guide/dev-mode.md)へ。
 
-## HTML を書かずに作れる画面
+## スクリプト画面のサンプル
 
 画面の項目・ボタン・表・グラフを JavaScript のオブジェクトで書くだけで、Windows の画面になります。どれも xljs に組み込みの画面のスクリーンショットです。
 
