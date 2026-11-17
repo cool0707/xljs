@@ -188,8 +188,8 @@ declare global {
     /** 各要素の表示ラベル。既定はハンドルなら relativePath */
     label?: (item: T, index: number) => string;
     /**
-     * キャンセルされたとき: "exit"（既定）はスクリプトを終了する（終了コード 1。フォームの ctx.withProgress では onSubmit を終える）。
-     * "break" は反復を終えるだけ（続きの処理で ui.cancelled / ctx.cancelled を見る）
+     * キャンセルされたとき: "exit"（既定）はスクリプトを終了する（終了コード 1。フォームの form.withProgress では onSubmit を終える）。
+     * "break" は反復を終えるだけ（続きの処理で ui.cancelled / form.cancelled を見る）
      */
     onCancel?: "exit" | "break";
   }
@@ -294,7 +294,7 @@ declare global {
      * 初期値。ファイル系はパスかハンドル、date は Date か "YYYY-MM-DD"、table は選択する行（行そのものか番号、配列可）、
      * checkboxes / tags / segmented（multiple）は配列、dateRange は { from, to } か [from, to]（Date か "YYYY-MM-DD"）、note は本文、
      * image は画像ファイル（PNG・JPEG・GIF・BMP・WebP・ICO・SVG。パス・ハンドル・File）・バイト列（Uint8Array / ArrayBuffer）・
-     * "https://..." や "data:image/..." の URL。ctx.setValue で画像を差し替えられる
+     * "https://..." や "data:image/..." の URL。form.setValue で画像を差し替えられる
      */
     default?: unknown;
     /** 入力必須（checkbox / switch はオン必須、checkboxes は 1 つ以上、table は 1 行以上の選択が必須、dateRange は両方） */
@@ -353,7 +353,7 @@ declare global {
       Promise<Record<string, string | null | undefined> | string | null | undefined | void>;
     /** table の表示する高さ（行数。既定は 8 行まで）。chart の高さ（1 行 25px として。既定 12）。image の高さ（px） */
     height?: number;
-    /** chart の項目のグラフ（ui.chart と同じ定義。ExcelChart も可）。ctx.chart(name, spec) で変えられる */
+    /** chart の項目のグラフ（ui.chart と同じ定義。ExcelChart も可）。form.chart(name, spec) で変えられる */
     chart?: ChartSpec | ExcelChart;
     /** ファイル系の拡張子（".xlsx" など）。ピッカーとドロップに使う */
     accept?: string | string[];
@@ -369,21 +369,21 @@ declare global {
     /**
      * ユーザーが値を変えたときに呼ばれる（入力欄を離れたとき・Enter・選択・参照・ドロップ・table の行の選択）。
      * required などの検証と項目の validate が通ったときだけ呼ばれる（空欄にしたときも、必須でなければ呼ばれる）。
-     * ctx.setValue でほかの項目を埋められる（例: 1 つ目のファイルと同じフォルダにある 2 つ目のファイルを自動で設定）。
+     * form.setValue でほかの項目を埋められる（例: 1 つ目のファイルと同じフォルダにある 2 つ目のファイルを自動で設定）。
      * setValue で変えた項目の onChange は呼ばれない。ここで起きたエラーはこの項目のエラーとして表示される
      * （コンソールでは呼び出し元に伝わる）。コンソール・mock では回答で変わった項目について項目の順に呼ばれる
      */
-    onChange?(value: any, values: FormValues, ctx: FormChangeContext): unknown;
+    onChange?(value: any, values: FormValues, form: FormChangeContext): unknown;
     /**
      * 項目を無効にする（グレーで表示し、入力できない）。関数ならほかの項目の値から決める
      * （例: `disabled: (v) => !v.useMail` でチェックボックスが外れている間は無効）。関数は表示時と値が変わるたびに呼ばれる。
      * 無効の項目は required などの検証も validate もされない（値はそのまま values に入る）。
-     * ctx.setDisabled / setEnabled で変えられる。コンソール・mock では無効の項目は尋ねない
+     * form.setDisabled / setEnabled で変えられる。コンソール・mock では無効の項目は尋ねない
      */
     disabled?: boolean | ((values: FormValues) => boolean);
     /**
      * 項目を隠す。関数ならほかの項目の値から決める（例: `hidden: (v) => v.kind !== "その他"`）。
-     * 隠した項目は検証されない（値はそのまま values に入る）。ctx.setHidden / setVisible で変えられる。
+     * 隠した項目は検証されない（値はそのまま values に入る）。form.setHidden / setVisible で変えられる。
      * コンソール・mock では隠した項目は尋ねない
      */
     hidden?: boolean | ((values: FormValues) => boolean);
@@ -430,7 +430,7 @@ declare global {
 
   /**
    * フォームの右上（ツールバー）のボタン。label なしで icon だけならアイコンのボタン（tooltip が説明）。
-   * 押すと検証せずに入力のままの値で onClick を呼ぶ（進捗・ログの表示はしない。ctx.setValue などで項目を変えられる。
+   * 押すと検証せずに入力のままの値で onClick を呼ぶ（進捗・ログの表示はしない。form.setValue などで項目を変えられる。
    * ここで起きたエラーはフォームの下にエラーとして表示される）。menu を付けるとメニューを開くボタンになる。
    * コンソール・mock では「label（なければ tooltip）」でボタンのあとに並び、押したあとはフォームをもう一度尋ねる
    */
@@ -445,7 +445,7 @@ declare global {
     /** メニューの項目。項目は menu を持てない */
     menu?: Omit<FormToolbarButton<V>, "menu" | "variant">[];
     /** 押されたときの処理。menu があれば省略可 */
-    onClick?(values: V, ctx: FormChangeContext): unknown;
+    onClick?(values: V, form: FormChangeContext): unknown;
   }
 
   interface FormValues {
@@ -523,7 +523,7 @@ declare global {
     /** メニューの項目（スプリットボタン）。項目は menu を持てない */
     menu?: Omit<FormButton<V>, "menu">[];
     /** 押されたときの処理。onSubmit と同じく、出力ファイルを返すと「フォルダを開く」ボタンを出す。menu があれば省略可 */
-    onClick?(values: V, ctx: FormContext): unknown;
+    onClick?(values: V, form: FormContext): unknown;
     /** false なら検証せずに入力のままの値で実行する（読み込み・クリアなど）。既定 true */
     validate?: boolean;
     /** true なら onClick が正常に終わったらフォームを閉じる（ui.form はその値を返す） */
@@ -570,7 +570,7 @@ declare global {
      * 出力ファイル（パス・ハンドル、配列可）を返すと完了後に「フォルダを開く」ボタンを出す。
      * ここで起きたエラーはウィンドウに表示される（コンソールでは呼び出し元に伝わる）
      */
-    onSubmit?(values: V, ctx: FormContext): unknown;
+    onSubmit?(values: V, form: FormContext): unknown;
     /** 前回の値を %APPDATA%\xljs\<スクリプト名>.json に保存して次回の初期値にする */
     remember?: boolean;
     /** remember の保存キー（既定は title）。同じスクリプトで複数のフォームを区別する */

@@ -9,7 +9,7 @@ let gear = 0;
 const v = await ui.form({
   title: "配置",
   toolbar: [
-    { icon: "gear", tooltip: "設定", onClick(values, ctx) { gear++; equal(values.last, "", "not checked"); ctx.setValue("last", "山田"); } },
+    { icon: "gear", tooltip: "設定", onClick(values, form) { gear++; equal(values.last, "", "not checked"); form.setValue("last", "山田"); } },
     { name: "dark", type: "switch", label: "ダーク" },
   ],
   fields: [

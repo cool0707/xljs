@@ -11,11 +11,11 @@ db.exec("CREATE TABLE IF NOT EXISTS 商品 (商品コード TEXT PRIMARY KEY, �
 const load = (word?: string) => db.all<Item>("SELECT * FROM 商品 WHERE 商品名 LIKE ? ORDER BY 商品コード", `%${word ?? ""}%`);
 
 /** 入力欄に 1 件を出す（item なしは空にする） */
-const show = (ctx: FormChangeContext, item?: Item | null) => {
-  ctx.setValue("code", item?.商品コード ?? "");
-  ctx.setValue("name", item?.商品名 ?? "");
-  ctx.setValue("price", item?.単価 ?? null);
-  ctx.setValue("note", item?.備考 ?? "");
+const show = (form: FormChangeContext, item?: Item | null) => {
+  form.setValue("code", item?.商品コード ?? "");
+  form.setValue("name", item?.商品名 ?? "");
+  form.setValue("price", item?.単価 ?? null);
+  form.setValue("note", item?.備考 ?? "");
 };
 
 await ui.form({
@@ -24,14 +24,14 @@ await ui.form({
   width: 820,
   fields: [
     // 条件を変えると一覧を絞り込む（実行ボタンを押させない）
-    { name: "word", label: "検索", icon: "magnifying-glass", placeholder: "商品名の一部", onChange(word, v, ctx) { ctx.table("list", load(word)); } },
+    { name: "word", label: "検索", icon: "magnifying-glass", placeholder: "商品名の一部", onChange(word, v, form) { form.table("list", load(word)); } },
     // 開いたときに一覧が出ている。行を選ぶと onChange で入力欄に出す。
     // 1 件もないときにも見出しが出るように、列（columns）を書いておく
     {
       name: "list", label: "商品", type: "table", rows: load(), selectable: "single", height: 10,
       columns: ["商品コード", "商品名", "単価", "備考"],
       formats: [{ column: "単価", empty: true, row: true, color: "#9c0006" }], // 単価のない行を目立たせる
-      onChange(item: Item | null, v, ctx) { show(ctx, item); },
+      onChange(item: Item | null, v, form) { show(form, item); },
     },
     {
       group: "選んだ商品", icon: "pen",
@@ -50,16 +50,16 @@ await ui.form({
   submit: false, // 操作はボタンに分ける（Enter で送信されない）
   buttons: [
     // validate: false のボタンは、入力欄の検証をせずに動く
-    { label: "新規", icon: "plus", validate: false, onClick(v, ctx) { show(ctx); } },
+    { label: "新規", icon: "plus", validate: false, onClick(v, form) { show(form); } },
     {
       label: "削除", icon: "trash", variant: "destructive", validate: false, confirm: "選んだ商品を削除しますか？",
-      onClick(v, ctx) {
+      onClick(v, form) {
         const item: Item | null = v.list;
         if (!item) throw new Error("削除する商品を一覧から選んでください"); // フォームに赤字で出る
         db.run("DELETE FROM 商品 WHERE 商品コード = ?", item.商品コード);
-        ctx.log(`${item.商品コード} ${item.商品名} を削除しました`);
-        ctx.table("list", load(v.word)); // 同じ画面のまま一覧を読み直す
-        show(ctx);
+        form.log(`${item.商品コード} ${item.商品名} を削除しました`);
+        form.table("list", load(v.word)); // 同じ画面のまま一覧を読み直す
+        show(form);
       },
     },
     {
@@ -67,7 +67,7 @@ await ui.form({
       menu: [
         {
           label: "CSV から取り込み", icon: "file-csv", validate: false,
-          async onClick(v, ctx) {
+          async onClick(v, form) {
             const [h] = await showOpenFilePicker({
               title: "取り込む商品の一覧を選択（サンプル: data/商品一覧.csv）",
               types: [{ description: "CSV", accept: [".csv"] }],
@@ -78,19 +78,19 @@ await ui.form({
             const n = db.insert("商品", rows.map((r) => ({
               商品コード: String(r.商品コード), 商品名: String(r.商品名), 単価: r.単価, 備考: r.備考,
             })), { replace: true });
-            ctx.log(`${h.name} から ${n} 件を取り込みました`);
-            ctx.table("list", load(v.word));
+            form.log(`${h.name} から ${n} 件を取り込みました`);
+            form.table("list", load(v.word));
           },
         },
         {
           label: "Excel に出力", icon: "file-excel", validate: false,
-          async onClick(v, ctx) {
+          async onClick(v, form) {
             const dest = await showSaveFilePicker({ suggestedName: `商品マスター_${dayjs().format("YYYYMMDD")}.xlsx` });
             if (!dest) return;
             const out = workbooks.create();
             out.addSheet("商品").write(load(v.word), { table: true, columnStyles: { 単価: { format: "#,##0" } } });
             out.save(dest);
-            ctx.log(`${dest.name} に出力しました`);
+            form.log(`${dest.name} に出力しました`);
             return dest; // 「フォルダを開く」ボタンが出る
           },
         },
@@ -98,11 +98,11 @@ await ui.form({
     },
     {
       label: "保存", icon: "floppy-disk", variant: "primary",
-      onClick(v, ctx) {
+      onClick(v, form) {
         // 同じ商品コードがあれば更新、なければ追加
         db.run("INSERT OR REPLACE INTO 商品 VALUES (?, ?, ?, ?)", v.code, v.name, v.price, v.note || null);
-        ctx.log(`${v.code} ${v.name} を保存しました`);
-        ctx.table("list", load(v.word));
+        form.log(`${v.code} ${v.name} を保存しました`);
+        form.table("list", load(v.word));
       },
     },
   ],

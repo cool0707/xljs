@@ -1,6 +1,6 @@
 // タブと表のあるフォーム。
 // 「入力」「オプション」「結果」の 3 つのタブに項目を分け、対象の支店は表から選ぶ。
-// 実行すると「結果」タブの表に集計結果を表示する（ctx.table）。
+// 実行すると「結果」タブの表に集計結果を表示する（form.table）。
 const branches = [
   { 支店: "東京", コード: "T01", 担当: "山田" },
   { 支店: "大阪", コード: "O01", 担当: "佐藤" },
@@ -35,16 +35,16 @@ const values = await ui.form({
     },
   ],
   submit: "集計",
-  async onSubmit(v, ctx) {
+  async onSubmit(v, form) {
     const codes = new Set(v.targets.map((b) => b.支店));
     const files: FileSystemFileHandle[] = v.src.walk("*.xlsx").toArray();
     const rows: any[] = [];
-    for (const h of ctx.withProgress(files)) {
+    for (const h of form.withProgress(files)) {
       try {
         const book = workbooks.open(h);
         const sheet = book.sheets["明細"];
         if (!sheet) {
-          ctx.log(`${h.relativePath}: 「明細」シートがないので飛ばします`);
+          form.log(`${h.relativePath}: 「明細」シートがないので飛ばします`);
           book.close();
           continue;
         }
@@ -55,15 +55,15 @@ const values = await ui.form({
         }
         book.close();
       } catch (e) {
-        ctx.error(`${h.relativePath}: ${e.message}`);
+        form.error(`${h.relativePath}: ${e.message}`);
       }
     }
     const summary = v.targets.map((b) => {
       const list = rows.filter((r) => r.支店 === b.支店);
       return { 支店: b.支店, 件数: list.length, 合計: list.reduce((s, r) => s + (Number(r.金額) || 0), 0) };
     });
-    ctx.table("summary", summary); // 「結果」タブの表を更新
-    ctx.log(`${rows.length} 件を集計しました（結果タブに表示）`);
+    form.table("summary", summary); // 「結果」タブの表を更新
+    form.log(`${rows.length} 件を集計しました（結果タブに表示）`);
   },
 });
 if (!values) console.log("キャンセルされました");

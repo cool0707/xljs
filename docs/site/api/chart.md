@@ -28,10 +28,10 @@ ui.chart({
   onChange(row, changes) { /* row には書き込み済み。changes: { start, end } か { progress } */ },
 });
 
-// フォームの中に置く（ctx.chart で変える。editable なガントは値が全行）
+// フォームの中に置く（form.chart で変える。editable なガントは値が全行）
 await ui.form({
   fields: [{ name: "g", type: "chart", height: 12, chart: { type: "line", data: [], x: "月", y: "合計" } }],
-  async onSubmit(v, ctx) { ctx.chart("g", { data: aggregate() }); },
+  async onSubmit(v, form) { form.chart("g", { data: aggregate() }); },
 });
 ```
 

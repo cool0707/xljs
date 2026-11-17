@@ -22,15 +22,15 @@
 # 作るものを決める（必ず守る）
 
 - **ツール**（入力して実行する）: 集計・変換・帳票の作成など、1 回の実行で終わる依頼。入力・出力先・条件を 1 画面にまとめ、処理は `onSubmit` に書く（回答の例 1）。
-- **アプリ**（開いたまま使う）: 次のどれかに当てはまる依頼: データを次回に持ち越す（登録・更新・削除）／一覧から選んで見る・直す・処理する／機能が 2 つ以上ある／続けて何度も使う。開くと一覧（`table` 項目）が出ていて、行を選ぶと `onChange` で入力欄に出し、操作は `buttons`（保存・削除・出力）、操作のたびに `ctx.table` で一覧を読み直す（回答の例 2）。機能ごとに画面を分けるなら `ui.forms`（サイドメニュー）。持ち越すデータは SQLite。
+- **アプリ**（開いたまま使う）: 次のどれかに当てはまる依頼: データを次回に持ち越す（登録・更新・削除）／一覧から選んで見る・直す・処理する／機能が 2 つ以上ある／続けて何度も使う。開くと一覧（`table` 項目）が出ていて、行を選ぶと `onChange` で入力欄に出し、操作は `buttons`（保存・削除・出力）、操作のたびに `form.table` で一覧を読み直す（回答の例 2）。機能ごとに画面を分けるなら `ui.forms`（サイドメニュー）。持ち越すデータは SQLite。
 - 「管理」「台帳」「登録」「アプリ」という依頼を、入力して実行するだけのツールに縮めない。依頼にある機能は別々のスクリプトに分けず 1 つにまとめる。逆に、1 回の集計・変換で済む依頼に一覧や登録の画面を足さない。
 
 # 画面の作り方（必ず守る）
 
-- **ウィンドウは 1 つ。** フォームを順に出さない。結果の表（`ui.table`）を続けて出さない。結果は同じフォームに出す: 経過と件数は `ctx.log`、一覧はフォームの `table` 項目に `ctx.table("項目名", rows)`、できたファイルは `return`。
+- **ウィンドウは 1 つ。** フォームを順に出さない。結果の表（`ui.table`）を続けて出さない。結果は同じフォームに出す: 経過と件数は `form.log`、一覧はフォームの `table` 項目に `form.table("項目名", rows)`、できたファイルは `return`。
 - **入力させるのは、プログラムが調べられないことだけ。** 実行している人の氏名・所属・メール・役職は入力欄にせず `ad.me()` で取る（`displayName` `department` `mail` `title`。`ad.available()` が false なら `xljs.userName`）。今日の日付は `default: new Date()`。前回と同じ値は `remember: true`。みんなで使うデータ（データベースなど）の場所は毎回選ばせず、`xljs.scriptDir` か設定ファイルで決める。
 - **入力は入力欄で受ける。表は「見る・選ぶ・すでにある行を直す」だけ。** 新しいデータを編集できる表に入力させない（行の追加・削除はできない）。選択肢が決まっていれば `select` / `radio` / `segmented` / `combobox`。
-- **登録・更新のあとは `ctx.table` で一覧を読み直す。** 「閉じて再実行してください」と案内しない（フォームは処理のあとも続けて実行できる）。`onSubmit` の中で `alert` を出さない（`ctx.log`、失敗は `throw`）。
+- **登録・更新のあとは `form.table` で一覧を読み直す。** 「閉じて再実行してください」と案内しない（フォームは処理のあとも続けて実行できる）。`onSubmit` の中で `alert` を出さない（`form.log`、失敗は `throw`）。
 - 全行に同じ値（処理日など）は表の列にせず、表の外に 1 つの項目を置く。表のセルを変えても、ほかのセルを自動では変えられない。
 - 表のセルに打ち込みながら行を増やす明細、入力に応じてその場で計算結果が変わる表、標準の部品にない見た目・操作が要るなら、フォームで無理に作らずカスタムアプリ（`@mode app` と HTML。リファレンスの「画面の設計」「アプリモード」）を提案する。
 
@@ -162,7 +162,7 @@ await ui.form({
 });
 ```
 
-項目の type: `text` `number` `date` `month` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table` `chart`。項目・ボタンには Font Awesome のアイコンを付けられる（`icon: "folder-open"`）。`placeholder`・`tooltip`（マウスを重ねたときの説明）も付けられる。項目の `onChange(value, values, ctx)` は値が変わったときに呼ばれ、`ctx.setValue(name, value)` でほかの項目を埋められる（選んだファイルと同じフォルダの関連ファイルを設定するなど）。項目の `disabled` / `hidden`（真偽値か `(values) => 真偽値`）で無効化（グレー表示）・非表示にでき、`ctx.setDisabled(name, bool)` / `ctx.setHidden(name, bool)` でも切り替えられる（無効・非表示の項目は検証しない）。`onSubmit`・ボタンの `onClick`・`onChange` の `ctx.table(name, rows)` で `table` 項目の行を入れ替えられる（結果の一覧、登録後の読み直し、絞り込み）。`table` に `selectable: "single"` を付けると行を選べ、選ぶと `onChange(row, values, ctx)` が呼ばれる（空でも見出しが出るよう `columns` を書く）。`buttons: [{ label, icon, variant, confirm, validate: false, onClick(v, ctx) }]` で操作のボタンを並べ、`submit: false` で送信ボタンをなくせる。`onSubmit` も `buttons` もないフォームは送信で閉じて値を返す（途中で少し尋ねるだけのとき）。表の行をその場で直させる（`editable: true`）、タブ（`tabs`）、ツールバー（`toolbar`）、サイドメニューでフォームを切り替える `ui.forms({ forms: [...] })` などはリファレンスを参照。
+項目の type: `text` `number` `date` `month` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table` `chart`。項目・ボタンには Font Awesome のアイコンを付けられる（`icon: "folder-open"`）。`placeholder`・`tooltip`（マウスを重ねたときの説明）も付けられる。項目の `onChange(value, values, form)` は値が変わったときに呼ばれ、`form.setValue(name, value)` でほかの項目を埋められる（選んだファイルと同じフォルダの関連ファイルを設定するなど）。項目の `disabled` / `hidden`（真偽値か `(values) => 真偽値`）で無効化（グレー表示）・非表示にでき、`form.setDisabled(name, bool)` / `form.setHidden(name, bool)` でも切り替えられる（無効・非表示の項目は検証しない）。`onSubmit`・ボタンの `onClick`・`onChange` の `form.table(name, rows)` で `table` 項目の行を入れ替えられる（結果の一覧、登録後の読み直し、絞り込み）。`table` に `selectable: "single"` を付けると行を選べ、選ぶと `onChange(row, values, form)` が呼ばれる（空でも見出しが出るよう `columns` を書く）。`buttons: [{ label, icon, variant, confirm, validate: false, onClick(v, form) }]` で操作のボタンを並べ、`submit: false` で送信ボタンをなくせる。`onSubmit` も `buttons` もないフォームは送信で閉じて値を返す（途中で少し尋ねるだけのとき）。表の行をその場で直させる（`editable: true`）、タブ（`tabs`）、ツールバー（`toolbar`）、サイドメニューでフォームを切り替える `ui.forms({ forms: [...] })` などはリファレンスを参照。
 
 ## 表で見せる・選ばせる（フォームなしのとき。フォームがあるならフォームの `table` 項目に出す）
 
@@ -213,11 +213,11 @@ await ui.form({
   ],
   submit: "まとめる",
   remember: true, // 前回の入力を次回の初期値にする
-  async onSubmit(v, ctx) {
+  async onSubmit(v, form) {
     const files = v.src.walk("*.xlsx").toArray();
     const rows = [];
     const errors = [];
-    for (const h of ctx.withProgress(files)) { // 中止ボタンで終わる
+    for (const h of form.withProgress(files)) { // 中止ボタンで終わる
       try {
         const book = workbooks.open(h);
         const sheet = book.sheets[v.sheet];
@@ -228,14 +228,14 @@ await ui.form({
         errors.push(`${h.relativePath}: ${e.message}`);
       }
     }
-    for (const e of errors) ctx.error(e); // フォームのログ欄に赤字で出す
+    for (const e of errors) form.error(e); // フォームのログ欄に赤字で出す
     if (rows.length === 0) throw new Error(`「${v.sheet}」シートのデータが見つかりませんでした`);
 
     const out = workbooks.create();
     out.addSheet(v.sheet).write(rows, { table: true });
     if (errors.length) out.addSheet("エラー").write(errors.map((e) => [e]));
     out.save(v.out);
-    ctx.log(`${files.length} ファイル、${rows.length} 行をまとめました`);
+    form.log(`${files.length} ファイル、${rows.length} 行をまとめました`);
     return v.out; // 完了後に「フォルダを開く」ボタンが出る
   },
 });
@@ -257,19 +257,19 @@ await ui.form({
 const db = sqlite.open(path.join(xljs.scriptDir, "商品.db"));
 db.exec("CREATE TABLE IF NOT EXISTS 商品 (コード TEXT PRIMARY KEY, 品名 TEXT NOT NULL, 区分 TEXT, 単価 INTEGER)");
 const load = (word) => db.all("SELECT * FROM 商品 WHERE 品名 LIKE ? ORDER BY コード", `%${word ?? ""}%`);
-const show = (ctx, r) => { // 入力欄に 1 件を出す（r なしは空）
-  ctx.setValue("code", r?.コード ?? "");
-  ctx.setValue("name", r?.品名 ?? "");
-  ctx.setValue("kind", r?.区分 ?? "製品");
-  ctx.setValue("price", r?.単価 ?? null);
+const show = (form, r) => { // 入力欄に 1 件を出す（r なしは空）
+  form.setValue("code", r?.コード ?? "");
+  form.setValue("name", r?.品名 ?? "");
+  form.setValue("kind", r?.区分 ?? "製品");
+  form.setValue("price", r?.単価 ?? null);
 };
 
 await ui.form({
   title: "商品マスター",
   fields: [
-    { name: "word", label: "検索", placeholder: "品名の一部", onChange(word, v, ctx) { ctx.table("list", load(word)); } },
+    { name: "word", label: "検索", placeholder: "品名の一部", onChange(word, v, form) { form.table("list", load(word)); } },
     { name: "list", label: "商品", type: "table", rows: load(), columns: ["コード", "品名", "区分", "単価"], selectable: "single", height: 10, // 開くと一覧が出ている
-      onChange(row, v, ctx) { show(ctx, row); } }, // 行を選ぶと入力欄に出す
+      onChange(row, v, form) { show(form, row); } }, // 行を選ぶと入力欄に出す
     { name: "code", label: "コード", required: true },
     { name: "name", label: "品名", required: true },
     { name: "kind", label: "区分", type: "select", options: ["製品", "部品", "消耗品"], default: "製品" },
@@ -277,20 +277,20 @@ await ui.form({
   ],
   submit: false, // 操作はボタンに分ける
   buttons: [
-    { label: "新規", icon: "plus", validate: false, onClick(v, ctx) { show(ctx); } },
+    { label: "新規", icon: "plus", validate: false, onClick(v, form) { show(form); } },
     { label: "削除", icon: "trash", variant: "destructive", validate: false, confirm: "選んだ商品を削除しますか？",
-      onClick(v, ctx) {
+      onClick(v, form) {
         if (!v.list) throw new Error("削除する商品を一覧から選んでください");
         db.run("DELETE FROM 商品 WHERE コード = ?", v.list.コード);
-        ctx.log(`${v.list.コード} ${v.list.品名} を削除しました`);
-        ctx.table("list", load(v.word));
-        show(ctx);
+        form.log(`${v.list.コード} ${v.list.品名} を削除しました`);
+        form.table("list", load(v.word));
+        show(form);
       } },
     { label: "保存", icon: "floppy-disk", variant: "primary",
-      onClick(v, ctx) { // 同じコードがあれば更新、なければ追加
+      onClick(v, form) { // 同じコードがあれば更新、なければ追加
         db.run("INSERT OR REPLACE INTO 商品 VALUES (?, ?, ?, ?)", v.code, v.name, v.kind, v.price);
-        ctx.log(`${v.code} ${v.name} を保存しました`);
-        ctx.table("list", load(v.word));
+        form.log(`${v.code} ${v.name} を保存しました`);
+        form.table("list", load(v.word));
       } },
   ],
 });

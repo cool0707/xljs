@@ -65,11 +65,11 @@ const seen = [];
 const r = await ui.form({
   title: "実行",
   fields: [{ name: "n", type: "number", default: 3 }],
-  async onSubmit(values, ctx) {
-    for (const i of ctx.withProgress([1, 2, 3])) seen.push(i);
-    ctx.progress(3, 3, "done");
-    ctx.log("finished", values.n);
-    equal(ctx.cancelled, false);
+  async onSubmit(values, form) {
+    for (const i of form.withProgress([1, 2, 3])) seen.push(i);
+    form.progress(3, 3, "done");
+    form.log("finished", values.n);
+    equal(form.cancelled, false);
   },
 });
 deepEqual(seen, [1, 2, 3]);
@@ -78,14 +78,14 @@ equal(r.n, 3);
 // Errors in onSubmit reach the caller (no window to show them in).
 await rejects(() => ui.form({ fields: [], onSubmit() { throw new Error("boom"); } }), /boom/);
 
-// Aborting ctx.withProgress ends onSubmit (the rest does not run) without an error.
+// Aborting form.withProgress ends onSubmit (the rest does not run) without an error.
 const aborted = [];
 let reachedEnd = false;
 const r2 = await ui.form({
   title: "中止",
   fields: [{ name: "n", type: "number", default: 1 }],
-  onSubmit(values, ctx) {
-    for (const i of ctx.withProgress([1, 2, 3])) aborted.push(i);
+  onSubmit(values, form) {
+    for (const i of form.withProgress([1, 2, 3])) aborted.push(i);
     reachedEnd = true;
   },
 });
@@ -100,8 +100,8 @@ const r3 = await ui.form({
   title: "ボタン",
   fields: [{ name: "n", type: "number", required: true }, { name: "memo" }],
   buttons: [
-    { label: "読込", validate: false, onClick(values, ctx) { clicks.push("load:" + values.n); ctx.setValue("n", 7); ctx.setValue("memo", "loaded"); } },
-    { label: "確認", onClick(values, ctx) { clicks.push("check:" + values.n); ctx.log("checked"); } },
+    { label: "読込", validate: false, onClick(values, form) { clicks.push("load:" + values.n); form.setValue("n", 7); form.setValue("memo", "loaded"); } },
+    { label: "確認", onClick(values, form) { clicks.push("check:" + values.n); form.log("checked"); } },
     { label: "完了", close: true, onClick(values) { clicks.push("finish:" + values.memo); } },
   ],
   onSubmit() { clicks.push("submit"); },
@@ -139,9 +139,9 @@ const changes = [];
 const pair = {
   title: "変更時",
   fields: [
-    { name: "sales", type: "file", tooltip: "売上の CSV", onChange(h, values, ctx) {
+    { name: "sales", type: "file", tooltip: "売上の CSV", onChange(h, values, form) {
       changes.push(h ? h.name : null);
-      if (h && !values.purchase) ctx.setValue("purchase", h.path.replace("売上_", "仕入_"));
+      if (h && !values.purchase) form.setValue("purchase", h.path.replace("売上_", "仕入_"));
     } },
     { name: "purchase", type: "file" },
     { name: "kind", type: "select", options: ["a", "b"], placeholder: "選んでください" },

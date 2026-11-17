@@ -12,7 +12,7 @@ AI（と利用者）が迷うのは、主に次の 5 つ。直すときもこの
 1. **1 つのことに書き方が 2 つ以上ある**: AI は両方を混ぜて書き、片方にしかない機能をもう片方で使おうとする。
    別名は、残すとしても d.ts とドキュメントには 1 つしか書かない（「別名の方針」を参照）。
 2. **同じ名前のキーが場所によって別の意味を持つ**: `height` が px だったり行数だったりする。
-3. **同じ種類のものが違う形をしている**: ボタンの書き方が 3 通り、ctx が 2 種類、キャンセルしたときの戻り値が `null` / `[]` / `false`。
+3. **同じ種類のものが違う形をしている**: ボタンの書き方が 3 通り、フォームの処理の第 2 引数の型が 2 種類、キャンセルしたときの戻り値が `null` / `[]` / `false`。
 4. **型で誤りを見つけられない**: どの type の項目にもすべてのキーが書けるので、tsc も開発モードの補完も誤りを指摘できない。
 5. **暗黙の切り替え**: あるキーがあるかないかで動きが変わる（`onSubmit` の有無でフォームが閉じるかどうかが変わる）。
 
@@ -29,13 +29,13 @@ Web 標準に合わせたもの（File System Access API・`fetch`・`URL`・`Te
 | # | 優先 | 対象 | 要旨 | 状態 |
 |---|---|---|---|---|
 | A1 | A | `ui.form` | 送信ボタン（`submit`・`submitIcon`・`onSubmit`）を `buttons` に統一 | 未着手 |
-| A2 | A | フォームの ctx | `FormContext` / `FormChangeContext` を 1 つに。対になった重複メソッドの整理 | 未着手 |
+| A2 | A | フォームの第 2 引数 | `FormContext` / `FormChangeContext` を 1 つに。対になった重複メソッドの整理 | 未着手 |
 | A3 | A | `FormField` | type ごとの型に分け、意味の違う同名のキーをなくす | 未着手 |
 | A4 | A | 全体 | 別名の方針（d.ts・ドキュメントに出すのは 1 つ） | 未着手 |
 | B1 | B | グローバル | `workbooks` の名前、JSON は `fs`・CSV は `csv` の不揃い | 未着手 |
 | B2 | B | `fs` / ハンドル | `fs.list` と `dir.list` の戻り値の違い、`walk` / `glob` の重複 | 未着手 |
 | B3 | B | 全体 | キャンセルしたときの戻り値をそろえる | 未着手 |
-| B4 | B | 進捗 | `ui.progress` と `ctx.progress` の形の違い、`ui.cancelled` | 未着手 |
+| B4 | B | 進捗 | `ui.progress` と `form.progress` の形の違い、`ui.cancelled` | 未着手 |
 | B5 | B | Excel の書式 | `CellStyle` の別名、`Range` と `sheet` のメソッドの重複 | 未着手 |
 | B6 | B | Excel の読み書き | `getValue` / `setValue`、`toObjects` / `rows` / `toArrays` / `Range.values` | 未着手 |
 | B7 | B | 印刷 | `preview` の渡し方と戻り値の違い | 未着手 |
@@ -70,9 +70,9 @@ Web 標準に合わせたもの（File System Access API・`fetch`・`URL`・`Te
 
 ```js
 // 今
-ui.form({ fields, submit: "集計", submitIcon: "play", onSubmit: async (v, ctx) => { ... } })
+ui.form({ fields, submit: "集計", submitIcon: "play", onSubmit: async (v, form) => { ... } })
 // 案
-ui.form({ fields, buttons: [{ label: "集計", icon: "play", variant: "primary", onClick: async (v, ctx) => { ... } }] })
+ui.form({ fields, buttons: [{ label: "集計", icon: "play", variant: "primary", onClick: async (v, form) => { ... } }] })
 ```
 
 **未決**
@@ -82,24 +82,26 @@ ui.form({ fields, buttons: [{ label: "集計", icon: "play", variant: "primary",
 
 **影響**: `prelude.js`（ウィンドウ・コンソール・mock の 3 経路）、`web/form.js`（Enter）、`ui.forms`、記録（`recordForm` の `$button`）と `case.json`、`docs/ai` の各指示・スキル、`examples` の 5 本、`testdata/scripts` のフォームのテスト。
 
-## A2. フォームの ctx を 1 つにする
+## A2. フォームの処理の第 2 引数を 1 つの型にする
+
+引数の名前は、ドキュメント・サンプル・`docs/ai` の例で `ctx` から `form` に変えた（`form.log(...)`・`form.setValue(...)` と読める。済み）。
 
 **現状**
 
 - `onSubmit`・ボタンの `onClick` は `FormContext`（進捗・ログ・`table`・`chart`・`setValue` など）。
 - 項目の `onChange`・ツールバーのボタンの `onClick` は `FormChangeContext`（`setValue`・`setDisabled` など・`table`。`chart` がない）。
-- 同じ「ボタンの onClick」でも、置き場所（`buttons` かツールバーか）で ctx の型が違う。
+- 同じ「ボタンの onClick」でも、置き場所（`buttons` かツールバーか）で第 2 引数の型が違う。
 - 対になった重複: `setDisabled(name, bool)` と `setEnabled(name, bool)`、`setHidden(name, bool)` と `setVisible(name, bool)`。どちらも引数で逆にもできるので、4 つのメソッドで 2 つのことをしている。
-- 項目を変える手段がばらばら: 値は `setValue`、表の行は `ctx.table(name, rows, columns)`、グラフは `ctx.chart(name, spec)`。表の `setValue` は「選択する行」で、行の入れ替えは `table`。
+- 項目を変える手段がばらばら: 値は `setValue`、表の行は `form.table(name, rows, columns)`、グラフは `form.chart(name, spec)`。表の `setValue` は「選択する行」で、行の入れ替えは `table`。
 
 **案**
 
-- ctx は `FormContext` 1 つにする。どこから呼ばれても同じメソッドを持つ。
+- 第 2 引数は `FormContext` 1 つにする。どこから呼ばれても同じメソッドを持つ。
   進捗・ログが意味を持たない場面（`onChange`・ツールバー）では、`progress` は何もしない、`log` はフォームの下に出す、など動きを決める（エラーにはしない）。
 - `setEnabled` / `setVisible` をなくし、`setDisabled(name, bool)` / `setHidden(name, bool)` だけにする（項目のキー `disabled` / `hidden` と同じ言葉）。
 - 表とグラフの更新の名前をそろえる。候補:
-  - そのまま `ctx.table(name, rows)` / `ctx.chart(name, spec)` を残す（いまの名前は短く、AI も書けている）
-  - `ctx.update(name, { rows, columns })` / `ctx.update(name, { chart })` のように項目のキーで書く（項目の定義と同じ言葉になる）
+  - そのまま `form.table(name, rows)` / `form.chart(name, spec)` を残す（いまの名前は短く、AI も書けている）
+  - `form.update(name, { rows, columns })` / `form.update(name, { chart })` のように項目のキーで書く（項目の定義と同じ言葉になる）
 
 **未決**: 表・グラフの更新の名前（いまの考えは「`table` / `chart` を残す」。変える効果が小さい）。
 
@@ -218,12 +220,12 @@ AI が書きそうな名前を受けるための別名と、機能の重複が�
 **現状**
 
 - `ui.progress()` はオブジェクトを返し、`update(done, message)`・`increment(message)`・`total` の代入。
-- フォームの `ctx.progress(done, total?, message?)` は関数で、引数の並びが違う（`ctx.progress(done, message)` も可）。
-- `ui.cancelled` は「直近の進捗表示がキャンセルされたか」というグローバルな状態。`ctx.cancelled` はフォームの実行ごと。
+- フォームの `form.progress(done, total?, message?)` は関数で、引数の並びが違う（`form.progress(done, message)` も可）。
+- `ui.cancelled` は「直近の進捗表示がキャンセルされたか」というグローバルな状態。`form.cancelled` はフォームの実行ごと。
 
 **案**
 
-- `ctx.progress` の引数を `ui.progress` の `update` に合わせるか、両方を `{ done, total, message }` のオブジェクトで受ける形にそろえる。
+- `form.progress` の引数を `ui.progress` の `update` に合わせるか、両方を `{ done, total, message }` のオブジェクトで受ける形にそろえる。
 - `ui.cancelled` は、`withProgress` の `onCancel: "break"` のためにあるので、反復のオブジェクト側（`for (const x of it)` の `it.cancelled`）に持たせられないか検討する。
 
 **未決**: そろえる形。
@@ -242,8 +244,12 @@ AI が書きそうな名前を受けるための別名と、機能の重複が�
 
 - `CellStyle` は平たい形（`bold`・`color`・`background`・`format`・`align`・`border`）を正にする。`TableFormat`（表の条件付き書式）とも同じ言葉になる。
   入れ子の形（`font`・`fill`・`alignment`・`numberFormat`）は A4 の方針で受け付けるだけにする。平たい形にない設定（`vertAlign`・`indent`・`rotation`・`shrink` など）は平たい形に足す。
-- `getStyle()` が返す形も平たい形にする。
-- 入口は `sheet.style(address, style)` と `cell.style(style)` を正にする。`Range` の個別のメソッドはなくす。
+- 読み書きのメソッドの名前は `setStyle(style, { replace })` / `getStyle()` の対にする。`setStyle` は既存の書式に重ね（`replace: true` で置き換え）、`this` を返す。`getStyle()` は平たい形で返し、そのまま `setStyle` に渡せる。
+  - 引数のない `style()` で読む形（jQuery の `css()` と同じ）は、引数の有無で読み書きが変わる暗黙の切り替え（基準 5）になる。AI は `style()` を「書式を消す」「既定に戻す」とも読みかねない。
+  - `style(s)` が設定後の書式を返す形は、設定のメソッドとしては珍しく（AI は `this` か何も返さないと考える）、`sheet.style("A1:D1", s)` のように範囲に付けたときは 1 つの書式に決まらない。
+  - プロパティ（`cell.style = {...}`）は、代入なのに重ねる動きになる。`cell.style.bold = true` と中身を書き換えると何も起きない（`win.state` と同じ落とし穴）。
+  - 値（`cell.value`）は丸ごとの置き換えなのでプロパティ、書式は部分的に重ねるのでメソッド、と分ける。
+- 入口は `sheet.setStyle(address, style)` と `cell.setStyle(style)` を正にする。`Range` の個別のメソッドはなくす。いまの `style()` は A4 の方針で受け付けるだけにする。
 
 **未決**: `Range` を残すか（`range.values` の読み書きにも使っている。B6）。
 

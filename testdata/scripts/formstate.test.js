@@ -1,6 +1,6 @@
 import { equal, rejects } from "./_assert.js";
 
-// disabled / hidden (true or a function of the values) and ctx.setDisabled /
+// disabled / hidden (true or a function of the values) and form.setDisabled /
 // setHidden: such fields are not checked and the console does not ask them.
 const fields = () => [
   { name: "useMail", type: "checkbox", default: false },
@@ -8,7 +8,7 @@ const fields = () => [
   { name: "kind", type: "select", options: ["a", "その他"], default: "a" },
   { name: "detail", required: true, hidden: (v) => v.kind !== "その他" },
   { name: "fixed", required: true, disabled: true },
-  { name: "lock", type: "switch", onChange(on, v, ctx) { ctx.setDisabled("memo", on); ctx.setVisible("extra", on); } },
+  { name: "lock", type: "switch", onChange(on, v, form) { form.setDisabled("memo", on); form.setVisible("extra", on); } },
   { name: "memo", default: "初期" },
   { name: "extra", type: "number", required: true, hidden: true },
 ];
@@ -27,6 +27,6 @@ v = await ui.form({ title: "状態", fields: fields() });
 equal(v.to, "b@example.jp");
 equal(v.detail, "詳細");
 
-// ctx.setDisabled names a field.
-await rejects(() => ui.form({ title: "x", fields: [{ name: "a", onChange(_, v, ctx) { ctx.setDisabled("nope"); } }] }), /nope/);
+// form.setDisabled names a field.
+await rejects(() => ui.form({ title: "x", fields: [{ name: "a", onChange(_, v, form) { form.setDisabled("nope"); } }] }), /nope/);
 console.log("formstate ok");

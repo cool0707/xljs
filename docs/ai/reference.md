@@ -423,9 +423,9 @@ xljs のフォーム（`ui.form`）は入力ダイアログではなく、画面
 2. **入力させるのは、プログラムが調べられないことだけ。** 利用者の氏名・所属・メール・役職は Active Directory から取る（下）。今日の日付・今月は初期値にする。ファイルを見れば分かること（シート名・対象の件数）は読んで決める。前回と同じになりやすい値は `remember: true`。
 3. **入力は入力欄で受ける。** 値に合った `type` を選ぶ: 決まった選択肢は `select` / `radio` / `segmented`、多い候補から選ぶなら `combobox`、日付は `date` / `month` / `dateRange`、はい・いいえは `checkbox` / `switch`。選べるものを文字で打たせない。
 4. **表は「見る・選ぶ・すでにある行を直す」ためのもの。** 新しいデータの入力欄の代わりにしない（フォームの表は行の追加・削除ができない）。新しい 1 件は入力欄で受け、ボタンで一覧に足す。表のセルに打ち込みながら何行も入れるならカスタムアプリにする。
-5. **結果は同じウィンドウに出す。** 経過と件数は `ctx.log`、一覧は同じフォームの `table` 項目に `ctx.table(name, rows)`、グラフは `chart` 項目に `ctx.chart(name, { data })`、できたファイルは `return`（「フォルダを開く」ボタンが出る）。`ui.table` の別ウィンドウは、利用者が頼んだときと、1 行をダブルクリックして開く明細のような補助の表示だけ。
-6. **処理のあとも画面を最新にする。** 登録・更新のあとは `ctx.table` で一覧を読み直す。「閉じてもう一度実行してください」と案内しない（フォームは処理のあとも入力に戻り、続けて実行できる）。
-7. **`onSubmit` / `onClick` の中で `alert` を出さない。** 知らせることは `ctx.log`、失敗は `throw new Error("…")`（フォームに赤字で出る）、取り消せない操作の確認はボタンの `confirm`。
+5. **結果は同じウィンドウに出す。** 経過と件数は `form.log`、一覧は同じフォームの `table` 項目に `form.table(name, rows)`、グラフは `chart` 項目に `form.chart(name, { data })`、できたファイルは `return`（「フォルダを開く」ボタンが出る）。`ui.table` の別ウィンドウは、利用者が頼んだときと、1 行をダブルクリックして開く明細のような補助の表示だけ。
+6. **処理のあとも画面を最新にする。** 登録・更新のあとは `form.table` で一覧を読み直す。「閉じてもう一度実行してください」と案内しない（フォームは処理のあとも入力に戻り、続けて実行できる）。
+7. **`onSubmit` / `onClick` の中で `alert` を出さない。** 知らせることは `form.log`、失敗は `throw new Error("…")`（フォームに赤字で出る）、取り消せない操作の確認はボタンの `confirm`。
 8. **機能が複数あるなら 1 つのウィンドウにまとめる。** 同じ一覧への操作（保存・削除・出力）は `buttons`（数が多ければ `menu`）、項目が多ければ `tabs`、機能ごとに画面を分けるなら `ui.forms`。操作がいくつもあるフォームは `submit: false` にして、どのボタンも動作の名前にする（「保存」「削除」「Excel に出力」）。めったに使わない管理用の機能は、条件付きで足す（`buttons: [...(admin ? [管理用のボタン] : [])]`）か、別のスクリプトにする。ボタンから別のフォームを開かない。
 9. **アプリは開いたときに使える状態にする。** 一覧は起動時に読んで出しておく（`rows: load()`）。何も出ていない画面で「読み込み」を押させない。1 件もないときにも見出しが出るように、一覧の列は `columns` に書く。
 
@@ -453,7 +453,7 @@ const user = {
 
 依頼に近い型から始め、組み合わせる（一覧の上に条件、下に入力欄、など）。
 
-**ツール: 入力 → 実行 → 結果**: ファイル・条件・保存先を 1 画面で受け、`onSubmit` で処理する（「フォーム（ui.form）」の例）。結果の一覧も見せるなら、空の `table` 項目を置いて `ctx.table` で入れる。
+**ツール: 入力 → 実行 → 結果**: ファイル・条件・保存先を 1 画面で受け、`onSubmit` で処理する（「フォーム（ui.form）」の例）。結果の一覧も見せるなら、空の `table` 項目を置いて `form.table` で入れる。
 
 **アプリ: 一覧を見て、直して、登録する**: 起動時に一覧を読んでフォームの表に出し、登録のあと同じ表を読み直す。
 
@@ -485,19 +485,19 @@ await ui.form({
   ],
   validate: (v) => (v.items.some((r) => r.出荷) ? null : { items: "出荷したものにチェックを付けてください" }),
   submit: "登録",
-  onSubmit(v, ctx) {
+  onSubmit(v, form) {
     const done = v.items.filter((r) => r.出荷);
     db.transaction(() => {
       for (const r of done) db.run("UPDATE 受注 SET 出荷日 = ?, 配送 = ? WHERE 受注番号 = ?", v.date, r.配送, r.受注番号);
     });
-    ctx.log(`${done.length} 件を登録しました`);
-    ctx.table("items", load()); // 同じ画面のまま、残りの一覧に入れ替える
+    form.log(`${done.length} 件を登録しました`);
+    form.table("items", load()); // 同じ画面のまま、残りの一覧に入れ替える
   },
 });
 db.close();
 ```
 
-**アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `ctx.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`、送信ボタンが要らなければ `submit: false`。
+**アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `form.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`、送信ボタンが要らなければ `submit: false`。
 
 ```js
 const all = workbooks.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].toObjects();
@@ -506,15 +506,15 @@ await ui.form({
   title: "商品の検索",
   fields: [
     { name: "kind", label: "区分", type: "segmented", options: ["すべて", "製品", "部品", "消耗品"], default: "すべて",
-      onChange(_, v, ctx) { ctx.table("list", pick(v)); } },
+      onChange(_, v, form) { form.table("list", pick(v)); } },
     { name: "word", label: "品名に含む文字",
-      onChange(_, v, ctx) { ctx.table("list", pick(v)); } },
+      onChange(_, v, form) { form.table("list", pick(v)); } },
     { name: "list", label: "一覧", type: "table", rows: all, height: 15 },
   ],
   submit: false,
   buttons: [{
     label: "Excel に保存", icon: "file-excel", variant: "primary",
-    async onClick(v, ctx) {
+    async onClick(v, form) {
       const dest = await showSaveFilePicker({ suggestedName: "検索結果.xlsx" });
       if (!dest) return;
       const out = workbooks.create();
@@ -533,20 +533,20 @@ await ui.form({
 const db = sqlite.open(path.join(xljs.scriptDir, "商品.db"));
 db.exec("CREATE TABLE IF NOT EXISTS 商品 (コード TEXT PRIMARY KEY, 品名 TEXT NOT NULL, 区分 TEXT, 単価 INTEGER)");
 const load = (word) => db.all("SELECT * FROM 商品 WHERE 品名 LIKE ? ORDER BY コード", `%${word ?? ""}%`);
-const show = (ctx, r) => { // 入力欄に 1 件を出す（r なしは空にする）
-  ctx.setValue("code", r?.コード ?? "");
-  ctx.setValue("name", r?.品名 ?? "");
-  ctx.setValue("kind", r?.区分 ?? "製品");
-  ctx.setValue("price", r?.単価 ?? null);
+const show = (form, r) => { // 入力欄に 1 件を出す（r なしは空にする）
+  form.setValue("code", r?.コード ?? "");
+  form.setValue("name", r?.品名 ?? "");
+  form.setValue("kind", r?.区分 ?? "製品");
+  form.setValue("price", r?.単価 ?? null);
 };
 
 await ui.form({
   title: "商品マスター",
   width: 760,
   fields: [
-    { name: "word", label: "検索", placeholder: "品名の一部", onChange(word, v, ctx) { ctx.table("list", load(word)); } },
+    { name: "word", label: "検索", placeholder: "品名の一部", onChange(word, v, form) { form.table("list", load(word)); } },
     { name: "list", label: "商品", type: "table", rows: load(), columns: ["コード", "品名", "区分", "単価"], selectable: "single", height: 10,
-      onChange(row, v, ctx) { show(ctx, row); } }, // 行を選ぶと入力欄に出す
+      onChange(row, v, form) { show(form, row); } }, // 行を選ぶと入力欄に出す
     { group: "選んだ商品（新しい商品は「新規」を押して入力）", fields: [
       { row: "", fields: [
         { name: "code", label: "コード", required: true, pattern: "[A-Z]\\d{3}", patternMessage: "英大文字 1 字と数字 3 桁で入力してください" },
@@ -558,20 +558,20 @@ await ui.form({
   ],
   submit: false, // 操作はボタンに分ける（Enter で送信されない）
   buttons: [
-    { label: "新規", icon: "plus", validate: false, onClick(v, ctx) { show(ctx); } },
+    { label: "新規", icon: "plus", validate: false, onClick(v, form) { show(form); } },
     { label: "削除", icon: "trash", variant: "destructive", validate: false, confirm: "選んだ商品を削除しますか？",
-      onClick(v, ctx) {
+      onClick(v, form) {
         if (!v.list) throw new Error("削除する商品を一覧から選んでください");
         db.run("DELETE FROM 商品 WHERE コード = ?", v.list.コード);
-        ctx.log(`${v.list.コード} ${v.list.品名} を削除しました`);
-        ctx.table("list", load(v.word));
-        show(ctx);
+        form.log(`${v.list.コード} ${v.list.品名} を削除しました`);
+        form.table("list", load(v.word));
+        show(form);
       } },
     { label: "保存", icon: "floppy-disk", variant: "primary",
-      onClick(v, ctx) { // 同じコードがあれば更新、なければ追加
+      onClick(v, form) { // 同じコードがあれば更新、なければ追加
         db.run("INSERT OR REPLACE INTO 商品 VALUES (?, ?, ?, ?)", v.code, v.name, v.kind, v.price);
-        ctx.log(`${v.code} ${v.name} を保存しました`);
-        ctx.table("list", load(v.word));
+        form.log(`${v.code} ${v.name} を保存しました`);
+        form.table("list", load(v.word));
       } },
   ],
 });
@@ -594,16 +594,16 @@ await ui.forms({
         { name: "customer", label: "顧客名", required: true },
         { name: "amount", label: "金額", type: "number", min: 0, suffix: "円", required: true },
       ],
-      onSubmit(v, ctx) {
+      onSubmit(v, form) {
         db.run("INSERT INTO 受注 (日付, 顧客名, 金額) VALUES (?, ?, ?)", v.date, v.customer, v.amount);
-        ctx.log(`${v.customer} の受注を登録しました`);
+        form.log(`${v.customer} の受注を登録しました`);
       } },
     { label: "受注の照会", icon: "magnifying-glass", submit: false,
       fields: [
-        { name: "word", label: "顧客名に含む文字", onChange(_, v, ctx) { ctx.table("list", find(v)); } },
+        { name: "word", label: "顧客名に含む文字", onChange(_, v, form) { form.table("list", find(v)); } },
         { name: "list", label: "受注", type: "table", rows: find(), columns: ["番号", "日付", "顧客名", "金額"], height: 14 },
       ],
-      buttons: [{ label: "再読み込み", icon: "rotate", validate: false, onClick(v, ctx) { ctx.table("list", find(v)); } }] },
+      buttons: [{ label: "再読み込み", icon: "rotate", validate: false, onClick(v, form) { form.table("list", find(v)); } }] },
   ],
 });
 db.close();
@@ -622,16 +622,16 @@ db.close();
 |---|---|
 | 氏名・所属・役職・メールの入力欄 | `ad.me()`（上）。見せるだけなら `note` |
 | フォームを閉じてから次のフォームや表を出す、の繰り返し | 1 つのフォーム（`tabs`・グループ・`hidden` / `disabled` で出し分け） |
-| 結果を `ui.table` で次々に出す（件数の表 → 明細の表 → `alert`） | 件数は `ctx.log`、明細は同じフォームの `table` 項目に `ctx.table` |
+| 結果を `ui.table` で次々に出す（件数の表 → 明細の表 → `alert`） | 件数は `form.log`、明細は同じフォームの `table` 項目に `form.table` |
 | 新しいデータを入力させるために編集できる表を出す | 入力欄を並べ、ボタンで一覧に足す。表に打ち込みながら何行も入力するならカスタムアプリ |
 | 選択肢が決まっているのに `text` | `select` / `radio` / `segmented` / `combobox` |
 | 全行に同じ値（今日の日付など）を入れる列を表に作る | 表の外に 1 つの項目（`default: new Date()`）を置き、保存のときに全行へ使う |
 | 表のセルを変えたら同じ行のほかのセルを書き換えようとする（その仕組みはない） | 保存のときに計算する。その場で見せる必要があるならカスタムアプリ |
-| 「閉じて再実行してください」という案内 | `ctx.table` で読み直す |
-| 処理の中の `alert`（特にループの中） | `ctx.log` / `ctx.error`、最後に件数をまとめて 1 行 |
+| 「閉じて再実行してください」という案内 | `form.table` で読み直す |
+| 処理の中の `alert`（特にループの中） | `form.log` / `form.error`、最後に件数をまとめて 1 行 |
 | 起動のたびに同じファイル・データベースを選ばせる | `remember: true`、`xljs.scriptDir`、設定ファイル |
 | 説明のためだけの `note` を並べる | `description` に 1〜2 行、項目ごとの補足は `help` |
-| 進捗の出ない長い処理 | `ctx.withProgress(list)`（中止もできる） |
+| 進捗の出ない長い処理 | `form.withProgress(list)`（中止もできる） |
 | 登録・管理・照会の依頼を、入力して実行するだけのツールにする（1 件登録して終わり、一覧が見られない） | アプリにする: 開くと一覧が出て、追加・更新・削除・出力を同じ画面で続けられる |
 | 機能ごとに別のスクリプト・別のフォームに分ける | 1 つのフォームの `buttons` / `tabs`、画面を分けるなら `ui.forms` |
 | 空の画面で「読み込み」を押させる | 起動時に読んで出しておく（`rows: load()`） |
@@ -669,8 +669,8 @@ await ui.form({
   validate(v) {                                        // 追加の検証。問題があれば { 項目名: "メッセージ" } を返す
     if (v.rate !== 8 && v.rate !== 10) return { rate: "8 か 10 を入力してください" };
   },
-  async onSubmit(v, ctx) {                             // 処理はここに書く（フォームは開いたまま。下の onSubmit）
-    ctx.log(`${v.list.name} から請求書を作ります`);
+  async onSubmit(v, form) {                             // 処理はここに書く（フォームは開いたまま。下の onSubmit）
+    form.log(`${v.list.name} から請求書を作ります`);
   },
 });
 ```
@@ -702,11 +702,11 @@ await ui.form({
 
 - 項目の共通オプション: `label` `default` `required` `placeholder`（`select` では未選択の表示になり、初期値が `""`）`help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`maxLength`（文字数の上限。「12 / 100」と表示）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
 - ウィンドウの大きさは `width` `height`（既定は項目数から決める）。`resizable: false` で大きさを固定する（枠のドラッグ・最大化ができない）。`titleBar: "custom"` で OS のタイトルバーの代わりに自前のタイトルバー（`icon` とタイトル、最小化・最大化・閉じる）を表示する（`ui.table` / `app.open` も同じ。メインウィンドウは `@titlebar custom`）。
-- `onChange(value, values, ctx)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる（`table` は行を選んだとき。選んだ行をほかの入力欄に出せる）。`ctx.setValue(name, value)` でほかの項目を埋められる（setValue で変えた項目の onChange は呼ばれない。例: 売上のファイルを選んだら、同じフォルダの対になる仕入のファイルを `ctx.setValue("purchase", path.join(path.dirname(h.path), "仕入_202604.csv"))` で設定する）。
-- 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`、`hidden: (v) => v.kind !== "その他"`）。onChange・onSubmit・ボタンの `ctx.setDisabled(name, bool)` / `ctx.setEnabled(name)` / `ctx.setHidden(name, bool)` / `ctx.setVisible(name)` でも切り替えられる（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
+- `onChange(value, values, form)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる（`table` は行を選んだとき。選んだ行をほかの入力欄に出せる）。`form.setValue(name, value)` でほかの項目を埋められる（setValue で変えた項目の onChange は呼ばれない。例: 売上のファイルを選んだら、同じフォルダの対になる仕入のファイルを `form.setValue("purchase", path.join(path.dirname(h.path), "仕入_202604.csv"))` で設定する）。
+- 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`、`hidden: (v) => v.kind !== "その他"`）。onChange・onSubmit・ボタンの `form.setDisabled(name, bool)` / `form.setEnabled(name)` / `form.setHidden(name, bool)` / `form.setVisible(name)` でも切り替えられる（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
 - 横に並べる: `{ row: "氏名", fields: [{ name: "last", label: "姓" }, { name: "first", label: "名" }] }` を項目と並べて書く（`row` が左のラベル、各項目の `label` は入力欄の前。`""` で出さない）。値はほかの項目と同じオブジェクト。
-- 右上のツールバー: `toolbar: [{ name: "detail", type: "switch", label: "詳細表示" }, { icon: "gear", tooltip: "設定", onClick(values, ctx) { ... } }]`。`name` のあるものは項目（値は `values`）、ないものはボタン（`label` なしならアイコンだけ。検証せずに `onClick` を呼ぶ。`ctx.setValue` で項目を変えられる。`menu: [{ label, onClick }]` も可）。
+- 右上のツールバー: `toolbar: [{ name: "detail", type: "switch", label: "詳細表示" }, { icon: "gear", tooltip: "設定", onClick(values, form) { ... } }]`。`name` のあるものは項目（値は `values`）、ないものはボタン（`label` なしならアイコンだけ。検証せずに `onClick` を呼ぶ。`form.setValue` で項目を変えられる。`menu: [{ label, onClick }]` も可）。
 - 複数のフォームを 1 つのウィンドウに: `await ui.forms({ forms: [{ label: "登録", icon: "pen", fields, onSubmit }, { label: "設定", icon: "gear", fields }], side: "left", size: "fixed" })`。サイドメニュー（ハンバーガーで畳める）で切り替える。`side: "right"` で右、`size: "each"` で切り替えるたびにそのフォームの `width` / `height` にする（`"fixed"` は `ui.forms` の `width` / `height`）。戻り値はフォームごとの最後に送信された値（なければ `null`）の配列。
 - `fields` に `{ group: "出力", icon: "file-export", help: "説明", fields: [...] }` を項目と並べて書くと見出し付きのグループになる（タブの中でも可。値は項目と同じく 1 つのオブジェクト）。`collapsed: true` で閉じた状態の「詳細設定」にできる（見出しのクリックで開閉。エラーが出ると開く）。`collapsible: true` は開いた状態で開閉可能。
 - アイコン（Font Awesome Free の名前。`"folder-open"` など）: 項目・タブ・ボタンの `icon`、送信ボタンは `submitIcon`。フォームの `icon` は `titleBar: "custom"` のときだけタイトルバーに出る（それ以外は無視）。
@@ -734,16 +734,16 @@ const v = await ui.form({
 if (!v) exit();
 // v.rows は（編集済みの）全行。badRows の各オブジェクトも書き換わっている
 ```
-- `onSubmit(v, ctx)` を書くと、送信後もフォームが開いたまま処理し、進捗・ログ・中止ボタンを表示する。出力ファイルを `return` すると「フォルダを開く」ボタンが出る。
+- `onSubmit(v, form)` を書くと、送信後もフォームが開いたまま処理し、進捗・ログ・中止ボタンを表示する。出力ファイルを `return` すると「フォルダを開く」ボタンが出る。
 
 ```js
 await ui.form({
   title: "集計",
   fields: [{ name: "src", label: "フォルダ", type: "folder", required: true }],
-  async onSubmit(v, ctx) {
+  async onSubmit(v, form) {
     const files = v.src.walk("*.xlsx").toArray();
-    for (const h of ctx.withProgress(files)) {  // 中止ボタンが押されると onSubmit はここで終わる
-      ctx.log(h.relativePath);      // ログ欄に表示（ctx.error で赤字）
+    for (const h of form.withProgress(files)) {  // 中止ボタンが押されると onSubmit はここで終わる
+      form.log(h.relativePath);      // ログ欄に表示（form.error で赤字）
     }
     // ... 保存
     // return dest;
@@ -751,11 +751,11 @@ await ui.form({
 });
 ```
 
-- `ctx.table(name, rows, columns?)` で `table` 項目の行（と列）を入れ替えられる（`onSubmit`・ボタンの `onClick`・項目の `onChange` のどれからでも）。結果の一覧を同じウィンドウに出す、登録のあとに一覧を読み直す、条件を変えたら絞り込む、に使う。最初は `rows: []` で空の表を置いておける。
+- `form.table(name, rows, columns?)` で `table` 項目の行（と列）を入れ替えられる（`onSubmit`・ボタンの `onClick`・項目の `onChange` のどれからでも）。結果の一覧を同じウィンドウに出す、登録のあとに一覧を読み直す、条件を変えたら絞り込む、に使う。最初は `rows: []` で空の表を置いておける。
 - 処理が終わるとフォームは入力できる状態に戻り、値を変えて続けて実行できる（閉じるのは利用者）。
-- フォームの表でできないこと: 表の上での行の追加・削除（スクリプトが `ctx.table` で行を入れ替えることはできる）、セルを変えたときにほかのセルを変えること（セルの `onChange` はない。検査は `validate` / `validateRow`）。これらが要るならカスタムアプリ（アプリモード）。
+- フォームの表でできないこと: 表の上での行の追加・削除（スクリプトが `form.table` で行を入れ替えることはできる）、セルを変えたときにほかのセルを変えること（セルの `onChange` はない。検査は `validate` / `validateRow`）。これらが要るならカスタムアプリ（アプリモード）。
 
-- `buttons: [{ label, onClick(v, ctx) }]` で送信ボタンの左にボタンを追加できる。押すと onClick が onSubmit と同じように動く（ウィンドウは開いたまま。押したボタンは終わるまでスピナーを表示）。`validate: false` で検証なし、`close: true` で正常終了後に閉じる。`submit: false` で送信ボタンを出さない。`ctx.setValue(name, value)` で項目の値を変えられる。
+- `buttons: [{ label, onClick(v, form) }]` で送信ボタンの左にボタンを追加できる。押すと onClick が onSubmit と同じように動く（ウィンドウは開いたまま。押したボタンは終わるまでスピナーを表示）。`validate: false` で検証なし、`close: true` で正常終了後に閉じる。`submit: false` で送信ボタンを出さない。`form.setValue(name, value)` で項目の値を変えられる。
 - ボタンの `variant`: `"primary"`（塗りつぶし）`"destructive"`（赤。削除など）`"ghost"`（枠なし）。`confirm: "削除しますか？"` で実行前に確認する（検証のあと）。
 - `menu: [{ label, onClick, ... }]` でスプリットボタン（本体と ▼ のメニュー）。`onClick` なしで `menu` だけなら、メニューを開くだけのボタン。
 
@@ -816,10 +816,10 @@ ui.chart({
   onChange(row, changes) { /* row には書き込み済み。changes: { start, end } か { progress } */ },
 });
 
-// フォームの中に置く（ctx.chart で変える。editable なガントは値が全行）
+// フォームの中に置く（form.chart で変える。editable なガントは値が全行）
 await ui.form({
   fields: [{ name: "g", type: "chart", height: 12, chart: { type: "line", data: [], x: "月", y: "合計" } }],
-  async onSubmit(v, ctx) { ctx.chart("g", { data: aggregate() }); },
+  async onSubmit(v, form) { form.chart("g", { data: aggregate() }); },
 });
 ```
 

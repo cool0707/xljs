@@ -54,7 +54,7 @@
     "range": "Range",
     "db": "Database",
     "win": "AppWindow",
-    "ctx": "FormContext",
+    "form": "FormContext",
     "view": "TableView",
     "doc": "PdfDocument",
     "proc": "ChildProcess",

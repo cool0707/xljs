@@ -30,17 +30,17 @@ const values = await ui.form({
   validate(v) {
     if (v.out && !v.out.name.toLowerCase().endsWith(".xlsx")) return { out: "拡張子は .xlsx にしてください" };
   },
-  async onSubmit(v, ctx) {
+  async onSubmit(v, form) {
     const files: FileSystemFileHandle[] = v.src.walk("*.xlsx").toArray();
-    ctx.log(`${files.length} ファイルが見つかりました`);
+    form.log(`${files.length} ファイルが見つかりました`);
     const rows: any[] = [];
     // 中止ボタンが押されると onSubmit はここで終わる（以降の保存は行わない）
-    for (const h of ctx.withProgress(files)) {
+    for (const h of form.withProgress(files)) {
       try {
         const book = workbooks.open(h);
         const sheet = book.sheets["明細"];
         if (!sheet) {
-          ctx.log(`${h.relativePath}: 「明細」シートがないので飛ばします`);
+          form.log(`${h.relativePath}: 「明細」シートがないので飛ばします`);
           book.close();
           continue;
         }
@@ -50,7 +50,7 @@ const values = await ui.form({
         }
         book.close();
       } catch (e) {
-        ctx.error(`${h.relativePath}: ${e.message}`);
+        form.error(`${h.relativePath}: ${e.message}`);
       }
     }
     const groups = Object.groupBy(rows, (r) => r[v.key] ?? "(未設定)");
@@ -64,7 +64,7 @@ const values = await ui.form({
     if (v.details) out.addSheet("明細").write(rows, { table: true });
     out.save(v.out);
     out.close();
-    ctx.log(`${rows.length} 件を集計して保存しました: ${v.out.path}`);
+    form.log(`${rows.length} 件を集計して保存しました: ${v.out.path}`);
     return v.out; // 完了後に「フォルダを開く」ボタンを表示
   },
 });
