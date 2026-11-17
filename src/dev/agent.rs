@@ -54,10 +54,10 @@ impl Service {
         t!(&format!("dev.agentWhat.{}", self.id()))
     }
 
-    /// The page that makes one, when there is a fixed one.
+    /// The page that makes one.
     fn create_url(self) -> &'static str {
         match self {
-            Service::M365 => "",
+            Service::M365 => "https://copilot.cloud.microsoft/agents/new",
             Service::Gemini => "https://gemini.google.com/gems/create",
             Service::ChatGpt => "https://chatgpt.com/gpts/editor",
             Service::Claude => "https://claude.ai/projects/create",
@@ -86,8 +86,10 @@ pub fn classify(url: &str) -> Option<(Service, bool)> {
     let param = |name: &str| query.split('&').any(|kv| kv.split('=').next().is_some_and(|k| k.eq_ignore_ascii_case(name)));
     let on = |domain: &str| host == domain || host.ends_with(&format!(".{domain}"));
     if on("cloud.microsoft") || on("microsoft365.com") || on("office.com") {
-        // An agent's chat: ?titleId=T_... (or a path under /agent(s)).
-        return Some((Service::M365, param("titleId") || seg("agent") || seg("agents")));
+        // An agent's chat: ?titleId=T_... (or a path under /agent(s));
+        // /agents/new is the page that makes one.
+        let new = segs.len() == 2 && segs[0] == "agents" && segs[1] == "new";
+        return Some((Service::M365, param("titleId") || (!new && (seg("agent") || seg("agents")))));
     }
     if host == "gemini.google.com" {
         return Some((Service::Gemini, seg("gem")));
@@ -208,6 +210,7 @@ mod tests {
             ("https://m365.cloud.microsoft/chat/?titleId=T_0123&source=embedded-builder", Some((Service::M365, true))),
             ("https://www.microsoft365.com/chat/agents/abc", Some((Service::M365, true))),
             ("https://copilot.cloud.microsoft/", Some((Service::M365, false))),
+            ("https://copilot.cloud.microsoft/agents/new", Some((Service::M365, false))),
             ("https://gemini.google.com/app", Some((Service::Gemini, false))),
             ("https://gemini.google.com/app/0a1b2c", Some((Service::Gemini, false))),
             ("https://gemini.google.com/gem/9f8e7d", Some((Service::Gemini, true))),
