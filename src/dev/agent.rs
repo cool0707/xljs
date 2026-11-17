@@ -190,7 +190,9 @@ pub fn write_for_drag(dir: &Path, file: &str, name: &str) -> Result<PathBuf> {
     if !plain_relative(name) {
         return Err(err!("dev.agentNoFile", name));
     }
-    let out = dir.join(name);
+    // Joined part by part: a "/" left in the path (dir\skill/SKILL.md on
+    // Windows) makes SHParseDisplayName fail, and the drag never starts.
+    let out = name.split('/').fold(dir.to_path_buf(), |p, part| p.join(part));
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent).map_err(|e| crate::Error::path("mkdir", parent.to_string_lossy(), e))?;
     }
@@ -278,6 +280,9 @@ mod tests {
         let d = crate::testutil::tempdir();
         let p = write_for_drag(&d, "copilot/skills/xljs-pdf/SKILL.md", "xljs-pdf/SKILL.md").unwrap();
         assert_eq!(p, d.join("xljs-pdf").join("SKILL.md"));
+        // The shell takes no "/" in a path.
+        #[cfg(windows)]
+        assert!(!p.to_string_lossy().contains('/'), "{}", p.display());
         assert_eq!(std::fs::read_to_string(&p).unwrap(), doc("copilot/skills/xljs-pdf/SKILL.md").unwrap());
         assert!(write_for_drag(&d, "nothing.md", "x.md").is_err());
         assert!(write_for_drag(&d, "prompt.md", "../x.md").is_err());
