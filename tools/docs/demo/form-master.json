@@ -1,0 +1,357 @@
+{
+ "type": "init",
+ "description": "一覧の行を選ぶと下に内容が出ます。直して「保存」を押してください。新しい商品は「新規」を押してから入力します。",
+ "texts": {
+  "ok": "OK",
+  "cancel": "キャンセル",
+  "close": "閉じる",
+  "browse": "参照…",
+  "clear": "クリア",
+  "dropHere": "ここにファイルをドロップできます",
+  "dropFolder": "ここにフォルダをドロップできます",
+  "abort": "中止",
+  "aborting": "中止しています…",
+  "running": "実行中…",
+  "done": "完了しました",
+  "aborted": "中止しました",
+  "failed": "エラーが発生しました",
+  "openFolder": "フォルダを開く",
+  "noRows": "表示する行がありません",
+  "grid": {
+   "ops": {
+    "contains": "含む",
+    "notContains": "含まない",
+    "equals": "等しい",
+    "notEqual": "等しくない",
+    "startsWith": "で始まる",
+    "endsWith": "で終わる",
+    "blank": "空白",
+    "notBlank": "空白以外",
+    "lessThan": "未満",
+    "lessThanOrEqual": "以下",
+    "greaterThan": "より大きい",
+    "greaterThanOrEqual": "以上",
+    "inRange": "範囲"
+   },
+   "filterOf": "{0} のフィルタ",
+   "menuOf": "{0} の列メニュー",
+   "pinLeft": "左端に固定",
+   "pinRight": "右端に固定",
+   "unpin": "固定を解除",
+   "freeze": "この列まで固定",
+   "unfreeze": "列の固定を解除",
+   "frozen": "ほかの列まで固定しています",
+   "hide": "この列を非表示",
+   "columns": "表示する列",
+   "findColumn": "列名で絞り込み",
+   "pinned": "固定",
+   "showAll": "すべて表示",
+   "reset": "初期状態に戻す",
+   "resetTip": "列の表示・固定・幅と並べ替え・列フィルタを初期状態に戻します",
+   "value": "値を入力…",
+   "from": "から",
+   "to": "まで",
+   "and": "AND",
+   "or": "OR",
+   "resetFilter": "リセット",
+   "clearFilters": "列フィルタを解除",
+   "filtered": "{1} 行中 {0} 行を表示"
+  },
+  "cellError": "{0} 行目 {1}: {2}",
+  "rowError": "{0} 行目: {1}",
+  "moreErrors": "ほか {0} 件",
+  "moreActions": "その他の操作",
+  "removeTag": "削除",
+  "addTag": "入力して Enter で追加",
+  "rangeFrom": "開始",
+  "rangeTo": "終了",
+  "noMatch": "一致する候補がありません"
+ },
+ "submit": "",
+ "submitIcon": "",
+ "accent": {
+  "light": "",
+  "dark": ""
+ },
+ "background": {
+  "light": "",
+  "dark": ""
+ },
+ "radius": "",
+ "tabs": [],
+ "tabIcons": [],
+ "groups": [
+  {
+   "label": "選んだ商品",
+   "icon": "fa-solid fa-pen",
+   "help": "",
+   "tab": -1,
+   "at": 2,
+   "collapsible": false,
+   "collapsed": false
+  }
+ ],
+ "noSubmit": true,
+ "buttons": [
+  "新規",
+  "削除",
+  "取り込み・出力",
+  "保存"
+ ],
+ "buttonIcons": [
+  "fa-solid fa-plus",
+  "fa-solid fa-trash",
+  "fa-solid fa-right-left",
+  "fa-solid fa-floppy-disk"
+ ],
+ "buttonTooltips": [
+  "",
+  "",
+  "",
+  ""
+ ],
+ "buttonVariants": [
+  "default",
+  "destructive",
+  "default",
+  "primary"
+ ],
+ "buttonMenus": [
+  {
+   "split": true,
+   "items": []
+  },
+  {
+   "split": true,
+   "items": []
+  },
+  {
+   "split": false,
+   "items": [
+    {
+     "label": "CSV から取り込み",
+     "icon": "fa-solid fa-file-csv",
+     "tooltip": "",
+     "variant": "default"
+    },
+    {
+     "label": "Excel に出力",
+     "icon": "fa-solid fa-file-excel",
+     "tooltip": "",
+     "variant": "default"
+    }
+   ]
+  },
+  {
+   "split": true,
+   "items": []
+  }
+ ],
+ "rows": [
+  {
+   "label": "",
+   "icon": "",
+   "help": "",
+   "tooltip": ""
+  }
+ ],
+ "fields": [
+  {
+   "name": "word",
+   "label": "検索",
+   "icon": "fa-solid fa-magnifying-glass",
+   "type": "text",
+   "options": [],
+   "required": false,
+   "placeholder": "商品名の一部",
+   "help": "",
+   "tooltip": "",
+   "change": true,
+   "accept": [],
+   "min": null,
+   "max": null,
+   "step": null,
+   "rows": 0,
+   "value": "",
+   "tab": -1,
+   "group": -1
+  },
+  {
+   "name": "list",
+   "label": "商品",
+   "icon": "",
+   "type": "table",
+   "options": [],
+   "required": false,
+   "placeholder": "",
+   "help": "",
+   "tooltip": "",
+   "change": true,
+   "accept": [],
+   "min": null,
+   "max": null,
+   "step": null,
+   "rows": 10,
+   "value": [],
+   "tab": -1,
+   "group": -1,
+   "table": {
+    "select": "single",
+    "columns": [
+     "商品コード",
+     "商品名",
+     "単価",
+     "備考"
+    ],
+    "rows": [
+     [
+      "P001",
+      "ノートPC",
+      128000,
+      "保守契約あり"
+     ],
+     [
+      "P002",
+      "モニター",
+      32800,
+      null
+     ],
+     [
+      "P003",
+      "キーボード",
+      6980,
+      null
+     ],
+     [
+      "P004",
+      "マウス",
+      2480,
+      null
+     ],
+     [
+      "P005",
+      "ドッキングステーション",
+      24800,
+      "USB Type-C 対応"
+     ],
+     [
+      "P006",
+      "Webカメラ",
+      8980,
+      null
+     ],
+     [
+      "P007",
+      "USB ハブ",
+      null,
+      "価格未定"
+     ]
+    ],
+    "formats": [
+     {
+      "cols": [
+       2
+      ],
+      "conds": [
+       [
+        "empty",
+        true
+       ]
+      ],
+      "fn": false,
+      "row": true,
+      "style": {
+       "color": "#9c0006"
+      },
+      "bar": null,
+      "scale": null
+     }
+    ]
+   }
+  },
+  {
+   "name": "code",
+   "label": "商品コード",
+   "icon": "",
+   "type": "text",
+   "options": [],
+   "required": true,
+   "placeholder": "",
+   "help": "",
+   "tooltip": "",
+   "change": false,
+   "accept": [],
+   "min": null,
+   "max": null,
+   "step": null,
+   "rows": 0,
+   "value": "",
+   "tab": -1,
+   "group": 0,
+   "row": 0
+  },
+  {
+   "name": "price",
+   "label": "単価",
+   "icon": "",
+   "type": "number",
+   "options": [],
+   "required": false,
+   "placeholder": "",
+   "help": "",
+   "tooltip": "",
+   "change": false,
+   "accept": [],
+   "min": 0,
+   "max": null,
+   "step": null,
+   "rows": 0,
+   "value": "",
+   "tab": -1,
+   "group": 0,
+   "suffix": "円",
+   "row": 0
+  },
+  {
+   "name": "name",
+   "label": "商品名",
+   "icon": "",
+   "type": "text",
+   "options": [],
+   "required": true,
+   "placeholder": "",
+   "help": "",
+   "tooltip": "",
+   "change": false,
+   "accept": [],
+   "min": null,
+   "max": null,
+   "step": null,
+   "rows": 0,
+   "value": "",
+   "tab": -1,
+   "group": 0
+  },
+  {
+   "name": "note",
+   "label": "備考",
+   "icon": "",
+   "type": "text",
+   "options": [],
+   "required": false,
+   "placeholder": "",
+   "help": "",
+   "tooltip": "",
+   "change": false,
+   "accept": [],
+   "min": null,
+   "max": null,
+   "step": null,
+   "rows": 0,
+   "value": "",
+   "tab": -1,
+   "group": 0
+  }
+ ],
+ "lang": "ja"
+}
