@@ -450,6 +450,7 @@
     "devPage.wzAttachTip": "AI チャットへドラッグすると、このファイルを添付できます",
     "devPage.wzAttachClose": "閉じる",
     "devPage.wzCopiedOnly": "プロンプトをコピーしました",
+    "devPage.wzCreating": "スクリプトを作成中…",
     "devPage.wzNeedBooks": "マクロのあるブックを選んでください。",
     "devPage.wzNeedOverview": "作成したい処理の内容を書いてください。",
     "devPage.wzNeedName": "名前を入れてください（または「おまかせ」）。",

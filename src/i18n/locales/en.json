@@ -449,6 +449,7 @@
     "devPage.wzAttachTip": "Drag to the AI chat to attach this file",
     "devPage.wzAttachClose": "Close",
     "devPage.wzCopiedOnly": "Copied the prompt",
+    "devPage.wzCreating": "Creating the script…",
     "devPage.wzNeedBooks": "Choose the workbook with the macro.",
     "devPage.wzNeedOverview": "Write what the script should do.",
     "devPage.wzNeedName": "Enter the name (or choose “Up to the AI”).",
