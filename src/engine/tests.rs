@@ -120,7 +120,10 @@ fn check_script_output(name: &str, r: &Res) -> Vec<String> {
             }
         }
         "printpreview.test.js" => {
-            want_in(&r.stderr, &["preview.pdf\", "], "mock log");
+            want_in(&r.stderr, &["preview.pdf\", ", "mirrored.pdf\", 4 pages, 1/1 charts, mirrored)"], "mock log");
+            if r.stderr.lines().any(|l| l.contains("preview.pdf\"") && l.contains("mirrored")) {
+                fails.borrow_mut().push(format!("{name}: margins mirrored without the switch"));
+            }
             if r.stderr.contains("cancelled.pdf") {
                 fails.borrow_mut().push(format!("{name}: a cancelled preview made a PDF"));
             }

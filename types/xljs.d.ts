@@ -2448,7 +2448,7 @@ declare global {
   /** printPreview・toPdf の preview のオプション */
   interface PrintPreviewOptions {
     /**
-     * 画面に出す設定（並べた順）。既定: ["sheets", "pages", "paper", "landscape", "scaling", "margin", "blackAndWhite"]（print では続けて "printer", "duplex", "copies"）。
+     * 画面に出す設定（並べた順）。既定: ["sheets", "pages", "paper", "landscape", "scaling", "margin", "blackAndWhite"]（toPdf の preview では "margin" の後に "mirrorMargins"、print では続けて "printer", "duplex", "copies"）。
      * true ですべて、false か [] で設定を出さない（ページの確認だけ）。
      * 設定の初めの値は options を当てたシートのページ設定。利用者が変えなかった設定は options とシートの設定のまま
      */

@@ -228,7 +228,7 @@ Excel の印刷プレビューのように、ページを出して設定を変�
 `toPdf(dest, { preview })` はそれを通してから PDF にする（キャンセルなら PDF を作らずに `null`）。
 
 - **出す設定**（`preview.settings`。prelude の `PREVIEW_SETTINGS`）: `sheets` `pages`（文字列の入力）`paper` `landscape` `scaling` `margin` `blackAndWhite` `gridLines`
-  `centerHorizontally` `charts` `skipBlankPages` `condense`。既定は `PREVIEW_DEFAULT`（シート・ページ・用紙・向き・拡大縮小・余白・白黒）。`sheets` はブックで印刷できるシートが 2 つ以上のときだけ。
+  `centerHorizontally` `charts` `skipBlankPages` `condense`。既定は `PREVIEW_DEFAULT`（シート・ページ・用紙・向き・拡大縮小・余白・白黒）。`toPdf` の `preview`（`"pdf"` のモード）は余白の後に `mirrorMargins` を足す（PDF には `duplex` がなく入れ替えが自動で掛からないため。説明文も PDF 用の `preview.mirrorMarginsPdfHelp`）。`sheets` はブックで印刷できるシートが 2 つ以上のときだけ。
 - **初めの値**: native の `xlsxPrintSetup(book, options)`（`xlsx_print::print_setup`）が、印刷するシートごとに `options` を当てたページ設定
   （用紙の名前（`paper_name`。名前のない用紙は null）・向き・倍率か「次のページ数」・余白 mm・枠線・白黒・左右中央）を返す。
   シートによって違う設定（用紙・向き・拡大縮小・余白）は「シートごとの設定」（値 `""`）から始める（向きはそのときだけセグメントではなく選択）。

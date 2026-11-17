@@ -1308,6 +1308,7 @@
     "preview.marginBottom": "下",
     "preview.marginLeft": "左",
     "preview.mirrorMargins": "左右の余白を偶数ページで入れ替える（両面印刷用）",
+    "preview.mirrorMarginsPdfHelp": "奇数ページは設定どおり、偶数ページは左右を逆にする（PDF を両面印刷するときに綴じしろをそろえる）",
     "preview.mirrorMarginsHelp": "奇数ページは設定どおり、偶数ページは左右を逆にする。両面印刷（縦向きの長辺綴じ・横向きの短辺綴じ）ではオフでも入れ替わる",
     "preview.blackAndWhite": "白黒印刷",
     "preview.gridLines": "枠線を印刷",
