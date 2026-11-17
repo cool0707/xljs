@@ -56,8 +56,8 @@ xljs のフォーム（`ui.form`）は入力ダイアログではなく、画面
 4. **表は「見る・選ぶ・すでにある行を直す」ためのもの。** 新しいデータの入力欄の代わりにしない（フォームの表は行の追加・削除ができない）。新しい 1 件は入力欄で受け、ボタンで一覧に足す。表のセルに打ち込みながら何行も入れるならカスタムアプリにする。
 5. **結果は同じウィンドウに出す。** 経過と件数は `form.log`、一覧は同じフォームの `table` 項目に `form.table(name, rows)`、グラフは `chart` 項目に `form.chart(name, { data })`、できたファイルは `return`（「フォルダを開く」ボタンが出る）。`ui.table` の別ウィンドウは、利用者が頼んだときと、1 行をダブルクリックして開く明細のような補助の表示だけ。
 6. **処理のあとも画面を最新にする。** 登録・更新のあとは `form.table` で一覧を読み直す。「閉じてもう一度実行してください」と案内しない（フォームは処理のあとも入力に戻り、続けて実行できる）。
-7. **`onSubmit` / `onClick` の中で `alert` を出さない。** 知らせることは `form.log`、失敗は `throw new Error("…")`（フォームに赤字で出る）、取り消せない操作の確認はボタンの `confirm`。
-8. **機能が複数あるなら 1 つのウィンドウにまとめる。** 同じ一覧への操作（保存・削除・出力）は `buttons`（数が多ければ `menu`）、項目が多ければ `tabs`、機能ごとに画面を分けるなら `ui.forms`。操作がいくつもあるフォームは `submit: false` にして、どのボタンも動作の名前にする（「保存」「削除」「Excel に出力」）。めったに使わない管理用の機能は、条件付きで足す（`buttons: [...(admin ? [管理用のボタン] : [])]`）か、別のスクリプトにする。ボタンから別のフォームを開かない。
+7. **ボタンの `onClick` の中で `alert` を出さない。** 知らせることは `form.log`、失敗は `throw new Error("…")`（フォームに赤字で出る）、取り消せない操作の確認はボタンの `confirm`。
+8. **機能が複数あるなら 1 つのウィンドウにまとめる。** 同じ一覧への操作（保存・削除・出力）は `buttons`（数が多ければ `menu`）、項目が多ければ `tabs`、機能ごとに画面を分けるなら `ui.forms`。ボタンはどれも動作の名前にする（「保存」「削除」「Excel に出力」）。Enter で押されるのは `variant: "primary"` のボタン（1 つまで）だけなので、主な操作に付ける（同格の操作が並ぶなら付けない）。めったに使わない管理用の機能は、条件付きで足す（`buttons: [...(admin ? [管理用のボタン] : [])]`）か、別のスクリプトにする。ボタンから別のフォームを開かない。
 9. **アプリは開いたときに使える状態にする。** 一覧は起動時に読んで出しておく（`rows: load()`）。何も出ていない画面で「読み込み」を押させない。1 件もないときにも見出しが出るように、一覧の列は `columns` に書く。
 
 ### 利用者の情報は Active Directory から
@@ -84,7 +84,7 @@ const user = {
 
 依頼に近い型から始め、組み合わせる（一覧の上に条件、下に入力欄、など）。
 
-**ツール: 入力 → 実行 → 結果**: ファイル・条件・保存先を 1 画面で受け、`onSubmit` で処理する（「フォーム（ui.form）」の例）。結果の一覧も見せるなら、空の `table` 項目を置いて `form.table` で入れる。
+**ツール: 入力 → 実行 → 結果**: ファイル・条件・保存先を 1 画面で受け、実行ボタン（`variant: "primary"`）の `onClick` で処理する（「フォーム（ui.form）」の例）。結果の一覧も見せるなら、空の `table` 項目を置いて `form.table` で入れる。
 
 **アプリ: 一覧を見て、直して、登録する**: 起動時に一覧を読んでフォームの表に出し、登録のあと同じ表を読み直す。
 
@@ -115,20 +115,19 @@ await ui.form({
     },
   ],
   validate: (v) => (v.items.some((r) => r.出荷) ? null : { items: "出荷したものにチェックを付けてください" }),
-  submit: "登録",
-  onSubmit(v, form) {
+  buttons: [{ label: "登録", variant: "primary", onClick(v, form) {
     const done = v.items.filter((r) => r.出荷);
     db.transaction(() => {
       for (const r of done) db.run("UPDATE 受注 SET 出荷日 = ?, 配送 = ? WHERE 受注番号 = ?", v.date, r.配送, r.受注番号);
     });
     form.log(`${done.length} 件を登録しました`);
     form.table("items", load()); // 同じ画面のまま、残りの一覧に入れ替える
-  },
+  } }],
 });
 db.close();
 ```
 
-**アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `form.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`、送信ボタンが要らなければ `submit: false`。
+**アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `form.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`。
 
 ```js
 const all = workbooks.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].toObjects();
@@ -142,7 +141,6 @@ await ui.form({
       onChange(_, v, form) { form.table("list", pick(v)); } },
     { name: "list", label: "一覧", type: "table", rows: all, height: 15 },
   ],
-  submit: false,
   buttons: [{
     label: "Excel に保存", icon: "file-excel", variant: "primary",
     async onClick(v, form) {
@@ -187,8 +185,7 @@ await ui.form({
       { name: "name", label: "品名", required: true },
     ] },
   ],
-  submit: false, // 操作はボタンに分ける（Enter で送信されない）
-  buttons: [
+  buttons: [ // Enter で押されるのは primary の「保存」
     { label: "新規", icon: "plus", validate: false, onClick(v, form) { show(form); } },
     { label: "削除", icon: "trash", variant: "destructive", validate: false, confirm: "選んだ商品を削除しますか？",
       onClick(v, form) {
@@ -219,17 +216,17 @@ await ui.forms({
   title: "受注管理",
   width: 900, height: 600,
   forms: [
-    { label: "受注の登録", icon: "pen", submit: "登録",
+    { label: "受注の登録", icon: "pen",
       fields: [
         { name: "date", label: "受注日", type: "date", default: new Date(), required: true },
         { name: "customer", label: "顧客名", required: true },
         { name: "amount", label: "金額", type: "number", min: 0, suffix: "円", required: true },
       ],
-      onSubmit(v, form) {
+      buttons: [{ label: "登録", variant: "primary", onClick(v, form) {
         db.run("INSERT INTO 受注 (日付, 顧客名, 金額) VALUES (?, ?, ?)", v.date, v.customer, v.amount);
         form.log(`${v.customer} の受注を登録しました`);
-      } },
-    { label: "受注の照会", icon: "magnifying-glass", submit: false,
+      } }] },
+    { label: "受注の照会", icon: "magnifying-glass",
       fields: [
         { name: "word", label: "顧客名に含む文字", onChange(_, v, form) { form.table("list", find(v)); } },
         { name: "list", label: "受注", type: "table", rows: find(), columns: ["番号", "日付", "顧客名", "金額"], height: 14 },
@@ -266,6 +263,7 @@ db.close();
 | 登録・管理・照会の依頼を、入力して実行するだけのツールにする（1 件登録して終わり、一覧が見られない） | アプリにする: 開くと一覧が出て、追加・更新・削除・出力を同じ画面で続けられる |
 | 機能ごとに別のスクリプト・別のフォームに分ける | 1 つのフォームの `buttons` / `tabs`、画面を分けるなら `ui.forms` |
 | 空の画面で「読み込み」を押させる | 起動時に読んで出しておく（`rows: load()`） |
+| `onSubmit`・`submit`・`submitIcon`（古い書き方。いまはなく、書くとエラー） | `buttons` に `onClick` のあるボタンを書き、Enter で押すものに `variant: "primary"` |
 
 ### カスタムアプリの方針
 

@@ -8,7 +8,7 @@ const fields = () => [
   { name: "kind", type: "select", options: ["a", "その他"], default: "a" },
   { name: "detail", required: true, hidden: (v) => v.kind !== "その他" },
   { name: "fixed", required: true, disabled: true },
-  { name: "lock", type: "switch", onChange(on, v, form) { form.setDisabled("memo", on); form.setVisible("extra", on); } },
+  { name: "lock", type: "switch", onChange(on, v, form) { form.setDisabled("memo", on); form.setHidden("extra", !on); } },
   { name: "memo", default: "初期" },
   { name: "extra", type: "number", required: true, hidden: true },
 ];

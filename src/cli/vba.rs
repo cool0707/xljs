@@ -145,7 +145,8 @@ fn ask_include(u: &Arc<dyn Ui>, books: &[String]) -> Option<Include> {
     let o = FormOptions {
         title: t!("cli.bookFormTitle"),
         description: t!("cli.bookFormDescription", names),
-        submit: t!("cli.bookFormSubmit"),
+        buttons: vec![t!("cli.bookFormSubmit")],
+        main: Some(0),
         fields: vec![FormField {
             name: "include".into(),
             label: t!("cli.bookFormInclude"),

@@ -31,7 +31,7 @@ const v = await ui.form({
       },
     },
   }],
-  submit: "保存",
+  buttons: [{ label: "保存", icon: "floppy-disk", variant: "primary" }], // onClick がないので、押すと閉じて値を返す
 });
 if (!v) exit();
 // editable なガントチャートの値はすべての行（変更済み）

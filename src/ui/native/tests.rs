@@ -281,9 +281,9 @@ fn capture_writes_pictures() {
     let dir = crate::testutil::tempdir();
     unsafe { std::env::set_var(crate::ui::WEBVIEW2_DATA_ENV, dir.join("wv2")) };
     let u = setup();
-    let form = r#"{"type":"init","texts":{"ok":"OK","cancel":"キャンセル"},"submit":"登録","tabs":[],"tabIcons":[],"groups":[],"buttons":[],"fields":[{"name":"a","label":"得意先","type":"text","value":"山田商店","tab":-1,"group":-1}]}"#;
+    let form = r#"{"type":"init","texts":{"ok":"OK","cancel":"キャンセル"},"tabs":[],"tabIcons":[],"groups":[],"buttons":["登録"],"buttonVariants":["primary"],"enter":0,"fields":[{"name":"a","label":"得意先","type":"text","value":"山田商店","tab":-1,"group":-1}]}"#;
     let jobs = [
-        ShotJob { page: "form.html?shot".into(), init: form.into(), mark: r#"{"type":"mark","title":"受注","fields":["a"],"button":{"kind":"submit"}}"#.into(), width: 500, height: 260, path: dir.join("form.png").to_string_lossy().into_owned() },
+        ShotJob { page: "form.html?shot".into(), init: form.into(), mark: r#"{"type":"mark","title":"受注","fields":["a"],"button":{"kind":"button","index":0}}"#.into(), width: 500, height: 260, path: dir.join("form.png").to_string_lossy().into_owned() },
         ShotJob { page: "shot.html?shot".into(), init: r#"{"type":"init","kind":"confirm","title":"受注","text":"登録しますか？","buttons":["OK","キャンセル"]}"#.into(), mark: r#"{"type":"mark","button":0}"#.into(), width: 600, height: 420, path: dir.join("dialog.png").to_string_lossy().into_owned() },
     ];
     for job in jobs {

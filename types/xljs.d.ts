@@ -188,7 +188,7 @@ declare global {
     /** 各要素の表示ラベル。既定はハンドルなら relativePath */
     label?: (item: T, index: number) => string;
     /**
-     * キャンセルされたとき: "exit"（既定）はスクリプトを終了する（終了コード 1。フォームの form.withProgress では onSubmit を終える）。
+     * キャンセルされたとき: "exit"（既定）はスクリプトを終了する（終了コード 1。フォームの form.withProgress ではボタンの onClick を終える）。
      * "break" は反復を終えるだけ（続きの処理で ui.cancelled / form.cancelled を見る）
      */
     onCancel?: "exit" | "break";
@@ -208,18 +208,18 @@ declare global {
     withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T> | string): AsyncIterableIterator<T>;
     /**
      * フォーム（項目の定義だけで作る画面）を表示する。入力欄・表・グラフ・ボタン・タブを置ける。
-     * onSubmit や buttons を指定すると、実行後もウィンドウを開いたまま進捗とログを表示し、続けて使える
+     * onClick のあるボタン（buttons）を押すと、ウィンドウを開いたまま onClick を実行して進捗とログを表示し、続けて使える
      * （入力して実行するツールも、一覧・登録のある開いたまま使うアプリも、この形で作る）。
-     * ウィンドウが閉じられたときに最後に送信された（検証を通った）値を返す。
-     * onSubmit も buttons もなければ、送信で閉じて値を返す（キャンセルされると null）。
+     * onClick のないボタンは、検証して閉じ、その値を返す（buttons を省くと「OK」ボタン 1 つ。途中で少し尋ねるだけのとき）。
+     * ウィンドウが閉じられたら、最後にボタンを押したときの（検証を通った）値を返す（なければ null）。
      * ネイティブ UI ではウィンドウ（WebView2）、コンソールでは対話入力になる。
      */
     form<V extends FormValues = FormValues>(options: FormOptions<V>): Promise<V | null>;
     /**
      * 複数のフォームを 1 つのウィンドウにまとめ、左（side: "right" なら右）のサイドメニューで切り替えて表示する。
      * メニューの上のハンバーガーボタンでメニューをアイコンだけの幅に畳める。各フォームは ui.form と同じように動く
-     * （onSubmit・buttons・検証・remember。値は別々）。ウィンドウが閉じられると、フォームごとの最後に送信された値
-     * （送信されていなければ null）の配列を返す。送信ボタン（onSubmit なし）・キャンセル・Esc はウィンドウを閉じる。
+     * （buttons・検証・remember。値は別々）。ウィンドウが閉じられると、フォームごとの最後にボタンを押したときの値
+     * （押していなければ null）の配列を返す。onClick のないボタン・キャンセル・Esc はウィンドウを閉じる。
      * コンソール・mock では forms の順に 1 つずつ尋ねる
      */
     forms(options: FormsOptions): Promise<(FormValues | null)[]>;
@@ -261,111 +261,55 @@ declare global {
     "checkbox" | "textarea" | "file" | "files" | "folder" | "saveFile" | "table" | "chart" |
     "switch" | "checkboxes" | "segmented" | "combobox" | "slider" | "dateRange" | "tags" | "note" | "image";
 
+  /** 選択肢（select / radio / checkboxes / segmented / combobox）。文字列なら値と表示が同じ */
+  type FormOption = string | { value: string; label?: string };
+
   /**
-   * フォームの項目。値の型は type による:
-   * text / password / textarea / select / radio / combobox は string、number は number | null、
-   * date は Date | null（ローカル日付）、month は "YYYY-MM" | null、time は "HH:MM" | null、
-   * checkbox / switch は boolean、slider は number、checkboxes / tags は string[]、
-   * segmented は string（multiple: true なら string[]）、dateRange は { from: Date, to: Date } | null、
-   * note・image は値なし、file / saveFile は FileSystemFileHandle | null、
-   * files は FileSystemFileHandle[]、folder は FileSystemDirectoryHandle | null、
-   * table は選択した行（元のオブジェクト）の配列（selectable: "single" なら行か null。selectable なしなら値なし。
-   * 編集できる表で selectable なしならすべての行）、
-   * chart は値なし（editable なガントチャートだけ、すべての行（編集が書き込まれた元のオブジェクト））
+   * フォームの項目。type ごとに使えるキーが決まっている（ほかの type のキーや、ないキーを書くとエラー）。
+   * 値の型も type による（各型の説明を参照）
    */
-  interface FormField {
+  type FormField = FormTextField | FormTextareaField | FormNumberField | FormSliderField | FormDateField | FormDateRangeField |
+    FormSelectField | FormRadioField | FormCheckboxField | FormCheckboxesField | FormSegmentedField | FormComboboxField |
+    FormTagsField | FormFileField | FormFilesField | FormTableField | FormChartField | FormNoteField | FormImageField;
+
+  /** すべての項目に共通のキー */
+  interface FormFieldBase {
     /** 値のキー */
     name: string;
-    /** 表示名（既定は name） */
+    /** 表示名（既定は name。note・image は既定なし） */
     label?: string;
     /** ラベルの前に出す Font Awesome のアイコン（"folder-open" は solid、"fa-regular fa-calendar" のようにクラスでも可） */
     icon?: string;
-    /**
-     * 既定 "text"。switch はオン・オフのスイッチ（checkbox と同じ値）、checkboxes は options の複数選択、
-     * segmented は options を並べたボタン（radio と同じ値。multiple: true で複数選択）、
-     * combobox は入力で options を絞り込んで選ぶ欄（allowCustom: true なら自由入力も可）、
-     * slider は min〜max（既定 0〜100）のスライダー、dateRange は開始日と終了日、
-     * tags は Enter かカンマで区切って入力する文字列のリスト、
-     * note は入力欄ではなくメッセージの表示（label が見出し、default が本文、variant が種類）、
-     * image は画像の表示（default が画像。label を付けなければフォームの幅いっぱいに置く）
-     */
-    type?: FormFieldType;
-    /**
-     * 初期値。ファイル系はパスかハンドル、date は Date か "YYYY-MM-DD"、table は選択する行（行そのものか番号、配列可）、
-     * checkboxes / tags / segmented（multiple）は配列、dateRange は { from, to } か [from, to]（Date か "YYYY-MM-DD"）、note は本文、
-     * image は画像ファイル（PNG・JPEG・GIF・BMP・WebP・ICO・SVG。パス・ハンドル・File）・バイト列（Uint8Array / ArrayBuffer）・
-     * "https://..." や "data:image/..." の URL。form.setValue で画像を差し替えられる
-     */
-    default?: unknown;
-    /** 入力必須（checkbox / switch はオン必須、checkboxes は 1 つ以上、table は 1 行以上の選択が必須、dateRange は両方） */
-    required?: boolean;
-    /** select / radio / checkboxes / segmented / combobox の選択肢 */
-    options?: (string | { value: string; label?: string })[];
-    /** segmented で複数選べるようにする（値は string[]） */
-    multiple?: boolean;
-    /** combobox で選択肢にない入力も値として受け付ける */
-    allowCustom?: boolean;
-    /** image の置き方（既定 "left"） */
-    align?: "left" | "center" | "right";
-    /** image の代わりの文字（読み上げ用） */
-    alt?: string;
-    /**
-     * image の表示する幅（px）。既定は画像の大きさ（フォームの幅を超えるときは縮める）。
-     * width か height の片方だけなら縦横比を保つ。height は table・chart では行数（下の height を参照）
-     */
-    width?: number;
-    /** note の種類（既定 "info"）。色とアイコンが変わる */
-    variant?: "info" | "success" | "warning" | "error";
-    /** text / number / password の入力欄の中に付ける前後の文字（"¥"、"件" など）。slider では値の表示に付く */
-    prefix?: string;
-    suffix?: string;
-    /** text / textarea / password の最大文字数。「12 / 100」と表示し、超えるとエラー。tags では 1 つあたり */
-    maxLength?: number;
-    /** 入力欄が空のときの薄い表示。select では未選択の項目として表示し、初期値を未選択（""）にする */
-    placeholder?: string;
     /** 入力欄の下に出す説明 */
     help?: string;
     /** マウスを重ねたときに出す説明（ツールチップ）。ラベルと入力欄に付く */
     tooltip?: string;
-    /** number の範囲と刻み */
-    min?: number;
-    max?: number;
-    step?: number | "any";
-    /** textarea / files の行数。table では表示する行（ui.table の rows と同じ） */
-    rows?: number | readonly unknown[];
-    /** table の列（ui.table の columns と同じ。既定はオブジェクトのキー）。列ごとに編集の可否と検証を指定できる */
-    columns?: (string | FormTableColumn)[];
-    /** table の条件付き書式（ui.table の formats と同じ） */
-    formats?: readonly TableFormat[];
-    /** table で行を選べるようにする（クリックで選択。true は "multiple"） */
-    selectable?: boolean | "single" | "multiple";
     /**
-     * table のセルをその場で編集できるようにする（列の editable で個別に指定も可）。
-     * 編集した値は検証を通ると元の行オブジェクトに直接書き込まれる。
-     * エラーのあるセルは赤く表示され、エラーが残っていると送信できない
+     * 項目を無効にする（グレーで表示し、入力できない）。関数ならほかの項目の値から決める
+     * （例: `disabled: (v) => !v.useMail` でチェックボックスが外れている間は無効）。関数は表示時と値が変わるたびに呼ばれる。
+     * 無効の項目は required などの検証も validate もされない（値はそのまま values に入る）。
+     * form.setDisabled で変えられる。コンソール・mock では無効の項目は尋ねない
      */
-    editable?: boolean;
+    disabled?: boolean | ((values: FormValues) => boolean);
     /**
-     * table の行の検証（編集できる表）。行全体へのメッセージか { 列のキー: "メッセージ" } を返す。
-     * 表示時と、行のセルが編集されるたびに呼ばれる
+     * 項目を隠す。関数ならほかの項目の値から決める（例: `hidden: (v) => v.kind !== "その他"`）。
+     * 隠した項目は検証されない（値はそのまま values に入る）。form.setHidden で変えられる。
+     * コンソール・mock では隠した項目は尋ねない
      */
-    validateRow?(row: any, index: number): Record<string, string | null | undefined> | string | null | undefined | void |
-      Promise<Record<string, string | null | undefined> | string | null | undefined | void>;
-    /** table の表示する高さ（行数。既定は 8 行まで）。chart の高さ（1 行 25px として。既定 12）。image の高さ（px） */
-    height?: number;
-    /** chart の項目のグラフ（ui.chart と同じ定義。ExcelChart も可）。form.chart(name, spec) で変えられる */
-    chart?: ChartSpec | ExcelChart;
-    /** ファイル系の拡張子（".xlsx" など）。ピッカーとドロップに使う */
-    accept?: string | string[];
-    /** 入力全体が一致すべき正規表現（文字列なら全体一致）。tags では 1 つずつ */
-    pattern?: string | RegExp;
-    /** pattern に一致しないときのメッセージ */
-    patternMessage?: string;
+    hidden?: boolean | ((values: FormValues) => boolean);
+  }
+
+  /** 値を入力する項目に共通のキー。T は値の型 */
+  interface FormInputBase<T> extends FormFieldBase {
+    /** 初期値（値と同じ型か、各 type の説明にある形） */
+    default?: unknown;
+    /** 入力必須（checkbox / switch はオン必須、checkboxes は 1 つ以上、table は 1 行以上の選択が必須、dateRange は両方） */
+    required?: boolean;
     /**
      * この項目の追加の検証。問題があればメッセージを返す（values はすべての項目の値）。
-     * required などの検証が通ったあとに、入力欄を離れたとき（エラー表示中は入力のたび）と送信時に呼ばれる
+     * required などの検証が通ったあとに、入力欄を離れたとき（エラー表示中は入力のたび）とボタンを押したときに呼ばれる
      */
-    validate?(value: any, values: FormValues): string | null | undefined | void | Promise<string | null | undefined | void>;
+    validate?(value: T, values: FormValues): string | null | undefined | void | Promise<string | null | undefined | void>;
     /**
      * ユーザーが値を変えたときに呼ばれる（入力欄を離れたとき・Enter・選択・参照・ドロップ・table の行の選択）。
      * required などの検証と項目の validate が通ったときだけ呼ばれる（空欄にしたときも、必須でなければ呼ばれる）。
@@ -373,22 +317,231 @@ declare global {
      * setValue で変えた項目の onChange は呼ばれない。ここで起きたエラーはこの項目のエラーとして表示される
      * （コンソールでは呼び出し元に伝わる）。コンソール・mock では回答で変わった項目について項目の順に呼ばれる
      */
-    onChange?(value: any, values: FormValues, form: FormChangeContext): unknown;
-    /**
-     * 項目を無効にする（グレーで表示し、入力できない）。関数ならほかの項目の値から決める
-     * （例: `disabled: (v) => !v.useMail` でチェックボックスが外れている間は無効）。関数は表示時と値が変わるたびに呼ばれる。
-     * 無効の項目は required などの検証も validate もされない（値はそのまま values に入る）。
-     * form.setDisabled / setEnabled で変えられる。コンソール・mock では無効の項目は尋ねない
-     */
-    disabled?: boolean | ((values: FormValues) => boolean);
-    /**
-     * 項目を隠す。関数ならほかの項目の値から決める（例: `hidden: (v) => v.kind !== "その他"`）。
-     * 隠した項目は検証されない（値はそのまま values に入る）。form.setHidden / setVisible で変えられる。
-     * コンソール・mock では隠した項目は尋ねない
-     */
-    hidden?: boolean | ((values: FormValues) => boolean);
-    /** remember: true のフォームで、この項目を保存しない場合は false（password は保存しない） */
+    onChange?(value: T, values: FormValues, form: FormContext): unknown;
+    /** remember: true のフォームで、この項目を保存しない場合は false（password・table・chart は保存しない） */
     remember?: boolean;
+  }
+
+  /** 1 行の文字の入力（type 省略時）。password は伏せ字。値は string */
+  interface FormTextField extends FormInputBase<string> {
+    type?: "text" | "password";
+    default?: string;
+    /** 入力欄が空のときの薄い表示 */
+    placeholder?: string;
+    /** 入力欄の中に付ける前後の文字（"¥"、"件" など） */
+    prefix?: string;
+    suffix?: string;
+    /** 最大文字数。「12 / 100」と表示し、超えるとエラー */
+    maxLength?: number;
+    /** 入力全体が一致すべき正規表現（文字列なら全体一致） */
+    pattern?: string | RegExp;
+    /** pattern に一致しないときのメッセージ */
+    patternMessage?: string;
+  }
+
+  /** 複数行の文字の入力。値は string */
+  interface FormTextareaField extends FormInputBase<string> {
+    type: "textarea";
+    default?: string;
+    placeholder?: string;
+    maxLength?: number;
+    pattern?: string | RegExp;
+    patternMessage?: string;
+    /** 行数（既定 4） */
+    lines?: number;
+  }
+
+  /** 数値の入力。値は number | null（空欄は null） */
+  interface FormNumberField extends FormInputBase<number | null> {
+    type: "number";
+    default?: number | null;
+    placeholder?: string;
+    prefix?: string;
+    suffix?: string;
+    /** 範囲と刻み */
+    min?: number;
+    max?: number;
+    step?: number | "any";
+  }
+
+  /** スライダー（min〜max、既定 0〜100）。値は number */
+  interface FormSliderField extends FormInputBase<number> {
+    type: "slider";
+    default?: number;
+    min?: number;
+    max?: number;
+    step?: number | "any";
+    /** 値の表示に付ける前後の文字 */
+    prefix?: string;
+    suffix?: string;
+  }
+
+  /**
+   * 日付（date）・年月（month）・時刻（time）。値は date が Date | null（ローカル日付）、month が "YYYY-MM" | null、time が "HH:MM" | null。
+   * default は Date か "YYYY-MM-DD"（month は "YYYY-MM"、time は "HH:MM"）
+   */
+  interface FormDateField extends FormInputBase<any> {
+    type: "date" | "month" | "time";
+    default?: Date | string | null;
+    placeholder?: string;
+  }
+
+  /** 開始日と終了日。値は { from: Date, to: Date } | null。default は { from, to } か [from, to]（Date か "YYYY-MM-DD"） */
+  interface FormDateRangeField extends FormInputBase<{ from: Date; to: Date } | null> {
+    type: "dateRange";
+    default?: { from: Date | string; to: Date | string } | [Date | string, Date | string] | null;
+  }
+
+  /** 選択肢から 1 つを選ぶドロップダウン。値は string（選択肢の value） */
+  interface FormSelectField extends FormInputBase<string> {
+    type: "select";
+    options: FormOption[];
+    default?: string;
+    /** 未選択の項目として表示し、初期値を未選択（""）にする */
+    placeholder?: string;
+  }
+
+  /** 選択肢から 1 つを選ぶラジオボタン。値は string */
+  interface FormRadioField extends FormInputBase<string> {
+    type: "radio";
+    options: FormOption[];
+    default?: string;
+  }
+
+  /** チェックボックス（checkbox）・オン・オフのスイッチ（switch）。値は boolean */
+  interface FormCheckboxField extends FormInputBase<boolean> {
+    type: "checkbox" | "switch";
+    default?: boolean;
+  }
+
+  /** 選択肢の複数選択（チェックボックスを並べる）。値は string[] */
+  interface FormCheckboxesField extends FormInputBase<string[]> {
+    type: "checkboxes";
+    options: FormOption[];
+    default?: string[];
+  }
+
+  /** 選択肢を並べたボタン（radio と同じ値。multiple: true で複数選択、値は string[]） */
+  interface FormSegmentedField extends FormInputBase<any> {
+    type: "segmented";
+    options: FormOption[];
+    multiple?: boolean;
+    default?: string | string[];
+  }
+
+  /** 入力で選択肢を絞り込んで選ぶ欄（allowCustom: true なら選択肢にない入力も値になる）。値は string */
+  interface FormComboboxField extends FormInputBase<string> {
+    type: "combobox";
+    options?: FormOption[];
+    /** 選択肢にない入力も値として受け付ける */
+    allowCustom?: boolean;
+    default?: string;
+    placeholder?: string;
+    pattern?: string | RegExp;
+    patternMessage?: string;
+  }
+
+  /** Enter かカンマで区切って入力する文字列のリスト。値は string[] */
+  interface FormTagsField extends FormInputBase<string[]> {
+    type: "tags";
+    default?: string[];
+    placeholder?: string;
+    /** 1 つあたりの最大文字数 */
+    maxLength?: number;
+    /** 1 つずつが一致すべき正規表現 */
+    pattern?: string | RegExp;
+    patternMessage?: string;
+  }
+
+  /**
+   * ファイル（file）・フォルダ（folder）・保存先（saveFile）を選ぶ欄（参照ボタンとドロップ）。
+   * 値は file / saveFile が FileSystemFileHandle | null、folder が FileSystemDirectoryHandle | null。default はパスかハンドル
+   */
+  interface FormFileField extends FormInputBase<any> {
+    type: "file" | "folder" | "saveFile";
+    default?: PathLike | null;
+    /** 拡張子（".xlsx" など）。ピッカーとドロップに使う */
+    accept?: string | string[];
+    placeholder?: string;
+  }
+
+  /** 複数のファイルを選ぶ欄。値は FileSystemFileHandle[] */
+  interface FormFilesField extends FormInputBase<FileSystemFileHandle[]> {
+    type: "files";
+    default?: PathLike[];
+    accept?: string | string[];
+    placeholder?: string;
+    /** 行数（既定 3） */
+    lines?: number;
+  }
+
+  /**
+   * 表。値は選択した行（元のオブジェクト）の配列（selectable: "single" なら行か null。selectable なしなら値なし。
+   * 編集できる表で selectable なしならすべての行）。default は選択する行（行そのものか番号、配列可）
+   */
+  interface FormTableField extends FormInputBase<any> {
+    type: "table";
+    /** 表示する行（ui.table の rows と同じ） */
+    rows: readonly unknown[];
+    /** 列（ui.table の columns と同じ。既定はオブジェクトのキー）。列ごとに編集の可否と検証を指定できる */
+    columns?: (string | FormTableColumn)[];
+    /** 条件付き書式（ui.table の formats と同じ） */
+    formats?: readonly TableFormat[];
+    /** 行を選べるようにする（クリックで選択。true は "multiple"） */
+    selectable?: boolean | "single" | "multiple";
+    /**
+     * セルをその場で編集できるようにする（列の editable で個別に指定も可）。
+     * 編集した値は検証を通ると元の行オブジェクトに直接書き込まれる。
+     * エラーのあるセルは赤く表示され、エラーが残っているとボタン（validate: false のものを除く）を実行できない
+     */
+    editable?: boolean;
+    /**
+     * 行の検証（編集できる表）。行全体へのメッセージか { 列のキー: "メッセージ" } を返す。
+     * 表示時と、行のセルが編集されるたびに呼ばれる
+     */
+    validateRow?(row: any, index: number): Record<string, string | null | undefined> | string | null | undefined | void |
+      Promise<Record<string, string | null | undefined> | string | null | undefined | void>;
+    /** 表の高さ（px。既定は 8 行分まで） */
+    height?: number;
+  }
+
+  /**
+   * グラフ（ui.chart と同じ定義。ExcelChart も可）。form.chart(name, spec) で変えられる。
+   * 値はなし（editable なガントチャートだけ、すべての行（編集が書き込まれた元のオブジェクト））
+   */
+  interface FormChartField extends FormFieldBase {
+    type: "chart";
+    chart: ChartSpec | ExcelChart;
+    /** グラフの高さ（px。既定 300） */
+    height?: number;
+  }
+
+  /** 入力欄ではなくメッセージの表示（label が見出し）。値はなし。form.setValue で本文を変えられる */
+  interface FormNoteField extends FormFieldBase {
+    type: "note";
+    /** 本文 */
+    text?: string;
+    /** 種類（既定 "info"）。色とアイコンが変わる */
+    kind?: "info" | "success" | "warning" | "error";
+  }
+
+  /**
+   * 画像の表示（label を付けなければフォームの幅いっぱいに置く）。値はなし。form.setValue で画像を差し替えられる
+   */
+  interface FormImageField extends FormFieldBase {
+    type: "image";
+    /**
+     * 画像ファイル（PNG・JPEG・GIF・BMP・WebP・ICO・SVG。パス・ハンドル・File）・バイト列（Uint8Array / ArrayBuffer）・
+     * "https://..." や "data:image/..." の URL
+     */
+    src?: PathLike | Uint8Array | ArrayBuffer | string;
+    /** 置き方（既定 "left"） */
+    align?: "left" | "center" | "right";
+    /** 画像の代わりの文字（読み上げ用） */
+    alt?: string;
+    /** 表示する幅・高さ（px）。既定は画像の大きさ（フォームの幅を超えるときは縮める）。片方だけなら縦横比を保つ */
+    width?: number;
+    height?: number;
   }
 
   /**
@@ -430,7 +583,7 @@ declare global {
 
   /**
    * フォームの右上（ツールバー）のボタン。label なしで icon だけならアイコンのボタン（tooltip が説明）。
-   * 押すと検証せずに入力のままの値で onClick を呼ぶ（進捗・ログの表示はしない。form.setValue などで項目を変えられる。
+   * 押すと検証せずに入力のままの値で onClick を呼ぶ（中止ボタンは出さない。form.setValue などで項目を変えられ、form.log はフォームの下に出る。
    * ここで起きたエラーはフォームの下にエラーとして表示される）。menu を付けるとメニューを開くボタンになる。
    * コンソール・mock では「label（なければ tooltip）」でボタンのあとに並び、押したあとはフォームをもう一度尋ねる
    */
@@ -445,14 +598,17 @@ declare global {
     /** メニューの項目。項目は menu を持てない */
     menu?: Omit<FormToolbarButton<V>, "menu" | "variant">[];
     /** 押されたときの処理。menu があれば省略可 */
-    onClick?(values: V, form: FormChangeContext): unknown;
+    onClick?(values: V, form: FormContext): unknown;
   }
 
   interface FormValues {
     [name: string]: any;
   }
 
-  /** onSubmit の第 2 引数。ウィンドウ内の進捗・ログ表示 */
+  /**
+   * 開いているフォームへの操作。ボタンの onClick の第 2 引数、項目の onChange の第 3 引数、ツールバーのボタンの onClick の第 2 引数
+   * （慣例で form という名前で受ける）。進捗とログはフォームの下に表示する（コンソールでは進捗表示と出力）
+   */
   interface FormContext {
     /** 中止ボタンが押された（またはウィンドウが閉じられた）か */
     readonly cancelled: boolean;
@@ -468,47 +624,33 @@ declare global {
      * コンソール・mock では表を出力する
      */
     table(name: string, rows: readonly unknown[], columns?: (string | FormTableColumn)[]): void;
-    /** 項目の値を変える（default と同じ形で指定。table は選択する行） */
+    /** 項目の値を変える（default と同じ形で指定。table は選択する行）。変えた項目は検証される（onChange は呼ばれない） */
     setValue(name: string, value: unknown): void;
     /** 項目を無効にする（グレーで表示。false で有効に戻す）。項目の disabled を置き換える */
     setDisabled(name: string, disabled?: boolean): void;
-    /** 項目を有効にする（false で無効に） */
-    setEnabled(name: string, enabled?: boolean): void;
     /** 項目を隠す（false で表示に戻す）。項目の hidden を置き換える */
     setHidden(name: string, hidden?: boolean): void;
-    /** 項目を表示する（false で隠す） */
-    setVisible(name: string, visible?: boolean): void;
     /**
      * chart の項目のグラフを変える。指定したキーだけが置き換わる（{ data: rows } で行だけ差し替え）。ExcelChart なら丸ごと置き換え。
      * コンソール・mock では表を出力する
      */
     chart(name: string, spec: Partial<ChartSpec> | ExcelChart): void;
-    /** ui.withProgress と同じ。進捗をフォーム内に表示し、中止されると onSubmit を終える（onCancel: "break" なら反復が終わるだけ） */
+    /** ui.withProgress と同じ。進捗をフォーム内に表示し、中止されると onClick を終える（onCancel: "break" なら反復が終わるだけ） */
     withProgress<T>(iterable: Iterable<T>, options?: WithProgressOptions<T>): Generator<T, void, undefined>;
     withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T>): AsyncIterableIterator<T>;
   }
 
-  /** 項目の onChange の第 3 引数 */
-  interface FormChangeContext {
-    /** 項目の値を変える（default と同じ形で指定。table は選択する行）。変えた項目は検証される */
-    setValue(name: string, value: unknown): void;
-    /** 項目を無効にする（グレーで表示。false で有効に戻す）。項目の disabled を置き換える */
-    setDisabled(name: string, disabled?: boolean): void;
-    /** 項目を有効にする（false で無効に） */
-    setEnabled(name: string, enabled?: boolean): void;
-    /** 項目を隠す（false で表示に戻す）。項目の hidden を置き換える */
-    setHidden(name: string, hidden?: boolean): void;
-    /** 項目を表示する（false で隠す） */
-    setVisible(name: string, visible?: boolean): void;
-    /** table の項目の行（と列）を入れ替える（選択は解除） */
-    table(name: string, rows: readonly unknown[], columns?: (string | FormTableColumn)[]): void;
-  }
-
   /**
-   * フォームのボタン。押されたボタンは処理が終わるまでスピナーを表示する。
+   * フォームのボタン（フォームの下に並べた順に置く）。押されたボタンは処理が終わるまでスピナーを表示する。
+   * onClick があれば検証してから onClick を実行する（ウィンドウは開いたまま、進捗・ログ・中止ボタンを表示）。
+   * onClick も menu もなければ、検証して閉じ、その値を ui.form が返す。
+   * variant: "primary" のボタン（1 つまで）は Enter でも押される。
    * menu を付けると右に ▼ が付き（スプリットボタン）、メニューの項目もボタンと同じように実行する。
    * onClick なしで menu だけならメニューを開くだけのボタンになる。
-   * コンソール・mock ではメニューの項目は「ボタン ▸ 項目」としてボタンのあとに並ぶ
+   * コンソール・mock では項目のあとにどのボタンを押すか尋ねる（既定は primary のボタン、なければ先頭）。
+   * メニューの項目は「ボタン ▸ 項目」としてボタンのあとに並ぶ
+   * @example
+   * buttons: [{ label: "集計", icon: "play", variant: "primary", onClick(values, form) { ... } }]
    */
   interface FormButton<V extends FormValues = FormValues> {
     label: string;
@@ -516,13 +658,21 @@ declare global {
     icon?: string;
     /** マウスを重ねたときに出す説明（ツールチップ） */
     tooltip?: string;
-    /** 見た目（既定 "default"＝枠線）。"primary" は塗りつぶし、"destructive" は赤（削除など）、"ghost" は枠なし */
+    /**
+     * 見た目（既定 "default"＝枠線）。"primary" は塗りつぶしで、Enter で押されるボタンになる（フォームに 1 つまで）。
+     * "destructive" は赤（削除など）、"ghost" は枠なし
+     */
     variant?: "default" | "primary" | "destructive" | "ghost";
     /** 実行の前に確認するメッセージ（検証が通ったあとに尋ね、「いいえ」ならフォームに戻る） */
     confirm?: string;
     /** メニューの項目（スプリットボタン）。項目は menu を持てない */
     menu?: Omit<FormButton<V>, "menu">[];
-    /** 押されたときの処理。onSubmit と同じく、出力ファイルを返すと「フォルダを開く」ボタンを出す。menu があれば省略可 */
+    /**
+     * 押されたときの処理。ウィンドウは開いたままで、進捗・ログ・中止ボタンを表示する。
+     * 出力ファイル（パス・ハンドル、配列可）を返すと完了後に「フォルダを開く」ボタンを出す。
+     * ここで起きたエラーはウィンドウに表示される（コンソールでは呼び出し元に伝わる）。
+     * 省略すると、押したら検証して閉じるボタンになる（menu があればメニューを開くだけのボタン）
+     */
     onClick?(values: V, form: FormContext): unknown;
     /** false なら検証せずに入力のままの値で実行する（読み込み・クリアなど）。既定 true */
     validate?: boolean;
@@ -547,30 +697,20 @@ declare global {
      * コンソールではタブごとに見出しを出して順に尋ねる
      */
     tabs?: { label: string; icon?: string; fields: (FormField | FormGroup | FormRow)[] }[];
-    /** 送信ボタンの文字（既定 "OK"）。false で送信ボタンを出さない（buttons があるときだけ） */
-    submit?: string | false;
-    /** 送信ボタンの Font Awesome のアイコン（FormField の icon と同じ） */
-    submitIcon?: string;
     /** 自前のタイトルバー（titleBar: "custom"）でタイトルの前に出す Font Awesome のアイコン（FormField の icon と同じ）。titleBar が "system" なら無視 */
     icon?: string;
     /**
-     * 送信ボタンの左に並べるボタン。押すと onClick を onSubmit と同じように実行する（進捗・ログ・中止。ウィンドウは開いたまま）。
-     * コンソールでは項目のあとにどのボタンを押すか尋ねる
+     * フォームの下に並べるボタン（FormButton）。省略すると「OK」ボタン 1 つ（押すと検証して閉じ、値を返す）。
+     * Enter で押されるのは variant: "primary" のボタン（1 つまで）
      */
     buttons?: FormButton<V>[];
     /**
      * 追加の検証。問題があれば { 項目名: "メッセージ" } か、全体へのメッセージ（文字列）を返す。
-     * 項目の検証（required / pattern / min / max / ファイルの存在 / 項目の validate）が通ったあと、送信時だけ呼ばれる。
+     * 項目の検証（required / pattern / min / max / ファイルの存在 / 項目の validate）が通ったあと、ボタンを押したときだけ呼ばれる（validate: false のボタンを除く）。
      * 項目をまたぐ検証に使う（項目の検証は入力中にも行われる）
      */
     validate?(values: V): Record<string, string | null | undefined> | string | null | undefined | void |
       Promise<Record<string, string | null | undefined> | string | null | undefined | void>;
-    /**
-     * 送信後に実行する処理。ウィンドウは開いたままで、進捗・ログ・中止ボタンを表示する。
-     * 出力ファイル（パス・ハンドル、配列可）を返すと完了後に「フォルダを開く」ボタンを出す。
-     * ここで起きたエラーはウィンドウに表示される（コンソールでは呼び出し元に伝わる）
-     */
-    onSubmit?(values: V, form: FormContext): unknown;
     /** 前回の値を %APPDATA%\xljs\<スクリプト名>.json に保存して次回の初期値にする */
     remember?: boolean;
     /** remember の保存キー（既定は title）。同じスクリプトで複数のフォームを区別する */
@@ -586,7 +726,7 @@ declare global {
      */
     titleBar?: "system" | "custom";
     /**
-     * アクセントカラー（送信ボタン・タブ・フォーカス枠・チェックボックス・表の選択行・タイトルバーのアイコン）。
+     * アクセントカラー（primary のボタン・タブ・フォーカス枠・チェックボックス・表の選択行・タイトルバーのアイコン）。
      * "#c42b1c" や "seagreen" のような CSS の色で、ライト・ダークの両方に使う。{ light, dark } で配色ごとに指定できる（省いた側は既定の色）。
      * ボタンの文字色（黒か白）・ホバー色・選択行の色は指定した色から決める。コンソール・モックでは無視
      */

@@ -1952,9 +1952,10 @@
     const color = (c) => ({ light: c, dark: c });
     lookForm = {
       type: "init", texts: st.formTexts || {}, lang: st.lang || "ja",
-      description: L.wzPvDescription, submit: L.wzPvSubmit, submitIcon: "ic ic-play",
+      description: L.wzPvDescription,
       accent: color(a.accent), background: color(a.background), radius: RADIUS[$("wz-radius").value] || "",
-      tabs: [], tabIcons: [], groups: [], buttons: [], buttonIcons: [], buttonTooltips: [],
+      tabs: [], tabIcons: [], groups: [], buttons: [L.wzPvSubmit], buttonIcons: ["ic ic-play"], buttonTooltips: [""],
+      buttonVariants: ["primary"], enter: 0,
       fields: [
         { name: "name", label: L.wzPvText, type: "text", value: L.wzPvTextValue, tab: -1, group: -1 },
         { name: "kind", label: L.wzPvSelect, type: "radio", options: [{ value: "a", label: L.wzPvOptionA }, { value: "b", label: L.wzPvOptionB }], value: "a", tab: -1, group: -1 },

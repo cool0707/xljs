@@ -1,6 +1,6 @@
 "use strict";
 // Built-in form page (ui.form). The script sends "init" with the fields,
-// validates "submit"ted values and, with onSubmit, reports the run.
+// validates "submit"ted values and, with a button's onClick, reports the run.
 const $ = (id) => document.getElementById(id);
 const el = (tag, props = {}, ...children) => {
   const e = Object.assign(document.createElement(tag), props);
@@ -16,8 +16,8 @@ let fields = [];
 let tabButtons = []; // one per tab; fields name their tab by index (-1 = above the tabs)
 let state = "input"; // input | busy (waiting for the script) | running | stopping
 let ran = false;
-let noSubmit = false;
-let extraButtons = []; // the form's buttons (beside the submit button), with the toggles and items of their menus
+let enter = -1; // the button Enter presses (the primary one), or -1
+let extraButtons = []; // the form's buttons, with the toggles and items of their menus
 let extraNodes = []; // what init put in the footer for them
 let toolButtons = []; // the toolbar's buttons (by index), busy until the script answers "toolDone"
 let pressed = null, spinTimer = 0; // the button whose press runs (it shows a spinner), and the timer that shows it
@@ -67,7 +67,7 @@ host.on((m) => {
 /**
  * (a picture for a manual, form.html?shot) The window's title, the tab of
  * the fields, and red boxes around the fields the user changed and the
- * button pressed (button: { kind: "submit" | "button" | "tool" | "cancel", index }).
+ * button pressed (button: { kind: "button" | "tool" | "cancel", index }).
  */
 function markShot(m) {
   if (!shot.on) return;
@@ -81,7 +81,7 @@ function markShot(m) {
     targets.push(c.item ? [c.item] : [c.label, c.ctl].filter(Boolean));
   }
   const b = m.button || {};
-  const node = b.kind === "submit" ? $("submit") : b.kind === "button" ? extraNodes[b.index]
+  const node = b.kind === "button" ? extraNodes[b.index]
     : b.kind === "tool" ? toolButtons[b.index] : b.kind === "cancel" ? $("cancel") : null;
   if (node) targets.push([node]);
   shot.mark(targets);
@@ -97,9 +97,7 @@ function init(m) {
     $("description").textContent = m.description;
     $("description").hidden = false;
   }
-  $("submit").replaceChildren(...withIcon(m.submitIcon, m.submit || texts.ok));
-  noSubmit = !!m.noSubmit;
-  $("submit").hidden = noSubmit;
+  enter = typeof m.enter === "number" ? m.enter : -1;
   for (const n of extraNodes) n.remove();
   extraButtons = [];
   menus.length = 0;
@@ -112,14 +110,9 @@ function init(m) {
     let node = b;
     if (menu && (menu.items.length || !menu.split)) node = menuButton(b, menu, variant, (j) => submit(k, j, b));
     else b.onclick = () => submit(k, undefined, b);
-    $("submit").before(node);
+    $("cancel").before(node);
     return node;
   });
-  // Without the submit button the last button is the main one (unless it has its own look).
-  if (noSubmit && extraNodes.length && ((m.buttonVariants || [])[extraNodes.length - 1] || "default") === "default") {
-    const last = extraNodes[extraNodes.length - 1];
-    for (const b of last.matches("button") ? [last] : last.querySelectorAll(":scope > button")) b.classList.add("primary");
-  }
   buildToolbar(m.tools || []);
   $("cancel").textContent = texts.cancel;
   $("open").textContent = texts.openFolder;
@@ -878,7 +871,7 @@ function tableControl(f, id) {
   const shownText = el("span");
   const clear = el("button", { type: "button", className: "link", textContent: (texts.grid || {}).clearFilters || "" });
   const bar = el("div", { className: "ftable-status", hidden: true }, shownText, clear);
-  wrap.style.maxHeight = (32 + 29 * (f.rows || 8)) + "px";
+  wrap.style.maxHeight = (f.height || 32 + 29 * (f.rows || 8)) + "px";
 
   const gt = () => texts.grid || {};
   const kindOf = (c) => GridKit.kindOf(rows, c);
@@ -1387,7 +1380,6 @@ function setState(s) {
   state = s;
   const editing = s === "input";
   for (const c of controls.values()) for (const i of c.inputs) i.disabled = !editing || !!c.off;
-  $("submit").disabled = !editing;
   for (const b of extraButtons) b.disabled = !editing;
   if (!editing) closeMenus();
   if (editing) {
@@ -1400,8 +1392,7 @@ function setState(s) {
 }
 
 /**
- * Sends the values for the submit button or, with k, the form's k-th
- * button (item: the item of its menu). The button pressed (b) shows a
+ * Sends the values for the form's k-th button (item: the item of its menu). The button pressed (b) shows a
  * spinner until the form takes input again, unless that is right away.
  */
 function submit(k, item, b) {
@@ -1409,11 +1400,10 @@ function submit(k, item, b) {
   flushCells();
   closeMenus();
   setState("busy");
-  pressed = b || (k === undefined ? $("submit") : null);
+  pressed = b || null;
   clearTimeout(spinTimer);
   spinTimer = setTimeout(() => { if (pressed) pressed.classList.add("loading"); }, 150);
-  const m = { type: "submit", values: values(), seq };
-  if (k !== undefined) m.button = k;
+  const m = { type: "submit", values: values(), seq, button: k };
   if (item !== undefined) m.item = item;
   host.send(m);
 }
@@ -1534,9 +1524,11 @@ function closeMenus() {
 const menuOpen = () => menus.some((x) => !x.menu.hidden);
 document.addEventListener("mousedown", (e) => { if (!e.target.closest(".menu-wrap")) closeMenus(); });
 
-// Enter submits (not when the submit button is hidden).
-$("form").addEventListener("submit", (e) => { e.preventDefault(); if (!noSubmit) submit(undefined, undefined, $("submit")); });
-$("submit").onclick = () => submit();
+/** The button itself of what init put in the footer for a button (a split button is wrapped). */
+const primaryOf = (node) => (node.matches("button") ? node : node.querySelector(":scope > button"));
+
+// Enter presses the primary button (none: nothing).
+$("form").addEventListener("submit", (e) => { e.preventDefault(); if (enter >= 0 && extraNodes[enter]) submit(enter, undefined, primaryOf(extraNodes[enter])); });
 $("cancel").onclick = cancel;
 $("open").onclick = () => host.send({ type: "open" });
 document.addEventListener("keydown", (e) => {
@@ -1567,7 +1559,7 @@ function cancel() {
 function startRun() {
   showErrors({}, "");
   ran = true;
-  $("run").hidden = false;
+  showRun(true);
   $("open").hidden = true;
   $("status").textContent = texts.running;
   $("status").className = "status";
@@ -1581,7 +1573,18 @@ function startRun() {
   $("cancel").focus();
 }
 
+/**
+ * Shows the run's box: its progress (once there is some, or a run) and
+ * its log. A field's onChange or a toolbar button may write before any run.
+ */
+function showRun(withProgress) {
+  $("run").hidden = false;
+  if (withProgress) $("run-head").hidden = $("run-progress").hidden = false;
+  else if (!ran) $("run-head").hidden = $("run-progress").hidden = true;
+}
+
 function progress(m) {
+  showRun(true);
   const bar = $("run-progress");
   if (m.total > 0) {
     bar.max = m.total;
@@ -1595,6 +1598,7 @@ function progress(m) {
 }
 
 function appendLog(lines, level) {
+  showRun(false);
   const log = $("log");
   log.hidden = false;
   const atEnd = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;

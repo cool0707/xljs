@@ -54,24 +54,20 @@ pub(crate) fn form(c: &Console, o: &FormOptions) -> Option<Map<String, Value>> {
             }
         }
     }
-    if !o.buttons.is_empty() {
+    if o.buttons.len() > 1 {
         let b = ask_button(c, o)?;
         values.insert("$button".into(), b);
     }
     Some(values)
 }
 
-/// Asks which of the form's buttons to press: the index of a button, or
-/// null for the submit button (listed last, the default).
+/// Asks which of the form's buttons to press: its index (the default: the
+/// primary button, else the first).
 fn ask_button(c: &Console, o: &FormOptions) -> Option<Value> {
-    let mut opts: Vec<FormOption> =
+    let opts: Vec<FormOption> =
         o.buttons.iter().enumerate().map(|(i, b)| FormOption { value: i.to_string(), label: b.clone() }).collect();
-    let mut cur = "0";
-    if !o.submit.is_empty() {
-        opts.push(FormOption { value: String::new(), label: o.submit.clone() });
-        cur = "";
-    }
-    let v = ask_choice(c, &t!("ui.formButton"), &opts, cur)?;
+    let cur = o.main.unwrap_or(0).to_string();
+    let v = ask_choice(c, &t!("ui.formButton"), &opts, &cur)?;
     Some(match v.as_str().and_then(|s| s.parse::<i64>().ok()) {
         Some(n) => json!(n),
         None => Value::Null,

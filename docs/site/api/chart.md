@@ -31,7 +31,7 @@ ui.chart({
 // フォームの中に置く（form.chart で変える。editable なガントは値が全行）
 await ui.form({
   fields: [{ name: "g", type: "chart", height: 12, chart: { type: "line", data: [], x: "月", y: "合計" } }],
-  async onSubmit(v, form) { form.chart("g", { data: aggregate() }); },
+  buttons: [{ label: "集計", variant: "primary", async onClick(v, form) { form.chart("g", { data: aggregate() }); } }],
 });
 ```
 

@@ -11,7 +11,7 @@ db.exec("CREATE TABLE IF NOT EXISTS 商品 (商品コード TEXT PRIMARY KEY, �
 const load = (word?: string) => db.all<Item>("SELECT * FROM 商品 WHERE 商品名 LIKE ? ORDER BY 商品コード", `%${word ?? ""}%`);
 
 /** 入力欄に 1 件を出す（item なしは空にする） */
-const show = (form: FormChangeContext, item?: Item | null) => {
+const show = (form: FormContext, item?: Item | null) => {
   form.setValue("code", item?.商品コード ?? "");
   form.setValue("name", item?.商品名 ?? "");
   form.setValue("price", item?.単価 ?? null);
@@ -47,7 +47,7 @@ await ui.form({
       ],
     },
   ],
-  submit: false, // 操作はボタンに分ける（Enter で送信されない）
+  // 操作ごとにボタンを並べる。Enter で押されるのは variant: "primary" の「保存」
   buttons: [
     // validate: false のボタンは、入力欄の検証をせずに動く
     { label: "新規", icon: "plus", validate: false, onClick(v, form) { show(form); } },

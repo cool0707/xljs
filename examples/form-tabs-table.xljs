@@ -34,36 +34,38 @@ const values = await ui.form({
       fields: [{ name: "summary", label: "集計結果", type: "table", rows: [], columns: ["支店", "件数", "合計"], height: 6 }],
     },
   ],
-  submit: "集計",
-  async onSubmit(v, form) {
-    const codes = new Set(v.targets.map((b) => b.支店));
-    const files: FileSystemFileHandle[] = v.src.walk("*.xlsx").toArray();
-    const rows: any[] = [];
-    for (const h of form.withProgress(files)) {
-      try {
-        const book = workbooks.open(h);
-        const sheet = book.sheets["明細"];
-        if (!sheet) {
-          form.log(`${h.relativePath}: 「明細」シートがないので飛ばします`);
+  buttons: [{
+    label: "集計", variant: "primary",
+    async onClick(v, form) {
+      const codes = new Set(v.targets.map((b) => b.支店));
+      const files: FileSystemFileHandle[] = v.src.walk("*.xlsx").toArray();
+      const rows: any[] = [];
+      for (const h of form.withProgress(files)) {
+        try {
+          const book = workbooks.open(h);
+          const sheet = book.sheets["明細"];
+          if (!sheet) {
+            form.log(`${h.relativePath}: 「明細」シートがないので飛ばします`);
+            book.close();
+            continue;
+          }
+          for (const r of sheet.toObjects()) {
+            if (!codes.has(r.支店)) continue;
+            if (v.from && r.日付 instanceof Date && r.日付 < v.from) continue;
+            rows.push(r);
+          }
           book.close();
-          continue;
+        } catch (e) {
+          form.error(`${h.relativePath}: ${e.message}`);
         }
-        for (const r of sheet.toObjects()) {
-          if (!codes.has(r.支店)) continue;
-          if (v.from && r.日付 instanceof Date && r.日付 < v.from) continue;
-          rows.push(r);
-        }
-        book.close();
-      } catch (e) {
-        form.error(`${h.relativePath}: ${e.message}`);
       }
-    }
-    const summary = v.targets.map((b) => {
-      const list = rows.filter((r) => r.支店 === b.支店);
-      return { 支店: b.支店, 件数: list.length, 合計: list.reduce((s, r) => s + (Number(r.金額) || 0), 0) };
-    });
-    form.table("summary", summary); // 「結果」タブの表を更新
-    form.log(`${rows.length} 件を集計しました（結果タブに表示）`);
-  },
+      const summary = v.targets.map((b) => {
+        const list = rows.filter((r) => r.支店 === b.支店);
+        return { 支店: b.支店, 件数: list.length, 合計: list.reduce((s, r) => s + (Number(r.金額) || 0), 0) };
+      });
+      form.table("summary", summary); // 「結果」タブの表を更新
+      form.log(`${rows.length} 件を集計しました（結果タブに表示）`);
+    },
+  }],
 });
 if (!values) console.log("キャンセルされました");

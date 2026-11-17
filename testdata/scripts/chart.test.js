@@ -127,11 +127,11 @@ const v = await ui.form({
     { name: "g", type: "chart", label: "売上", chart: { data: rows } },
     { name: "t", type: "chart", chart: { type: "gantt", data: tasks, editable: true } },
   ],
-  onSubmit(values, form) {
+  buttons: [{ label: "実行", variant: "primary", onClick(values, form) {
     form.chart("g", { type: "line" });
     throws(() => form.chart("a", {}), /グラフの項目/);
     throws(() => form.chart("g", { type: "x" }), /種類/);
-  },
+  } }],
 });
 deepEqual(Object.keys(v), ["a", "t"]);
 equal(v.t[0], tasks[0]);

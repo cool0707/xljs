@@ -75,10 +75,10 @@ ui.form({ fields, submit: "集計", submitIcon: "play", onSubmit: async (v, form
 ui.form({ fields, buttons: [{ label: "集計", icon: "play", variant: "primary", onClick: async (v, form) => { ... } }] })
 ```
 
-**未決**
+**決定**
 
-- ボタンが 1 つで primary がないとき、それを primary とみなすか（ツールの例が 1 キー短くなるが、暗黙の規則が増える。いまの考えは「みなさない」）。
-- ツールバーのボタン（`FormToolbarButton`）との関係は A2 で決める。
+- ボタンが 1 つで primary がなくても、それを primary とみなさない（暗黙の規則を増やさない）。
+- ツールバーのボタン（`FormToolbarButton`）は A2 で第 2 引数の型をそろえる。
 
 **影響**: `prelude.js`（ウィンドウ・コンソール・mock の 3 経路）、`web/form.js`（Enter）、`ui.forms`、記録（`recordForm` の `$button`）と `case.json`、`docs/ai` の各指示・スキル、`examples` の 5 本、`testdata/scripts` のフォームのテスト。
 
@@ -103,7 +103,7 @@ ui.form({ fields, buttons: [{ label: "集計", icon: "play", variant: "primary",
   - そのまま `form.table(name, rows)` / `form.chart(name, spec)` を残す（いまの名前は短く、AI も書けている）
   - `form.update(name, { rows, columns })` / `form.update(name, { chart })` のように項目のキーで書く（項目の定義と同じ言葉になる）
 
-**未決**: 表・グラフの更新の名前（いまの考えは「`table` / `chart` を残す」。変える効果が小さい）。
+**決定**: 表・グラフの更新は `form.table` / `form.chart` のまま残す。
 
 ## A3. `FormField` を type ごとの型に分ける
 
@@ -132,7 +132,7 @@ ui.form({ fields, buttons: [{ label: "集計", icon: "play", variant: "primary",
   - note・image の `default` → note は `text`、image は `src`（値ではないので `default` と呼ばない）
 - 値の型の説明（いまは `FormField` のコメントに長く書いてある）は、type ごとの型のコメントに移す。
 
-**未決**: 名前の付け方（`lines` / `kind` / `text` / `src`）、高さの単位。
+**決定**: 上の名前（`lines` / `kind` / `text` / `src`）にする。`height` はどの項目でも px にする（AI は `height: 300` を px と読む。表の既定は今と同じ 8 行分）。
 
 **影響**: d.ts が大きく変わる。`docs/site/api/form.md`。`tools/docs/build.mjs` のコード例の型検査で、既存の例の誤りが見つかるはず。
 
@@ -163,7 +163,7 @@ AI が書きそうな名前を受けるための別名と、機能の重複が�
 - **Web 標準の形とそろえるための重複**（`Notification`、`exit` と `xljs.exit`）は残す。ドキュメントではどちらを使うか決めて片方だけを書く。
 - **機能の重複**（`setEnabled` など）はなくす。
 
-**未決**: `sheet.rows()` と `toObjects()` のどちらを正にするか（`ui.table(rows)`・`ChartSpec.data`・`db.insert(table, rows)` との並びでは `rows()` が自然。いまのドキュメントは `toObjects()`）。
+**決定**: `sheet.rows()` を正にする（`ui.table(rows)`・`db.insert(table, rows)` と並ぶ）。`toObjects()` は受け付けるだけにする。
 
 ---
 
@@ -180,7 +180,7 @@ AI が書きそうな名前を受けるための別名と、機能の重複が�
 - `workbooks` → `excel` にする（`excel.open`・`excel.create`・`excel.readVBA`・`excel.columnName`）。`workbooks` は A4 の方針で受け付けるだけにする。
 - JSON は `fs` のまま（`JSON` は組み込みのグローバルと衝突するので `json.read` は作らない）。ドキュメントで「CSV は `csv`、JSON は `fs.readJSON`」と並べて示す。
 
-**未決**: `excel` にするか（ほかの候補 `xlsx`）。
+**決定**: `excel` にする。
 
 ## B2. `fs` とハンドル
 
@@ -228,7 +228,7 @@ AI が書きそうな名前を受けるための別名と、機能の重複が�
 - `form.progress` の引数を `ui.progress` の `update` に合わせるか、両方を `{ done, total, message }` のオブジェクトで受ける形にそろえる。
 - `ui.cancelled` は、`withProgress` の `onCancel: "break"` のためにあるので、反復のオブジェクト側（`for (const x of it)` の `it.cancelled`）に持たせられないか検討する。
 
-**未決**: そろえる形。
+**決定**: `ui.progress()` の `update` を `form.progress` と同じ `(done, total?, message?)`（`(done, message)` も可）にそろえる。`ui.cancelled` は今のまま。
 
 ## B5. Excel の書式
 
@@ -251,7 +251,7 @@ AI が書きそうな名前を受けるための別名と、機能の重複が�
   - 値（`cell.value`）は丸ごとの置き換えなのでプロパティ、書式は部分的に重ねるのでメソッド、と分ける。
 - 入口は `sheet.setStyle(address, style)` と `cell.setStyle(style)` を正にする。`Range` の個別のメソッドはなくす。いまの `style()` は A4 の方針で受け付けるだけにする。
 
-**未決**: `Range` を残すか（`range.values` の読み書きにも使っている。B6）。
+**決定**: `Range` は残し、`values`・`setStyle`・`getStyle`・`merge`・`unmerge` だけにする（`font()` などの個別のメソッドはなくす）。
 
 ## B6. シートの読み書き
 
@@ -339,7 +339,7 @@ API は残し、ドキュメント（`docs/ai/reference.md` の「カスタム�
 
 ## 進め方
 
-1. この文書で各項目の方針（特に「未決」）を決める。
+1. この文書で各項目の方針を決める（済み。`setStyle` / `getStyle` 以外は書いてあるとおり、「決定」のとおりに進める）。
 2. A から順に直す。1 項目ごとに、d.ts → `prelude.js` / Rust → テスト → `docs/site` → `docs/ai` → `examples` まで直してコミットする
    （`cd tools/docs && npm ci && node build.mjs` と `cargo test --lib`、`examples` の tsc の検査を通す）。
 3. 直したら一覧の「状態」を「完了」にする。リリース後はこの文書を消すか、決めた方針だけを「API の流儀」として CLAUDE.md の規約に移す。

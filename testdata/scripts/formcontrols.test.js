@@ -4,7 +4,7 @@ import { ok, equal, deepEqual, rejects } from "./_assert.js";
 // segmented, combobox, slider, dateRange, tags, note), prefix/suffix,
 // maxLength, and the buttons' menus, variants and confirm.
 const fields = [
-  { name: "notice", type: "note", variant: "warning", label: "注意", default: "元のファイルは変更しません" },
+  { name: "notice", type: "note", kind: "warning", label: "注意", text: "元のファイルは変更しません" },
   { name: "on", type: "switch", label: "有効", default: true },
   { name: "depts", type: "checkboxes", options: ["営業", "総務", "経理"], default: ["経理"], required: true },
   { name: "unit", type: "segmented", options: ["日", "週", "月"], default: "週" },
@@ -75,14 +75,21 @@ const r = await ui.form({
     },
     { label: "その他", menu: [{ label: "削除", variant: "destructive", confirm: "削除しますか？", close: true, onClick() { clicks.push("delete"); } }] },
   ],
-  onSubmit() { clicks.push("submit"); },
 });
 deepEqual(clicks, ["save:1", "saveAs:2", "pdf", "delete"]);
 equal(r.n, 2);
 
 // Bad definitions.
 await rejects(() => ui.form({ fields: [{ name: "a", type: "checkboxes" }] }), /options/);
-await rejects(() => ui.form({ fields: [{ name: "a", type: "note", variant: "loud" }] }), /loud/);
+await rejects(() => ui.form({ fields: [{ name: "a", type: "note", kind: "loud" }] }), /loud/);
+// Keys of another type, renamed or misspelt.
+await rejects(() => ui.form({ fields: [{ name: "a", type: "note", variant: "warning" }] }), /variant は kind になりました/);
+await rejects(() => ui.form({ fields: [{ name: "a", type: "note", default: "x" }] }), /default は text になりました/);
+await rejects(() => ui.form({ fields: [{ name: "a", type: "image", default: "x.png" }] }), /default は src になりました/);
+await rejects(() => ui.form({ fields: [{ name: "a", type: "textarea", rows: 5 }] }), /rows は lines になりました/);
+await rejects(() => ui.form({ fields: [{ name: "a", type: "text", options: ["x"] }] }), /options は使えません/);
+await rejects(() => ui.form({ fields: [{ name: "a", placeholdr: "x" }] }), /placeholdr.*placeholder ですか/);
+await rejects(() => ui.form({ fields: [{ name: "a", colour: "red" }] }), /colour というキーはありません/);
 await rejects(() => ui.form({ fields: [], buttons: [{ label: "x", menu: [{ label: "y" }] }] }), /onClick/);
 await rejects(() => ui.form({ fields: [], buttons: [{ label: "x", variant: "big", onClick() {} }] }), /big/);
 console.log("formcontrols ok");

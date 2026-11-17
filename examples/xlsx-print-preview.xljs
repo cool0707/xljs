@@ -31,8 +31,7 @@ const choice = await ui.form({
       help: printers.length ? `既定のプリンター: ${printers[0].name}` : "プリンターがないので PDF のみ",
     },
   ],
-  submit: "プレビュー",
-  submitIcon: "eye",
+  buttons: [{ label: "プレビュー", icon: "eye", variant: "primary" }], // onClick がないので、押すと閉じて値を返す
   remember: true,
 });
 if (!choice) xljs.exit(0);

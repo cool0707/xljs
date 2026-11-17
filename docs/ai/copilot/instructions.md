@@ -10,7 +10,7 @@
 
 1. 要件があいまいなときは、推測でよいので**仮定を箇条書きで先に書いてから**コードを出す。推測できない重要なことだけ質問する。
 2. コードは**完成した 1 ファイル**を 1 つのコードブロック（```js）で出す。省略（`// ...`）はしない。
-3. **先に、作るものがツールかアプリかを決めて書く**（下の「作るものを決める」）。画面は原則 `ui.form` で作る。
+3. **先に、作るものがツールかアプリかを決めて書く**（下の「作るものを決める」）。
 4. **入力チェックを省略しない**: `required`、数値の `min` / `max`、ファイルの中身（シート・列の有無）は項目の `validate`、項目をまたぐ条件はフォームの `validate`。
 5. フォームを使わないのは、他のアプリから自動で呼ばれるとき（画面を出さず `xljs.args`・`console.log`・`exit(1)`）と、利用者が「一度だけ」と言ったとき（ピッカーと `alert`）だけ。
 6. ファイルのパスは決め打ちしない。コメントと画面の文言は日本語。列名は日本語のままキーにできる（`r.金額`）。
@@ -19,7 +19,7 @@
 
 # 作るものを決める（必ず守る）
 
-- **ツール**（入力して実行する）: 集計・変換など 1 回の実行で終わる依頼。入力・出力先・条件を 1 画面にまとめ、処理は `onSubmit`（例 1）。
+- **ツール**（入力して実行する）: 集計・変換など 1 回の実行で終わる依頼。入力・出力先・条件を 1 画面にまとめ、処理は実行ボタンの `onClick`（例 1）。
 - **アプリ**（開いたまま使う）: データを次回に持ち越す（登録・更新・削除）／一覧から選んで見る・直す／機能が 2 つ以上ある／続けて何度も使う、のどれかに当てはまる依頼。開くと一覧（`table` 項目）が出ていて、行を選ぶと `onChange` で入力欄に出し、操作は `buttons`、操作のたびに `form.table` で読み直す（例 2）。画面を分けるなら `ui.forms`。データは SQLite。
 - 「管理」「台帳」「登録」という依頼をツールに縮めない。依頼にある機能は 1 つにまとめる。逆に、1 回の集計・変換で済む依頼に一覧や登録の画面を足さない。
 
@@ -28,12 +28,13 @@
 - **ウィンドウは 1 つ。** フォームを順に出さない。結果の表（`ui.table`）を続けて出さない。結果は同じフォームに出す: 経過と件数は `form.log`、一覧はフォームの `table` 項目に `form.table("項目名", rows)`、できたファイルは `return`。
 - **入力させるのは、プログラムが調べられないことだけ。** 実行している人の氏名・所属・メール・役職は入力欄にせず `ad.me()` で取る（`displayName` `department` `mail` `title`。`ad.available()` が false なら `xljs.userName`）。今日の日付は `default: new Date()`。前回と同じ値は `remember: true`。みんなで使うデータ（データベースなど）の場所は毎回選ばせず、`xljs.scriptDir` か設定ファイルで決める。
 - **入力は入力欄で受ける。表は「見る・選ぶ・すでにある行を直す」だけ。** 新しいデータを編集できる表に入力させない（行の追加・削除はできない）。選択肢が決まっていれば `select` / `radio` / `segmented` / `combobox`。
-- **登録・更新のあとは `form.table` で一覧を読み直す。** 「閉じて再実行してください」と案内しない（フォームは処理のあとも続けて実行できる）。`onSubmit` の中で `alert` を出さない（`form.log`、失敗は `throw`）。
+- **登録・更新のあとは `form.table` で一覧を読み直す。** 「閉じて再実行してください」と案内しない（フォームは処理のあとも続けて実行できる）。`onClick` の中で `alert` を出さない（`form.log`、失敗は `throw`）。
 - 全行に同じ値（処理日など）は表の列にせず、表の外に 1 つの項目を置く。表のセルを変えても、ほかのセルを自動では変えられない。
 - 表のセルに打ち込みながら行を増やす明細、その場で計算結果が変わる表、標準の部品にない見た目が要るなら、カスタムアプリ（`@mode app` と HTML。スキル `xljs-app-design`）を提案する。
 
 # よくある間違い（必ず避ける）
 
+- `onSubmit`・`submit` は無い。ボタンは `buttons` に書く。
 - `require("fs")` は不要（`fs` は最初から使える）。`process.exit()` → `exit()`、`process.argv` → `xljs.args`。
 - `book.sheets["明細"]` は無ければ `undefined`。`?? book.sheets[0]` などで備える。
 - 文字列の数値は文字列で返る。合計は `Number(r.金額) || 0`。空欄は `null`。
@@ -87,12 +88,11 @@ await ui.form({
       name: "src", label: "Excel ファイルのあるフォルダ", type: "folder", required: true,
       validate: (dir) => (dir && dir.walk("*.xlsx").toArray().length === 0 ? "Excel ファイルがありません" : null),
     },
-    { name: "sheet", label: "シート名", type: "text", default: "明細", required: true },
+    { name: "sheet", label: "シート名", default: "明細", required: true },
     { name: "out", label: "保存先", type: "saveFile", accept: [".xlsx"], default: "明細まとめ.xlsx", required: true },
   ],
-  submit: "まとめる",
   remember: true,
-  async onSubmit(v, form) {
+  buttons: [{ label: "まとめる", variant: "primary", async onClick(v, form) {
     const rows = [];
     for (const h of form.withProgress(v.src.walk("*.xlsx").toArray())) {
       try {
@@ -111,7 +111,7 @@ await ui.form({
     out.save(v.out);
     form.log(`${rows.length} 行をまとめました`);
     return v.out;
-  },
+  } }],
 });
 ```
 
@@ -135,7 +135,6 @@ await ui.form({
     { name: "name", label: "品名", required: true },
     { name: "price", label: "単価", type: "number" },
   ],
-  submit: false,
   buttons: [
     { label: "新規", validate: false, onClick(v, form) { show(form); } },
     { label: "削除", variant: "destructive", validate: false, confirm: "選んだ商品を削除しますか？",

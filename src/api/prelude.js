@@ -2451,7 +2451,7 @@
     return native.displayText([`${e.name}: ${e.message}`, ...frames].join("\n"));
   }
 
-  /** Existing paths among the values returned by onSubmit (paths, handles, Files, arrays). */
+  /** Existing paths among the values returned by a button's onClick (paths, handles, Files, arrays). */
   function outputsOf(r) {
     const out = [];
     for (const x of [r].flat(Infinity)) {
@@ -2486,6 +2486,62 @@
     return native.imageDataUrl(native.fsReadBytes(p), p);
   }
 
+  /**
+   * The keys a field may have: those of every field, and those of some
+   * types only (others are an error, so that a key meant for another type
+   * or a misspelt one does not pass unnoticed).
+   */
+  const FIELD_KEYS = ["name", "label", "icon", "type", "default", "required", "help", "tooltip", "disabled", "hidden",
+    "onChange", "validate", "remember"];
+  const TEXTS = ["text", "password", "textarea", "tags", "combobox"];
+  const FILES = ["file", "files", "folder", "saveFile"];
+  const TYPE_KEYS = {
+    options: ["select", "radio", "checkboxes", "segmented", "combobox"],
+    multiple: ["segmented"], allowCustom: ["combobox"],
+    placeholder: ["text", "password", "number", "textarea", "select", "combobox", "tags", "date", "month", "time", ...FILES],
+    prefix: ["text", "password", "number", "slider"], suffix: ["text", "password", "number", "slider"],
+    maxLength: ["text", "password", "textarea", "tags"], pattern: TEXTS, patternMessage: TEXTS,
+    min: ["number", "slider"], max: ["number", "slider"], step: ["number", "slider"],
+    lines: ["textarea", "files"], accept: FILES,
+    rows: ["table"], columns: ["table"], formats: ["table"], selectable: ["table"], editable: ["table"], validateRow: ["table"],
+    chart: ["chart"], height: ["table", "chart", "image"],
+    text: ["note"], kind: ["note"], src: ["image"], align: ["image"], alt: ["image"], width: ["image"],
+  };
+  /** Keys renamed: { key: { types, now } }. */
+  const RENAMED_KEYS = {
+    rows: { types: ["textarea", "files"], now: "lines" },
+    variant: { types: ["note"], now: "kind" },
+    default: { types: ["note", "image"], now: { note: "text", image: "src" } },
+  };
+
+  /** Throws for a key a field of its type does not have. */
+  function checkFieldKeys(f, name, type) {
+    for (const k of Object.keys(f)) {
+      const r = RENAMED_KEYS[k];
+      if (r && r.types.includes(type)) {
+        throw new TypeError(T("form.renamedKey", name, type, k, typeof r.now === "string" ? r.now : r.now[type]));
+      }
+      if (FIELD_KEYS.includes(k)) continue;
+      const types = TYPE_KEYS[k];
+      if (types && types.includes(type)) continue;
+      if (types) throw new TypeError(T("form.keyForType", name, type, k, types.join(", ")));
+      const known = FIELD_KEYS.concat(Object.keys(TYPE_KEYS));
+      const near = known.find((x) => x.toLowerCase() === k.toLowerCase()) || known.find((x) => editDistance(x, k) <= 2);
+      throw new TypeError(near ? T("form.unknownKeyNear", name, k, near) : T("form.unknownKey", name, k));
+    }
+  }
+
+  /** The Levenshtein distance of two short strings. */
+  function editDistance(a, b) {
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+
   /** Looks of a note field and of buttons. */
   const NOTE_VARIANTS = ["info", "success", "warning", "error"];
   const BUTTON_VARIANTS = ["default", "primary", "destructive", "ghost"];
@@ -2515,7 +2571,9 @@
         type = typeof v === "number" ? "number" : typeof v === "boolean" ? "checkbox" : v instanceof Date ? "date" : "text";
       }
       if (!CELL_TYPES.includes(String(type))) throw new TypeError(T("form.cellType", c.label, type));
-      const cf = normField(Object.assign({}, s, { name: c.label, type: String(type) }), i, -1);
+      // The column's own keys aside, the rest is checked as a field's.
+      const { key, label, width, editable, validate, ...rest } = s;
+      const cf = normField(Object.assign(rest, { name: c.label, type: String(type) }), i, -1);
       cf.col = i;
       cf.validate = typeof s.validate === "function" ? s.validate : null;
       return cf;
@@ -2662,13 +2720,14 @@
     const name = String(f.name);
     const type = f.type === undefined ? "text" : String(f.type);
     if (!FIELD_TYPES.includes(type)) throw new TypeError(T("form.fieldType", name, type));
+    checkFieldKeys(f, name, type);
     const options = Array.from(f.options || []).map((o) => (o !== null && typeof o === "object"
       ? { value: String(o.value), label: String(o.label === undefined ? o.value : o.label) }
       : { value: String(o), label: String(o) }));
     if (["select", "radio", "checkboxes", "segmented"].includes(type) && !options.length) throw new TypeError(T("form.noOptions", name));
     if (type === "combobox" && !options.length && !f.allowCustom) throw new TypeError(T("form.noOptions", name));
-    const variant = f.variant === undefined || f.variant === null || f.variant === "" ? "info" : String(f.variant);
-    if (type === "note" && !NOTE_VARIANTS.includes(variant)) throw new TypeError(T("form.badNoteVariant", name, variant));
+    const variant = f.kind === undefined || f.kind === null || f.kind === "" ? "info" : String(f.kind);
+    if (type === "note" && !NOTE_VARIANTS.includes(variant)) throw new TypeError(T("form.badNoteKind", name, variant));
     const align = f.align === undefined || f.align === null || f.align === "" ? "left" : String(f.align);
     if (type === "image" && !IMAGE_ALIGNS.includes(align)) throw new TypeError(T("form.badAlign", name, align));
     const accept = (typeof f.accept === "string" ? [f.accept] : Array.from(f.accept || []))
@@ -2684,9 +2743,9 @@
       multiple: type === "segmented" && !!f.multiple, custom: type === "combobox" && !!f.allowCustom,
       variant: type === "note" ? variant : "",
       align: type === "image" ? align : "", alt: f.alt ? String(f.alt) : "",
-      // The size of an image (px; 0: its own, never wider than the form).
+      // The width of an image (px; 0: its own, never wider than the form); the height of an image, a table or a chart (px; 0: the default).
       width: type === "image" ? Math.max(0, Number(f.width) || 0) : 0,
-      height: type === "image" ? Math.max(0, Number(f.height) || 0) : 0,
+      height: Math.max(0, Number(f.height) || 0),
       prefix: f.prefix === undefined || f.prefix === null ? "" : String(f.prefix),
       suffix: f.suffix === undefined || f.suffix === null ? "" : String(f.suffix),
       maxLength: Number.isFinite(maxLength) && maxLength > 0 ? Math.floor(maxLength) : 0,
@@ -2699,7 +2758,8 @@
       help: f.help ? String(f.help) : "",
       tooltip: f.tooltip ? String(f.tooltip) : "",
       min: num(f.min) ?? (slider ? 0 : null), max: num(f.max) ?? (slider ? 100 : null), step: f.step === undefined ? null : f.step,
-      rows: type === "table" || type === "chart" ? Number(f.height) || 0 : type === "image" ? 0 : Number(f.rows) || 0,
+      // Lines of a textarea or a files field.
+      rows: Number(f.lines) || 0,
       pattern: f.pattern === undefined || f.pattern === null || f.pattern === "" ? null
         : f.pattern instanceof RegExp ? f.pattern : new RegExp("^(?:" + f.pattern + ")$"),
       patternMessage: f.patternMessage ? String(f.patternMessage) : "",
@@ -2709,7 +2769,8 @@
       // disabled / hidden: true, or a function of the values (checked again as they change); ctx.setDisabled / setHidden replace it.
       disabled: typeof f.disabled === "function" ? f.disabled : !!f.disabled,
       hidden: typeof f.hidden === "function" ? f.hidden : !!f.hidden,
-      default: f.default,
+      // A note's text and an image are given as text / src (form.setValue changes them).
+      default: type === "note" ? f.text : type === "image" ? f.src : f.default,
     };
   }
 
@@ -2986,7 +3047,7 @@
     }
   }
 
-  /** The ctx argument of onSubmit. */
+  /** The form argument of a button's onClick, a field's onChange and a toolbar button's onClick. */
   class FormContext {
     constructor(impl) { define(this, "_i", impl); }
     /** Whether the user asked to stop (or closed the window). */
@@ -3028,8 +3089,6 @@
       f.disabled = !!disabled;
       this._i.state();
     }
-    /** Enables a field, or disables it with false. */
-    setEnabled(name, enabled = true) { this.setDisabled(name, !enabled); }
     /** Hides a field, or shows it with false; replaces its hidden option. */
     setHidden(name, hidden = true) {
       const f = this._i.fields.find((x) => x.name === String(name));
@@ -3037,10 +3096,8 @@
       f.hidden = !!hidden;
       this._i.state();
     }
-    /** Shows a field, or hides it with false. */
-    setVisible(name, visible = true) { this.setHidden(name, !visible); }
     /**
-     * Like ui.withProgress, shown in the form. Cancelling ends onSubmit
+     * Like ui.withProgress, shown in the form. Cancelling ends onClick
      * (the form shows that it was aborted) unless onCancel: "break".
      */
     withProgress(iterable, options = {}) {
@@ -3055,7 +3112,7 @@
     }
   }
 
-  /** Thrown by ctx.withProgress when the run is aborted; ends onSubmit quietly. */
+  /** Thrown by ctx.withProgress when the run is aborted; ends onClick quietly. */
   class FormCancel {}
 
   function formTexts() {
@@ -3151,33 +3208,45 @@
     const remembered = options.remember ? loadRemembered(key) : {};
     const wire = {};
     for (const f of fields) wire[f.name] = f.remember && f.name in remembered ? remembered[f.name] : toWire(f, f.default);
-    // Buttons beside the submit button; each runs its onClick like onSubmit.
-    // A button's menu (a split button, or a menu button without onClick) holds more of them.
+    // The submit button of earlier versions is now one of the buttons.
+    for (const k of ["onSubmit", "submit", "submitIcon"]) if (options[k] !== undefined) throw new TypeError(T("form.noSubmitOption", k));
+    // The buttons: each runs its onClick (with the run's progress and log); one without
+    // onClick checks the values and closes the form. A button's menu (a split button,
+    // or a menu button without onClick) holds more of them. Without buttons: an OK button.
     const button = (b, label, menu) => {
       const variant = b.variant === undefined || b.variant === null || b.variant === "" ? "default" : String(b.variant);
       if (!BUTTON_VARIANTS.includes(variant)) throw new TypeError(T("form.badVariant", label, variant));
+      const onClick = typeof b.onClick === "function" ? b.onClick : null;
       return {
         label, icon: faClass(b.icon), tooltip: b.tooltip ? String(b.tooltip) : "", variant,
         confirm: b.confirm ? String(b.confirm) : "",
-        onClick: typeof b.onClick === "function" ? b.onClick : null, validate: b.validate !== false, close: !!b.close, menu,
+        // press: the button itself runs (or closes); a menu button without onClick only opens its menu.
+        onClick, validate: b.validate !== false, close: !!b.close || (!onClick && !menu.length), menu, press: !!onClick || !menu.length,
       };
     };
-    const buttons = Array.from(options.buttons || []).map((b, k) => {
-      if (!b || typeof b !== "object") throw new TypeError(T("form.badButton", k + 1));
-      const label = b.label === undefined ? String(k + 1) : String(b.label);
-      const menu = Array.from(b.menu || []).map((x, j) => {
-        if (!x || typeof x !== "object" || typeof x.onClick !== "function") throw new TypeError(T("form.badMenuItem", label, j + 1));
-        return button(x, x.label === undefined ? String(j + 1) : String(x.label), []);
+    const buttons = options.buttons === undefined || options.buttons === null
+      ? [button({ variant: "primary" }, T("form.ok"), [])]
+      : Array.from(options.buttons).map((b, k) => {
+        if (!b || typeof b !== "object") throw new TypeError(T("form.badButton", k + 1));
+        const label = b.label === undefined ? String(k + 1) : String(b.label);
+        const menu = Array.from(b.menu || []).map((x, j) => {
+          if (!x || typeof x !== "object" || typeof x.onClick !== "function") throw new TypeError(T("form.badMenuItem", label, j + 1));
+          return button(x, x.label === undefined ? String(j + 1) : String(x.label), []);
+        });
+        return button(b, label, menu);
       });
-      if (typeof b.onClick !== "function" && !menu.length) throw new TypeError(T("form.badButton", k + 1));
-      return button(b, label, menu);
-    });
-    // What can be pressed, in order: the buttons with onClick and the items of their menus ("label ▸ item").
+    // Enter presses the primary button (at most one).
+    const primaries = buttons.filter((b) => b.variant === "primary");
+    if (primaries.length > 1) throw new TypeError(T("form.twoPrimary", primaries[0].label, primaries[1].label));
+    const enter = primaries.length && primaries[0].press ? buttons.indexOf(primaries[0]) : -1;
+    // What can be pressed, in order: the buttons and the items of their menus ("label ▸ item").
     const actions = [];
     for (const b of buttons) {
-      if (b.onClick) actions.push(b);
+      if (b.press) actions.push(b);
       for (const x of b.menu) actions.push(Object.assign({}, x, { path: b.label + " ▸ " + x.label }));
     }
+    // Pressed when the console or an answer names no button: the primary one, else the first.
+    const main = enter >= 0 ? buttons[enter] : actions[0] || null;
     // The toolbar's buttons after the form's buttons, for the console and mock.
     for (const t of tools) {
       if (t.onClick) actions.push(Object.assign({}, t, { path: t.text }));
@@ -3186,9 +3255,7 @@
     const o = {
       title: options.title === undefined ? title() : String(options.title),
       description: options.description ? String(options.description) : "",
-      submit: options.submit ? String(options.submit) : "",
-      noSubmit: options.submit === false && buttons.length > 0,
-      titleBar: customTitleBar(options.titleBar), icon: faClass(options.icon), submitIcon: faClass(options.submitIcon),
+      titleBar: customTitleBar(options.titleBar), icon: faClass(options.icon), enter, main,
       accent: themeColor(options.accent, "form.badAccent"), background: themeColor(options.background, "form.badBackground"),
       radius: formRadius(options.radius), key, tabs, tabIcons, groups, rows, buttons, actions, tools,
     };
@@ -3213,12 +3280,12 @@
   }
 
   /**
-   * The values for a press of the submit button (b = null) or a button:
-   * checked unless the button has validate: false. Returns { values } or
+   * The values for a press of a button: checked unless the button has
+   * validate: false. Returns { values } or
    * { errors, error }.
    */
   async function pressValues(o, b, fields, wire, options) {
-    if (b && !b.validate) return { values: rawValues(fields, wire) };
+    if (!b.validate) return { values: rawValues(fields, wire) };
     const c = await checkForm(fields, wire, options.validate);
     if (!c.ok) return { errors: c.errors, error: c.error, cells: c.cells };
     if (options.remember) saveRemembered(o.key, fields, wire);
@@ -3244,12 +3311,12 @@
   /** The values a form shows in a run of a test case: the defaults (nothing is remembered there). */
   const defaultWire = (fields) => Object.fromEntries(fields.map((f) => [f.name, toWire(f, f.default)]));
 
-  // Console and mock: ask until the values pass, then run onSubmit (or the
-  // button's onClick) with a progress indicator. After a button without
-  // close: true the form is asked again.
+  // Console and mock: ask until the values pass, then run the button's
+  // onClick with a progress indicator. After a button with onClick and
+  // without close: true the form is asked again.
   //
   // A run of a test case (native.testMode) plays the form window instead:
-  // the form stays open after onSubmit, and an error of onSubmit is shown.
+  // the form stays open after onClick, and an error of onClick is shown.
   async function formPrompt(o, fields, wire, options) {
     let errors = {}, error = "", result = null;
     const seen = native.recording ? defaultWire(fields) : null;
@@ -3259,7 +3326,7 @@
       for (const f of fields) if (f.chart) printChart(f.chart);
       const spec = {
         title: o.title, description: o.description, error,
-        submit: o.noSubmit ? "" : o.submit || T("form.ok"), buttons: o.actions.map((b) => b.path || b.label),
+        main: o.main ? o.actions.indexOf(o.main) : null, buttons: o.actions.map((b) => b.path || b.label),
         names: fields.map((f) => f.name),
         fields: fields.filter((f) => !f.chart && f.type !== "image" && !inactive(fields, f, wire)).map((f) => Object.assign({
           name: f.name, label: promptLabel(f), type: promptType(f), options: f.options, required: f.required, custom: f.custom,
@@ -3282,11 +3349,12 @@
       const answer = JSON.parse(r);
       const edited = Object.keys(answer.$cells || {});
       const extra = {};
-      if (seen && answer.$button !== null && answer.$button !== undefined) extra.$button = answer.$button;
+      // (recording) The button pressed, unless it is the one pressed by default.
+      if (seen && answer.$button !== null && answer.$button !== undefined && o.actions[answer.$button] !== o.main) extra.$button = answer.$button;
       if (seen && answer.$cells) extra.$cells = answer.$cells;
-      // "$button": the index or label of the button pressed (none: the submit button).
+      // "$button": the index or label of the button pressed (none: the primary button, else the first).
       // The items of the buttons' menus are listed after their button ("label ▸ item"; the item's label alone also works).
-      let b = o.noSubmit ? o.actions[0] : null;
+      let b = o.main;
       if ("$button" in answer) {
         const x = answer.$button;
         delete answer.$button;
@@ -3348,11 +3416,11 @@
       errors = c.errors || {};
       error = c.error || "";
       if (!c.values) continue;
-      if (b && b.confirm && !native.uiConfirm(o.title, b.confirm)) continue;
-      if (!b || b.validate || b.close) result = c.values;
-      const handler = b ? b.onClick : options.onSubmit;
+      if (b.confirm && !native.uiConfirm(o.title, b.confirm)) continue;
+      if (b.validate || b.close) result = c.values;
+      const handler = b.onClick;
       let ok = true;
-      if (typeof handler === "function") {
+      if (handler) {
         const ctx = promptContext(o, fields, wire);
         try {
           await handler(c.values, ctx);
@@ -3368,12 +3436,12 @@
         }
         if (seen) Object.assign(seen, wire);
       }
-      const closes = b ? b.close && ok : typeof handler !== "function";
+      const closes = b.close && ok;
       if (native.testMode) {
         if (closes) return result;
         continue;
       }
-      if (!b || b.close) {
+      if (b.close) {
         // (recording a test case) A run of the case asks again here.
         if (seen && !closes) native.testRecord("form", "null", "{}");
         return result;
@@ -3381,9 +3449,9 @@
     }
   }
 
-  /** (making a manual) The button of the form page that is the action b (none: the submit button). */
+  /** (making a manual) The button of the form page that is the action b. */
   function shotButton(o, b) {
-    if (!b) return o.noSubmit ? null : { kind: "submit" };
+    if (!b) return null;
     const top = (list, name) => list.findIndex((x) => x === b || (b.path && (b.path === name(x) || b.path.startsWith(name(x) + " \u25b8 "))));
     if (b.tool) return { kind: "tool", index: top(o.tools, (t) => t.text) };
     return { kind: "button", index: top(o.buttons, (x) => x.label) };
@@ -3435,7 +3503,7 @@
     native.uiTable(JSON.stringify(Object.assign(chartTable(c), { select: "" })));
   }
 
-  /** onSubmit's (and onChange's) ctx for the console and mock: a progress indicator once it reports progress. */
+  /** A button's onClick's (and onChange's) form argument for the console and mock: a progress indicator once it reports progress. */
   function promptContext(o, fields, wire) {
     let p = null;
     return new FormContext({
@@ -3472,7 +3540,7 @@
       if (f.group >= 0 && o.groups[f.group].collapsed) continue; // opened by the user
       const lines = (t) => String(t || "").split("\n").reduce((n, l) => n + 1 + Math.floor(l.length / 40), 0);
       let fh = 16 + (f.type === "textarea" ? 12 + 20 * (f.rows || 4) : f.type === "files" ? 12 + 20 * Math.max(3, f.rows || 3)
-        : f.type === "table" ? 36 + 29 * tableLines(f) : f.type === "chart" ? 12 + chartHeight(f)
+        : f.type === "table" ? (f.height ? 4 + f.height : 36 + 29 * tableLines(f)) : f.type === "chart" ? 12 + chartHeight(f)
           : f.type === "note" ? 24 + 20 * (lines(wireStr(f.default)) + (f.label ? 1 : 0))
             : f.type === "image" ? f.height || 120
             : ["checkbox", "radio", "switch", "checkboxes"].includes(f.type) ? 28 : 32);
@@ -3500,26 +3568,29 @@
     };
   }
 
-  /** The height of a chart field in pixels: height lines (default 12) of 25 px, as the page draws it. */
-  const chartHeight = (f) => 25 * (f.rows || 12);
+  /** Whether a form shows the progress and log of a run: one of its buttons has onClick. */
+  const hasRun = (o) => o.buttons.some((b) => b.onClick || b.menu.length);
 
-  /** Visible rows of a table field: height, or up to 8 (at least 3). */
-  const tableLines = (f) => f.rows || Math.min(8, Math.max(3, f.table.data.length));
+  /** The height of a chart field in pixels (default 300). */
+  const chartHeight = (f) => f.height || 300;
+
+  /** Visible rows of a table field: as many as its height (px) holds, or up to 8 (at least 3). */
+  const tableLines = (f) => (f.height ? Math.max(1, Math.round((f.height - 32) / 29)) : Math.min(8, Math.max(3, f.table.data.length)));
 
   /** The form page's first message: the form and its fields. */
   function formInit(o, fields, wire) {
     const states = fieldStates(fields, wire);
     return {
       type: "init", description: o.description, texts: formTexts(),
-      submit: o.submit, submitIcon: o.submitIcon, accent: o.accent, background: o.background, radius: o.radius, tabs: o.tabs, tabIcons: o.tabIcons,
+      accent: o.accent, background: o.background, radius: o.radius, tabs: o.tabs, tabIcons: o.tabIcons,
       groups: o.groups,
-      noSubmit: o.noSubmit, buttons: o.buttons.map((b) => b.label), buttonIcons: o.buttons.map((b) => b.icon),
+      enter: o.enter, buttons: o.buttons.map((b) => b.label), buttonIcons: o.buttons.map((b) => b.icon),
       buttonTooltips: o.buttons.map((b) => b.tooltip),
       // Only when used, so that forms without them send what they did.
       buttonVariants: o.buttons.some((b) => b.variant !== "default") ? o.buttons.map((b) => b.variant) : undefined,
-      buttonMenus: o.buttons.some((b) => b.menu.length || !b.onClick)
+      buttonMenus: o.buttons.some((b) => b.menu.length)
         ? o.buttons.map((b) => ({
-          split: !!b.onClick,
+          split: b.press,
           items: b.menu.map((x) => ({ label: x.label, icon: x.icon, tooltip: x.tooltip, variant: x.variant })),
         }))
         : undefined,
@@ -3600,7 +3671,7 @@
   }
 
   function formsWindow(options, forms, side, size, start) {
-    const sizes = forms.map((x) => formSize(x.o, x.fields, typeof x.opts.onSubmit === "function" || x.o.buttons.length > 0, x.opts));
+    const sizes = forms.map((x) => formSize(x.o, x.fields, hasRun(x.o), x.opts));
     const collapsed = !!options.collapsed;
     const sideWidth = collapsed ? SIDE_CLOSED : SIDE_OPEN;
     // fixed: the set's size (by default the largest form's); each: the size of the form shown.
@@ -3663,8 +3734,6 @@
   // embed(onMessage): the page of a form in a set (ui.forms) instead of a window of its own.
   function formWindow(o, fields, wire, options, embed) {
     const byName = new Map(fields.map((f) => [f.name, f]));
-    const onSubmit = typeof options.onSubmit === "function" ? options.onSubmit : null;
-    const hasRun = !!onSubmit || o.buttons.length > 0;
     return new Promise((resolve, reject) => {
       let result = null, failed = null, running = false, outputs = [];
       // ctx.setValue calls: their count and, per field, the last one.
@@ -3679,7 +3748,7 @@
       let cellEdits = {}, autoClosed = false;
       const onMessage = (m, files) => { handle(m, files).catch(fail); };
       const page = embed ? embed(onMessage)
-        : openPage("form.html", Object.assign({ title: o.title, titleBar: o.titleBar, icon: o.icon }, formSize(o, fields, hasRun, options)), onMessage);
+        : openPage("form.html", Object.assign({ title: o.title, titleBar: o.titleBar, icon: o.icon }, formSize(o, fields, hasRun(o), options)), onMessage);
       const finish = () => (failed ? reject(failed) : resolve(result));
       function fail(e) {
         if (!failed) failed = e;
@@ -3759,15 +3828,16 @@
             break;
           }
           case "submit": {
-            // button: the index of the button pressed (none: the submit button); item: the index in its menu.
-            const top = typeof m.button === "number" ? o.buttons[m.button] : null;
+            // button: the index of the button pressed (none: Enter's, the primary one); item: the index in its menu.
+            const top = typeof m.button === "number" ? o.buttons[m.button] : o.enter >= 0 ? o.buttons[o.enter] : null;
             const b = top && typeof m.item === "number" ? top.menu[m.item] : top;
-            if (b === undefined || (b && !b.onClick) || (!b && o.noSubmit) || running) return;
+            if (!b || !b.press || running) return;
             await editQueue;
             takeValues(m);
             refresh();
             if (seen) {
-              const extra = b ? { $button: b === top ? top.label : top.label + " ▸ " + b.label } : {};
+              // The button pressed, unless it is the one an answer presses by default.
+              const extra = b === o.main ? {} : { $button: b === top ? top.label : top.label + " ▸ " + b.label };
               if (Object.keys(cellEdits).length) extra.$cells = cellEdits;
               cellEdits = {};
               recordForm(fields, wire, seen, extra);
@@ -3780,16 +3850,15 @@
               return;
             }
             // confirm: asked once the values pass; "no" goes back to the form.
-            if (b && b.confirm && !native.uiConfirm(o.title, b.confirm)) {
+            if (b.confirm && !native.uiConfirm(o.title, b.confirm)) {
               if (!page.n.isClosed()) page.send({ type: "errors", errors: {}, error: "" });
               return;
             }
-            if (!b || b.validate || b.close) result = c.values;
-            const handler = b ? b.onClick : onSubmit;
-            const ok = handler ? await run(handler, c.values) : true;
+            if (b.validate || b.close) result = c.values;
+            const ok = b.onClick ? await run(b.onClick, c.values) : true;
             if (seen) Object.assign(seen, wire);
-            // Without onSubmit the submit button closes the form; a button with close: true does once it succeeds.
-            if (b ? b.close && ok : !handler) {
+            // A button without onClick closes the form; one with close: true does once onClick succeeds.
+            if (b.close && ok) {
               autoClosed = true;
               page.n.close();
             }
@@ -3873,7 +3942,7 @@
         ctx._i.flush();
       }
 
-      /** Runs onSubmit or a button's onClick; true if it ended without an error or being stopped. */
+      /** Runs a button's onClick; true if it ended without an error or being stopped. */
       async function run(handler, values) {
         running = true;
         page.n.clearCancel();
@@ -3897,7 +3966,7 @@
   }
 
   /**
-   * onSubmit's (and onChange's) ctx for a form window: updates are sent at
+   * A button's onClick's (and onChange's) form argument for a form window: updates are sent at
    * most every 50 ms. sets counts the setValue calls (see takeValues).
    */
   function windowContext(page, fields, wire, sets, refresh) {
@@ -5167,7 +5236,7 @@
       // Console and mock: the settings as a form (nothing to change: the options as given).
       if (!fields.length) return base;
       const values = await showForm({
-        title, submit: ok,
+        title, buttons: [{ label: ok, variant: "primary" }],
         fields: fields.map((f) => {
           const x = Object.assign({}, f, { default: init[f.name] });
           delete x.showIf;

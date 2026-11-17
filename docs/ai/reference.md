@@ -425,8 +425,8 @@ xljs のフォーム（`ui.form`）は入力ダイアログではなく、画面
 4. **表は「見る・選ぶ・すでにある行を直す」ためのもの。** 新しいデータの入力欄の代わりにしない（フォームの表は行の追加・削除ができない）。新しい 1 件は入力欄で受け、ボタンで一覧に足す。表のセルに打ち込みながら何行も入れるならカスタムアプリにする。
 5. **結果は同じウィンドウに出す。** 経過と件数は `form.log`、一覧は同じフォームの `table` 項目に `form.table(name, rows)`、グラフは `chart` 項目に `form.chart(name, { data })`、できたファイルは `return`（「フォルダを開く」ボタンが出る）。`ui.table` の別ウィンドウは、利用者が頼んだときと、1 行をダブルクリックして開く明細のような補助の表示だけ。
 6. **処理のあとも画面を最新にする。** 登録・更新のあとは `form.table` で一覧を読み直す。「閉じてもう一度実行してください」と案内しない（フォームは処理のあとも入力に戻り、続けて実行できる）。
-7. **`onSubmit` / `onClick` の中で `alert` を出さない。** 知らせることは `form.log`、失敗は `throw new Error("…")`（フォームに赤字で出る）、取り消せない操作の確認はボタンの `confirm`。
-8. **機能が複数あるなら 1 つのウィンドウにまとめる。** 同じ一覧への操作（保存・削除・出力）は `buttons`（数が多ければ `menu`）、項目が多ければ `tabs`、機能ごとに画面を分けるなら `ui.forms`。操作がいくつもあるフォームは `submit: false` にして、どのボタンも動作の名前にする（「保存」「削除」「Excel に出力」）。めったに使わない管理用の機能は、条件付きで足す（`buttons: [...(admin ? [管理用のボタン] : [])]`）か、別のスクリプトにする。ボタンから別のフォームを開かない。
+7. **ボタンの `onClick` の中で `alert` を出さない。** 知らせることは `form.log`、失敗は `throw new Error("…")`（フォームに赤字で出る）、取り消せない操作の確認はボタンの `confirm`。
+8. **機能が複数あるなら 1 つのウィンドウにまとめる。** 同じ一覧への操作（保存・削除・出力）は `buttons`（数が多ければ `menu`）、項目が多ければ `tabs`、機能ごとに画面を分けるなら `ui.forms`。ボタンはどれも動作の名前にする（「保存」「削除」「Excel に出力」）。Enter で押されるのは `variant: "primary"` のボタン（1 つまで）だけなので、主な操作に付ける（同格の操作が並ぶなら付けない）。めったに使わない管理用の機能は、条件付きで足す（`buttons: [...(admin ? [管理用のボタン] : [])]`）か、別のスクリプトにする。ボタンから別のフォームを開かない。
 9. **アプリは開いたときに使える状態にする。** 一覧は起動時に読んで出しておく（`rows: load()`）。何も出ていない画面で「読み込み」を押させない。1 件もないときにも見出しが出るように、一覧の列は `columns` に書く。
 
 ### 利用者の情報は Active Directory から
@@ -453,7 +453,7 @@ const user = {
 
 依頼に近い型から始め、組み合わせる（一覧の上に条件、下に入力欄、など）。
 
-**ツール: 入力 → 実行 → 結果**: ファイル・条件・保存先を 1 画面で受け、`onSubmit` で処理する（「フォーム（ui.form）」の例）。結果の一覧も見せるなら、空の `table` 項目を置いて `form.table` で入れる。
+**ツール: 入力 → 実行 → 結果**: ファイル・条件・保存先を 1 画面で受け、実行ボタン（`variant: "primary"`）の `onClick` で処理する（「フォーム（ui.form）」の例）。結果の一覧も見せるなら、空の `table` 項目を置いて `form.table` で入れる。
 
 **アプリ: 一覧を見て、直して、登録する**: 起動時に一覧を読んでフォームの表に出し、登録のあと同じ表を読み直す。
 
@@ -484,20 +484,19 @@ await ui.form({
     },
   ],
   validate: (v) => (v.items.some((r) => r.出荷) ? null : { items: "出荷したものにチェックを付けてください" }),
-  submit: "登録",
-  onSubmit(v, form) {
+  buttons: [{ label: "登録", variant: "primary", onClick(v, form) {
     const done = v.items.filter((r) => r.出荷);
     db.transaction(() => {
       for (const r of done) db.run("UPDATE 受注 SET 出荷日 = ?, 配送 = ? WHERE 受注番号 = ?", v.date, r.配送, r.受注番号);
     });
     form.log(`${done.length} 件を登録しました`);
     form.table("items", load()); // 同じ画面のまま、残りの一覧に入れ替える
-  },
+  } }],
 });
 db.close();
 ```
 
-**アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `form.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`、送信ボタンが要らなければ `submit: false`。
+**アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `form.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`。
 
 ```js
 const all = workbooks.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].toObjects();
@@ -511,7 +510,6 @@ await ui.form({
       onChange(_, v, form) { form.table("list", pick(v)); } },
     { name: "list", label: "一覧", type: "table", rows: all, height: 15 },
   ],
-  submit: false,
   buttons: [{
     label: "Excel に保存", icon: "file-excel", variant: "primary",
     async onClick(v, form) {
@@ -556,8 +554,7 @@ await ui.form({
       { name: "name", label: "品名", required: true },
     ] },
   ],
-  submit: false, // 操作はボタンに分ける（Enter で送信されない）
-  buttons: [
+  buttons: [ // Enter で押されるのは primary の「保存」
     { label: "新規", icon: "plus", validate: false, onClick(v, form) { show(form); } },
     { label: "削除", icon: "trash", variant: "destructive", validate: false, confirm: "選んだ商品を削除しますか？",
       onClick(v, form) {
@@ -588,17 +585,17 @@ await ui.forms({
   title: "受注管理",
   width: 900, height: 600,
   forms: [
-    { label: "受注の登録", icon: "pen", submit: "登録",
+    { label: "受注の登録", icon: "pen",
       fields: [
         { name: "date", label: "受注日", type: "date", default: new Date(), required: true },
         { name: "customer", label: "顧客名", required: true },
         { name: "amount", label: "金額", type: "number", min: 0, suffix: "円", required: true },
       ],
-      onSubmit(v, form) {
+      buttons: [{ label: "登録", variant: "primary", onClick(v, form) {
         db.run("INSERT INTO 受注 (日付, 顧客名, 金額) VALUES (?, ?, ?)", v.date, v.customer, v.amount);
         form.log(`${v.customer} の受注を登録しました`);
-      } },
-    { label: "受注の照会", icon: "magnifying-glass", submit: false,
+      } }] },
+    { label: "受注の照会", icon: "magnifying-glass",
       fields: [
         { name: "word", label: "顧客名に含む文字", onChange(_, v, form) { form.table("list", find(v)); } },
         { name: "list", label: "受注", type: "table", rows: find(), columns: ["番号", "日付", "顧客名", "金額"], height: 14 },
@@ -635,6 +632,7 @@ db.close();
 | 登録・管理・照会の依頼を、入力して実行するだけのツールにする（1 件登録して終わり、一覧が見られない） | アプリにする: 開くと一覧が出て、追加・更新・削除・出力を同じ画面で続けられる |
 | 機能ごとに別のスクリプト・別のフォームに分ける | 1 つのフォームの `buttons` / `tabs`、画面を分けるなら `ui.forms` |
 | 空の画面で「読み込み」を押させる | 起動時に読んで出しておく（`rows: load()`） |
+| `onSubmit`・`submit`・`submitIcon`（古い書き方。いまはなく、書くとエラー） | `buttons` に `onClick` のあるボタンを書き、Enter で押すものに `variant: "primary"` |
 
 ### カスタムアプリの方針
 
@@ -651,7 +649,7 @@ db.close();
 
 ## フォーム（ui.form）
 
-画面は原則このフォームで作る。入力して実行するツールも、開いたまま使うアプリも同じ `ui.form` で、置くもの（入力欄・表・グラフ・ボタン・タブ）と `onSubmit` / `buttons` / `onChange` の書き方で決まる（形の選び方と型は「画面の設計」。バッチ・他のアプリから自動で呼ばれるときは画面を出さず `xljs.args` や設定ファイルから、使い捨ての処理はダイアログで）。`required` `min` `max` `pattern` と `validate` で入力チェックを必ず入れ、ファイルは中身（シート・列）まで `validate` で確かめる。
+画面は原則このフォームで作る。入力して実行するツールも、開いたまま使うアプリも同じ `ui.form` で、置くもの（入力欄・表・グラフ・ボタン・タブ）と `buttons` / `onChange` の書き方で決まる（形の選び方と型は「画面の設計」。バッチ・他のアプリから自動で呼ばれるときは画面を出さず `xljs.args` や設定ファイルから、使い捨ての処理はダイアログで）。`required` `min` `max` `pattern` と `validate` で入力チェックを必ず入れ、ファイルは中身（シート・列）まで `validate` で確かめる。
 
 ```js
 await ui.form({
@@ -664,18 +662,17 @@ await ui.form({
     { name: "prefix", label: "ファイル名の先頭", type: "text", default: "請求書_", pattern: "[^\\\\/:*?\"<>|]*", patternMessage: "使えない文字があります" },
     { name: "rate", label: "税率(%)", type: "number", default: 10, min: 0, max: 100 },
   ],
-  submit: "作成",
   remember: true,
   validate(v) {                                        // 追加の検証。問題があれば { 項目名: "メッセージ" } を返す
     if (v.rate !== 8 && v.rate !== 10) return { rate: "8 か 10 を入力してください" };
   },
-  async onSubmit(v, form) {                             // 処理はここに書く（フォームは開いたまま。下の onSubmit）
+  buttons: [{ label: "作成", variant: "primary", async onClick(v, form) { // 処理はここに書く（フォームは開いたまま。下の buttons）
     form.log(`${v.list.name} から請求書を作ります`);
-  },
+  } }],
 });
 ```
 
-`onSubmit` も `buttons` もないフォームは、送信すると閉じて値を返す（`const v = await ui.form({ ... }); if (!v) exit();`）。処理の途中で少し尋ねるだけのときに使い、ツールやアプリの画面は `onSubmit` / `buttons` で開いたままにする。
+`buttons` を省いたフォームは「OK」ボタンだけになり、押すと閉じて値を返す（`const v = await ui.form({ ... }); if (!v) exit();`。`onClick` のないボタンも同じく閉じる）。処理の途中で少し尋ねるだけのときに使い、ツールやアプリの画面は `onClick` のあるボタンで開いたままにする。
 
 | type | 値 |
 |---|---|
@@ -700,20 +697,20 @@ await ui.form({
 | `note` | 値なし。メッセージの表示（`label` が見出し、`default` が本文、`variant: "info" | "success" | "warning" | "error"`） |
 | `image` | 値なし。画像の表示（`default` に画像ファイルのパス・バイト列・URL。`width` `height` `align: "left" | "center" | "right"`。`label` なしならフォームの幅いっぱい） |
 
-- 項目の共通オプション: `label` `default` `required` `placeholder`（`select` では未選択の表示になり、初期値が `""`）`help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`maxLength`（文字数の上限。「12 / 100」と表示）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
+- 項目の共通オプション: `label` `default` `required` `placeholder`（`select` では未選択の表示になり、初期値が `""`）`help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`maxLength`（文字数の上限。「12 / 100」と表示）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` はボタンを押したときだけ。
 - ウィンドウの大きさは `width` `height`（既定は項目数から決める）。`resizable: false` で大きさを固定する（枠のドラッグ・最大化ができない）。`titleBar: "custom"` で OS のタイトルバーの代わりに自前のタイトルバー（`icon` とタイトル、最小化・最大化・閉じる）を表示する（`ui.table` / `app.open` も同じ。メインウィンドウは `@titlebar custom`）。
 - `onChange(value, values, form)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる（`table` は行を選んだとき。選んだ行をほかの入力欄に出せる）。`form.setValue(name, value)` でほかの項目を埋められる（setValue で変えた項目の onChange は呼ばれない。例: 売上のファイルを選んだら、同じフォルダの対になる仕入のファイルを `form.setValue("purchase", path.join(path.dirname(h.path), "仕入_202604.csv"))` で設定する）。
-- 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`、`hidden: (v) => v.kind !== "その他"`）。onChange・onSubmit・ボタンの `form.setDisabled(name, bool)` / `form.setEnabled(name)` / `form.setHidden(name, bool)` / `form.setVisible(name)` でも切り替えられる（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
+- 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`、`hidden: (v) => v.kind !== "その他"`）。onChange やボタンの onClick から `form.setDisabled(name, bool)` / `form.setEnabled(name)` / `form.setHidden(name, bool)` / `form.setVisible(name)` でも切り替えられる（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
 - 横に並べる: `{ row: "氏名", fields: [{ name: "last", label: "姓" }, { name: "first", label: "名" }] }` を項目と並べて書く（`row` が左のラベル、各項目の `label` は入力欄の前。`""` で出さない）。値はほかの項目と同じオブジェクト。
 - 右上のツールバー: `toolbar: [{ name: "detail", type: "switch", label: "詳細表示" }, { icon: "gear", tooltip: "設定", onClick(values, form) { ... } }]`。`name` のあるものは項目（値は `values`）、ないものはボタン（`label` なしならアイコンだけ。検証せずに `onClick` を呼ぶ。`form.setValue` で項目を変えられる。`menu: [{ label, onClick }]` も可）。
-- 複数のフォームを 1 つのウィンドウに: `await ui.forms({ forms: [{ label: "登録", icon: "pen", fields, onSubmit }, { label: "設定", icon: "gear", fields }], side: "left", size: "fixed" })`。サイドメニュー（ハンバーガーで畳める）で切り替える。`side: "right"` で右、`size: "each"` で切り替えるたびにそのフォームの `width` / `height` にする（`"fixed"` は `ui.forms` の `width` / `height`）。戻り値はフォームごとの最後に送信された値（なければ `null`）の配列。
+- 複数のフォームを 1 つのウィンドウに: `await ui.forms({ forms: [{ label: "登録", icon: "pen", fields, buttons }, { label: "設定", icon: "gear", fields }], side: "left", size: "fixed" })`。サイドメニュー（ハンバーガーで畳める）で切り替える。`side: "right"` で右、`size: "each"` で切り替えるたびにそのフォームの `width` / `height` にする（`"fixed"` は `ui.forms` の `width` / `height`）。戻り値はフォームごとの最後にボタンを押したときの値（なければ `null`）の配列。
 - `fields` に `{ group: "出力", icon: "file-export", help: "説明", fields: [...] }` を項目と並べて書くと見出し付きのグループになる（タブの中でも可。値は項目と同じく 1 つのオブジェクト）。`collapsed: true` で閉じた状態の「詳細設定」にできる（見出しのクリックで開閉。エラーが出ると開く）。`collapsible: true` は開いた状態で開閉可能。
-- アイコン（Font Awesome Free の名前。`"folder-open"` など）: 項目・タブ・ボタンの `icon`、送信ボタンは `submitIcon`。フォームの `icon` は `titleBar: "custom"` のときだけタイトルバーに出る（それ以外は無視）。
-- アクセントカラー: `accent: "#c42b1c"`（CSS の色。ライト・ダーク共通）か `accent: { light, dark }`。送信ボタン・タブ・フォーカス枠などの色が変わる。
+- アイコン（Font Awesome Free の名前。`"folder-open"` など）: 項目・タブ・ボタンの `icon`。フォームの `icon` は `titleBar: "custom"` のときだけタイトルバーに出る（それ以外は無視）。
+- アクセントカラー: `accent: "#c42b1c"`（CSS の色。ライト・ダーク共通）か `accent: { light, dark }`。primary のボタン・タブ・フォーカス枠などの色が変わる。
 - 角丸: `radius: "large"`（`"none"` `"small"` `"medium"`（既定）`"large"` `"full"` かピクセル数）。ボタン・入力欄・タブ・表の角の丸み。
 - 背景色: `background: "#fff8e1"`（CSS の色。ライト・ダーク共通）か `background: { light, dark }`。暗い色なら文字・入力欄もダークの配色になる。
-- `table` に `editable: true` を付けるとセルをその場で編集でき、入力のたびに検証してエラーのセルを赤く表示する（エラーが残っていると送信できない）。検証を通った値は元の行オブジェクトに書き込まれる。
+- `table` に `editable: true` を付けるとセルをその場で編集でき、入力のたびに検証してエラーのセルを赤く表示する（エラーが残っているとボタンを実行できない）。検証を通った値は元の行オブジェクトに書き込まれる。
 
 ```js
 const v = await ui.form({
@@ -729,34 +726,34 @@ const v = await ui.form({
     ],
     validateRow: (r) => (r.区分 === "返品" && r.金額 > 10000 ? { 金額: "返品は 1 万円まで" } : ""),
   }],
-  submit: "修正を反映",
+  buttons: [{ label: "修正を反映", variant: "primary" }], // onClick なしは押すと閉じて値を返す
 });
 if (!v) exit();
 // v.rows は（編集済みの）全行。badRows の各オブジェクトも書き換わっている
 ```
-- `onSubmit(v, form)` を書くと、送信後もフォームが開いたまま処理し、進捗・ログ・中止ボタンを表示する。出力ファイルを `return` すると「フォルダを開く」ボタンが出る。
+- ボタンに `onClick(v, form)` を書くと、押したあともフォームが開いたまま処理し、進捗・ログ・中止ボタンを表示する。出力ファイルを `return` すると「フォルダを開く」ボタンが出る。
 
 ```js
 await ui.form({
   title: "集計",
   fields: [{ name: "src", label: "フォルダ", type: "folder", required: true }],
-  async onSubmit(v, form) {
+  buttons: [{ label: "集計", variant: "primary", async onClick(v, form) {
     const files = v.src.walk("*.xlsx").toArray();
-    for (const h of form.withProgress(files)) {  // 中止ボタンが押されると onSubmit はここで終わる
+    for (const h of form.withProgress(files)) {  // 中止ボタンが押されると onClick はここで終わる
       form.log(h.relativePath);      // ログ欄に表示（form.error で赤字）
     }
     // ... 保存
     // return dest;
-  },
+  } }],
 });
 ```
 
-- `form.table(name, rows, columns?)` で `table` 項目の行（と列）を入れ替えられる（`onSubmit`・ボタンの `onClick`・項目の `onChange` のどれからでも）。結果の一覧を同じウィンドウに出す、登録のあとに一覧を読み直す、条件を変えたら絞り込む、に使う。最初は `rows: []` で空の表を置いておける。
+- `form.table(name, rows, columns?)` で `table` 項目の行（と列）を入れ替えられる（ボタンの `onClick`・項目の `onChange` のどちらからでも）。結果の一覧を同じウィンドウに出す、登録のあとに一覧を読み直す、条件を変えたら絞り込む、に使う。最初は `rows: []` で空の表を置いておける。
 - 処理が終わるとフォームは入力できる状態に戻り、値を変えて続けて実行できる（閉じるのは利用者）。
 - フォームの表でできないこと: 表の上での行の追加・削除（スクリプトが `form.table` で行を入れ替えることはできる）、セルを変えたときにほかのセルを変えること（セルの `onChange` はない。検査は `validate` / `validateRow`）。これらが要るならカスタムアプリ（アプリモード）。
 
-- `buttons: [{ label, onClick(v, form) }]` で送信ボタンの左にボタンを追加できる。押すと onClick が onSubmit と同じように動く（ウィンドウは開いたまま。押したボタンは終わるまでスピナーを表示）。`validate: false` で検証なし、`close: true` で正常終了後に閉じる。`submit: false` で送信ボタンを出さない。`form.setValue(name, value)` で項目の値を変えられる。
-- ボタンの `variant`: `"primary"`（塗りつぶし）`"destructive"`（赤。削除など）`"ghost"`（枠なし）。`confirm: "削除しますか？"` で実行前に確認する（検証のあと）。
+- `buttons: [{ label, onClick(v, form) }]` でフォームの下にボタンを並べる。押すと検証してから onClick が動く（ウィンドウは開いたまま。押したボタンは終わるまでスピナーを表示）。`onClick` のないボタンは検証して閉じ、値を返す。`validate: false` で検証なし、`close: true` で onClick の正常終了後に閉じる。`onSubmit`・`submit`・`submitIcon` はない（書くとエラー）。`form.setValue(name, value)` で項目の値を変えられる。
+- ボタンの `variant`: `"primary"`（塗りつぶし。Enter で押されるボタンで 1 つまで。なければ Enter では何も押されない）`"destructive"`（赤。削除など）`"ghost"`（枠なし）。`confirm: "削除しますか？"` で実行前に確認する（検証のあと）。
 - `menu: [{ label, onClick, ... }]` でスプリットボタン（本体と ▼ のメニュー）。`onClick` なしで `menu` だけなら、メニューを開くだけのボタン。
 
 ## 表の表示（ui.table）
@@ -819,7 +816,7 @@ ui.chart({
 // フォームの中に置く（form.chart で変える。editable なガントは値が全行）
 await ui.form({
   fields: [{ name: "g", type: "chart", height: 12, chart: { type: "line", data: [], x: "月", y: "合計" } }],
-  async onSubmit(v, form) { form.chart("g", { data: aggregate() }); },
+  buttons: [{ label: "集計", variant: "primary", async onClick(v, form) { form.chart("g", { data: aggregate() }); } }],
 });
 ```
 

@@ -278,7 +278,7 @@ const picked = await ui.table([{ a: 1 }, { a: 2 }], { selectable: true });
 await ui.form({
   title: "t",
   fields: [{ name: "src", label: "入力", type: "file" }, { name: "memo", label: "メモ" }, { name: "pw", label: "pw", type: "password" }],
-  async onSubmit(v, ctx) { ctx.log(fs.readText(v.src).trim() + ":" + v.memo); },
+  buttons: [{ label: "実行", variant: "primary", async onClick(v, form) { form.log(fs.readText(v.src).trim() + ":" + v.memo); } }],
 });
 const second = await ui.form({ title: "second", fields: [{ name: "x", label: "x" }] });
 fs.writeText(dest, [name, fs.readText(f).trim(), dir.walk("*.txt").toArray().length, picked.length, second.x, xljs.args.length].join(",") + "\n");
@@ -300,7 +300,7 @@ fn record_then_replay() {
         "showDirectoryPicker": [p("dir")],
         "showSaveFilePicker": [p("dir/out.txt")],
         "table": [[1]],
-        "form": [{ "src": p("a.txt"), "memo": "m", "pw": "secret" }, { "x": "y" }],
+        "form": [{ "src": p("a.txt"), "memo": "m", "pw": "secret" }, null, { "x": "y" }],
     });
     let u = std::sync::Arc::new(crate::ui::Mock::from_json(&answers.to_string(), None).unwrap());
     let quiet = || -> crate::engine::Out { std::sync::Arc::new(std::sync::Mutex::new(std::io::sink())) };
@@ -310,7 +310,7 @@ fn record_then_replay() {
     assert!(matches!(r.result, Ok(0)) && r.failed.is_empty(), "{:?} {:?}", r.result.as_ref().map_err(|e| e.to_string()), r.failed);
 
     // The paths name the copies; the password is not written; the form
-    // with onSubmit is closed (null) before the second one.
+    // with a button's onClick is closed (null) before the second one.
     assert_eq!(case_json(&root, "記録"), serde_json::json!({
         "script": "main.js",
         "now": "2026-04-10T09:00:00",
@@ -418,8 +418,10 @@ fn record_form_windows() {
 await ui.form({
   title: "w",
   fields: [{ name: "n", label: "数", type: "number", min: 1, default: 1 }, { name: "f", label: "ファイル", type: "file" }],
-  buttons: [{ label: "確認", onClick(v, ctx) { ctx.log("確認 " + v.n); } }],
-  async onSubmit(v, ctx) { ctx.log("実行 " + v.n + " " + fs.readText(v.f).trim()); },
+  buttons: [
+    { label: "確認", onClick(v, form) { form.log("確認 " + v.n); } },
+    { label: "実行", variant: "primary", async onClick(v, form) { form.log("実行 " + v.n + " " + fs.readText(v.f).trim()); } },
+  ],
 });
 const picked = await ui.table([{ a: 1 }, { a: 2 }, { a: 3 }], { selectable: true });
 const v = await ui.form({ title: "second", fields: [{ name: "x", label: "x" }] });
@@ -477,7 +479,7 @@ fn suggest_and_remove_variants() {
     { name: "区分", label: "区分", type: "select", options: ["通常", "至急"], default: "通常" },
     { name: "控え", label: "控え/出す", type: "checkbox" },
   ],
-  onSubmit(v, ctx) { ctx.log(`${v.名前} x${v.数} ${v.区分} ${v.控え}`); },
+  buttons: [{ label: "登録", variant: "primary", onClick(v, form) { form.log(`${v.名前} x${v.数} ${v.区分} ${v.控え}`); } }],
 });
 "#,
         r#"{"script": "main.js", "answers": {"form": [{"名前": "山田", "数": 9}]}, "variants": {"手書き": {"form": [{"数": 5}]}}}"#,
@@ -531,12 +533,11 @@ await ui.form({
     ] },
     { label: "詳細", fields: [{ name: "memo", label: "備考" }] },
   ],
-  submit: "登録",
-  onSubmit: async (v) => {
+  buttons: [{ label: "登録", variant: "primary", onClick: async (v) => {
     if (!confirm(`${v.customer} を登録しますか？`)) return;
     fs.writeText("out.txt", v.customer + "\n");
     alert("登録しました");
-  },
+  } }],
 });
 "#;
     let case = r#"{"script": "main.js", "answers": {"form": [{"customer": "山田商店", "kind": "b", "memo": "急ぎ"}], "confirm": [true]}}"#;
@@ -559,7 +560,7 @@ await ui.form({
     assert_eq!(screens[0]["mark"]["fields"], json!(["customer", "kind"]));
     assert_eq!((&screens[0]["mark"]["tab"], &screens[0]["mark"]["button"]), (&json!(0), &Value::Null));
     assert_eq!(screens[1]["mark"]["fields"], json!(["memo"]));
-    assert_eq!(screens[1]["mark"]["button"], json!({"kind": "submit"}));
+    assert_eq!(screens[1]["mark"]["button"], json!({"kind": "button", "index": 0}));
     assert_eq!(screens[0]["init"]["type"], "init");
     assert_eq!(screens[0]["title"], "受注入力");
     assert_eq!((&screens[2]["page"], &screens[2]["kind"], &screens[2]["answer"]), (&json!("dialog"), &json!("confirm"), &json!(true)));

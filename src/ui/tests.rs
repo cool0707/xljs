@@ -117,11 +117,11 @@ fn console_form_buttons() {
     let c = console("\n\n\n2\n\n4\n読込\n", &out);
     let o = FormOptions {
         fields: vec![FormField { name: "a".into(), value: json!("x"), ..Default::default() }],
-        submit: "OK".into(),
-        buttons: vec!["読込".into(), "確認".into()],
+        buttons: vec!["読込".into(), "確認".into(), "OK".into()],
+        main: Some(2),
         ..Default::default()
     };
-    for want in [Value::Null, json!(1), json!(0)] {
+    for want in [json!(2), json!(1), json!(0)] {
         let v = c.form(&o).unwrap();
         assert!(v["$button"] == want && v["a"] == "x", "{v:?} want {want}\n{}", out.text());
     }

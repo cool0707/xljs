@@ -1180,7 +1180,7 @@ fn write_template(p: &Path, tpl: Template) -> Result<()> {
         Template::Form => {
             let js_title = serde_json::to_string(&title).unwrap_or_default();
             write_text(p, &format!(
-                "// ==xljs==\n// @title {title}\n// ==/xljs==\n\n// {}\nawait ui.form({{\n  title: {js_title},\n  fields: [\n    {{ name: \"name\", label: {}, required: true }},\n  ],\n  submit: {},\n  onSubmit(values, form) {{\n    form.log({});\n  }},\n}});\n",
+                "// ==xljs==\n// @title {title}\n// ==/xljs==\n\n// {}\nawait ui.form({{\n  title: {js_title},\n  fields: [\n    {{ name: \"name\", label: {}, required: true }},\n  ],\n  buttons: [\n    {{ label: {}, variant: \"primary\", onClick(values, form) {{\n      form.log({});\n    }} }},\n  ],\n}});\n",
                 t!("dev.templateFormComment"),
                 serde_json::to_string(&t!("dev.templateFormLabel")).unwrap_or_default(),
                 serde_json::to_string(&t!("dev.templateFormSubmit")).unwrap_or_default(),

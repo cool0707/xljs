@@ -837,7 +837,7 @@ fn dev_form_preview() {
     let f = crate::testutil::tempdir().join("form.json");
     let src = r#"
         console.log("before");
-        await ui.form({ title: "集計", fields: [{ name: "file", label: "ファイル", type: "file", required: true }], onSubmit() { console.log("ran") } });
+        await ui.form({ title: "集計", fields: [{ name: "file", label: "ファイル", type: "file", required: true }], buttons: [{ label: "実行", variant: "primary", onClick() { console.log("ran") } }] });
         console.log("after");"#;
     let r = run_dev(src, "{}", &f.to_string_lossy());
     assert_eq!(r.code, 0, "{} {:?}", r.err_text(), r.stderr);

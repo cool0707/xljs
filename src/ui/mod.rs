@@ -388,11 +388,11 @@ pub struct FormOptions {
     pub fields: Vec<FormField>,
     /// A message about the form as a whole (from a previous attempt).
     pub error: String,
-    /// The label of the submit button ("" = none) and those of the other
-    /// buttons. With buttons, the values returned name the one pressed in
-    /// "$button": its index, or null for submit.
-    pub submit: String,
+    /// The labels of the buttons, and the index of the one pressed when the
+    /// answer names none (the primary button). With more than one button,
+    /// the values returned name the one pressed in "$button": its index.
     pub buttons: Vec<String>,
+    pub main: Option<usize>,
     /// The names of all the fields of the form, also of those that are not
     /// shown now (disabled or hidden): what an answer may name (tests).
     pub names: Vec<String>,
