@@ -19,6 +19,9 @@ fn dialogs_open_and_close() {
     let u = setup();
     assert_eq!(u.prompt("xljs テスト", "名前を入力してください\n2 行目", "既定値"), Some("既定値".to_string()));
     u.show_error("xljs テスト", "エラーの例\n\tat main.js:1:1");
+    // With the report: the buttons to save it and to write to the author.
+    let report = crate::ui::ErrorReport { text: "レポート".into(), file_name: "r.txt".into(), contact_link: Some("mailto:a@example.com".into()), contact_mail: true };
+    u.show_error_report("xljs テスト", "エラーの例\n\n作成者に連絡してください。", &report);
     let choices = vec![
         Choice { label: "実行".into(), note: "スクリプトを実行します".into(), icon: include_bytes!("../../cli/icons/run.ico").to_vec() },
         Choice { label: "終了".into(), ..Default::default() },

@@ -15,7 +15,7 @@ use windows::Win32::UI::WindowsAndMessaging::*;
 
 use super::{hstr, owner, webview};
 use crate::t;
-use crate::ui::Choice;
+use crate::ui::{Choice, ErrorReport};
 
 const DS_SETFONT: u32 = 0x40;
 const DS_MODALFRAME: u32 = 0x80;
@@ -43,6 +43,8 @@ const ID_EDIT: i32 = 100;
 const ID_COPY: i32 = 101;
 const ID_TEXT: i32 = 102;
 const ID_ICON: i32 = 103;
+const ID_SAVE: i32 = 104;
+const ID_CONTACT: i32 = 105;
 const ID_CHOICE: i32 = 1000; // + the index of the choice
 
 /// (tests) Dialogs press their default button as soon as they open.
@@ -158,7 +160,7 @@ struct PromptState {
 
 thread_local! {
     static PROMPT: RefCell<Option<PromptState>> = const { RefCell::new(None) };
-    static ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
+    static ERROR: RefCell<Option<ErrorState>> = const { RefCell::new(None) };
     static CHOOSE: RefCell<Option<ChooseState>> = const { RefCell::new(None) };
 }
 
@@ -257,6 +259,50 @@ fn set_clipboard_text(hwnd: HWND, s: &str) -> bool {
     }
 }
 
+/// The error dialog's text and the report of the run (if any).
+struct ErrorState {
+    text: String,
+    report: Option<ErrorReport>,
+}
+
+/// What the Copy button copies: the report when there is one.
+fn error_copy_text() -> String {
+    ERROR.with(|e| e.borrow().as_ref().map(|s| s.report.as_ref().map(|r| r.text.clone()).unwrap_or_else(|| s.text.clone())).unwrap_or_default())
+}
+
+fn error_report() -> Option<ErrorReport> {
+    ERROR.with(|e| e.borrow().as_ref().and_then(|s| s.report.clone()))
+}
+
+/// Saves the report where the user chooses (UTF-8 with a BOM and CRLF, so
+/// that Notepad of any version reads it).
+fn save_report(hwnd: HWND, r: &ErrorReport) {
+    let o = crate::ui::PickerOptions {
+        title: t!("report.saveTitle"),
+        filters: vec![crate::ui::FileFilter { description: t!("report.textFiles"), patterns: vec!["*.txt".into()] }],
+        suggested_name: r.file_name.clone(),
+        ..Default::default()
+    };
+    let path = match super::file_dialog(true, false, &o) {
+        Ok(p) => p.into_iter().next(),
+        Err(e) => {
+            let _ = super::message_box(&o.title, &e.to_string(), MB_OK | MB_ICONERROR);
+            None
+        }
+    };
+    let Some(path) = path else { return };
+    let text = r.text.replace("\r\n", "\n").replace('\n', "\r\n");
+    let mut bytes = b"\xEF\xBB\xBF".to_vec();
+    bytes.extend_from_slice(text.as_bytes());
+    match std::fs::write(&path, bytes) {
+        Ok(()) => set_text(hwnd, ID_SAVE, &t!("report.saved")),
+        Err(e) => {
+            let e = crate::Error::path("open", path, e);
+            let _ = super::message_box(&o.title, &crate::i18n::error(&e), MB_OK | MB_ICONERROR);
+        }
+    }
+}
+
 unsafe extern "system" fn error_proc(hwnd: HWND, msg: u32, wparam: WPARAM, _lparam: LPARAM) -> isize {
     unsafe {
         match msg {
@@ -266,7 +312,7 @@ unsafe extern "system" fn error_proc(hwnd: HWND, msg: u32, wparam: WPARAM, _lpar
                     SendMessageW(item(hwnd, ID_ICON), STM_SETICON, Some(WPARAM(icon.0 as usize)), Some(LPARAM(0)));
                 }
                 SendMessageW(item(hwnd, ID_TEXT), EM_SETLIMITTEXT, Some(WPARAM(0)), Some(LPARAM(0)));
-                let text = ERROR.with(|e| e.borrow().clone().unwrap_or_default());
+                let text = ERROR.with(|e| e.borrow().as_ref().map(|s| s.text.clone()).unwrap_or_default());
                 set_text(hwnd, ID_TEXT, &text);
                 let _ = SetFocus(Some(item(hwnd, ID_OK)));
                 auto_close(hwnd, &[ID_COPY, ID_OK]);
@@ -274,9 +320,29 @@ unsafe extern "system" fn error_proc(hwnd: HWND, msg: u32, wparam: WPARAM, _lpar
             }
             WM_COMMAND => match (wparam.0 & 0xFFFF) as i32 {
                 ID_COPY => {
-                    let text = ERROR.with(|e| e.borrow().clone().unwrap_or_default());
-                    if set_clipboard_text(hwnd, &text) {
+                    if set_clipboard_text(hwnd, &error_copy_text()) {
                         set_text(hwnd, ID_COPY, &t!("ui.copied"));
+                    }
+                    1
+                }
+                ID_SAVE => {
+                    if let Some(r) = error_report() {
+                        save_report(hwnd, &r);
+                    }
+                    1
+                }
+                ID_CONTACT => {
+                    if let Some(r) = error_report()
+                        && let Some(link) = &r.contact_link
+                    {
+                        // A mailto: link cannot carry the whole report: it
+                        // goes onto the clipboard to be pasted into the mail.
+                        if r.contact_mail && set_clipboard_text(hwnd, &r.text) {
+                            set_text(hwnd, ID_COPY, &t!("ui.copied"));
+                        }
+                        if let Err(e) = super::shell_execute(link) {
+                            let _ = super::message_box(&t!("report.mail"), &e.to_string(), MB_OK | MB_ICONERROR);
+                        }
                     }
                     1
                 }
@@ -295,9 +361,10 @@ unsafe extern "system" fn error_proc(hwnd: HWND, msg: u32, wparam: WPARAM, _lpar
     }
 }
 
-/// Shows an error whose text can be selected and copied. It returns false
-/// when the dialog could not be shown.
-pub(super) fn error_dialog(title: &str, message: &str) -> bool {
+/// Shows an error whose text can be selected and copied, with the buttons
+/// to save the report and to contact the author when there is a report.
+/// It returns false when the dialog could not be shown.
+pub(super) fn error_dialog(title: &str, message: &str, report: Option<&ErrorReport>) -> bool {
     let text = message.replace("\r\n", "\n").replace('\n', "\r\n").replace('\t', "    ");
     const CX: i32 = 340;
     const MARGIN: i32 = 7;
@@ -311,7 +378,8 @@ pub(super) fn error_dialog(title: &str, message: &str) -> bool {
     let cy = btn_y + BTN_H + MARGIN;
     let copy_w = 60;
     let mut d = Builder::default();
-    d.header(WS_EX_TOPMOST.0, 4, CX, cy, title);
+    let count = 4 + usize::from(report.is_some()) + usize::from(report.is_some_and(|r| r.contact_link.is_some()));
+    d.header(WS_EX_TOPMOST.0, count, CX, cy, title);
     d.item(SS_ICON, MARGIN, MARGIN, ICON_W, 20, ID_ICON, CLASS_STATIC, "");
     d.item(
         WS_BORDER.0 | WS_VSCROLL.0 | WS_TABSTOP.0 | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL,
@@ -323,9 +391,17 @@ pub(super) fn error_dialog(title: &str, message: &str) -> bool {
         CLASS_EDIT,
         "",
     );
+    if let Some(r) = report {
+        let w = 74;
+        d.item(WS_TABSTOP.0, MARGIN, btn_y, w, BTN_H, ID_SAVE, CLASS_BUTTON, &t!("report.save"));
+        if r.contact_link.is_some() {
+            let label = if r.contact_mail { t!("report.mail") } else { t!("report.openContact") };
+            d.item(WS_TABSTOP.0, MARGIN + w + 4, btn_y, w, BTN_H, ID_CONTACT, CLASS_BUTTON, &label);
+        }
+    }
     d.item(WS_TABSTOP.0, CX - MARGIN - 50 - 4 - copy_w, btn_y, copy_w, BTN_H, ID_COPY, CLASS_BUTTON, &t!("ui.copy"));
     d.item(WS_TABSTOP.0 | BS_DEFPUSHBUTTON, CX - MARGIN - 50, btn_y, 50, BTN_H, ID_OK, CLASS_BUTTON, "OK");
-    ERROR.with(|e| *e.borrow_mut() = Some(text));
+    ERROR.with(|e| *e.borrow_mut() = Some(ErrorState { text, report: report.cloned() }));
     unsafe {
         let _ = windows::Win32::System::Diagnostics::Debug::MessageBeep(MB_ICONERROR);
     }

@@ -862,7 +862,7 @@ function aggregate(month) {
 </html>
 ```
 
-メタデータ（スクリプトの先頭のコメント）: `@mode app`、`@html`（最初に開く HTML）、`@assets`（画面が使うフォルダ。複数行可）、`@title`、`@size 幅x高さ`、`@icon app.ico`、`@titlebar custom`（OS のタイトルバーの代わりに自前のタイトルバー）、`@version 1.2.0`（スクリプトのバージョン。手順書の右上に出る）。
+メタデータ（スクリプトの先頭のコメント）: `@mode app`、`@html`（最初に開く HTML）、`@assets`（画面が使うフォルダ。複数行可）、`@title`、`@size 幅x高さ`、`@icon app.ico`、`@titlebar custom`（OS のタイトルバーの代わりに自前のタイトルバー）、`@version 1.2.0`（スクリプトのバージョン。手順書の右上に出る）、`@author 作成者名` と `@contact メールアドレス・URL・内線など`（エラーの画面に作成者への連絡の案内と［メールで連絡］が出る。利用者に渡すスクリプトには書く）。
 
 画面側（HTML。`xljs` は自動で使える。`<script src>` で読み込まない）:
 

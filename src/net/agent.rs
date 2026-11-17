@@ -319,6 +319,30 @@ impl Installed {
     }
 }
 
+/// This OS for error reports: "Windows 11 Pro 24H2 (26100.2314, AMD64)".
+pub fn os_description() -> String {
+    let arch = std::env::var("PROCESSOR_ARCHITEW6432").or_else(|_| std::env::var("PROCESSOR_ARCHITECTURE")).unwrap_or_else(|_| std::env::consts::ARCH.into());
+    #[cfg(windows)]
+    {
+        use windows::Win32::System::Registry::HKEY_LOCAL_MACHINE;
+        let get = |n: &str| win::reg_string(HKEY_LOCAL_MACHINE, "Software\\Microsoft\\Windows NT\\CurrentVersion", n).unwrap_or_default().trim().to_string();
+        let build = get("CurrentBuildNumber");
+        let mut name = get("ProductName");
+        // Windows 11 still says "Windows 10" here.
+        if build.parse::<u32>().is_ok_and(|b| b >= 22000) {
+            name = name.replace("Windows 10", "Windows 11");
+        }
+        let display = get("DisplayVersion");
+        let name = if name.is_empty() { "Windows".to_string() } else { name };
+        let ver = [name, display].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" ");
+        format!("{ver} ({build}, {arch})")
+    }
+    #[cfg(not(windows))]
+    {
+        format!("{} ({arch})", std::env::consts::OS)
+    }
+}
+
 /// What the client hints tell about this Windows.
 fn os() -> Os {
     #[cfg(windows)]

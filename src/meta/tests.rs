@@ -3,7 +3,7 @@ use crate::i18n;
 
 #[test]
 fn parse_block() {
-    let src = "\u{FEFF}#!/usr/bin/env xljs\n// Sales tool\n\n// ==xljs==\n// @mode    app            // console（既定）| app\n// @html    ui\\index.html\n// @assets  ui/ img\n// @assets  data/list.csv\n// @title   売上集計ツール // comment\n// @size    960x640\n// @lang    ja\n// @icon    img/App.ICO\n// @titlebar Custom\n// @version 1.2.0 // comment\n// @author  someone\n// free text\n// ==/xljs==\n// @mode console\nconsole.log(1);\n";
+    let src = "\u{FEFF}#!/usr/bin/env xljs\n// Sales tool\n\n// ==xljs==\n// @mode    app            // console（既定）| app\n// @html    ui\\index.html\n// @assets  ui/ img\n// @assets  data/list.csv\n// @title   売上集計ツール // comment\n// @size    960x640\n// @lang    ja\n// @icon    img/App.ICO\n// @titlebar Custom\n// @version 1.2.0 // comment\n// @author  山田太郎 <yamada@example.com>\n// @homepage x\n// free text\n// ==/xljs==\n// @mode console\nconsole.log(1);\n";
     let (m, warns) = parse("a.js", src.as_bytes()).unwrap();
     let want = Meta {
         mode: "app".into(),
@@ -16,9 +16,11 @@ fn parse_block() {
         icon: "img/App.ICO".into(),
         title_bar: "custom".into(),
         version: "1.2.0".into(),
+        author: "山田太郎".into(),
+        contact: "yamada@example.com".into(),
     };
     assert_eq!(m, want);
-    assert!(warns.len() == 1 && warns[0].contains("@author") && warns[0].contains("a.js:15"), "{warns:?}");
+    assert!(warns.len() == 1 && warns[0].contains("@homepage") && warns[0].contains("a.js:16"), "{warns:?}");
     assert!(m.is_app());
 }
 
@@ -85,5 +87,18 @@ fn asset_paths_stay_in_their_folder() {
     }
     for bad in ["", "/a", "../a", "a/../b", "a//b", "./a", "a\\b", "C:/x", "C:x", "a/b:stream", "ui/"] {
         assert!(!ok(bad), "{bad}");
+    }
+}
+
+#[test]
+fn parse_author_contact() {
+    for (src, author, contact) in [
+        ("// ==xljs==\n// @author 総務課 山田\n// @contact 内線 1234\n// ==/xljs==\n", "総務課 山田", "内線 1234"),
+        ("// ==xljs==\n// @contact https://example.com/help\n// @author 山田 <y@example.com>\n// ==/xljs==\n", "山田", "https://example.com/help"),
+        ("// ==xljs==\n// @author <y@example.com>\n// ==/xljs==\n", "", "y@example.com"),
+    ] {
+        let (m, warns) = parse("a.js", src.as_bytes()).unwrap();
+        assert!(warns.is_empty(), "{warns:?}");
+        assert_eq!((m.author.as_str(), m.contact.as_str()), (author, contact), "{src:?}");
     }
 }

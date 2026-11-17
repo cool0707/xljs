@@ -1,5 +1,6 @@
 use std::io::{BufRead, IsTerminal};
 
+use super::report::{self, RunInfo};
 use crate::ui::Ui;
 use crate::{Error, i18n, t};
 
@@ -30,22 +31,45 @@ impl ConsoleState {
     /// Reports err and returns the exit code 1. Without a console the error
     /// is shown in a dialog so that GUI builds never fail silently.
     pub fn fail(&self, u: Option<&dyn Ui>, e: &Error) -> i32 {
+        self.fail_run(u, e, None)
+    }
+
+    /// Reports the error that ended a run of a script: the message says
+    /// whom to ask (the script's @author / @contact) and the dialog offers
+    /// to save the error report and to contact the author.
+    pub fn fail_run(&self, u: Option<&dyn Ui>, e: &Error, run: Option<&RunInfo>) -> i32 {
         let msg = match e {
             Error::Bundle(_) => format!("{}\n{e}", t!("cli.syntaxError")),
             Error::Script(_) => e.to_string(),
             _ => t!("cli.error", i18n::error(e)),
         };
-        eprintln!("{msg}");
+        let run = run.filter(|_| report::wanted());
+        let ask = run.and_then(|r| report::ask_author(&r.meta));
+        match &ask {
+            Some(a) => eprintln!("{msg}\n\n{a}"),
+            None => eprintln!("{msg}"),
+        }
         if !self.has {
             let title = std::env::current_exe()
                 .ok()
                 .and_then(|p| p.file_stem().map(|s| s.to_string_lossy().into_owned()))
                 .unwrap_or_else(|| "xljs".into());
+            let show = |u: &dyn Ui| match run {
+                Some(r) => {
+                    let report = report::build(r, &msg);
+                    let mut text = format!("{msg}\n\n{} {}", ask.clone().unwrap_or_else(|| t!("report.askMaker")), t!("report.saveHint"));
+                    if report.contact_mail {
+                        text = format!("{text}\n{}", t!("report.mailHint"));
+                    }
+                    u.show_error_report(&title, &text, &report);
+                }
+                None => u.show_error(&title, &msg),
+            };
             match u {
-                Some(u) if u.name() == "native" => u.show_error(&title, &msg),
+                Some(u) if u.name() == "native" => show(u),
                 None if crate::ui::native_available() => {
                     if let Ok(n) = crate::ui::new_native() {
-                        n.show_error(&title, &msg);
+                        show(&*n);
                     }
                 }
                 _ => {}
