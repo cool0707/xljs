@@ -63,6 +63,10 @@ xljs dev 集計.js
 
 ### エラーのときの連絡先を書く
 
+書いていないと、エラーの画面には「このツールを作った人に連絡してください」としか出ず、利用者は誰に聞けばよいか分かりません。
+
+<figure class="shot"><img src="../images/error-no-contact.png" alt="xljs のエラーの画面。ReferenceError: hoge は定義されていません、dialog-aggregate.xljs の 14 行目。解決しないときは、このツールを作った人に連絡してください、のあとにレポートを保存の案内。レポートを保存・コピー・OK のボタン" width="597" loading="lazy"><figcaption>`@author`・`@contact` を書いていないときのエラーの画面。作った人の名前も連絡先も出ません。</figcaption></figure>
+
 メタデータに `@author`（作成者）と `@contact`（連絡先）を書いておくと、利用者のパソコンでスクリプトがエラーで止まったとき、エラーの画面に「このツールの作成者 総務課 山田太郎（yamada@example.com）に連絡してください。」と表示します。
 
 ```js
