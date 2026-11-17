@@ -34,7 +34,8 @@ if (dest) {
 
 **リファレンス: https://cool0707.github.io/xljs/**
 
-- [インストールと実行](https://cool0707.github.io/xljs/guide/run.html) — ダウンロード、コマンドとオプション
+- [ファーストステップ](https://cool0707.github.io/xljs/guide/first-steps.html) — ダウンロードからサンプルの実行、開発モードで作り始めるまで
+- [実行ファイルと引数](https://cool0707.github.io/xljs/guide/run.html) — コマンドとオプション
 - [API](https://cool0707.github.io/xljs/api/globals.html) — 機能ごとの説明と、型定義から作ったリファレンス
 - [サンプル](examples/README.md)
 - [AI チャットでスクリプトを作る](docs/ai/README.md) — Claude・Gemini・Copilot などに渡すプロンプトとリファレンス

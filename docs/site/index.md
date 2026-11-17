@@ -7,7 +7,7 @@ description: JavaScript / TypeScript のスクリプトで Excel・CSV を処理
 <div class="badges"><span class="badge strong">Windows 用のシングルバイナリ</span><span class="badge">Excel・Acrobat・Node.js 不要</span></div>
 <h1 class="hero-title">JavaScript / TypeScript で、<br>Excel・PDF・業務の画面まで。</h1>
 <p class="lead">Excel・CSV の集計やデータ変換、Excel で印刷したときと同じページの PDF 出力を、スクリプト 1 本で行います。入力して実行するツールから、一覧・検索・登録の画面を持つ業務アプリまで、HTML を書かずに作れます。作ったものは exe にして配れます。</p>
-<p class="cta"><a class="button primary" href="guide/run.md">インストールと実行</a><a class="button" href="#開発モードのイメージ">開発モードのイメージ</a><a class="button" href="guide/examples.md">サンプル</a></p>
+<p class="cta"><a class="button primary" href="guide/first-steps.md">ファーストステップ</a><a class="button" href="#開発モードのイメージ">開発モードのイメージ</a><a class="button" href="guide/examples.md">サンプル</a></p>
 </section>
 
 ## 開発モードのイメージ
@@ -81,7 +81,8 @@ if (dest) {
 
 ## このサイトの読み方
 
-- [インストールと実行](guide/run.md): ダウンロード、実行のしかた、コマンドとオプション
+- [ファーストステップ](guide/first-steps.md): ダウンロードからサンプルの実行、開発モードで AI チャットと作り始めるまで
+- [実行ファイルと引数](guide/run.md): xljs.exe と xljsc.exe、コマンドとオプション、.xljs ファイル
 - [サンプル](guide/examples.md): 機能ごとのサンプルスクリプト
 - [AI チャットでスクリプトを作る](guide/ai-chat.md): Claude・Gemini・Copilot などに書いてもらうための資料
 - API: 左の目次から機能ごとのページへ。各ページの「リファレンス」は型定義（[`xljs.d.ts`](../../types/xljs.d.ts)）から作っているので、オプションの名前と型はここが正確です。上の検索欄で `ui.form` や `Worksheet.toPdf` のように引けます。

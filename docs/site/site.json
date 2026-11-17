@@ -4,6 +4,7 @@
       "title": "はじめに",
       "pages": [
         "index",
+        "guide/first-steps",
         "guide/run",
         "guide/examples",
         "guide/ai-chat"
