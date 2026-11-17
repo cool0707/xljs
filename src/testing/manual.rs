@@ -407,6 +407,30 @@ pub fn load_made(case_dir: &Path) -> Option<Made> {
     serde_json::from_str(&s).ok()
 }
 
+/// Follows a case's folder that was renamed from old: the manual's files
+/// (`manual/<old>.md` and the rest) take the new name, and the Markdown
+/// and the page are written again (their default title has the name).
+pub fn case_renamed(case_dir: &Path, old: &str) -> Result<()> {
+    let dir = folder(case_dir);
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    let md = markdown_path(case_dir);
+    for ext in ["md", "html", "pdf"] {
+        let from = dir.join(format!("{old}.{ext}"));
+        let to = md.with_extension(ext);
+        if from.is_file() && from != to {
+            std::fs::rename(&from, &to).map_err(|e| Error::path("rename", from.display().to_string(), e))?;
+        }
+    }
+    let Some(mut made) = load_made(case_dir) else { return Ok(()) };
+    made.case = case_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    write(&dir.join(STEPS), &(serde_json::to_string_pretty(&made)? + "\n"))?;
+    // A CSS file that cannot be read: the files stay as they were.
+    let _ = write_markdown(case_dir);
+    Ok(())
+}
+
 /// Text the user wrote, as Markdown: a line break stays one (two spaces
 /// at the end of the line), a blank line starts a paragraph.
 fn user_text(text: &str) -> String {

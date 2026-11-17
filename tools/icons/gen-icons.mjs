@@ -16,6 +16,7 @@ const ICONS = {
   square: true, table: false, terminal: false, "text-align-start": false,
   "triangle-alert": false, "wand-sparkles": false, x: false,
   package: false, "scroll-text": false, sparkles: false, "mouse-pointer-click": false, link: false,
+  pencil: false, "trash-2": false,
 };
 
 const pkg = process.argv[2];

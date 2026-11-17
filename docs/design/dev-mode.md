@@ -43,6 +43,7 @@ AI チャットと並べてスクリプトを作る・直すための画面。�
 - メニューはページの要素なので、チャットの枠と重なるあいだは枠を隠す。
 - ウィンドウは自前のタイトルバー（`WindowOptions::custom_title_bar`）。バーは `dev.html` の `#titlebar`（titlebar.js が見た目とボタンを受け持つ）で、xljs のアイコン（`web/xljs-logo.png`）と「ファイル名 - xljs 開発モード」を出す。同じ文字列を `\x01window:title:` でウィンドウのテキスト（タスクバー）にも設定する。開いているファイルのフォルダはコードタブのファイルの選択の隣に出す。
 - ツールバーの配置のボタンは「配置を元に戻す」だけ。既定（左にチャット、右にキャンバス、閉じたタブなし）に戻す。
+- 「テスト」タブと手順書のバー（`.bar.fit`）は、ボタンが入りきらないとアイコンだけになる（`dev.js` の `fitBar`。バーの大きさと中身の変化を監視してはみ出しを測る）。ボタンのツールチップは常にラベル（＋説明）。
 - 配置は `localStorage` の `xljs.dev.layout`（`{groups: [{id, tabs, active, size}], closed: [tab]}`）。以前の形（`{mode, swap, split}`）は読み込み時に変換し、`mode`（チャットだけ / キャンバスだけ）は捨てる。
 
 ## AI チャットの枠
@@ -121,7 +122,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `agentHint` `agentKit` `agentCopy` `agentDrag` | xljs 用のエージェントの案内（チャットのサービスの判定、入れるもの、文書のコピー、文書のドラッグ） |
 | `intro` `notify` `showFolder` | AI への説明のコピー（［プロンプト］のドロップダウン。`mode` が `prompt`＝指示だけ、`script`＝スクリプトだけ、空＝両方。その下に各サービスの「xljs 用の〇〇を作る」＝`agentKit`。一覧は `init` の `agents`）、自分で直したところのコピー、フォルダを開く |
 | `wizardBooks` `wizardFolder` `wizardPrompt` `wizardSave` `wizardCreate` | 新規作成ウィザード（`answers`） |
-| `tests` `testApprove` `testRecord` `testPrompt` | 「テスト」タブ（`docs/design/test-design.md`） |
+| `tests` `testApprove` `testRecord` `testPrompt` `testSuggest` `testRemove` `testRename` | 「テスト」タブ（`docs/design/test-design.md`） |
 
 | Rust → ページ（`type`） | 内容 |
 |---|---|
@@ -130,7 +131,7 @@ AI の回答を取り込んだあとに自分でコードを直すと、AI は�
 | `download` | ダウンロードしたファイル（`name` `text` `target` `old` `files`） |
 | `runStarted` `output` `runEnded` | 実行。`runEnded` は失敗時に `message` `location` `prompt` |
 | `previewForm` `previewFailed` `previewSkipped` | フォームのプレビュー（`previewSkipped` は自動表示をしなかったとき） |
-| `testsStarted` `tests` | テストケースの実行と結果 |
+| `testsStarted` `tests` `testRenamed` `testsFailed` | テストケースの実行と結果、名前の変更 |
 | `agentHint` `agentKit` | チャットのサービスと作ったものかどうか、エージェントなどに入れるもの |
 | `url` `copy` `error` `info` `browserFailed` | チャットの URL、クリップボードへのコピー、エラー・お知らせ |
 | `wizardBooks` `wizardFolder` `wizardPrompt` `wizardAttach` | ウィザードの答え（`wizardPrompt` の `attachment`、`wizardAttach` の `file` は添付ファイルの名前） |

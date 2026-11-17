@@ -260,7 +260,7 @@ body.tab-dragging iframe { pointer-events: none; }
 .tests .head .label { font-weight: 600; }
 .tests .head .name { font-family: var(--mono); }
 .tests .head .spacer { flex: 1; }
-.tests .pass .head .ic, .tests .pass .label { color: var(--ok, #1a7f37); }
+.tests .pass .head > .ic, .tests .pass .label { color: var(--ok, #1a7f37); }
 .tests .fail .head > .ic, .tests .fail .label, .tests .problem .head > .ic, .tests .problem .label { color: var(--error); }
 .tests p { margin: 6px 0 0; }
 .test-lines { margin: 6px 0 2px; padding: 8px; max-height: 320px; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 4px; font-family: var(--mono); font-size: 12px; white-space: pre; }
@@ -350,10 +350,22 @@ body.drop-over iframe { pointer-events: none; }
   #chat-bar .split-drop { padding: 0 2px; }
 }
 
+/* A bar whose buttons do not fit (dev.js fitBar): their icons only, the label in the tooltip. */
+.bar.fit.compact { gap: 4px; }
+.bar.fit.compact button.tool > span { display: none; }
+.bar.fit.compact button.tool { padding: 0 8px; }
+
+/* The buttons of a test case's line: icons only. */
+.tests .head button.mini { min-width: 0; min-height: 0; padding: 2px 4px; border: 0; background: none; box-shadow: none; color: var(--muted); cursor: pointer; }
+.tests .head button.mini:hover:not(:disabled) { color: var(--fg); background: var(--sel); }
+.tests .head button.mini.run:not(:disabled) { color: var(--ok, #1a7f37); }
+.tests .head button.mini.del:hover:not(:disabled) { color: var(--error); }
+.tests .head .rename-field { font-family: var(--mono); min-width: 120px; padding: 1px 6px; }
+
 /* The manual of a test case (dev.js manual): the steps with their notes, and the Markdown shown. */
 .manual { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .manual[hidden] { display: none; }
-.manual-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.manual-name { font-weight: 600; min-width: 8em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .manual-edit { flex: 1; overflow: auto; padding: 4px 16px 16px; }
 .manual-preview { flex: 1; min-height: 0; width: 100%; border: none; border-top: 1px solid var(--border); background: #fff; }
 .manual-style > span { flex: none; font-weight: 600; }

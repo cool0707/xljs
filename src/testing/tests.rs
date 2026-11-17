@@ -582,3 +582,42 @@ await ui.form({
     assert!(md.ends_with("manual/基本.md") || md.ends_with("manual\\基本.md"));
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// Renaming a variant keeps its place and takes its approved result
+/// along; renaming a case moves its folder and its manual's files.
+#[test]
+fn renaming_cases_and_variants() {
+    let _g = lock_lang("ja");
+    let root = project("alert(1);\n", r#"{"script": "main.js", "variants": {"a": {}, "b": {}}}"#);
+    let path = root.to_string_lossy().into_owned();
+    let dir = root.join(TESTS_DIR).join("基本");
+    std::fs::create_dir_all(dir.join("expected")).unwrap();
+    std::fs::write(dir.join("expected/a.jsonl"), "{}\n").unwrap();
+    rename(&path, "基本", "a", "c").unwrap();
+    let c = cases(&root).unwrap().remove(0);
+    assert_eq!(c.variants.iter().map(|v| v.name.as_str()).collect::<Vec<_>>(), ["c", "b"]);
+    assert!(c.expected_path("c").is_file() && !c.expected_path("a").exists());
+    assert!(rename(&path, "基本", "c", "b").is_err(), "taken");
+    assert!(rename(&path, "基本", "c", "x/y").is_err());
+    assert!(rename(&path, "基本", "ない", "y").is_err());
+
+    // The manual of the case follows it.
+    let made = manual::Made { case: "基本".into(), script: "main.js".into(), ..Default::default() };
+    let steps = manual::folder(&dir).join("steps.json");
+    std::fs::create_dir_all(steps.parent().unwrap()).unwrap();
+    std::fs::write(&steps, serde_json::to_string(&made).unwrap()).unwrap();
+    manual::write_markdown(&dir).unwrap();
+    std::fs::write(manual::folder(&dir).join("基本.pdf"), "PDF").unwrap();
+    rename(&path, "基本", "", "月次").unwrap();
+    let to = root.join(TESTS_DIR).join("月次");
+    assert!(!dir.exists() && to.join("case.json").is_file());
+    let m = manual::folder(&to);
+    assert!(m.join("月次.md").is_file() && m.join("月次.html").is_file() && m.join("月次.pdf").is_file() && !m.join("基本.md").exists());
+    assert_eq!(manual::load_made(&to).unwrap().case, "月次");
+    assert!(std::fs::read_to_string(m.join("月次.md")).unwrap().contains("月次"));
+    std::fs::create_dir_all(root.join(TESTS_DIR).join("週次")).unwrap();
+    std::fs::write(root.join(TESTS_DIR).join("週次/case.json"), r#"{"script": "main.js"}"#).unwrap();
+    assert!(rename(&path, "月次", "", "週次").is_err(), "taken");
+    assert!(rename(&path, "月次", "", "_x").is_err());
+    let _ = std::fs::remove_dir_all(&root);
+}

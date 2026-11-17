@@ -1262,7 +1262,7 @@
   // gave against what was approved. A run that differs is approved (the
   // change was asked for) or goes to the AI as a request with the
   // difference; the AI is never shown the cases themselves.
-  const tests = { running: false, outcomes: [], open: new Set(), asked: false };
+  const tests = { running: false, outcomes: [], open: new Set(), asked: false, editing: "", draft: null };
 
   function testsStarted() {
     tests.running = true;
@@ -1326,10 +1326,20 @@
         else tests.open.add(o.name);
         renderTests();
       };
+      const mini = (cls, tip, onclick, disabled) => {
+        const b = el("button", { type: "button", className: "mini " + cls.split(" ")[0], title: tip, onclick }, icon("ic " + cls.split(" ")[1]));
+        b.disabled = !!disabled;
+        return b;
+      };
       const head = el("div", { className: "head" },
         icon(o.status === "pass" ? "ic ic-circle-check" : o.status === "new" ? "ic ic-info" : "ic ic-circle-x"),
-        el("span", { className: "label", textContent: labels[o.status] || o.status }),
-        el("span", { className: "name", textContent: o.name.replace(/\/$/, "") }),
+        el("span", { className: "label", textContent: labels[o.status] || o.status }));
+      if (tests.editing === o.name) head.append(renameField(o));
+      else {
+        head.append(el("span", { className: "name", textContent: o.name.replace(/\/$/, ""), title: L.testsRenameTip, ondblclick: () => startRename(o) }),
+          mini("rename ic-pencil", o.variant ? L.testsRenameVariant : L.testsRenameCase, () => startRename(o), tests.running));
+      }
+      head.append(mini("run ic-play", L.testsRunOne, () => { save(); tests.asked = true; send({ op: "tests", name: o.name }); }, tests.running || st.running),
         el("span", { className: "spacer" }));
       if (lines.length) head.append(el("button", { type: "button", className: "link", onclick: toggle, textContent: open ? L.testsHide : L.testsShow }));
       if (o.status === "fail" || o.status === "problem") {
@@ -1350,7 +1360,7 @@
         m.disabled = tests.running || o.status === "problem";
         head.append(m);
       }
-      head.append(el("button", { type: "button", className: "link", textContent: L.testsRemove, onclick: () => send({ op: "testRemove", name: o.name }) }));
+      head.append(mini("del ic-trash-2", o.variant ? L.testsRemoveVariant : L.testsRemoveCase, () => send({ op: "testRemove", name: o.name }), tests.running));
       const li = el("li", { className: "test " + o.status }, head);
       if (open && lines.length) {
         if (o.status === "fail" || o.status === "new") li.append(el("p", { className: "muted", textContent: o.status === "fail" ? L.testsFailLead : L.testsNewLead }));
@@ -1360,6 +1370,50 @@
     }));
     updateTests();
     if (man.open) showManual();
+  }
+
+  /** Starts editing the name of a case (or of a variant: its own part). */
+  function startRename(o) {
+    if (tests.running) return;
+    tests.editing = o.name;
+    tests.draft = null;
+    renderTests();
+  }
+
+  /** The field the name is edited in: Enter (or leaving it) renames, Esc does not. */
+  function renameField(o) {
+    const old = o.variant || o.case;
+    const input = el("input", { type: "text", className: "rename-field", value: tests.draft ?? old, spellcheck: false });
+    input.addEventListener("input", () => { tests.draft = input.value; });
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      tests.editing = "";
+      tests.draft = null;
+      const name = input.value.trim();
+      if (ok && name && name !== old) send({ op: "testRename", name: o.name, rename: name });
+      renderTests();
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener("blur", () => finish(true));
+    const field = o.variant ? el("span", { className: "name" }, o.case + "/", input) : input;
+    setTimeout(() => { input.focus(); input.select(); });
+    return field;
+  }
+
+  /** A case was renamed (testRenamed): what is kept by its name follows it. */
+  function testRenamed(m) {
+    const moved = (n) => (n === m.from ? m.to : m.case && n.startsWith(m.from) ? m.to + n.slice(m.from.length) : n);
+    tests.open = new Set([...tests.open].map(moved));
+    if (m.case && man.case === m.from.replace(/\/$/, "")) {
+      man.case = m.to.replace(/\/$/, "");
+      if (man.data) man.data.case = man.case;
+      if (man.open) send({ op: "manual", name: man.case });
+    }
   }
 
   function updateTests() {
@@ -1974,6 +2028,36 @@
     $("w-port").onclick = () => openWizard("port");
   }
 
+  // ------------------------------------------------------------ fitting bars
+
+  // A bar marked fit (.bar.fit) whose buttons do not fit shows their icons
+  // only (.compact); the label is always in the tooltip.
+
+  function fitBar(bar) {
+    bar.classList.remove("compact");
+    if (bar.offsetParent !== null && bar.scrollWidth > bar.clientWidth + 1) bar.classList.add("compact");
+  }
+
+  function initFitBars() {
+    const resized = new ResizeObserver((entries) => { for (const e of entries) fitBar(e.target); });
+    for (const bar of document.querySelectorAll(".bar.fit")) {
+      resized.observe(bar);
+      // A button shown or hidden, the state's text changed.
+      new MutationObserver(() => fitBar(bar)).observe(bar, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ["hidden"] });
+    }
+  }
+
+  /** The tooltips of the buttons of the fit bars: the label, then the tip. */
+  function fitTips() {
+    for (const b of document.querySelectorAll(".bar.fit button.tool")) {
+      const label = b.querySelector(":scope > span[data-t]");
+      if (!label) continue;
+      const tip = b.dataset.tip ? L[b.dataset.tip] || "" : "";
+      b.title = label.textContent + (tip ? "\n" + tip : "");
+    }
+    for (const bar of document.querySelectorAll(".bar.fit")) fitBar(bar);
+  }
+
   // ------------------------------------------------------------ messages
 
   function handle(m) {
@@ -1984,6 +2068,7 @@
         editor.phrases(L);
         for (const e of document.querySelectorAll("[data-t]")) e.textContent = L[e.dataset.t] || e.dataset.t;
         for (const e of document.querySelectorAll("[data-tip]")) e.title = L[e.dataset.tip] || "";
+        fitTips();
         document.body.dataset.dropHint = L.dropHint || "";
         $("chat-url").placeholder = L.urlShort;
         $("chat-url-start").placeholder = L.urlPlaceholder;
@@ -2088,6 +2173,8 @@
         break;
       case "runStarted": runStarted(m); updateTests(); break;
       case "testsStarted": testsStarted(); break;
+      case "testRenamed": testRenamed(m); break;
+      case "testsFailed": status(m.message || "", "error"); break;
       case "tests": testsDone(m); break;
       case "manualStarted": manualStarted(); break;
       case "manual": manualShown(m); break;
@@ -2177,6 +2264,7 @@
   $("btn-pack").onclick = () => { save(); send({ op: "pack" }); };
   $("lay-reset").onclick = () => { st.layout = defaultLayout(); saveLayout(); applyLayout(); };
   new ResizeObserver(syncBrowser).observe($("chat-view"));
+  initFitBars();
   window.addEventListener("resize", syncBrowser);
   document.addEventListener("visibilitychange", syncBrowser);
   document.addEventListener("keydown", (e) => {
