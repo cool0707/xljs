@@ -270,7 +270,7 @@ db.close();
 
 - 画面（HTML）は見た目と操作、スクリプト（`.js`）はファイル・Excel・データベースの処理、と分ける。画面の JavaScript から xljs の API（`excel` など）は呼べないので、スクリプトの `export` した関数を `data-action` か `xljs.invoke` で呼ぶ。
 - 1 つのウィンドウの中で画面を切り替える（`data-show` で出し分け）。`app.open` で別のウィンドウを増やすのは、同時に見比べる必要があるときだけ。
-- 起動時に見せるデータ（利用者の名前、一覧）はスクリプトの先頭で `win.state` に入れる。利用者にボタンを押させてから読むのではなく、開いたときに出ているようにする。
+- 値の表示は `win.state`（画面の `data-bind`）が基本。表など大きな描画は `win.invoke` で画面の関数（`xljs.handle`）に渡す。`win.$` / `win.evaluate` は補助。起動時に見せるデータ（利用者の名前、一覧）はスクリプトの先頭で `win.state` に入れ、開いたときに出ているようにする。
 - ファイルの選択は `<input type="file">` ではなく、スクリプトの関数で `showOpenFilePicker` などを呼ぶ（パスが取れる）。ドロップは `e.dataTransfer.files` をそのまま `xljs.invoke` に渡す。
 - 入力の検査は HTML の `required` `min` `max` `pattern`（`data-action` は送信の前に検査する）と、スクリプトの関数の中の両方で行う。エラーは `throw new Error("…")`。
 - 長い処理は進捗を `win.state` に入れ、ループの中で `await sleep(0)` して中止のボタンを受け取れるようにする。処理中はボタンを `data-show` / `disabled` で押せなくする（`data-action` のボタンは処理が終わるまで自動で無効になる）。
@@ -364,7 +364,7 @@ function aggregate(month) {
 | `export function 名前(...)` | 画面から呼べる関数（エントリのファイルの export だけ）。`app.handle(name, fn)` でも登録できる |
 | `win.state.key = 値` / `win.state = { ... }` | 画面へ送る（代入したキーだけが変わる）。同期するのは最上位のキーだけなので、中身を変えたら `win.state.list = [...list]` のように代入し直す |
 | `await win.invoke(name, ...args)` / `win.emit(name, ...args)` / `win.on(name, fn)` | 画面の関数を呼ぶ / イベントを送る / 画面の `xljs.emit` を受け取る |
-| `win.$(selector).text(v)` `.html(v)` `.val(v)` `.attr(n, v)` `.addClass(c)` `.show()` `.hide()` `.on("click", fn)` | 画面の要素を直接変える・イベントを受ける簡易 DOM（読み取りは `await win.$(sel).val()`） |
+| `win.$(selector).text(v)` `.html(v)` `.val(v)` `.attr(n, v)` `.addClass(c)` `.show()` `.hide()` `.on("click", fn)` | 補助: 画面の要素を直接変える・イベントを受ける簡易 DOM（読み取りは `await win.$(sel).val()`）。表示は `win.state`、描画は `win.invoke` を先に考える |
 | `app.open({ html, title, width, height })` | 別のウィンドウを開く（`await w.closed` で閉じるまで待つ） |
 | `await win.closed` / `win.close()` | メインウィンドウが閉じるとスクリプトも終わる |
 

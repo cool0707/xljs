@@ -15,7 +15,7 @@ const book = excel.open(target);
 const pages = book.printPages() ?? [];
 if (pages.length === 0) {
   alert(`${target.name} には印刷するものがありません。`);
-  xljs.exit(1);
+  exit(1);
 }
 
 // 出力のしかたを選ぶ（前回の選択を覚える）
@@ -34,7 +34,7 @@ const choice = await ui.form({
   buttons: [{ label: "プレビュー", icon: "eye", variant: "primary" }], // onClick がないので、押すと閉じて値を返す
   remember: true,
 });
-if (!choice) xljs.exit(0);
+if (!choice) exit();
 
 if (choice.output === "印刷") {
   // プレビューで確定すると、ダイアログを出さずにそのまま印刷する。キャンセルなら false
@@ -42,10 +42,12 @@ if (choice.output === "印刷") {
   if (printed) alert("印刷しました。");
 } else {
   // 先にプレビューで設定を決めてから保存先を尋ねる（プレビューをキャンセルしたら保存先は聞かない）
-  const options = await book.printPreview({}, {
-    title: `印刷プレビュー - ${target.name}`,
-    ok: "PDF に出力",
-    settings: ["sheets", "paper", "landscape", "scaling", "margin", "blackAndWhite", "skipBlankPages"],
+  const options = await book.printPreview({
+    preview: {
+      title: `印刷プレビュー - ${target.name}`,
+      ok: "PDF に出力",
+      settings: ["sheets", "paper", "landscape", "scaling", "margin", "blackAndWhite", "skipBlankPages"],
+    },
   });
   if (options) {
     const dest = await showSaveFilePicker({

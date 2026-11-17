@@ -54,7 +54,7 @@ if (!path) exit();
 await book.toPdf("一覧.pdf", { fitToWidth: 1, preview: { settings: ["scaling", "blackAndWhite"] } });
 
 // 設定だけ選んでもらい、あとで使う
-const options = await book.printPreview({ paper: "A4" }, { settings: true, ok: "決定" });
+const options = await book.printPreview({ paper: "A4", preview: { settings: true, ok: "決定" } });
 if (options) {
   await book.toPdf("控え.pdf", options);
   await book.toPdf("配布用.pdf", { ...options, blackAndWhite: true });
@@ -62,7 +62,7 @@ if (options) {
 ```
 
 - `toPdf(dest, { preview })`: `preview` が `true` かオブジェクト（`PrintPreviewOptions`）なら、書き出す前にプレビューを出す。キャンセルされたら PDF を作らずに `null` を返す。
-- `book.printPreview(options?, preview?)` / `sheet.printPreview(options?, preview?)`: プレビューを出し、確定したら `options` に利用者が変えた設定を重ねたものを返す（キャンセルは `null`）。`toPdf`・`toHtml`・`printPages` にそのまま渡せる。
+- `book.printPreview(options?)` / `sheet.printPreview(options?)`: プレビューを出し、確定したら `options` に利用者が変えた設定を重ねたものを返す（キャンセルは `null`）。プレビューの設定は `toPdf` と同じく `options.preview` に書く。`toPdf`・`toHtml`・`printPages` にそのまま渡せる。
 - `print` の `preview` も同じ画面（ボタンは「印刷」）。既定の設定に続けて、プリンター・両面・部数も出る。
 - 出す設定は `preview.settings` で選ぶ: `"sheets"`（印刷するシート。ブックで印刷できるシートが 2 つ以上のとき）`"pages"`（印刷するページ。`1,3,5-7` の形で入力）`"paper"` `"landscape"`（向き）`"scaling"`（拡大縮小なし・シートを 1 ページに印刷・すべての列 / 行を 1 ページに印刷・倍率・横 n × 縦 n ページ）`"margin"`（標準・広い・狭い・ユーザー設定）`"mirrorMargins"` `"blackAndWhite"` `"gridLines"` `"centerHorizontally"` `"charts"` `"skipBlankPages"` `"condense"`、プリンターの設定 `"printer"` `"duplex"`（両面に対応したプリンターのときだけ選べる）`"copies"` `"color"`（`print` と `printPreview` のみ）。既定は `["sheets", "pages", "paper", "landscape", "scaling", "margin", "blackAndWhite"]`（`toPdf` の `preview` では `"margin"` の後に `"mirrorMargins"`。PDF には両面印刷の設定がないので、偶数ページの左右の余白を入れ替えるかをここで選ぶ）、`true` ですべて、`false` で設定なし（ページの確認だけ）。
 - 設定の初めの値は、`options` を当てたシートのページ設定。シートによって違う設定（用紙・向き・拡大縮小・余白）は「シートごとの設定」になる。利用者が変えなかった設定は `options` に入れない（シートごとの設定のまま印刷される）。

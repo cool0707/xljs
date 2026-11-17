@@ -1,6 +1,6 @@
 ---
 title: フォーム（ui.form）
-api: FormOptions, FormField, FormFieldType, FormFieldBase, FormInputBase, FormOption, FormTextField, FormTextareaField, FormNumberField, FormSliderField, FormDateField, FormDateRangeField, FormSelectField, FormRadioField, FormCheckboxField, FormCheckboxesField, FormSegmentedField, FormComboboxField, FormTagsField, FormFileField, FormFilesField, FormTableField, FormChartField, FormNoteField, FormImageField, FormGroup, FormRow, FormToolbarButton, FormsOptions, FormsItem, FormValues, FormContext, FormButton, FormTableColumn
+api: FormOptions, FormField, FormFieldType, FormFieldBase, FormInputBase, FormOption, FormTextField, FormTextareaField, FormNumberField, FormSliderField, FormDateField, FormDateRangeField, FormSelectField, FormRadioField, FormCheckboxField, FormCheckboxesField, FormSegmentedField, FormComboboxField, FormTagsField, FormFileField, FormFilesField, FormTableField, FormChartField, FormNoteField, FormImageField, FormGroup, FormRow, FormToolbarButton, FormsOptions, FormsItem, FormValues, FormContext, FormButton, FormTableColumn, WindowOptions, PageLooks
 ---
 
 HTML を書かずに、項目の定義だけで画面を作れます。フォームは入力のダイアログではなく、入力欄・表・グラフ・ボタン・タブを置ける画面で、処理のあとも開いたまま続けて使えます（Excel VBA のユーザーフォームや C# のフォームアプリに当たります）。同じ `ui.form` で、次のどちらも作れます。
@@ -193,12 +193,13 @@ const v = await ui.form({
 - `tabs: [{ label, fields }]` を指定するとタブで項目を切り替えて表示します（`fields` はタブの上に常に表示）。値はタブに関係なく 1 つのオブジェクトにまとまります。エラーのある項目のタブには印が付き、そのタブに切り替わります。Ctrl+Tab でも切り替えられます。サンプル: `examples/form-tabs-table.xljs`
 - ウィンドウのアイコンはメタデータの `@icon` で変えられます（`@mode app` でなくても有効。表も同じ）。
 - 同梱の [Font Awesome Free](https://fontawesome.com/icons) のアイコンを、項目のラベル（`icon`）、タブ（`tabs: [{ label, icon, fields }]`）、ボタン（`buttons: [{ label, icon, ... }]`）に付けられます。`"folder-open"` のように名前だけなら solid、`"fa-regular fa-calendar"` のようにクラスでも書けます。フォームの `icon` は `titleBar: "custom"` のときに自前のタイトルバーでタイトルの前に表示します（`"system"` では無視）。コンソール・モックでは無視されます。
+- ウィンドウの `title` `width` `height` `resizable`（`false` で大きさを固定）`titleBar` `icon` は `ui.forms`・`ui.table`・`ui.chart`・`app.open` と共通です（`WindowOptions`）。見た目の `accent` `background` `radius`（`PageLooks`）は `ui.forms`・`ui.table`・`ui.chart` でも使えます。
 - `accent` でフォームのアクセントカラー（primary のボタン・タブ・フォーカス枠・チェックボックス・表の選択行・タイトルバーのアイコン）を変えられます。`accent: "#c42b1c"` のような CSS の色はライト・ダークの両方に、`accent: { light: "#0f7b0f", dark: "#6ccb5f" }` なら配色ごとに使います。ボタンの文字色（黒か白）やホバー色は指定した色から決めます。コンソール・モックでは無視されます。
 - `background` でフォームの背景色（ページとタイトルバーの地の色）を変えられます。`background: "#fff8e1"` のような CSS の色はライト・ダークの両方に、`background: { light: "#eef6ff", dark: "#1a2533" }` なら配色ごとに使います。暗い背景色を指定すると文字・入力欄・枠線もダークの配色になります（ダークの配色で明るい背景色なら逆）。コンソール・モックでは無視されます。
 - 検証: `required`、`pattern`（＋`patternMessage`）、`min` / `max`、ファイル・フォルダの存在、項目ごとの `validate(value, values)`（メッセージを返す）。これらは入力欄を離れたときに検証して項目の下に表示し、エラーの表示中は入力のたびに検証し直します（直すとすぐ消えます）。フォームの `validate(values)`（`{ 項目名: "メッセージ" }` か全体へのメッセージを返す）はボタンを押したときだけ呼ばれるので、項目をまたぐ検証に使います。
 - `buttons: [{ label, onClick(values, form) }]` でフォームの下にボタンを並べます。押すと検証してから `onClick` を実行し、実行後もウィンドウが開いたままになり、進捗（`form.progress(done, total, message)` / `form.withProgress(iterable)`。中止ボタンで `form.withProgress` のループから onClick が終わる）、ログ（`form.log` / `form.error`）、中止ボタン（`form.cancelled`）を表示します。出力ファイルを返すと完了後に「フォルダを開く」ボタンが出ます。ウィンドウが閉じられると、`ui.form` は最後にボタンを押したときの（検証を通った）値を返します。
 - `onClick` のないボタンは、押すと検証して閉じ、その値を `ui.form` が返します。`variant: "primary"` のボタン（1 つまで）は Enter でも押されます。`validate: false` を付けると検証せずに入力のままの値で実行し（読み込み・クリアなど）、`close: true` を付けると `onClick` が正常に終わったらフォームを閉じます。コンソールでは項目のあとにどのボタンを押すか尋ねます（既定は primary のボタン、なければ先頭）。以前の `submit` / `submitIcon` / `onSubmit` はなくなりました（書くとエラー。ボタンにします）。
-- ボタンの `onClick(values, form)`・項目の `onChange(value, values, form)`・ツールバーのボタンの `onClick(values, form)` には、同じ `form`（`FormContext`）が渡ります。`form.setValue(name, value)` で値を、`form.setDisabled(name, bool)` / `form.setHidden(name, bool)` で無効・非表示を、`form.table` / `form.chart` で表とグラフを変えられます。ボタンの処理の外で呼んだ `form.log` / `form.progress` はフォームの下に出ます。
+- ボタンの `onClick(values, form)`・項目の `onChange(value, values, form)`・ツールバーのボタンの `onClick(values, form)` には、同じ `form`（`FormContext`）が渡ります。`form.setValue(name, value)` で値を（受け取った `values` も変わります）、`form.setDisabled(name, bool)` / `form.setHidden(name, bool)` で無効・非表示を、`form.table` / `form.chart` で表とグラフを変えられます。ボタンの処理の外で呼んだ `form.log` / `form.progress` はフォームの下に出ます。
 - `remember` ではパスワードは保存しません。保存したくない項目には `remember: false` を付けます。保存先のフォルダは環境変数 `XLJS_CONFIG_DIR` で変えられます。
 
 ## 複数のフォームをまとめる（ui.forms）

@@ -14,6 +14,8 @@ const picked = await ui.table(files, { title: "処理するファイル", select
 
 `columns` は省略するとオブジェクトのキー（配列の行は A, B, C…）。`{ key, label, width }` でも指定できます。
 
+表示のみの表（`selectable` なし）が返す `view` の `view.update(rows, columns?)` で、表示する行（と列）を差し替えられます（並べ替え・絞り込みは解除。コンソールでは表をもう一度出力）。`view.close()` で閉じます。ウィンドウのオプション（`title` `width` `height` `resizable` `titleBar` `icon`）と見た目の `accent` `background` `radius` はフォームと同じです（[フォーム](form.md)）。
+
 ## 列の操作
 
 列見出しにマウスを乗せると、フィルタ（≡）と列メニュー（⋮）のボタンが出ます。
@@ -51,9 +53,11 @@ ui.table(files, {
   title: "ファイル一覧",
   onDoubleClick(e) {            // e: { row, index, column, key, value, close() }
     if (e.column === "更新日時") alert(`${e.row.名前} の更新日時: ${e.value}`);
-    else shell.openPath(e.row.handle);
+    else shell.open(e.row.handle);
   },
 });
-```サンプル: `examples/table-file-list.xljs`
+```
+
+サンプル: `examples/table-file-list.xljs`
 
 フォームと表はネイティブ UI では WebView2 のウィンドウ、コンソール（`--ui=console`）では対話入力と罫線の表で表示します。モック UI（`--ui=mock`）では応答ファイルの `"form": [{ 項目名: 値 }]`（既定値との差分。表の項目は選ぶ行の番号の配列。`null` でキャンセル）と `"table": [[0, 2]]`（選ぶ行の番号）を使います。
