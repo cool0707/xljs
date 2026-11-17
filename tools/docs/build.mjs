@@ -13,6 +13,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
+import crypto from "node:crypto";
 import ts from "typescript";
 import { Marked } from "marked";
 import hljs from "highlight.js";
@@ -440,6 +441,10 @@ function checkCode() {
 
 const CSS = fs.readFileSync(path.join(import.meta.dirname, "site.css"), "utf8");
 const JS = fs.readFileSync(path.join(import.meta.dirname, "site.js"), "utf8");
+// Versions in the URLs, so that a browser does not use a cached old file with a new page.
+const ver = (s) => crypto.createHash("sha256").update(s).digest("hex").slice(0, 10);
+const CSS_VER = ver(CSS);
+const JS_VER = ver(JS);
 
 function layout(pg, content, toc) {
   const to = (p) => pageHref(pg.path, p);
@@ -467,7 +472,7 @@ function layout(pg, content, toc) {
 <title>${esc(title)}</title>
 ${pg.description ? `<meta name="description" content="${esc(pg.description)}">` : ""}
 <link rel="icon" href="${base}/files/assets/xljs.png">
-<link rel="stylesheet" href="${base}/site.css">
+<link rel="stylesheet" href="${base}/site.css?v=${CSS_VER}">
 </head>
 <body${pg.path === "index" ? ' class="home"' : ""}>
 <header class="top">
@@ -486,7 +491,7 @@ ${tocHtml}
 </div>
 <script>window.XLJS_BASE = ${JSON.stringify(base)};</script>
 <script src="${base}/search.js"></script>
-<script src="${base}/site.js"></script>
+<script src="${base}/site.js?v=${JS_VER}"></script>
 </body>
 </html>
 `;
