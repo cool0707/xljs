@@ -40,6 +40,7 @@ Web 標準に合わせたもの（File System Access API・`fetch`・`URL`・`Te
 | B6 | B | Excel の読み書き | `getValue` / `setValue`、`toObjects` / `rows` / `toArrays` / `Range.values` | 未着手 |
 | B7 | B | 印刷 | `preview` の渡し方と戻り値の違い | 未着手 |
 | B8 | B | ウィンドウ | ウィンドウのオプションの共通化 | 未着手 |
+| B9 | B | 全体 | 読み書きの対がそろっていないもの（書けるのに読めない・2 通りで書ける） | 未着手 |
 | C1 | C | `shell` | `open` / `openPath` / `openExternal` | 未着手 |
 | C2 | C | Excel のメモ | `cell.note`（文字列）と `cell.comment`（オブジェクト） | 未着手 |
 | C3 | C | `ChartSpec` | ガントチャートのキーが同じ型に混在 | 未着手 |
@@ -300,6 +301,45 @@ AI が書きそうな名前を受けるための別名と、機能の重複が�
 
 - d.ts に `WindowOptions`（`title`・`width`・`height`・`resizable`・`titleBar`・`icon`）を作り、各オプションはそれを継承する。
 - 組み込みのページ（form・table・chart・印刷プレビュー）は見た目のオプション（`accent`・`background`・`radius`）も共通にする。
+
+## B9. 読み書きの対
+
+書ける（設定できる）のに読めないもの、読めるのに書けないもの、同じ値を 2 通りで書けるものを洗い出した。
+Web 標準の型（`URLSearchParams`・`Headers` など）と Day.js は対象外。
+
+**書けるのに読めない**
+
+| 書く | 読む | 案 |
+|---|---|---|
+| `sheet.setRowHeight(row, h)` | なし（列は `getColumnWidth` がある） | `getRowHeight(row)` を足す |
+| `range.style()`・`sheet.style(address, s)` | なし（セルは `cell.getStyle()`） | B5 の `setStyle` / `getStyle` を `Range` と `sheet` にもそろえる（範囲の `getStyle` は左上のセルの書式） |
+| `sheet.freeze(cell)` / `unfreeze()` | なし | 読み取り専用の `sheet.frozen`（`{ rows, columns }`、なければ null）を足す |
+| `sheet.merge(address)` / `unmerge(address)` | なし（どこが結合されているか分からない） | 読み取り専用の `sheet.merges`（`["A1:C1", ...]`）を足す |
+| `sheet.autoFilter(address)` | なし。外す手段もない | 読み取り専用の `sheet.filter`（範囲か null）と、`autoFilter(null)` で外すのを足す |
+| `form.setValue(name, v)` | 第 1 引数の `values` は呼ばれた時点の値のまま（`setValue` のあとで `values.n` を読むと古い値） | `setValue` で `values` も書き換える（メソッドは足さない） |
+| `ui.table(...)` の行・`form.table(name, rows)` | ― | 読む場面がないので足さない |
+
+**読めるのに書けない**
+
+| 読む | 書く | 案 |
+|---|---|---|
+| 印刷のページ設定（`printPreview` の初めの値・`printPages`。用紙・向き・余白・拡大縮小） | 印刷のときの `options` だけ。シートに保存できない | 今回は対象外（機能の追加になる）。要望が出たら `sheet.pageSetup` で読み書きする |
+| 非表示のシート（`toPdf` は非表示でないシートだけを出す） | なし。読むこともできない | `sheet.hidden`（読み書き）を足す |
+| `sheet.rowCount` | ― | 列の数がない。`columnCount` を足す |
+
+**2 通りで書ける**
+
+| 値 | 書き方 | 案 |
+|---|---|---|
+| 進捗の総数・メッセージ | `p.total = n`・`p.message = s` と `p.update(done, message)` | B4 で `update(done, total?, message?)` にそろえたら、`total`・`message` は読み取り専用にする |
+| ファイルへの追記 | `fs.appendText` / `h.appendText`（メソッド）と `fs.writeJSONL(..., { append: true })`・`csv.write(..., { append: true })`（オプション） | `writeText(path, text, { append: true })` にそろえ、`appendText` は A4 の方針で受け付けるだけにする（`writeText` の第 3 引数は文字コードの文字列か、`{ encoding, append }`） |
+| セルの値 | `cell.value` と `sheet.setValue` / `getValue` | B6 のとおり `getValue` / `setValue` をなくす |
+
+**そろえないもの**
+
+- `cell.note`（プロパティで読み書き）と `cell.comment`（読み取り専用。付けるのは `addComment`、消すのは `comment.delete()`）: C2 のとおり、メモは 1 つの文字列、コメントはスレッドという Excel の違いに合わせる。
+- カスタムアプリの `win.$(selector)` の `text()` / `text(v)` のように、引数の有無で読み書きを切り替える形: jQuery と同じ形で AI が知っているので残す（セルの書式は B5 のとおり `setStyle` / `getStyle`）。
+- `form.setDisabled` / `setHidden` の読み取り: 状態はスクリプトが決めたもの（項目の `disabled` / `hidden` の関数）なので足さない。
 
 ---
 
