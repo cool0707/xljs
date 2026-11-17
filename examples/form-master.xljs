@@ -1,0 +1,110 @@
+// 開いたまま使うアプリをフォームで作る例: 商品マスターの管理。
+// 開くと一覧が出ていて、行を選ぶと下の入力欄に内容が出る。「保存」「削除」のたびに同じ画面の一覧を読み直す。
+// データはこのファイルと同じフォルダの 商品マスター.db（SQLite）に置く（毎回選ばせない）。
+// 「取り込み・出力」のメニューで、CSV の取り込み（サンプル: data/商品一覧.csv）と Excel への出力ができる。
+type Item = { 商品コード: string; 商品名: string; 単価: number | null; 備考: string | null };
+
+const db = sqlite.open(path.join(xljs.scriptDir, "商品マスター.db"));
+db.exec("CREATE TABLE IF NOT EXISTS 商品 (商品コード TEXT PRIMARY KEY, 商品名 TEXT NOT NULL, 単価 INTEGER, 備考 TEXT)");
+
+/** 一覧に出す行（商品名に word を含むもの） */
+const load = (word?: string) => db.all<Item>("SELECT * FROM 商品 WHERE 商品名 LIKE ? ORDER BY 商品コード", `%${word ?? ""}%`);
+
+/** 入力欄に 1 件を出す（item なしは空にする） */
+const show = (ctx: FormChangeContext, item?: Item | null) => {
+  ctx.setValue("code", item?.商品コード ?? "");
+  ctx.setValue("name", item?.商品名 ?? "");
+  ctx.setValue("price", item?.単価 ?? null);
+  ctx.setValue("note", item?.備考 ?? "");
+};
+
+await ui.form({
+  title: "商品マスター",
+  description: "一覧の行を選ぶと下に内容が出ます。直して「保存」を押してください。新しい商品は「新規」を押してから入力します。",
+  width: 820,
+  fields: [
+    // 条件を変えると一覧を絞り込む（実行ボタンを押させない）
+    { name: "word", label: "検索", icon: "magnifying-glass", placeholder: "商品名の一部", onChange(word, v, ctx) { ctx.table("list", load(word)); } },
+    // 開いたときに一覧が出ている。行を選ぶと onChange で入力欄に出す。
+    // 1 件もないときにも見出しが出るように、列（columns）を書いておく
+    {
+      name: "list", label: "商品", type: "table", rows: load(), selectable: "single", height: 10,
+      columns: ["商品コード", "商品名", "単価", "備考"],
+      formats: [{ column: "単価", empty: true, row: true, color: "#9c0006" }], // 単価のない行を目立たせる
+      onChange(item: Item | null, v, ctx) { show(ctx, item); },
+    },
+    {
+      group: "選んだ商品", icon: "pen",
+      fields: [
+        {
+          row: "", fields: [
+            { name: "code", label: "商品コード", required: true, pattern: "[A-Z]\\d{3}", patternMessage: "英大文字 1 字と数字 3 桁で入力してください（P001 など）" },
+            { name: "price", label: "単価", type: "number", min: 0, suffix: "円" },
+          ],
+        },
+        { name: "name", label: "商品名", required: true },
+        { name: "note", label: "備考" },
+      ],
+    },
+  ],
+  submit: false, // 操作はボタンに分ける（Enter で送信されない）
+  buttons: [
+    // validate: false のボタンは、入力欄の検証をせずに動く
+    { label: "新規", icon: "plus", validate: false, onClick(v, ctx) { show(ctx); } },
+    {
+      label: "削除", icon: "trash", variant: "destructive", validate: false, confirm: "選んだ商品を削除しますか？",
+      onClick(v, ctx) {
+        const item: Item | null = v.list;
+        if (!item) throw new Error("削除する商品を一覧から選んでください"); // フォームに赤字で出る
+        db.run("DELETE FROM 商品 WHERE 商品コード = ?", item.商品コード);
+        ctx.log(`${item.商品コード} ${item.商品名} を削除しました`);
+        ctx.table("list", load(v.word)); // 同じ画面のまま一覧を読み直す
+        show(ctx);
+      },
+    },
+    {
+      label: "取り込み・出力", icon: "right-left",
+      menu: [
+        {
+          label: "CSV から取り込み", icon: "file-csv", validate: false,
+          async onClick(v, ctx) {
+            const [h] = await showOpenFilePicker({
+              title: "取り込む商品の一覧を選択（サンプル: data/商品一覧.csv）",
+              types: [{ description: "CSV", accept: [".csv"] }],
+            });
+            if (!h) return;
+            // 列は data/商品一覧.csv（商品コード・商品名・単価・備考）に合わせている。同じ商品コードは置き換える
+            const rows = csv.read(h).filter((r) => r.商品コード && r.商品名);
+            const n = db.insert("商品", rows.map((r) => ({
+              商品コード: String(r.商品コード), 商品名: String(r.商品名), 単価: r.単価, 備考: r.備考,
+            })), { replace: true });
+            ctx.log(`${h.name} から ${n} 件を取り込みました`);
+            ctx.table("list", load(v.word));
+          },
+        },
+        {
+          label: "Excel に出力", icon: "file-excel", validate: false,
+          async onClick(v, ctx) {
+            const dest = await showSaveFilePicker({ suggestedName: `商品マスター_${dayjs().format("YYYYMMDD")}.xlsx` });
+            if (!dest) return;
+            const out = workbooks.create();
+            out.addSheet("商品").write(load(v.word), { table: true, columnStyles: { 単価: { format: "#,##0" } } });
+            out.save(dest);
+            ctx.log(`${dest.name} に出力しました`);
+            return dest; // 「フォルダを開く」ボタンが出る
+          },
+        },
+      ],
+    },
+    {
+      label: "保存", icon: "floppy-disk", variant: "primary",
+      onClick(v, ctx) {
+        // 同じ商品コードがあれば更新、なければ追加
+        db.run("INSERT OR REPLACE INTO 商品 VALUES (?, ?, ?, ?)", v.code, v.name, v.price, v.note || null);
+        ctx.log(`${v.code} ${v.name} を保存しました`);
+        ctx.table("list", load(v.word));
+      },
+    },
+  ],
+});
+db.close();

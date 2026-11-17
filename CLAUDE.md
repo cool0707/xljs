@@ -43,7 +43,7 @@ PDF の編集（グローバルの `pdf`: 結合・ページの削除・挿入�
 | `types/xljs.d.ts` | 公開 API の型定義（`xljs init` で出力）。**API の説明の正**（リファレンスサイトのエントリはここから生成）。API を変えたら必ず更新 |
 | `docs/site/` | リファレンスサイト（GitHub Pages）の原稿。`site.json` がページの並び、各ページのフロントマター `api:` がそのページで説明する d.ts の宣言。`tools/docs/build.mjs` が生成と検査（d.ts の宣言がすべてどこかのページにあるか、コード例が d.ts で型エラーにならないか、リンク切れ）を行い、`.github/workflows/docs.yml` が公開する。`docs/development.md` |
 | `testdata/scripts/*.test.{js,ts}` | モック UI で実行される結合テスト（`src/engine/tests.rs`）。`<name>.answers.json` がモック応答 |
-| `examples/` | サンプル。拡張子は `.xljs`（TS の構文。型は TS の書き方で付ける）。`xljs init` の d.ts と jsconfig.json で tsc の型チェックが通る状態を保つ（CI の ubuntu で `.ts` に名前を変えて検査）。ファイル・フォルダを選ぶダイアログのタイトル（フォームなら項目の `help`）に試すサンプルデータを書く。試すためのデータは `examples/data/`（`tools/examples/make_data.py` で生成。構成の違いが要らないサンプルは同じファイルを使う）。配布 zip には `prompt/` と並べて `examples/` として入る |
+| `examples/` | サンプル（フォームは、入力して実行するツール＝`form-aggregate`・`form-tabs-table` と、開いたまま使うアプリ＝`form-master`）。拡張子は `.xljs`（TS の構文。型は TS の書き方で付ける）。`xljs init` の d.ts と jsconfig.json で tsc の型チェックが通る状態を保つ（CI の ubuntu で `.ts` に名前を変えて検査）。ファイル・フォルダを選ぶダイアログのタイトル（フォームなら項目の `help`）に試すサンプルデータを書く。試すためのデータは `examples/data/`（`tools/examples/make_data.py` で生成。構成の違いが要らないサンプルは同じファイルを使う）。配布 zip には `prompt/` と並べて `examples/` として入る |
 | `tools/gui/` | Windows 実機での GUI 自動操作・スクリーンショット（`XljsGui.psm1`、`smoke.ps1`、`stay-awake.ps1`）。`docs/design/gui-testing.md` 参照 |
 | `tools/excel-verify/` | Windows 実機の Excel（COM）で、xljs の xlsx の読み書き・数式の計算・表示形式（`run.ps1`）と、保存でセル以外の機能が残るか（`features.ps1`）、シートの名前の変更で参照が付いてくるか（`rename.ps1`）を確かめる。`docs/design/excel-verify.md`・`save-fidelity.md` 参照 |
 | `docs/ai/` | AI チャット向けのプロンプトとリファレンス。`ai_docs` テストがコードブロックの構文と長さを検査 |
@@ -67,6 +67,7 @@ PDF の編集（グローバルの `pdf`: 結合・ページの削除・挿入�
 - **デバッガ（`--debug`）**: prelude とスクリプトをデバッグウィンドウ（`web/debug.html`）のワーカーで実行し、natives は Rust 側の QuickJS に残して `api::remote::Remote` が JSON のワイヤ形式で中継する。ワーカー→Rust はページ経由のメッセージ（`call:`＋要求、応答は `R`＋応答）。終了判定は Rust 側（idle 報告の処理済みイベント数が一致し、デバッグウィンドウ以外に pending がない）。Linux では `src/engine/debug/tests.rs` の偽ページ（別スレッドの QuickJS）がページ役をし、`scripts_in_debugger` が全結合テストをこの経路でも流す。natives を足すときは値がワイヤ形式で表せること。
 - **テスト**はプロセス共通の状態（言語・カレントディレクトリ・環境変数）を触るので `testutil::lock_lang` でロックする（既定は日本語）。
 - **ドキュメント**: README は簡単な紹介だけ。API を変えたら `types/xljs.d.ts`（ドキュメントコメント）→ `docs/site/api/*.md`（例と説明、新しい宣言はフロントマターの `api:`）→ `docs/ai/` の順に直し、`cd tools/docs && npm ci && node build.mjs` で検査する（`docs/development.md`）。
+- **画面のあるスクリプトの呼び方**（ドキュメント・AI 向けの資料・ウィザードの依頼文で共通。基準の説明は `docs/ai/reference.md` の「画面の設計」）: 作るものは「ツール」（入力して実行する）か「アプリ」（開いたまま使う。一覧・検索・登録・更新、複数の機能）、作り方は「フォームアプリ」（`ui.form` / `ui.forms`。ツールもアプリも作れる）か「カスタムアプリ」（`@mode app` と HTML）。`ui.form` を「入力フォーム」「入力ダイアログ」と書かない（入力欄・表・グラフ・ボタン・タブを置ける画面で、処理のあとも開いたまま使える）。例を足すときは、ツールの例ばかりにしない（AI が単機能のものばかり作るようになる）。
 - **umya-spreadsheet のフォークを直すとき**は、`Cargo.toml` を書き換えない（`excel-compat` を指したまま）。フォークにも xljs と同じ名前のブランチで push すれば、CI（`tools/umya-branch.sh`）がそのブランチで組み立てる。手元では `cargo test --lib --config 'patch.crates-io.umya-spreadsheet.path="../umya-spreadsheet"'` で試す（`Cargo.lock` が書き換わるのでコミットしない）。フォークのブランチを `excel-compat` に取り込んだら `cargo update -p umya-spreadsheet` で `Cargo.lock` だけを進めてコミットする（遅れていると CI が警告する）。
 - コミットメッセージは英語、ドキュメント・UI 文言は日本語（英語はロケールファイル側）。
 
