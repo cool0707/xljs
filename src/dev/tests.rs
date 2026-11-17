@@ -388,18 +388,22 @@ fn wizard_prompts() {
         ws.cell_mut((5, 7)).set_formula("SUM(E2:E6)");
     }
     umya_spreadsheet::writer::xlsx::write(&wb, &book).unwrap();
-    let o = crate::api::workbook_outline(&book.to_string_lossy(), 2).unwrap();
+    let o = crate::book::outline(&book.to_string_lossy(), 2).unwrap();
     assert!(o.contains("シート「明細」（A1:E7、7 行 × 5 列）"), "{o}");
-    assert!(o.contains("先頭 2 行") && o.contains("| 1 | 日付 | 顧客 |") && !o.contains("顧客3"), "{o}");
-    assert!(o.contains("E2: `=C2*D2` （E2〜E6 に同じ形の数式が 5 セル）") && o.contains("E7: `=SUM(E2:E6)`"), "{o}");
-    assert!(!crate::api::workbook_outline(&book.to_string_lossy(), 0).unwrap().contains("先頭"));
+    assert!(o.contains("表 A1:E7: 見出しは 1 行目、データは 2〜6 行目（5 行）、7 行目は合計の行、数式の並びから推定。"), "{o}");
+    assert!(o.contains("- 列: A「日付」、B「顧客」、C「数量」、D「単価」、E「金額」\n"), "{o}");
+    assert!(o.contains("見出しとデータの先頭 2 行:") && o.contains("| 1 | 日付 | 顧客 |") && o.contains("顧客3") && !o.contains("顧客4"), "{o}");
+    assert!(o.contains("- E2:E6: `=C2*D2`\n") && o.contains("- E7: `=SUM(E2:E6)`\n"), "{o}");
+    // Without rows: where the table is and its header, no cells.
+    let o = crate::book::outline(&book.to_string_lossy(), 0).unwrap();
+    assert!(o.contains("表 A1:E7: 見出しは 1 行目") && o.contains("A「日付」") && !o.contains("先頭") && !o.contains("顧客2"), "{o}");
 
     // A port: the macro and the sheets go to an attachment by default.
     let macro_book = crate::testutil::repo_path("testdata/scripts/macro.xlsm").to_string_lossy().into_owned();
     let a = port_answers(&macro_book);
     assert_eq!(wizard::attachment_name(&a).as_deref(), Some("macro_xljs.md"));
     let p = wizard::prompt(&a);
-    assert!(p.contains("## ブックのマクロとシート構成\n\nマクロ（VBA）とシートの構成（大きさ・先頭の行・数式）は添付ファイル「macro_xljs.md」にあります。"), "{p}");
+    assert!(p.contains("## ブックのマクロとシート構成\n\nマクロ（VBA）とシートの構成（大きさ・表の位置・数式）は添付ファイル「macro_xljs.md」にあります。"), "{p}");
     assert!(!p.contains("Sub 売上集計()") && !p.contains("## ブックのシート構成"), "{p}");
     let out = tempdir();
     let f = wizard::write_attachment(&a, &out).unwrap().unwrap();

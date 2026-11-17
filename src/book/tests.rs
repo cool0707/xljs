@@ -63,7 +63,7 @@ fn sheet_parts() {
 </x14:conditionalFormattings></ext>
 <ext uri="{CCE6A557-97BC-4b89-ADB6-D9C93CAAB3DF}"><x14:dataValidations count="1"><x14:dataValidation type="list" allowBlank="1" showErrorMessage="1"><x14:formula1><xm:f>他!$A$1:$A$3</xm:f></x14:formula1><xm:sqref>B1:B9</xm:sqref></x14:dataValidation></x14:dataValidations></ext></extLst></worksheet>"#;
     let mut sh = Sheet { name: "S".into(), ..Default::default() };
-    read_sheet(xml.as_bytes(), &mut sh, false);
+    read_sheet(xml.as_bytes(), &mut sh, None);
     let wb = Workbook { sheets: vec![sh], theme: ["FFFFFF", "000000", "E7E6E6", "44546A", "4472C4"].map(String::from).to_vec(), ..Default::default() };
     let s = text("b.xlsx", &wb, &Include::ALL);
     for want in [
@@ -215,4 +215,124 @@ fn rules_book_saved_as_it_was() {
     }
     let charts = |s: &str| s[s.find("# rules.xlsx のグラフ").unwrap()..].to_string();
     assert_eq!(charts(&after), charts(&before));
+}
+
+/// Where the tables are: settings and totals above them, headers of
+/// several rows, groups of columns.
+#[test]
+fn layout_book() {
+    let _l = lock_lang("ja");
+    let path = repo_path("testdata/book/layout.xlsx").to_string_lossy().into_owned();
+    let s = outline(&path, 2).unwrap();
+    for want in [
+        "#### シート「売上」（A1:F129、129 行 × 6 列）\n\n表の外の行（1〜5 行目）:\n\n| | A | B |\n|---|---|---|\n| 1 | 売上一覧 |  |\n| 3 | 期間 | 2025-04-01 |\n| 4 | 担当 | 山田 |\n| 5 | 合計 |  |\n",
+        // The names are above the empty row of the filter; a name over
+        // merged cells or centered across the selection is a group.
+        "表 A7:F129: 見出しは 7〜9 行目、データは 10〜129 行目（120 行）、フィルターから推定。\n\n- 列: A「日付」、B「得意先 / コード」、C「得意先 / 名前」、D「金額 / 税抜」、E「金額 / 税込」、F「備考」\n- 列のグループ: 「得意先」B〜C 列、「金額」D〜E 列\n",
+        "見出しとデータの先頭 2 行:\n\n| | A | B | C | D | E | F |\n|---|---|---|---|---|---|---|\n| 7 | 日付 | 得意先 |  | 金額 |  | 備考 |\n| 8 |  | コード | 名前 | 税抜 | 税込 |  |\n| 9 |  |  |  |  |  |  |\n| 10 | 2025-04-01 | C000 | 得意先0 | 1000 |  |  |\n| 11 | 2025-04-02 | C001 | 得意先1 | 1010 |  |  |\n| … |  |  |  |  |  |  |\n",
+        "- D5: `=SUBTOTAL(9,D10:D129)`\n- E10:E129: `=ROUND(D10*1.1,0)`\n",
+        // Formulas filled down: the total in the settings is not part of
+        // the header, the totals under the header are not data.
+        "表の外の行（1〜3 行目）:\n\n| | A | B |\n|---|---|---|\n| 1 | 在庫表 |  |\n| 2 | 更新日 | 2025-04-01 |\n| 3 | 総数 |  |\n",
+        "表 A4:E40: 見出しは 4 行目、データは 6〜40 行目（35 行）、5 行目は合計の行、数式の並びから推定。\n\n- 列: A「品番」、B「品名」、C「数量」、D「単価」、E「金額」\n",
+        "| 4 | 品番 | 品名 | 数量 | 単価 | 金額 |\n| 5 | 合計 |  |  |  |  |\n| 6 | P006 | 部品6 | 6 | 50 |  |\n| 7 | P007 | 部品7 | 7 | 50 |  |\n| … |  |  |  |  |  |\n",
+        // The name of a group above an Excel table.
+        "テーブル「名簿」（A2:C7）: 見出しは 1〜2 行目、データは 3〜7 行目（5 行）。\n\n- 列: A「氏名」、B「連絡先 / 電話」、C「連絡先 / メール」\n- 列のグループ: 「連絡先」B〜C 列\n",
+        // A small sheet without a table: all of it.
+        "#### シート「設定」（A1:B3、3 行 × 2 列）\n\n先頭 3 行:\n\n| | A | B |\n|---|---|---|\n| 1 | 会社名 | サンプル商事 |\n| 2 | 部署 | 営業部 |\n| 3 | 出力先 | C:\\out |\n",
+        // The cells only: the header in bold under the settings.
+        "表の外の行（1〜2 行目）:\n\n| | A | B |\n|---|---|---|\n| 1 | 予定表 |  |\n| 2 | 年度 | 2025 |\n\n表 A3:C9: 見出しは 3 行目、データは 4〜9 行目（6 行）、セルの並びから推定。\n",
+    ] {
+        assert!(s.contains(want), "want {want:?} in\n{s}");
+    }
+    // Without rows: no cells but the headers.
+    let s = outline(&path, 0).unwrap();
+    assert!(s.contains("表 A7:F129: 見出しは 7〜9 行目") && s.contains("B「得意先 / コード」"), "{s}");
+    for not in ["山田", "サンプル商事", "C000", "| "] {
+        assert!(!s.contains(not), "{not:?} in\n{s}");
+    }
+    // The columns of the tables with many rows.
+    let inc = Include::parse(&["columns"]).unwrap();
+    let s = text("layout.xlsx", &read_file(&path, &inc).unwrap(), &inc);
+    for want in [
+        "## 売上\n\n### A7:F129\n\n見出しは 7〜9 行目、データは 10〜129 行目（120 行）、フィルターから推定。\n\n列のグループ: 「得意先」B〜C 列、「金額」D〜E 列\n\n- A 列「日付」: 日付のみ",
+        "- B 列「得意先 / コード」: 文字列のみ、空白なし、4 文字、形式 `A999`",
+        "- F 列「備考」: すべて空白\n",
+    ] {
+        assert!(s.contains(want), "want {want:?} in\n{s}");
+    }
+    assert!(!s.contains("在庫") && !s.contains("名簿"), "{s}");
+}
+
+/// The XML of a sheet from its cells in reading order: (cell, style,
+/// value), the value a number, a text, a formula (=...) or nothing; then
+/// what follows the cells.
+fn sheet_xml(cells: &[(&str, u32, &str)], rest: &str) -> String {
+    let mut x = String::from("<worksheet><sheetData>");
+    let mut row = 0;
+    for (at, style, v) in cells {
+        let r: u32 = at.trim_start_matches(char::is_alphabetic).parse().unwrap();
+        if r != row {
+            if row > 0 {
+                x.push_str("</row>");
+            }
+            x.push_str(&format!("<row r=\"{r}\">"));
+            row = r;
+        }
+        x.push_str(&match v {
+            v if v.is_empty() => format!("<c r=\"{at}\" s=\"{style}\"/>"),
+            v if v.starts_with('=') => format!("<c r=\"{at}\" s=\"{style}\"><f>{}</f><v>1</v></c>", &v[1..]),
+            v if v.parse::<f64>().is_ok() => format!("<c r=\"{at}\" s=\"{style}\"><v>{v}</v></c>"),
+            v => format!("<c r=\"{at}\" s=\"{style}\" t=\"str\"><v>{v}</v></c>"),
+        });
+    }
+    format!("{x}</row></sheetData>{rest}</worksheet>")
+}
+
+/// The tables found on a sheet, the styles being 0 plain, 1 filled as a
+/// header, 2 boxed, 3 filled and boxed, 4 bold.
+fn tables(cells: &[(&str, u32, &str)], rest: &str) -> Vec<String> {
+    let line = layout::Xf { top: true, bottom: true, left: true, right: true, ..Default::default() };
+    let xfs = vec![layout::Xf::default(), layout::Xf { fill: 1, ..Default::default() }, line, layout::Xf { fill: 1, ..line }, layout::Xf { bold: true, ..Default::default() }];
+    let mut sh = Sheet::default();
+    read_sheet(sheet_xml(cells, rest).as_bytes(), &mut sh, Some(&xfs));
+    let wb = Workbook { xfs, ..Default::default() };
+    let cx = columns::Ctx { wb: &wb };
+    let g = columns::Grid::new(&sh.cells);
+    layout::find(&cx, &sh, &g).iter().map(|f| format!("{}: {}: {}", f.rect.display(), columns::info(f, "book.tbl.totals").join("、"), f.names.join("|"))).collect()
+}
+
+#[test]
+fn layouts() {
+    let _l = lock_lang("ja");
+    // A filter: the row above its row is part of the header when it is
+    // filled as one; a title at the left and settings are not.
+    let filter = r#"<autoFilter ref="A4:C6"/>"#;
+    let t = tables(
+        &[("A1", 0, "設定"), ("B1", 0, "5"), ("A2", 1, "一覧"), ("B2", 1, ""), ("C2", 1, ""), ("B3", 1, "数"), ("C3", 1, "額"), ("A4", 1, "名前"), ("B4", 1, "予定"), ("C4", 1, "実績"), ("A5", 0, "あ"), ("B5", 0, "1"), ("C5", 0, "2"), ("A6", 0, "い"), ("B6", 0, "3"), ("C6", 0, "4"), ("A7", 0, "う"), ("B7", 0, "5")],
+        filter,
+    );
+    assert_eq!(t, ["A3:C7: 見出しは 3〜4 行目、データは 5〜7 行目（3 行）、フィルターから推定: 名前|数 / 予定|額 / 実績"]);
+    // The same without a fill: a row of text right above is not enough
+    // when numbers are in it, nor above a header in a box of its own.
+    let t = tables(&[("A3", 0, "区分"), ("B3", 0, "2024"), ("A4", 3, "名前"), ("B4", 3, "予定"), ("C4", 3, "実績"), ("A5", 2, "あ"), ("B5", 2, "1"), ("C5", 2, "2")], filter);
+    assert_eq!(t, ["A4:C5: 見出しは 4 行目、データは 5 行目（1 行）、フィルターから推定: 名前|予定|実績"]);
+    // Boxes only: the rows of text in the box are the header, the title
+    // above them is not; the totals under the data are left out.
+    let t = tables(
+        &[("A1", 0, "一覧"), ("A2", 2, "品"), ("B2", 2, "数量"), ("C2", 2, "数量"), ("A3", 2, "名前"), ("B3", 2, "予定"), ("C3", 2, "実績"), ("A4", 2, "あ"), ("B4", 2, "1"), ("C4", 2, "2"), ("A5", 2, "い"), ("B5", 2, "3"), ("C5", 2, "4"), ("A6", 2, "合計"), ("B6", 2, "=SUM(B4:B5)"), ("C6", 2, "=SUM(C4:C5)")],
+        "",
+    );
+    assert_eq!(t, ["A2:C6: 見出しは 2〜3 行目、データは 4〜5 行目（2 行）、6 行目は合計の行として除外、セルの並びから推定: 品 / 名前|数量 / 予定|数量 / 実績"]);
+    // Formulas filled down: a first row of data without the formula, the
+    // header in bold above it; the frozen panes say the same.
+    let cells = [("A1", 0, "年度"), ("B1", 0, "2025"), ("A2", 4, "名前"), ("B2", 4, "数"), ("C2", 4, "累計"), ("A3", 0, "あ"), ("B3", 0, "1"), ("C3", 0, "1"), ("A4", 0, "い"), ("B4", 0, "2"), ("C4", 0, "=C3+B4"), ("A5", 0, "う"), ("B5", 0, "3"), ("C5", 0, "=C4+B5"), ("A6", 0, "え"), ("B6", 0, "4"), ("C6", 0, "=C5+B6"), ("A7", 0, "お"), ("B7", 0, "5")];
+    assert_eq!(tables(&cells, ""), ["A2:C7: 見出しは 2 行目、データは 3〜7 行目（5 行）、数式の並びから推定: 名前|数|累計"]);
+    let frozen = r#"<sheetViews><sheetView><pane ySplit="2" state="frozen"/></sheetView></sheetViews>"#;
+    assert_eq!(tables(&cells, frozen), ["A2:C7: 見出しは 2 行目、データは 3〜7 行目（5 行）、ウィンドウ枠の固定から推定: 名前|数|累計"]);
+    // A filter over a header only: no data yet.
+    let t = tables(&[("A1", 1, "名前"), ("B1", 1, "数")], r#"<autoFilter ref="A1:B1"/>"#);
+    assert_eq!(t, ["A1:B1: 見出しは 1 行目、データなし（2 行目から）、フィルターから推定: 名前|数"]);
+    // Text without a header that stands out, a few numbers: no table.
+    assert!(tables(&[("A1", 0, "会社"), ("B1", 0, "あ"), ("A2", 0, "部署"), ("B2", 0, "い"), ("A3", 0, "担当"), ("B3", 0, "う")], "").is_empty());
 }
