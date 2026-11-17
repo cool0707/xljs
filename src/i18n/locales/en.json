@@ -698,7 +698,7 @@
     "devPage.agentHintNever": "Don't show this again",
     "devPage.agentHintClose": "Close",
     "devPage.agentTitle": "Create {0} for xljs",
-    "devPage.agentLead": "You can then ask an AI that knows how to write xljs scripts without pasting the prompt every time. Create it as follows.",
+    "devPage.agentLead": "Follow the steps below to create an AI that helps you write xljs scripts.",
     "devPage.agentName": "Name (example)",
     "devPage.agentDescription": "Description (example)",
     "devPage.agentInstructions": "Instructions",

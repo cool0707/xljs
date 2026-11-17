@@ -699,7 +699,7 @@
     "devPage.agentHintNever": "今後表示しない",
     "devPage.agentHintClose": "閉じる",
     "devPage.agentTitle": "xljs 用の{0}を作る",
-    "devPage.agentLead": "毎回プロンプトを貼らなくても、xljs の書き方を知った AI に頼めるようになります。次の手順で作ってください。",
+    "devPage.agentLead": "以下の手順に従って、xljs スクリプトの作成をサポートする AI を作成しましょう。",
     "devPage.agentName": "名前（例）",
     "devPage.agentDescription": "説明（例）",
     "devPage.agentInstructions": "指示",
