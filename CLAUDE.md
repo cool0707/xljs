@@ -14,6 +14,7 @@ PDF の編集（グローバルの `pdf`: 結合・ページの削除・挿入�
 スクリプトの自動テスト（`xljs test`。記録・再生型: `.xljs/tests/<ケース>/case.json` の応答で画面を出さずに実行し、画面に出したものと出力ファイルを承認済みの台本と比べる。AI にテストを書かせない方針と実装の段階。ケースの操作から作る手順書＝`--manual`・`Ui::capture` の画面の画像）は `docs/design/test-design.md`。
 数式の計算（`book.calculate()`・`cell.calc()`。GridCraft から取り込んだ計算エンジン `vendor/gridcraft`、umya のブックを計算用のモデルに写す仕組み、書き換えたセルの追跡と差分の計算、計算しない数式の扱い、スクリプトが書く数式の保存の形とスピル・配列数式の範囲、反復計算、日本語の Excel に合わせたところ＝漢数字の表示形式 `[DBNum1]` など）は `docs/design/calc-design.md`。
 保存で落ちるもの（開いて保存するだけで消えるグラフ・入力規則の条件・テーブルスタイルなどの一覧と調べ方。**優先対応事項**）は `docs/design/save-fidelity.md`。
+リリース前の API の見直し（AI が迷う箇所の一覧と方針、進み具合）は `docs/design/api-review.md`。
 実行ファイルのサイズ（内訳、埋め込みファイルの圧縮、今後の方針＝パック専用のランタイム・機能別の軽量ランタイム）は `docs/design/binary-size.md`。
 
 ## 構成
