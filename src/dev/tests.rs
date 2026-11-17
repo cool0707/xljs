@@ -422,7 +422,7 @@ fn wizard_prompts() {
     let p = wizard::prompt(&a);
     assert!(p.starts_with("# 依頼: Excel のマクロ（VBA）を xljs に移植する"), "{p}");
     assert!(p.contains("Sub 売上集計()") && p.contains("## ブックのシート構成"), "{p}");
-    assert!(p.contains("- 形式: フォームアプリ（通常のスクリプト。@mode app にしない）。入力を 1 画面のフォーム（ui.form）") && p.contains("- 入力ファイル: あり — 販売システムの売上 xlsx"), "{p}");
+    assert!(p.contains("- 形式: フォームアプリ（通常のスクリプト。@mode app にしない。画面は ui.form、機能ごとに画面を分けるなら ui.forms）。やりたいことから、入力して実行するツールか、開いたまま使うアプリ") && p.contains("- 入力ファイル: あり — 販売システムの売上 xlsx"), "{p}");
     assert!(p.contains("内容が分かる短い日本語の名前") && p.contains("特になし。マクロと同じ動作"), "{p}");
     assert!(p.contains("まずマクロが何をしているか") && !p.contains("あなたは「xljs」"), "{p}");
     assert_eq!(wizard::file_name(&a), "新しいスクリプト.js");
@@ -442,12 +442,12 @@ fn wizard_prompts() {
     };
     let p = wizard::prompt(&a);
     assert_eq!(wizard::file_name(&a), "在庫_管理.js");
-    assert!(p.contains("- 形式: 専用の HTML 画面を持つアプリ") && p.contains("「在庫_管理.js」") && p.contains("## やりたいこと\n\n在庫を一覧で見たい") && p.contains("ui/index.html"), "{p}");
+    assert!(p.contains("- 形式: カスタムアプリ（@mode app。専用の HTML の画面 ui/index.html を持つ）") && p.contains("「在庫_管理.js」") && p.contains("## やりたいこと\n\n在庫を一覧で見たい") && p.contains("ui/index.html"), "{p}");
     assert!(!p.contains("- 入力:") && !p.contains("入力ファイル"), "{p}");
     assert_eq!(wizard::file_name(&wizard::Answers { name_mode: "name".into(), name: "a.ts".into(), ..Default::default() }), "a.ts");
     assert!(!p.contains("見た目"), "{p}");
 
-    assert!(p.contains("- コードの前に、画面の構成") && !p.contains("使う人") && !p.contains("実行している人の情報") && !p.contains("- データ:"), "{p}");
+    assert!(p.contains("- コードの前に、作るもの（入力して実行するツールか、開いたまま使うアプリか）、画面の構成") && !p.contains("使う人") && !p.contains("実行している人の情報") && !p.contains("- データ:"), "{p}");
 
     // How it is used: several people, their own details from Active Directory, data kept in a database.
     let p = wizard::prompt(&wizard::Answers { users: "shared".into(), use_ad: true, data: "keep".into(), ..a.clone() });
@@ -536,7 +536,9 @@ fn templates_run() {
     write_text(&answers, r#"{"form": [{"name": "山田"}]}"#).unwrap();
     let r = crate::engine::tests::run_script(&form.to_string_lossy(), &answers.to_string_lossy(), &[]);
     assert_eq!(r.code, 0, "{:?} {}", r.err, r.stderr);
-    assert!(r.stderr.contains("山田 さん、こんにちは！"), "{}", r.stderr);
+    // The form stays open: onSubmit writes in its log.
+    assert!(text.contains("onSubmit(values, ctx)") && text.contains("submit: \"実行\""), "{text}");
+    assert!(r.stdout.contains("山田 さん、こんにちは！"), "{} {}", r.stdout, r.stderr);
 
     let app = dir.join("新しいカスタムアプリ.js");
     write_template(&app, Template::App).unwrap();

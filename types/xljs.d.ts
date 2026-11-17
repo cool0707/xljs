@@ -207,10 +207,12 @@ declare global {
     withProgress<T>(iterable: Iterable<T>, options?: WithProgressOptions<T> | string): Generator<T, void, undefined>;
     withProgress<T>(iterable: AsyncIterable<T>, options?: WithProgressOptions<T> | string): AsyncIterableIterator<T>;
     /**
-     * 入力フォームを表示する。キャンセルされると null。
-     * ネイティブ UI ではウィンドウ（WebView2）、コンソールでは対話入力になる。
-     * onSubmit や buttons を指定すると、実行後もウィンドウを開いたまま進捗とログを表示し、
+     * フォーム（項目の定義だけで作る画面）を表示する。入力欄・表・グラフ・ボタン・タブを置ける。
+     * onSubmit や buttons を指定すると、実行後もウィンドウを開いたまま進捗とログを表示し、続けて使える
+     * （入力して実行するツールも、一覧・登録のある開いたまま使うアプリも、この形で作る）。
      * ウィンドウが閉じられたときに最後に送信された（検証を通った）値を返す。
+     * onSubmit も buttons もなければ、送信で閉じて値を返す（キャンセルされると null）。
+     * ネイティブ UI ではウィンドウ（WebView2）、コンソールでは対話入力になる。
      */
     form<V extends FormValues = FormValues>(options: FormOptions<V>): Promise<V | null>;
     /**

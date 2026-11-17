@@ -5,18 +5,18 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 
 | ファイル | 内容 | 大きさ |
 |---|---|---|
-| [`prompt.md`](prompt.md) | AI への指示（回答の決まり・よくある間違い）＋要点のリファレンス＋回答例。**これだけで基本的な集計・変換は書ける** | 約 11,000 字 |
-| [`reference.md`](reference.md) | 詳しいリファレンス（全オプション・書式・フォーム・表・画面の設計の方針・アプリモード）とレシピ 6 本 | 約 52,000 字 |
-| [`copilot/instructions.md`](copilot/instructions.md) | Copilot のエージェント用の指示（`prompt.md` を 8,000 字以内に縮めたもの） | 約 5,600 字 |
-| [`chatgpt/instructions.md`](chatgpt/instructions.md)・[`gemini/instructions.md`](gemini/instructions.md)・[`claude/instructions.md`](claude/instructions.md) | ChatGPT・Gemini・Claude 用の指示（3 つとも同じ中身。`copilot/instructions.md` のスキルの呼び方を、知識のファイル `xljs-reference.txt` などに替えたもの） | 約 5,700 字 |
-| [`copilot/skills/xljs-reference/SKILL.md`](copilot/skills/xljs-reference/SKILL.md) | スキル版のリファレンス（`reference.md` から下の 5 つを除いたもの） | 約 28,000 字 |
-| [`copilot/skills/xljs-app-design/SKILL.md`](copilot/skills/xljs-app-design/SKILL.md) | スキル版のリファレンス: 画面の設計（フォームアプリ・カスタムアプリの方針、型、アンチパターン）とアプリモード | 約 12,000 字 |
+| [`prompt.md`](prompt.md) | AI への指示（回答の決まり・作るものの決め方・よくある間違い）＋要点のリファレンス＋回答例（ツールとアプリ）。**これだけで基本的な集計・変換のツールと、一覧・登録のあるアプリは書ける** | 約 15,000 字 |
+| [`reference.md`](reference.md) | 詳しいリファレンス（全オプション・書式・フォーム・表・画面の設計の方針・アプリモード）とレシピ 6 本 | 約 59,000 字 |
+| [`copilot/instructions.md`](copilot/instructions.md) | Copilot のエージェント用の指示（`prompt.md` を 8,000 字以内に縮めたもの） | 約 7,700 字 |
+| [`chatgpt/instructions.md`](chatgpt/instructions.md)・[`gemini/instructions.md`](gemini/instructions.md)・[`claude/instructions.md`](claude/instructions.md) | ChatGPT・Gemini・Claude 用の指示（3 つとも同じ中身。`copilot/instructions.md` のスキルの呼び方を、知識のファイル `xljs-reference.txt` などに替えたもの） | 約 7,800 字 |
+| [`copilot/skills/xljs-reference/SKILL.md`](copilot/skills/xljs-reference/SKILL.md) | スキル版のリファレンス（`reference.md` から下の 5 つを除いたもの） | 約 29,000 字 |
+| [`copilot/skills/xljs-app-design/SKILL.md`](copilot/skills/xljs-app-design/SKILL.md) | スキル版のリファレンス: 画面の設計（ツールかアプリかの決め方、フォームアプリ・カスタムアプリの方針、型、アンチパターン）とアプリモード | 約 18,000 字 |
 | [`copilot/skills/xljs-pdf/SKILL.md`](copilot/skills/xljs-pdf/SKILL.md) | スキル版のリファレンス: PDF 出力と PDF の編集 | 約 4,000 字 |
 | [`copilot/skills/xljs-sqlite/SKILL.md`](copilot/skills/xljs-sqlite/SKILL.md) | スキル版のリファレンス: SQLite | 約 3,300 字 |
 | [`copilot/skills/xljs-network/SKILL.md`](copilot/skills/xljs-network/SKILL.md) | スキル版のリファレンス: Web API（fetch）と Active Directory | 約 3,500 字 |
 | [`copilot/skills/xljs-chart/SKILL.md`](copilot/skills/xljs-chart/SKILL.md) | スキル版のリファレンス: グラフ（ui.chart） | 約 2,900 字 |
-| [`copilot/skills/vba-port/SKILL.md`](copilot/skills/vba-port/SKILL.md) | Excel マクロ（VBA）移植用のスキル。素直な書き方への置き換え、不要なコードの省略、手順の見直しの提案 | 約 4,300 字 |
-| [`coding-agent/xljs-dev/SKILL.md`](coding-agent/xljs-dev/SKILL.md) | 開発モードを使わず、自分の AI 開発環境（Claude Code・GitHub Copilot のエージェント・Cursor など）で作るときのスキル。開発モードがしていること（履歴、モックの UI での実行とエラーの読み取り、テストの再生、exe の作成）を AI に自分で行わせる | 約 5,700 字 |
+| [`copilot/skills/vba-port/SKILL.md`](copilot/skills/vba-port/SKILL.md) | Excel マクロ（VBA）移植用のスキル。素直な書き方への置き換え、不要なコードの省略、手順の見直しの提案 | 約 4,600 字 |
+| [`coding-agent/xljs-dev/SKILL.md`](coding-agent/xljs-dev/SKILL.md) | 開発モードを使わず、自分の AI 開発環境（Claude Code・GitHub Copilot のエージェント・Cursor など）で作るときのスキル。開発モードがしていること（履歴、モックの UI での実行とエラーの読み取り、テストの再生、exe の作成）を AI に自分で行わせる | 約 5,900 字 |
 
 配布 zip にも `prompt/` として同梱しています（このフォルダの中身がそのまま入ります）。
 
@@ -67,8 +67,9 @@ ChatGPT・Gemini・Claude の「知識」には、`copilot/skills/` の 7 つの
 - **入力ファイルの形を具体的に書く**: シート名、見出しが何行目か、列名（「日付・顧客名・商品・数量・金額」）、1 ファイルか複数か。見出しと数行を（個人情報を消して）貼るのがいちばん確実です。
 - **出力の形を書く**: 「顧客ごとの件数と合計を新しい Excel に」「Shift_JIS の CSV で」「元のファイルと同じフォルダに」など。
 - **誰がどう使うかを書く**: 「自分だけ」か「共有フォルダに置いて何人かで使う」か、実行する人の氏名・所属を使うか（AI は Active Directory から取るコードを書きます）、データを次回に持ち越すか。開発モードの新規作成ウィザードでは「使う人」「データの保存」で選べます。
+- **作りたいものを書く**: xljs では、いくつかの項目に入力して実行する「ツール」（集計・変換・帳票の作成）も、開いたまま使う「アプリ」（一覧・検索・登録・更新、複数の機能）も作れます。どちらも HTML を書かないフォーム（`ui.form`）の画面です。AI は依頼からどちらかを決めるので、「一覧を見ながら登録・修正・削除したい」「登録と照会の 2 つの画面がほしい」のように、続けて使うものならそう書きます。
 - **画面の流れを書く**: 「開いたら自分の担当分の一覧が出て、チェックを付けて登録する」のように、最初に見えるものと操作を書くと、1 つの画面にまとまります。
-- **使い方を書く**: AI は入力をフォーム（1 画面に入力欄と実行ボタン）で受け取るスクリプトを書きます。タスクスケジューラーや他のアプリから自動で実行するなら「画面を出さずに自動実行したい」、一度きりの作業なら「使い捨てでよい」と書くと、フォームなしで書きます。
+- **画面が要らないときはそう書く**: タスクスケジューラーや他のアプリから自動で実行するなら「画面を出さずに自動実行したい」、一度きりの作業なら「使い捨てでよい」と書くと、フォームなしで書きます。
 - **一度に頼みすぎない**: まず動くものを作ってもらい、「金額の列に 3 桁区切りを付けて」のように足していきます。
 - **エラーが出たら**: エラーダイアログの「コピー」ボタンで全文をコピーし、「このエラーが出ました」と貼って直してもらいます。
 - 実行する前に構文だけ確かめるには `xljs check 集計.js`。
@@ -76,10 +77,21 @@ ChatGPT・Gemini・Claude の「知識」には、`copilot/skills/` の 7 つの
 
 ## 依頼の例
 
+入力して実行するツール:
+
 ```
 フォルダの中に支店ごとの売上ファイル（東京.xlsx、大阪.xlsx…）があります。
 各ファイルの「売上」シートは 1 行目が見出しで、列は「日付・担当・商品・数量・金額」です。
 全ファイルをまとめて、担当ごと・月ごとの金額の合計表を作り、新しい Excel に保存したいです。
+```
+
+開いたまま使うアプリ:
+
+```
+備品の台帳を Excel の代わりに管理したいです。共有フォルダに置いて総務課の 3 人で使います。
+項目は「管理番号・品名・設置場所・購入日・金額・状態（使用中／修理中／廃棄）」です。
+開くと一覧が出て、品名や設置場所で絞り込めること。一覧から選んで内容を直したり、新しい備品を登録したりしたいです。
+いまの台帳（備品.xlsx の「台帳」シート）を最初に取り込み、一覧は Excel に出力できるようにしてください。
 ```
 
 ## 資料を更新するとき（開発者向け）

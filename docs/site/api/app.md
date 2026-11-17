@@ -1,7 +1,9 @@
 ---
-title: アプリ（HTML の画面）
+title: カスタムアプリ（HTML の画面）
 api: App, app, AppWindow, AppWindowOptions, AppElements, AppDomEvent, WireValue
 ---
+
+画面を自分の HTML で作るアプリです。入力欄・表・ボタンを並べた画面は HTML を書かずに [フォーム](form.md)（`ui.form`）で作れるので、カスタムアプリはフォームにない見た目・操作（表のセルに打ち込みながら行を増やす明細、入力に応じてその場で変わる計算結果、独自のレイアウト）が要るときに使います。
 
 `@mode app`（または `app.open`）のウィンドウでは、画面（HTML）とスクリプトが関数呼び出し・イベント・共有の値でやり取りできます。画面の `xljs` オブジェクトは自動で使えるようになります（`<script>` の読み込みは不要）。
 

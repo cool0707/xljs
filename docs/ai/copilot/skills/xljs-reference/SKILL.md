@@ -10,7 +10,7 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 
 | スキル | 内容 |
 |---|---|
-| `xljs-app-design` | 画面の設計（フォームアプリ・カスタムアプリの方針・型・アンチパターン）とアプリモード（`@mode app`） |
+| `xljs-app-design` | 画面の設計（ツールかアプリかの決め方、フォームアプリ・カスタムアプリの方針・型・アンチパターン）とアプリモード（`@mode app`） |
 | `xljs-pdf` | PDF 出力（`book.toPdf`・`sheet.toPdf`・`xljs.htmlToPdf`）と PDF の編集（`pdf`） |
 | `xljs-sqlite` | SQLite データベース（`sqlite.open`） |
 | `xljs-network` | Web API（`fetch`）と Active Directory（`ad`） |
@@ -262,12 +262,12 @@ for (const [i, f] of files.entries()) {
 p.close();
 ```
 
-## 入力フォーム（ui.form）
+## フォーム（ui.form）
 
-入力は原則このフォームで受け取る（バッチ・他のアプリから自動で呼ばれるときは画面を出さず `xljs.args` や設定ファイルから、使い捨ての処理はダイアログで）。`required` `min` `max` `pattern` と `validate` で入力チェックを必ず入れ、ファイルは中身（シート・列）まで `validate` で確かめる。
+画面は原則このフォームで作る。入力して実行するツールも、開いたまま使うアプリも同じ `ui.form` で、置くもの（入力欄・表・グラフ・ボタン・タブ）と `onSubmit` / `buttons` / `onChange` の書き方で決まる（形の選び方と型は「画面の設計」。バッチ・他のアプリから自動で呼ばれるときは画面を出さず `xljs.args` や設定ファイルから、使い捨ての処理はダイアログで）。`required` `min` `max` `pattern` と `validate` で入力チェックを必ず入れ、ファイルは中身（シート・列）まで `validate` で確かめる。
 
 ```js
-const v = await ui.form({
+await ui.form({
   title: "請求書作成",
   description: "一覧の各行から請求書を作ります",
   fields: [
@@ -282,9 +282,13 @@ const v = await ui.form({
   validate(v) {                                        // 追加の検証。問題があれば { 項目名: "メッセージ" } を返す
     if (v.rate !== 8 && v.rate !== 10) return { rate: "8 か 10 を入力してください" };
   },
+  async onSubmit(v, ctx) {                             // 処理はここに書く（フォームは開いたまま。下の onSubmit）
+    ctx.log(`${v.list.name} から請求書を作ります`);
+  },
 });
-if (!v) exit();
 ```
+
+`onSubmit` も `buttons` もないフォームは、送信すると閉じて値を返す（`const v = await ui.form({ ... }); if (!v) exit();`）。処理の途中で少し尋ねるだけのときに使い、ツールやアプリの画面は `onSubmit` / `buttons` で開いたままにする。
 
 | type | 値 |
 |---|---|
@@ -311,7 +315,7 @@ if (!v) exit();
 
 - 項目の共通オプション: `label` `default` `required` `placeholder`（`select` では未選択の表示になり、初期値が `""`）`help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`maxLength`（文字数の上限。「12 / 100」と表示）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
 - ウィンドウの大きさは `width` `height`（既定は項目数から決める）。`resizable: false` で大きさを固定する（枠のドラッグ・最大化ができない）。`titleBar: "custom"` で OS のタイトルバーの代わりに自前のタイトルバー（`icon` とタイトル、最小化・最大化・閉じる）を表示する（`ui.table` / `app.open` も同じ。メインウィンドウは `@titlebar custom`）。
-- `onChange(value, values, ctx)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる。`ctx.setValue(name, value)` でほかの項目を埋められる（setValue で変えた項目の onChange は呼ばれない。例: 売上のファイルを選んだら、同じフォルダの対になる仕入のファイルを `ctx.setValue("purchase", path.join(path.dirname(h.path), "仕入_202604.csv"))` で設定する）。
+- `onChange(value, values, ctx)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる（`table` は行を選んだとき。選んだ行をほかの入力欄に出せる）。`ctx.setValue(name, value)` でほかの項目を埋められる（setValue で変えた項目の onChange は呼ばれない。例: 売上のファイルを選んだら、同じフォルダの対になる仕入のファイルを `ctx.setValue("purchase", path.join(path.dirname(h.path), "仕入_202604.csv"))` で設定する）。
 - 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`、`hidden: (v) => v.kind !== "その他"`）。onChange・onSubmit・ボタンの `ctx.setDisabled(name, bool)` / `ctx.setEnabled(name)` / `ctx.setHidden(name, bool)` / `ctx.setVisible(name)` でも切り替えられる（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
 - 横に並べる: `{ row: "氏名", fields: [{ name: "last", label: "姓" }, { name: "first", label: "名" }] }` を項目と並べて書く（`row` が左のラベル、各項目の `label` は入力欄の前。`""` で出さない）。値はほかの項目と同じオブジェクト。
@@ -362,7 +366,7 @@ await ui.form({
 
 - `ctx.table(name, rows, columns?)` で `table` 項目の行（と列）を入れ替えられる（`onSubmit`・ボタンの `onClick`・項目の `onChange` のどれからでも）。結果の一覧を同じウィンドウに出す、登録のあとに一覧を読み直す、条件を変えたら絞り込む、に使う。最初は `rows: []` で空の表を置いておける。
 - 処理が終わるとフォームは入力できる状態に戻り、値を変えて続けて実行できる（閉じるのは利用者）。
-- フォームの表でできないこと: 行の追加・削除、セルを変えたときにほかのセルを変えること（セルの `onChange` はない。検査は `validate` / `validateRow`）。これらが要るならアプリモード。
+- フォームの表でできないこと: 表の上での行の追加・削除（スクリプトが `ctx.table` で行を入れ替えることはできる）、セルを変えたときにほかのセルを変えること（セルの `onChange` はない。検査は `validate` / `validateRow`）。これらが要るならカスタムアプリ（アプリモード）。
 
 - `buttons: [{ label, onClick(v, ctx) }]` で送信ボタンの左にボタンを追加できる。押すと onClick が onSubmit と同じように動く（ウィンドウは開いたまま。押したボタンは終わるまでスピナーを表示）。`validate: false` で検証なし、`close: true` で正常終了後に閉じる。`submit: false` で送信ボタンを出さない。`ctx.setValue(name, value)` で項目の値を変えられる。
 - ボタンの `variant`: `"primary"`（塗りつぶし）`"destructive"`（赤。削除など）`"ghost"`（枠なし）。`confirm: "削除しますか？"` で実行前に確認する（検証のあと）。
@@ -395,7 +399,7 @@ ui.table(rows, { formats: [
 ] });
 ```
 
-- `ui.table` は表示と選択だけで、セルは編集できない。編集させるときは `ui.form` の `type: "table"` に `editable: true`（上の「入力フォーム」）。
+- `ui.table` は表示と選択だけで、セルは編集できない。編集させるときは `ui.form` の `type: "table"` に `editable: true`（上の「フォーム」）。
 - `onDoubleClick` は `ui.table` だけにある（フォームの表にはない）。`e.column` はダブルクリックした列の見出し（行番号の欄なら `null`）、`e.key` は列のキー。`selectable: "single"` と一緒に指定すると、ダブルクリックでは OK にならない。
 
 ## 日付（dayjs）

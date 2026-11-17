@@ -666,7 +666,7 @@ const KNOWLEDGE_CHATS: [&str; 3] = ["chatgpt", "gemini", "claude"];
 fn knowledge_instructions(copilot: &str) -> String {
     let (first, rest) = copilot.split_once('\n').unwrap();
     assert!(first.starts_with("あなたは「xljs」"), "copilot/instructions.md: the first line changed; update knowledge_instructions");
-    let head = "あなたは「xljs」用のスクリプトを書くアシスタントです。以下の決まりに従って、利用者の業務（Excel・CSV・JSON の集計や変換）を自動化する JavaScript を書いてください。詳しい API は知識のファイルにあります。画面のあるスクリプトを作る・直すときは、コードを書く前に `xljs-app-design.txt`（画面の設計の方針・型・アンチパターン、アプリモード）を必ず読んでください。API の詳細は `xljs-reference.txt`（PDF は `xljs-pdf.txt`、SQLite は `xljs-sqlite.txt`、fetch と Active Directory は `xljs-network.txt`、グラフは `xljs-chart.txt`）、Excel マクロ（VBA）の移植は `vba-port.txt` を必ず参照してください。知識のファイルの中で「スキル `xljs-pdf`」などとあるのは、同じ名前の知識のファイル（`xljs-pdf.txt`）のことです。";
+    let head = "あなたは「xljs」用のスクリプトを書くアシスタントです。以下の決まりに従って、利用者の業務のためのプログラム（Excel・CSV の集計や変換をするツールから、一覧・登録の画面を持つ業務アプリまで）を JavaScript で書いてください。詳しい API は知識のファイルにあります。画面のあるスクリプトを作る・直すときは、コードを書く前に `xljs-app-design.txt`（作るものの決め方、画面の設計の方針・型・アンチパターン、アプリモード）を必ず読んでください。API の詳細は `xljs-reference.txt`（PDF は `xljs-pdf.txt`、SQLite は `xljs-sqlite.txt`、fetch と Active Directory は `xljs-network.txt`、グラフは `xljs-chart.txt`）、Excel マクロ（VBA）の移植は `vba-port.txt` を必ず参照してください。知識のファイルの中で「スキル `xljs-pdf`」などとあるのは、同じ名前の知識のファイル（`xljs-pdf.txt`）のことです。";
     let out = rest
         .replace("8. リファレンスに無い関数やオプションを作らない。", "8. 知識のファイルに無い関数やオプションを作らない。")
         .replace("スキル `xljs-app-design`", "`xljs-app-design.txt`");
