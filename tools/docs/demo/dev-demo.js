@@ -140,7 +140,7 @@
   // The form in the run's window (bridge.js in a frame: "\x01" + JSON).
   window.addEventListener("message", (e) => {
     if (chatFrame && e.source === chatFrame.contentWindow && e.data && e.data.demo === "download") {
-      post({ type: "download", name: ENTRY, text: D.after, target: ENTRY, old: files[ENTRY] });
+      post({ type: "download", name: ENTRY, text: D.after, target: ENTRY, old: files[ENTRY], files: Object.keys(files) });
       return;
     }
     if (!runWin || e.source !== runWin.frame.contentWindow || typeof e.data !== "string" || e.data[0] !== "\x01") return;

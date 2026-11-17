@@ -148,6 +148,10 @@ ol.demo-steps { margin: 12px 0 0; padding-left: 1.4em; color: var(--fg-soft); fo
 .gallery figure { margin: 16px 0 0; }
 .gallery figure img { display: block; height: auto; margin: 0 auto; }
 .gallery figcaption { margin-top: 10px; font-size: 14px; color: var(--fg-soft); text-align: center; }
+/* Screenshots in the guides (<figure class="shot">). */
+main figure.shot { margin: 16px 0 24px; }
+main figure.shot img { display: block; height: auto; border: 1px solid var(--border); border-radius: 8px; }
+main figure.shot figcaption { margin-top: 8px; font-size: 14px; color: var(--fg-soft); }
 
 /* A screenshot in a guide (guide/first-steps.md). */
 figure.shot { margin: 16px 0 20px; }
