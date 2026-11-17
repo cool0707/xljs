@@ -469,7 +469,7 @@ ${pg.description ? `<meta name="description" content="${esc(pg.description)}">` 
 <link rel="icon" href="${base}/files/assets/xljs.png">
 <link rel="stylesheet" href="${base}/site.css">
 </head>
-<body>
+<body${pg.path === "index" ? ' class="home"' : ""}>
 <header class="top">
   <button class="menu" aria-label="メニュー" aria-expanded="false">☰</button>
   <a class="brand" href="${to("index")}"><img src="${base}/files/assets/xljs.png" alt="">xljs</a>
@@ -479,9 +479,7 @@ ${pg.description ? `<meta name="description" content="${esc(pg.description)}">` 
 <div class="wrap">
 <nav class="side" aria-label="目次">${navHtml}</nav>
 <main>
-<p class="crumb">${esc(pg.section)}</p>
-<h1>${esc(pg.title)}</h1>
-${content}
+${pg.path === "index" ? "" : `<p class="crumb">${esc(pg.section)}</p>\n<h1>${esc(pg.title)}</h1>\n`}${content}
 <footer><a href="${REPO}/edit/main/${rel(pg.srcFile)}">このページを編集</a></footer>
 </main>
 ${tocHtml}
@@ -492,6 +490,53 @@ ${tocHtml}
 </body>
 </html>
 `;
+}
+
+// ------------------------------------------------------------------ demo
+
+// The mock of the development mode on the top page (demo/web/dev-demo.html): the
+// built-in pages (src/ui/web) as they are, with tools/docs/demo/dev-demo.js
+// playing the Rust side (see there) and a fictional AI chat (chat.html).
+function buildDemo() {
+  const WEB = path.join(ROOT, "src/ui/web");
+  const DEMO = path.join(import.meta.dirname, "demo");
+  const dest = path.join(OUT, "demo/web");
+  fs.cpSync(WEB, dest, { recursive: true, filter: (f) => !rel(f).startsWith("src/ui/web/manual") });
+  const dev = fs.readFileSync(path.join(WEB, "dev.html"), "utf8");
+  const scripts = `<script src="demo-data.js"></script>\n<script src="dev-demo.js"></script>\n<script src="titlebar.js"></script>\n</head>`;
+  if (!dev.includes("</head>")) problem("src/ui/web/dev.html", "</head> がない");
+  fs.writeFileSync(path.join(dest, "dev-demo.html"), dev.replace("</head>", scripts));
+  for (const f of ["dev-demo.js", "chat.html"]) fs.copyFileSync(path.join(DEMO, f), path.join(dest, f));
+  // The title bar draws itself only in a window's top page: here in a frame.
+  const tb = fs.readFileSync(path.join(WEB, "titlebar.js"), "utf8");
+  const top = " || window.top !== window";
+  if (!tb.includes(top)) problem("src/ui/web/titlebar.js", "モックで外す条件（window.top !== window）が見つからない");
+  fs.writeFileSync(path.join(dest, "titlebar.js"), tb.replace(top, ""));
+
+  // The texts as the Rust side sends them (src/dev/mod.rs: texts()).
+  const messages = (lang) => JSON.parse(fs.readFileSync(path.join(ROOT, `src/i18n/locales/${lang}.json`), "utf8")).messages;
+  const all = { ...messages("en"), ...messages("ja") };
+  const under = (prefix) => Object.fromEntries(Object.entries(all).filter(([k]) => k.startsWith(prefix)).map(([k, v]) => [k.slice(prefix.length), v]));
+  const after = fs.readFileSync(path.join(ROOT, "examples/form-master.xljs"), "utf8").replace(/\r\n/g, "\n");
+  // The script before the chat's change: without the table's formats.
+  const line = after.split("\n").find((l) => /^\s*formats: /.test(l));
+  if (!line) problem("examples/form-master.xljs", "モックの変更（一覧の formats の行）が見つからない");
+  const data = {
+    texts: {
+      ...under("devPage."),
+      demoOnly: "このモックでは使えません。xljs をダウンロードしてお試しください。",
+      demoBefore: "AI チャットの変更の前",
+      demoNoSave: "モックなので保存・削除はしません",
+    },
+    window: under("window."),
+    chatName: "サンプル AI",
+    intro: "（モック）実際の開発モードでは、xljs の書き方の資料をここでコピーして AI チャットに貼ります。",
+    notify: "（モック）実際の開発モードでは、手で直した変更を AI チャットに伝える文をコピーします。",
+    before: line ? after.replace(line + "\n", "") : after,
+    after,
+    form: JSON.parse(fs.readFileSync(path.join(DEMO, "form-master.json"), "utf8")),
+  };
+  fs.writeFileSync(path.join(dest, "demo-data.js"), `window.XLJS_DEMO = ${JSON.stringify(data)};\n`);
 }
 
 // ------------------------------------------------------------------ build
@@ -505,6 +550,8 @@ fs.copyFileSync(DTS, path.join(OUT, "xljs.d.ts"));
 fs.writeFileSync(path.join(OUT, "site.css"), CSS);
 fs.writeFileSync(path.join(OUT, "site.js"), JS);
 fs.writeFileSync(path.join(OUT, ".nojekyll"), "");
+
+buildDemo();
 
 const search = [];
 const pageIds = new Map();

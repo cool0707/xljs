@@ -69,6 +69,36 @@
     menu.setAttribute("aria-expanded", open);
   });
 
+  // The top page: the tabs of the pictures, and the mock of the development mode
+  // (demo/web/dev-demo.html at its own size, scaled to the width).
+  for (const g of document.querySelectorAll(".gallery")) {
+    const tabs = [...g.querySelectorAll(".tabs button")];
+    const panels = [...g.querySelectorAll("figure")];
+    tabs.forEach((t, i) => t.addEventListener("click", () => {
+      tabs.forEach((x, k) => x.setAttribute("aria-selected", String(k === i)));
+      panels.forEach((p, k) => (p.hidden = k !== i));
+    }));
+  }
+  for (const d of document.querySelectorAll(".demo[data-demo-page]")) {
+    const box = d.querySelector(".demo-frame");
+    const start = () => {
+      if (box.querySelector("iframe")) return;
+      const f = document.createElement("iframe");
+      f.src = base + "/" + d.dataset.demoPage;
+      f.title = "開発モードのモック";
+      box.replaceChildren(f);
+      const fit = () => (f.style.transform = `scale(${box.clientWidth / 1280})`);
+      fit();
+      new ResizeObserver(fit).observe(box);
+    };
+    d.querySelector(".demo-start").addEventListener("click", start);
+    // Opened by itself when it comes into view on a wide screen.
+    if ("IntersectionObserver" in window && matchMedia("(min-width: 900px)").matches) {
+      const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) { io.disconnect(); start(); } });
+      io.observe(box);
+    }
+  }
+
   const links = [...document.querySelectorAll("nav.toc a")];
   if (links.length && "IntersectionObserver" in window) {
     const byId = new Map(links.map((a) => [decodeURIComponent(a.hash.slice(1)), a]));
