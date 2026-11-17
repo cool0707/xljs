@@ -372,7 +372,7 @@ const rows = [{ 名前: "a", 数: 1, 日: new Date(2026, 3, 1) }, { 名前: "b",
 const picked = await ui.table(rows, { title: "表", selectable: true });
 console.log("5", picked.map((r) => r.名前).join());
 console.log("csv", JSON.stringify(fs.readText("out.csv")));
-console.log("xlsx", workbooks.open("out.xlsx").sheets[0].toArrays().length);
+console.log("xlsx", excel.open("out.xlsx").sheets[0].toArrays().length);
 
 const view = ui.table(rows, { onDoubleClick(e) {
   console.log("dbl", e.index, e.row.名前, e.column, e.key, e.value);

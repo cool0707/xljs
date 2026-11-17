@@ -5737,17 +5737,18 @@
   const XLSX_MIME = MIME[".xlsx"];
 
   /**
-   * Normalizes a style spec. Besides the full form
-   * { font, fill, border, alignment, numberFormat } it accepts shorthands:
-   * bold, italic, underline, strike, color, fontSize, fontName,
-   * background (= fill), align, valign, wrap, format (= numberFormat).
+   * Normalizes a style spec to the native form { font, fill, border,
+   * alignment, numberFormat, protection }. The documented form is flat
+   * (bold, italic, underline, strike, color, fontSize, fontName, vertAlign,
+   * background, align, valign, wrap, shrink, indent, rotation, border,
+   * format, locked); the nested form (font, fill, alignment, numberFormat,
+   * protection) is accepted too.
    */
   function normStyle(s) {
     if (!s || typeof s !== "object") return {};
     const out = {};
     const font = Object.assign({}, s.font);
-    for (const k of ["bold", "italic", "underline", "strike"]) if (s[k] !== undefined) font[k] = s[k];
-    if (s.color !== undefined) font.color = s.color;
+    for (const k of ["bold", "italic", "underline", "strike", "color", "vertAlign"]) if (s[k] !== undefined) font[k] = s[k];
     if (s.fontSize !== undefined) font.size = s.fontSize;
     if (s.fontName !== undefined) font.name = s.fontName;
     if (Object.keys(font).length) out.font = font;
@@ -5756,12 +5757,32 @@
     const al = Object.assign({}, s.alignment);
     if (s.align !== undefined) al.horizontal = s.align;
     if (s.valign !== undefined) al.vertical = s.valign;
-    if (s.wrap !== undefined) al.wrap = s.wrap;
+    for (const k of ["wrap", "shrink", "indent", "rotation"]) if (s[k] !== undefined) al[k] = s[k];
     if (Object.keys(al).length) out.alignment = al;
     if (s.border !== undefined) out.border = s.border;
     const nf = s.numberFormat !== undefined ? s.numberFormat : s.format;
     if (nf !== undefined) out.numberFormat = nf;
-    if (s.protection !== undefined) out.protection = s.protection;
+    const prot = Object.assign({}, s.protection);
+    if (s.locked !== undefined) prot.locked = s.locked;
+    if (Object.keys(prot).length) out.protection = prot;
+    return out;
+  }
+
+  /** A style as getStyle() returns it: the flat form of setStyle(). */
+  function flatStyle(n) {
+    const out = {};
+    const f = n.font || {};
+    for (const k of ["bold", "italic", "underline", "strike", "color", "vertAlign"]) if (f[k] !== undefined) out[k] = f[k];
+    if (f.size !== undefined) out.fontSize = f.size;
+    if (f.name !== undefined) out.fontName = f.name;
+    if (n.fill) out.background = n.fill;
+    const al = n.alignment || {};
+    if (al.horizontal !== undefined) out.align = al.horizontal;
+    if (al.vertical !== undefined) out.valign = al.vertical;
+    for (const k of ["wrap", "shrink", "indent", "rotation"]) if (al[k] !== undefined) out[k] = al[k];
+    if (n.border !== undefined) out.border = n.border;
+    if (n.numberFormat !== undefined) out.format = n.numberFormat;
+    if (n.protection && n.protection.locked !== undefined) out.locked = n.protection.locked;
     return out;
   }
 
@@ -5779,15 +5800,16 @@
     get address() { return this._address; }
     get sheet() { return this._sheet; }
     /** Applies (merges) a style; opts.replace discards the existing style first. */
-    style(spec, opts = {}) {
+    setStyle(spec, opts = {}) {
       native.xlsxStyle(this._sheet._book._h, this._sheet._name, this._address, normStyle(spec), !!opts.replace);
       return this;
     }
-    font(spec) { return this.style({ font: spec }); }
-    fill(color) { return this.style({ fill: color }); }
-    border(spec) { return this.style({ border: spec }); }
-    align(horizontal, vertical) { return this.style({ alignment: { horizontal, vertical } }); }
-    numberFormat(format) { return this.style({ numberFormat: format }); }
+    /** Alias of setStyle() (not documented). */
+    style(spec, opts) { return this.setStyle(spec, opts); }
+    /** The style of the range's top-left cell, as setStyle() takes it. */
+    getStyle() {
+      return flatStyle(native.xlsxGetStyle(this._sheet._book._h, this._sheet._name, this._address.split(":")[0]));
+    }
     merge() { native.xlsxMerge(this._sheet._book._h, this._sheet._name, this._address, false); return this; }
     unmerge() { native.xlsxMerge(this._sheet._book._h, this._sheet._name, this._address, true); return this; }
     /** Values of the range as a 2-D array; assigning writes from the top-left cell. */
@@ -5893,9 +5915,11 @@
     /** Evaluates the formula with excelize's calculation engine (subset of Excel functions). */
     calc() { return native.xlsxCalc(this._sheet._book._h, this._sheet._name, this._address); }
     /** Applies (merges) a style to the cell. */
-    style(spec, opts) { new Range(this._sheet, this._address).style(spec, opts); return this; }
+    setStyle(spec, opts) { new Range(this._sheet, this._address).setStyle(spec, opts); return this; }
+    /** Alias of setStyle() (not documented). */
+    style(spec, opts) { return this.setStyle(spec, opts); }
     /** The cell's current style ({ font, fill, border, alignment, numberFormat }). */
-    getStyle() { return native.xlsxGetStyle(this._sheet._book._h, this._sheet._name, this._address); }
+    getStyle() { return flatStyle(native.xlsxGetStyle(this._sheet._book._h, this._sheet._name, this._address)); }
     [inspectSymbol]() { return `Cell ${this._sheet._name}!${this._address} ${inspect(this.value)}`; }
   }
 
@@ -5936,12 +5960,6 @@
     }
     /** cell("B2") or cell(row, column) (1-based). */
     cell(a, b) { return new Cell(this, refOf(a, b)); }
-    getValue(a, b) { return native.xlsxGet(this._book._h, this._name, refOf(a, b)); }
-    setValue(a, b, c) {
-      if (typeof a === "number") native.xlsxSet(this._book._h, this._name, refOf(a, b), plainDate(c));
-      else native.xlsxSet(this._book._h, this._name, String(a), plainDate(b));
-      return this;
-    }
     /** All used rows as arrays of typed values. opts: { text: true } returns displayed strings. */
     toArrays(opts = {}) {
       const rows = native.xlsxReadAll(this._book._h, this._name, !!opts.text);
@@ -5951,7 +5969,7 @@
      * Rows as objects keyed by the header row.
      * opts: { header = 1 (row number), columns, skipEmpty = true, text = false }
      */
-    toObjects(opts = {}) {
+    rows(opts = {}) {
       const rows = native.xlsxReadAll(this._book._h, this._name, !!opts.text);
       const headerRow = opts.header === undefined ? 1 : opts.header;
       let keys, body;
@@ -5970,8 +5988,8 @@
         return o;
       });
     }
-    /** Alias of toObjects(). */
-    rows(opts) { return this.toObjects(opts); }
+    /** Alias of rows() (not documented). */
+    toObjects(opts) { return this.rows(opts); }
     /**
      * Writes rows (array of objects or array of arrays) starting at opts.start ("A1").
      * Objects get a header row unless opts.header === false.
@@ -6003,16 +6021,16 @@
       const c2 = c1 + nCols - 1, r2 = r1 + data.length - 1;
       const ref = (c, r) => native.xlsxCellName(c, r);
       const bodyTop = hasHeader ? r1 + 1 : r1;
-      if (bodyStyle) this.style(`${ref(c1, r1)}:${ref(c2, r2)}`, bodyStyle);
+      if (bodyStyle) this.setStyle(`${ref(c1, r1)}:${ref(c2, r2)}`, bodyStyle);
       if (opts.columnStyles && bodyTop <= r2) {
         for (const [key, spec] of Object.entries(opts.columnStyles)) {
           let idx = cols ? cols.indexOf(key) : -1;
           if (idx < 0 && /^\d+$/.test(key)) idx = Number(key);
           if (idx < 0 && /^[A-Z]+$/i.test(key)) idx = native.xlsxParseRef(key + "1")[0] - c1;
-          if (idx >= 0 && idx < nCols) this.style(`${ref(c1 + idx, bodyTop)}:${ref(c1 + idx, r2)}`, spec);
+          if (idx >= 0 && idx < nCols) this.setStyle(`${ref(c1 + idx, bodyTop)}:${ref(c1 + idx, r2)}`, spec);
         }
       }
-      if (hasHeader && headerStyle) this.style(`${ref(c1, r1)}:${ref(c2, r1)}`, headerStyle);
+      if (hasHeader && headerStyle) this.setStyle(`${ref(c1, r1)}:${ref(c2, r1)}`, headerStyle);
       const want = (k) => opts[k] !== undefined ? opts[k] : !!preset;
       if (want("autoFit")) this.autoFit(`${native.xlsxColumnName(c1)}:${native.xlsxColumnName(c2)}`);
       if (want("freeze") && hasHeader) this.freeze(ref(1, r1 + 1));
@@ -6045,6 +6063,14 @@
     toPdf(dest, options) { return printToPdf(this._book, dest, options, [this._name]); }
     get dimension() { return native.xlsxDimension(this._book._h, this._name); }
     get rowCount() { return native.xlsxRowCount(this._book._h, this._name); }
+    /** The number of the last used column (0 for an empty sheet). */
+    get columnCount() {
+      const d = this.dimension;
+      return d ? native.xlsxParseRef(d.split(":")[1] || d)[0] : 0;
+    }
+    /** Whether the sheet is hidden (Excel's "非表示"); assigning hides or shows it. */
+    get hidden() { return native.xlsxSheetHidden(this._book._h, this._name, null); }
+    set hidden(v) { native.xlsxSheetHidden(this._book._h, this._name, !!v); }
     /** Inserts count rows before row (1-based); what refers to the cells moves with them, as in Excel. */
     insertRows(row, count = 1) { return editLines(this, "insertRows", false, row, count, true); }
     deleteRows(row, count = 1) { return editLines(this, "deleteRows", false, row, count, false); }
@@ -6062,6 +6088,8 @@
       native.xlsxSetRowHeight(this._book._h, this._name, row, height);
       return this;
     }
+    /** The height of a row in points (the sheet's default for a row without a height of its own). */
+    getRowHeight(row) { return native.xlsxGetRowHeight(this._book._h, this._name, row); }
     /** Sets column widths from the cell contents. cols: "A:D" (default: all used columns). */
     autoFit(cols, opts = {}) {
       if (typeof cols === "object" && cols !== null) { opts = cols; cols = undefined; }
@@ -6077,7 +6105,13 @@
     /** range("A1:D10") */
     range(address) { return new Range(this, address); }
     /** style("A1:D1", { bold: true, background: "#DDEBF7", border: "thin" }) */
-    style(address, spec, opts) { new Range(this, address).style(spec, opts); return this; }
+    setStyle(address, spec, opts) { new Range(this, address).setStyle(spec, opts); return this; }
+    /** Alias of setStyle() (not documented). */
+    style(address, spec, opts) { return this.setStyle(address, spec, opts); }
+    /** The style of a cell (of the top-left cell of a range), as setStyle() takes it. */
+    getStyle(address) { return new Range(this, address).getStyle(); }
+    /** The merged ranges ("A1:C1", ...). */
+    get merges() { return native.xlsxMerges(this._book._h, this._name); }
     merge(address) { new Range(this, address).merge(); return this; }
     unmerge(address) { new Range(this, address).unmerge(); return this; }
     /** Freezes the rows above and columns left of the cell: freeze("A2") freezes row 1. */
@@ -6087,11 +6121,18 @@
       return this;
     }
     unfreeze() { native.xlsxFreeze(this._book._h, this._name, ""); return this; }
-    /** Adds filter buttons to the header row of the range (default: the used range). */
+    /** The rows and columns frozen ({ rows, columns }), or null. */
+    get frozen() {
+      const [rows, columns] = native.xlsxGetFreeze(this._book._h, this._name);
+      return rows || columns ? { rows, columns } : null;
+    }
+    /** Adds filter buttons to the header row of the range (default: the used range); null removes them. */
     autoFilter(address) {
-      native.xlsxAutoFilter(this._book._h, this._name, address || this.dimension);
+      native.xlsxAutoFilter(this._book._h, this._name, address === null ? "" : address || this.dimension);
       return this;
     }
+    /** The range of the filter buttons, or null. */
+    get filter() { return native.xlsxGetAutoFilter(this._book._h, this._name) || null; }
     [inspectSymbol]() { return `Worksheet ${JSON.stringify(this._name)}`; }
   }
 
@@ -6163,7 +6204,7 @@
     open(src) {
       if (src instanceof Blob && !(src instanceof File && src.path)) return new Workbook(native.xlsxOpenBytes(src._bytes(), src.name || ""));
       if (src instanceof ArrayBuffer || ArrayBuffer.isView(src)) return new Workbook(native.xlsxOpenBytes(src, ""));
-      return new Workbook(native.xlsxOpen(toPath(src, "workbooks.open()")));
+      return new Workbook(native.xlsxOpen(toPath(src, "excel.open()")));
     },
     /**
      * Reads the VBA code of a macro workbook (.xlsm, .xlsb, .xlam ...)
@@ -6173,7 +6214,7 @@
     readVBA(src) {
       if (src instanceof Blob && !(src instanceof File && src.path)) return native.vbaReadBytes(src._bytes(), src.name || "");
       if (src instanceof ArrayBuffer || ArrayBuffer.isView(src)) return native.vbaReadBytes(src, "");
-      return native.vbaRead(toPath(src, "workbooks.readVBA()"));
+      return native.vbaRead(toPath(src, "excel.readVBA()"));
     },
     /** Creates an empty workbook. The first addSheet() replaces the default sheet. */
     create(options) { return new Workbook(native.xlsxCreate(options)); },
@@ -6186,6 +6227,8 @@
     /** Builds a cell reference from (row, column), 1-based. */
     cellName: (row, column) => native.xlsxCellName(column, row),
   };
+  defineGlobal("excel", workbooksObj);
+  // The earlier name (not documented).
   defineGlobal("workbooks", workbooksObj);
 
   // ---------------------------------------------------------------- sqlite

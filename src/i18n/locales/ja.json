@@ -1057,6 +1057,7 @@
     "book.col.textFmt": "（文字列）",
     "book.col.validation": "入力規則あり",
     "xlsx.invalidHandle": "ブックではありません",
+    "xlsx.lastVisibleSheet": "{0} を非表示にできません（ブックには表示しているシートが 1 つは要ります）",
     "xlsx.phoneticNotText": "ふりがなは文字列に付けます（{0} は文字列ではありません）",
     "xlsx.note.hasComment": "{0} にはコメントがあります（メモとコメントは同じセルに付けられません）",
     "xlsx.comment.hasNote": "{0} にはメモがあります（メモとコメントは同じセルに付けられません）",

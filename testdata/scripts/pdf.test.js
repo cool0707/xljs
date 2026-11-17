@@ -1,18 +1,17 @@
 import { ok, equal, throws, rejects } from "./_assert.js";
 
 // book.toHtml / toPdf: the sheets as Excel would print them.
-const wb = workbooks.create();
+const wb = excel.create();
 const ws = wb.addSheet("見積");
 ws.write([["品名", "数量", "単価", "金額"], ["りんご", 3, 120, 360], ["みかん", 10, 30, 300]]);
-ws.setValue("A5", "合計");
-ws.setValue("D5", 660);
-ws.style("A1:D1", { bold: true, background: "#DDEBF7", align: "center" });
-ws.setValue("D6", -5);
-ws.style("C2:D6", { format: "#,##0;[Red]-#,##0" });
-ws.range("A1:D3").border({ outline: "medium", inside: "thin" });
+ws.cell("A5").value = "合計";
+ws.cell("D5").value = 660;
+ws.setStyle("A1:D1", { bold: true, background: "#DDEBF7", align: "center" });
+ws.cell("D6").value = -5;
+ws.setStyle("C2:D6", { format: "#,##0;[Red]-#,##0" });
+ws.setStyle("A1:D3", { border: { outline: "medium", inside: "thin" } });
 ws.merge("A5:C5");
-ws.setValue("F1", "長いテキストは右の空のセルにはみ出す");
-
+ws.cell("F1").value = "長いテキストは右の空のセルにはみ出す";
 const html = ws.toHtml();
 ok(html.startsWith("<!doctype html>"), "a document");
 equal(html.match(/class="xljs-page"/g).length, 1, "one page");
@@ -33,9 +32,9 @@ ok(html.includes("font-variant-emoji:text"), "emoji in the colors of the text");
 
 // Text running over the empty cells beside it is printed whole: the used range takes in those cells.
 const ov = wb.addSheet("はみ出し");
-ov.setValue("B2", "未チェックの件数が表示されるので、自身の担当の行の施設をチェックしてください。");
-ov.setValue("H4", "右寄せの長いテキストです");
-ov.style("H4", { align: "right" });
+ov.cell("B2").value = "未チェックの件数が表示されるので、自身の担当の行の施設をチェックしてください。";
+ov.cell("H4").value = "右寄せの長いテキストです";
+ov.setStyle("H4", { align: "right" });
 const oh = ov.toHtml();
 // About 37 em of 11pt text from B: B:J (H4 runs over the empty cells to its left, inside them).
 equal(oh.match(/<col /g).length, 9, "B:J for the text in B2");
@@ -44,9 +43,9 @@ wb.removeSheet("はみ出し");
 
 // Diagonal borders are SVG lines (vectors in the PDF), not CSS gradients.
 const dg = wb.addSheet("斜め");
-dg.setValue("A1", "x");
-dg.range("B2").border({ diagonalDown: "thin" });
-dg.range("C2").border({ diagonalUp: { style: "dashed", color: "#FF0000" }, diagonalDown: { style: "dashed", color: "#FF0000" } });
+dg.cell("A1").value = "x";
+dg.setStyle("B2", { border: { diagonalDown: "thin" } });
+dg.setStyle("C2", { border: { diagonalUp: { style: "dashed", color: "#FF0000" }, diagonalDown: { style: "dashed", color: "#FF0000" } } });
 const dh = dg.toHtml();
 ok(dh.includes('<svg class="xljs-diag"><line x1="0" y1="0" x2="100%" y2="100%" style="stroke:#000000;stroke-width:0.75pt"/></svg>'), "a diagonal border (a cell with only it is printed)");
 ok(dh.includes('<line x1="0" y1="100%" x2="100%" y2="0" style="stroke:#FF0000;stroke-width:0.75pt;stroke-dasharray:3pt 1.5pt"/>'), "both diagonals, dashed");
@@ -95,10 +94,10 @@ equal(pages(big.toHtml({ fitToPage: true })), 1, "fit to one page");
 
 // skipBlankPages: leave out pages with nothing (true) or with no values ("values").
 const sparse = wb.addSheet("まばら");
-sparse.setValue("A1", "先頭");
-sparse.setValue("A200", "末尾");
-sparse.range("A100").border({ outline: "thin" });
-sparse.setValue("A150", "  ");
+sparse.cell("A1").value = "先頭";
+sparse.cell("A200").value = "末尾";
+sparse.setStyle("A100", { border: { outline: "thin" } });
+sparse.cell("A150").value = "  ";
 equal(pages(sparse.toHtml()), 6, "6 pages down");
 // pages: only the pages chosen, with their own numbers.
 const chosen = sparse.toHtml({ pages: "2,4-" });
@@ -123,7 +122,7 @@ ok(both.includes("@page s0{") && both.includes("@page s1{"), "a page rule per sh
 ok(both.includes("page:s1;"), "pages of the second sheet");
 
 // Excel's charts: boxes where the charts are; toPdf draws them (the mock logs).
-const book = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "charts.xlsx"));
+const book = excel.open(path.join(xljs.scriptDir, "..", "xlsx", "charts.xlsx"));
 const sheet = book.sheets[0];
 const ch = sheet.toHtml();
 ok(ch.includes('class="xljs-print-chart" data-chart="0"'), "chart boxes");
@@ -133,7 +132,7 @@ ok(out.endsWith("charts.pdf"), out);
 await wb.toPdf("見積.pdf", { sheets: ["見積"] });
 
 // The page setup of an Excel file (testdata/xlsx/make_print.py).
-const pb = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "print.xlsx"));
+const pb = excel.open(path.join(xljs.scriptDir, "..", "xlsx", "print.xlsx"));
 const ph = pb.toHtml();
 equal(pages(ph), 4, "fit to 1 page wide (3 pages) and the print area (1 page); not the empty and hidden sheets");
 ok(ph.includes("@page s0{size:841.89pt 595.276pt;"), "A4 landscape");
@@ -163,7 +162,7 @@ ok(!ph.includes(":left{"), "not mirrored by default");
 await pb.toPdf("print.pdf");
 
 // Table styles, black and white, print areas by formulas (testdata/xlsx/make_tables.py).
-const tb = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "tables.xlsx"));
+const tb = excel.open(path.join(xljs.scriptDir, "..", "xlsx", "tables.xlsx"));
 const th = tb.sheet("テーブル").toHtml();
 ok(th.includes("background-color:#DDEBF7"), "header fill of the custom table style");
 ok(th.includes("stroke:#808080;stroke-width:0.75;") && th.includes("stroke:#808080;stroke-width:0.25;"), "borders of the custom table style (thin, hair inside)");
@@ -180,8 +179,8 @@ equal(pages(cols), 1, "whole columns end at the used range");
 equal(cols.match(/<tr /g).length, 10, "whole columns: 10 rows");
 
 // Several fonts in one cell (testdata/xlsx/make_richtext.py).
-const rb = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "richtext.xlsx")).sheets[0];
-equal(rb.getValue("B1"), "前インライン後", "inline rich text: the text of every run");
+const rb = excel.open(path.join(xljs.scriptDir, "..", "xlsx", "richtext.xlsx")).sheets[0];
+equal(rb.cell("B1").value, "前インライン後", "inline rich text: the text of every run");
 const rh = rb.toHtml();
 const span = (t) => (rh.match(new RegExp(`<span style="([^"]*)">${t}</span>`)) ?? [])[1] ?? "";
 ok(rh.includes("><span>通常<span"), "a run without properties has the cell's font");
@@ -194,7 +193,7 @@ ok(span("インライン").includes("font-size:18pt") && span("インライン")
 ok(!rb.toHtml({ blackAndWhite: true }).includes("color:#FF0000"), "black and white: no colors of runs");
 
 // Shrink to fit (the sheet 縮小 of richtext.xlsx).
-const kh = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "richtext.xlsx")).sheet("縮小").toHtml();
+const kh = excel.open(path.join(xljs.scriptDir, "..", "xlsx", "richtext.xlsx")).sheet("縮小").toHtml();
 const zoom = (t) => Number((kh.match(new RegExp(`<span class="xljs-shrink" style="zoom:([0-9.]+)">(<span>)?${t}`)) ?? [])[1]);
 ok(zoom("とても長い") > 0.15 && zoom("とても長い") < 0.35, "long text is shrunk: " + zoom("とても長い"));
 equal(zoom("短い"), 1, "short text keeps its size");
@@ -204,20 +203,20 @@ ok(zoom("前") > 0.15 && zoom("前") < 0.35, "rich text is shrunk by its larger 
 ok(!/xljs-shrink[^>]*>折り返す/.test(kh), "wrapped text is not shrunk");
 ok(/width:42pt;height:15pt"><span class="xljs-shrink" style="zoom:[0-9.]+">とても/.test(kh), "shrunk text does not run into the next cell");
 // Set by a script, and kept when the book is saved and opened again.
-const sb = workbooks.create();
+const sb = excel.create();
 const ss = sb.addSheet("s");
 ss.setColumnWidth("A", 8);
-ss.setValue("A1", "スクリプトで縮小する長い文字列");
-ss.style("A1", { alignment: { shrink: true } });
+ss.cell("A1").value = "スクリプトで縮小する長い文字列";
+ss.setStyle("A1", { alignment: { shrink: true } });
 ok(/xljs-shrink[^>]*>スクリプト/.test(ss.toHtml()), "shrink set by a script is printed");
-const kb = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "richtext.xlsx"));
+const kb = excel.open(path.join(xljs.scriptDir, "..", "xlsx", "richtext.xlsx"));
 kb.save("shrink-saved.xlsx");
-const kh2 = workbooks.open("shrink-saved.xlsx").sheet("縮小").toHtml();
+const kh2 = excel.open("shrink-saved.xlsx").sheet("縮小").toHtml();
 ok(/xljs-shrink[^>]*>とても長い/.test(kh2), "shrink to fit survives saving");
-equal(workbooks.open("shrink-saved.xlsx").sheets[0].getValue("B1"), "前インライン後", "inline rich text survives saving");
+equal(excel.open("shrink-saved.xlsx").sheets[0].cell("B1").value, "前インライン後", "inline rich text survives saving");
 
 // Shapes, text boxes, lines, groups and a freeform (testdata/xlsx/make_shapes.py).
-const sh = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "shapes.xlsx")).sheets[0].toHtml();
+const sh = excel.open(path.join(xljs.scriptDir, "..", "xlsx", "shapes.xlsx")).sheets[0].toHtml();
 for (const t of ["テキストボックスの文字", "太字で赤", "角丸", "楕円", "ここに注意", "四角", "ひし形", "縦書きの文字", "雲の吹き出し"]) ok(sh.includes(`>${t}<`), t);
 ok(!sh.includes("見えない") && !sh.includes(">印刷しない<"), "hidden shapes and shapes not printed");
 equal(sh.match(/class="xljs-print-shape"/g).length, 20, "top-level objects");
@@ -243,7 +242,7 @@ const warps = [...sh.matchAll(/class="xljs-warp" data-warp="([^"]*)"/g)].map((m)
 equal(warps.map((w) => w.paths.length).join(","), "1,2,2,1", "arch up, wave, inflate, circle");
 ok(warps.every((w) => w.w > 0 && w.h > 0 && w.paths.every((p) => p.length >= 4 && p.every(Number.isFinite))), "the paths of the warps");
 // Pictures placed in cells and cells that refer to them (testdata/xlsx/make_cellimages.py).
-const ci = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "cellimages.xlsx"));
+const ci = excel.open(path.join(xljs.scriptDir, "..", "xlsx", "cellimages.xlsx"));
 const srcs = (h) => [...h.matchAll(/<img class="xljs-cell-image" alt="([^"]*)" src="(data:[^"]+)" style="([^"]*)"/g)].map((m) => ({ alt: m[1], src: m[2], pos: m[3] }));
 const goods = srcs(ci.sheets[0].toHtml());
 equal(goods.length, 5, "B2, D2 (=B2), B3, D3 (=B3), B4");
@@ -271,7 +270,7 @@ equal(refs.cell("C2").calc(), "#VALUE!");
 // A saved workbook keeps the pictures in the cells (the rich values are
 // written back as they were read).
 ci.save("cellimages-saved.xlsx");
-let cs = workbooks.open("cellimages-saved.xlsx");
+let cs = excel.open("cellimages-saved.xlsx");
 equal(srcs(cs.sheets[0].toHtml()).map((x) => x.src).join(), goods.map((x) => x.src).join(), "the pictures of a saved workbook");
 equal(srcs(cs.sheets[0].toHtml())[4].alt, "ぶどうの写真");
 equal(srcs(cs.sheets[1].toHtml()).map((x) => x.src).join(), got.join(), "and what refers to them");
@@ -279,7 +278,7 @@ equal(cs.sheets[0].cell("B2").value, "#VALUE!", "a picture is #VALUE! as a value
 // A value written over a picture is no picture, also where it is referred to:
 // the formulas are calculated again for the pages, those Excel saved with
 // the picture too (D3 here, A2 on the other sheet).
-ci.sheets[0].setValue("B3", "売り切れ");
+ci.sheets[0].cell("B3").value = "売り切れ";
 ok(ci.sheets[0].toHtml().includes(">売り切れ<") && srcs(ci.sheets[0].toHtml()).length === 3, "overwritten picture");
 equal(ci.sheets[0].cell("D3").value, "売り切れ", "the result is stored in the cell");
 got = srcs(refs.toHtml()).map((x) => x.src);
@@ -289,17 +288,17 @@ equal(refs.cell("A2").value, "売り切れ");
 ci.sheets[0].cell("B4").formula = "=1/0";
 ci.calculate();
 ci.save("cellimages-saved.xlsx");
-cs = workbooks.open("cellimages-saved.xlsx");
+cs = excel.open("cellimages-saved.xlsx");
 equal(cs.sheets[0].cell("B3").value, "売り切れ");
 equal(cs.sheets[0].cell("B4").value, "#DIV/0!", "an error written over a picture is no picture");
 equal(srcs(cs.sheets[0].toHtml()).map((x) => x.src).join(), [img1, img1].join(), "B2 and D2 (=B2)");
 equal(srcs(cs.sheets[1].toHtml()).map((x) => x.src).join(), [img1, img1, img1].join(), "the formulas that show B2: the saved one, = and INDEX");
 // Nothing shows a picture any more: the rich values are not written.
-cs.sheets[0].setValue("B2", null);
-cs.sheets[0].setValue("B4", null);
+cs.sheets[0].cell("B2").value = null;
+cs.sheets[0].cell("B4").value = null;
 cs.calculate();
 cs.save("cellimages-none.xlsx");
-equal(srcs(workbooks.open("cellimages-none.xlsx").sheets.map((x) => x.toHtml()).join()).length, 0);
+equal(srcs(excel.open("cellimages-none.xlsx").sheets.map((x) => x.toHtml()).join()).length, 0);
 await ci.toPdf("cellimages.pdf");
 
 await xljs.htmlToPdf("<h1>こんにちは</h1>", "hello.pdf", { paper: "A5", landscape: true });

@@ -2,7 +2,7 @@ import { ok, equal, deepEqual, throws } from "./_assert.js";
 
 // Threaded comments and notes of a workbook Excel saved (testdata/xlsx/make_comments.py).
 const src = path.join(xljs.scriptDir, "..", "xlsx", "comments.xlsx");
-const ws = workbooks.open(src).sheets[0];
+const ws = excel.open(src).sheets[0];
 
 const h5 = ws.cell("H5").comment;
 equal(h5.text, "👤😀絵文字");
@@ -28,7 +28,7 @@ deepEqual(ws.comments.map((c) => c.address), ["H5", "I5", "J5"]);
 
 // Kept when saved: authors, replies, resolved, mentions, the notes in their place.
 const bytes = ws.book.toArrayBuffer();
-const back = workbooks.open(bytes).sheets[0];
+const back = excel.open(bytes).sheets[0];
 deepEqual(back.comments.map((c) => [c.address, c.author, c.text, c.resolved, c.replies.map((r) => r.text)]), [
   ["H5", "山田 太郎", "👤😀絵文字", false, []],
   ["I5", "山田 太郎", "かきくけこ", false, ["返信１", "返信２"]],
@@ -37,7 +37,7 @@ deepEqual(back.comments.map((c) => [c.address, c.author, c.text, c.resolved, c.r
 equal(back.cell("K5").note, "佐藤 花子:\n古いメモ");
 
 // Writing: a thread, replies, resolving, editing, deleting.
-const wb = workbooks.create();
+const wb = excel.create();
 const s = wb.addSheet("確認");
 s.write([["項目", "金額"], ["交通費", 1200]]);
 const c = s.cell("B2").addComment("金額を確認してください", { author: "鈴木 一郎" });
@@ -62,7 +62,7 @@ equal(s.cell("A1").note, "見出し");
 s.cell("A1").note = "見出しの行";
 throws(() => s.cell("A1").addComment("x"), /メモがあります/);
 
-const again = workbooks.open(wb.toArrayBuffer()).sheet("確認");
+const again = excel.open(wb.toArrayBuffer()).sheet("確認");
 const t = again.cell("B2").comment;
 deepEqual([t.author, t.text, t.resolved], ["鈴木 一郎", "金額を確認してください", true]);
 deepEqual(t.replies.map((x) => [x.author, x.text]), [["高橋 次郎", "領収書で確認済み"], ["鈴木 一郎", "ありがとうございます"]]);
@@ -79,7 +79,7 @@ again.cell("B2").note = "メモに";
 equal(again.cell("B2").note, "メモに");
 again.cell("A1").note = null;
 equal(again.cell("A1").note, null);
-const last = workbooks.open(again.book.toArrayBuffer()).sheet("確認");
+const last = excel.open(again.book.toArrayBuffer()).sheet("確認");
 deepEqual(last.comments.map((x) => x.address), ["A2"]);
 deepEqual(last.notes.map((n) => [n.address, n.text]), [["B2", "メモに"]]);
 console.log("comments ok");

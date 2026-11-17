@@ -2146,7 +2146,7 @@ declare global {
   }
   const sqlite: Sqlite;
 
-  // ------------------------------------------------------------------ workbooks
+  // ------------------------------------------------------------------ excel
 
   type CellValue = number | string | boolean | Date | null;
 
@@ -2177,61 +2177,48 @@ declare global {
     diagonalDown?: BorderSide;
   }
 
-  interface FontSpec {
-    name?: string;
-    size?: number;
+  /**
+   * セルの書式（setStyle に渡す形、getStyle が返す形）。指定した項目だけが既存の書式に重なる。
+   * @example sheet.setStyle("A1:D1", { bold: true, background: "#DDEBF7", align: "center", border: "thin" })
+   */
+  interface CellStyle {
+    /** 太字・斜体・取り消し線 */
     bold?: boolean;
     italic?: boolean;
-    /** true / "single" / "double" / "none" */
-    underline?: boolean | "single" | "double" | "singleAccounting" | "doubleAccounting" | "none";
     strike?: boolean;
+    /** 下線（true は "single"） */
+    underline?: boolean | "single" | "double" | "singleAccounting" | "doubleAccounting" | "none";
+    /** 文字の色 */
     color?: Color;
+    /** 文字の大きさ（pt）とフォント名 */
+    fontSize?: number;
+    fontName?: string;
+    /** 上付き・下付き */
     vertAlign?: "superscript" | "subscript" | "baseline";
-  }
-
-  interface AlignmentSpec {
-    horizontal?: "general" | "left" | "center" | "right" | "fill" | "justify" | "centerContinuous" | "distributed";
-    vertical?: "top" | "center" | "middle" | "bottom" | "justify" | "distributed";
+    /** 塗りつぶしの色。null または "none" で塗りなし */
+    background?: Color | null;
+    /** "thin" などで全セルの上下左右、または辺ごとの指定 */
+    border?: BorderSide | BorderSpec;
+    /** 横位置 */
+    align?: "general" | "left" | "center" | "right" | "fill" | "justify" | "centerContinuous" | "distributed";
+    /** 縦位置 */
+    valign?: "top" | "center" | "middle" | "bottom" | "justify" | "distributed";
     /** 折り返して全体を表示 */
     wrap?: boolean;
     /** 縮小して全体を表示 */
     shrink?: boolean;
+    /** インデント */
     indent?: number;
     /** 文字の角度（-90〜90、255 で縦書き） */
     rotation?: number;
-  }
-
-  /**
-   * セルの書式。指定した項目だけが既存の書式に上書きされる。
-   * 省略形: bold, italic, underline, strike, color（文字色）, fontSize, fontName,
-   * background（= fill）, align, valign, wrap, format（= numberFormat）
-   */
-  interface CellStyle {
-    font?: FontSpec;
-    /** 塗りつぶしの色。null または "none" で塗りなし */
-    fill?: Color | { color: Color } | null;
-    /** "thin" などで全セルの上下左右、または辺ごとの指定 */
-    border?: BorderSide | BorderSpec;
-    alignment?: AlignmentSpec;
     /**
      * "#,##0"、"yyyy/m/d"、"0.0%" などの表示形式、または組み込み番号。"General" で標準に戻す。
      * 漢数字の `[DBNum1]G/標準`（一万二千三百四十五）・`[DBNum2]`（壱萬弐阡参百四拾伍）・`[DBNum3]`（全角数字）も `text` と印刷に反映する
      * （"G/標準" は "General" として保存する）
      */
-    numberFormat?: string | number;
-    protection?: { locked?: boolean };
-    bold?: boolean;
-    italic?: boolean;
-    underline?: FontSpec["underline"];
-    strike?: boolean;
-    color?: Color;
-    fontSize?: number;
-    fontName?: string;
-    background?: Color | null;
-    align?: AlignmentSpec["horizontal"];
-    valign?: AlignmentSpec["vertical"];
-    wrap?: boolean;
     format?: string | number;
+    /** シートの保護でセルをロックするか */
+    locked?: boolean;
   }
 
   interface StyleOptions {
@@ -2242,12 +2229,10 @@ declare global {
   interface Range {
     readonly address: string;
     readonly sheet: Worksheet;
-    style(style: CellStyle, options?: StyleOptions): this;
-    font(font: FontSpec): this;
-    fill(color: Color | null): this;
-    border(border: BorderSide | BorderSpec): this;
-    align(horizontal?: AlignmentSpec["horizontal"], vertical?: AlignmentSpec["vertical"]): this;
-    numberFormat(format: string | number): this;
+    /** 範囲のすべてのセルに書式を付ける（既存の書式に重ねる。options.replace で置き換え） */
+    setStyle(style: CellStyle, options?: StyleOptions): this;
+    /** 範囲の左上のセルの書式（setStyle に渡せる形） */
+    getStyle(): CellStyle;
     merge(): this;
     unmerge(): this;
     /** 範囲の値（2 次元配列）。代入すると左上から書き込む */
@@ -2319,13 +2304,13 @@ declare global {
      *     c.reply("確認しました", { author: "経理 担当" });
      */
     addComment(text: string, options?: CommentOptions): CellComment;
-    /** 書式を適用する（既存の書式にマージ） */
-    style(style: CellStyle, options?: StyleOptions): this;
-    /** 現在の書式（style() に渡せる形） */
+    /** 書式を付ける（既存の書式に重ねる。options.replace で置き換え） */
+    setStyle(style: CellStyle, options?: StyleOptions): this;
+    /** 現在の書式（setStyle に渡せる形） */
     getStyle(): CellStyle;
   }
 
-  interface ToObjectsOptions {
+  interface RowsOptions {
     /** 見出し行の行番号（既定 1）。0 で見出しなし（columns を指定） */
     header?: number;
     columns?: string[];
@@ -2405,13 +2390,10 @@ declare global {
     name: string;
     cell(address: string): Cell;
     cell(row: number, column: number): Cell;
-    getValue(address: string): CellValue;
-    getValue(row: number, column: number): CellValue;
-    setValue(address: string, value: unknown): this;
-    setValue(row: number, column: number, value: unknown): this;
+    /** 行を見出しの行をキーにしたオブジェクトにする（[{ 月: "4月", 売上: 1200 }, ...]） */
+    rows<T = Row>(options?: RowsOptions): T[];
+    /** 行を値の配列にする（見出しの行も 1 行として含む） */
     toArrays(options?: { text?: boolean; skipEmpty?: boolean }): CellValue[][];
-    toObjects<T = Row>(options?: ToObjectsOptions): T[];
-    rows<T = Row>(options?: ToObjectsOptions): T[];
     write(rows: Row[] | unknown[][], options?: WriteOptions): this;
     /** 最終行の下に追記する */
     append(rows: Row[] | unknown[][], options?: WriteOptions): this;
@@ -2423,7 +2405,12 @@ declare global {
     readonly comments: CellComment[];
     /** シートのメモ（セルの順）。スレッド形式のコメントの代わりに Excel が書くメモは含まない */
     readonly notes: CellNote[];
+    /** 値のある最後の行の番号 */
     readonly rowCount: number;
+    /** 値のある最後の列の番号（空のシートは 0） */
+    readonly columnCount: number;
+    /** シートを非表示にするか（Excel の「非表示」）。ブックには表示しているシートが 1 つは要る（すべてを非表示にすると例外） */
+    hidden: boolean;
     /**
      * row 行目の前に count 行（既定 1）を挿入する（Excel の「行の挿入」）。
      * Excel と同じく、ずれたセルを参照する数式（ほかのシートの数式も。絶対参照の `$B$5` も）・名前の定義・印刷範囲・入力規則・条件付き書式・
@@ -2453,21 +2440,33 @@ declare global {
     /** setColumnWidth("A", 20) / setColumnWidth("A:C", 12) */
     setColumnWidth(columns: string, width: number): this;
     getColumnWidth(column: string): number;
+    /** 行の高さ（ポイント） */
     setRowHeight(row: number, height: number): this;
+    /** 行の高さ（ポイント。高さを変えていない行はシートの既定の高さ） */
+    getRowHeight(row: number): number;
     /** 内容に合わせて列幅を調整する（省略時は全列）。全角文字は 2 文字分として計算 */
     autoFit(columns?: string, options?: { min?: number; max?: number }): this;
     autoFit(options: { min?: number; max?: number }): this;
     /** range("A1:D10") */
     range(address: string): Range;
-    /** style("A1:D1", { bold: true, background: "#DDEBF7", border: "thin" }) */
-    style(address: string, style: CellStyle, options?: StyleOptions): this;
+    /** 書式を付ける（既存の書式に重ねる。options.replace で置き換え）。setStyle("A1:D1", { bold: true, background: "#DDEBF7", border: "thin" }) */
+    setStyle(address: string, style: CellStyle, options?: StyleOptions): this;
+    /** セル（範囲なら左上のセル）の書式（setStyle に渡せる形） */
+    getStyle(address: string): CellStyle;
+    /** セルを結合する / 結合を解除する */
     merge(address: string): this;
     unmerge(address: string): this;
+    /** 結合しているセル範囲（["A1:C1", ...]） */
+    readonly merges: string[];
     /** 指定セルより上の行・左の列を固定する（freeze("A2") で 1 行目を固定）。{ rows, columns } でも指定可 */
     freeze(cell: string | { rows?: number; columns?: number }): this;
     unfreeze(): this;
-    /** フィルターを付ける（既定: 使用範囲） */
-    autoFilter(address?: string): this;
+    /** 固定している行数と列数（{ rows: 1, columns: 0 }）。固定していなければ null */
+    readonly frozen: { rows: number; columns: number } | null;
+    /** フィルターを付ける（既定: 使用範囲）。null で外す */
+    autoFilter(address?: string | null): this;
+    /** フィルターの範囲（"A1:D20"）。なければ null */
+    readonly filter: string | null;
     /**
      * Excel で印刷したときのように PDF に書き出す（WebView2 が必要。Windows のネイティブ UI のみ）。
      * 用紙・向き・余白・拡大縮小・印刷範囲・印刷タイトル・改ページ・ヘッダー/フッターはシートのページ設定に従い、options で上書きできる。
@@ -2659,7 +2658,7 @@ declare global {
     save(dest?: PathLike): this;
     /**
      * ブックのすべての数式を計算し直し、結果を各セルに入れる（Excel の「再計算」）。
-     * セルの値を書き換えたあと・数式を書いたあとに、数式の結果を `value` や `toObjects()` で読む前、
+     * セルの値を書き換えたあと・数式を書いたあとに、数式の結果を `value` や `rows()` で読む前、
      * 計算済みの値をファイルに入れて保存したいときに呼ぶ（`toPdf()` は書き換えの影響を受ける数式を自動で計算する）。
      * 計算できない数式（マクロやアドインの関数、ほかのブックへの参照など）は保存されていた値のまま残し、
      * 戻り値の `skipped` で知らせる。
@@ -2738,7 +2737,8 @@ declare global {
     text: string;
   }
 
-  interface Workbooks {
+  /** Excel のブック（.xlsx）を開く・作る */
+  interface Excel {
     /** .xlsx を開く（パス・ハンドル・File・Blob・ArrayBuffer） */
     open(src: PathLike | Blob | ArrayBuffer | ArrayBufferView): Workbook;
     /**
@@ -2754,7 +2754,7 @@ declare global {
     /** (行, 列) → "B3" */
     cellName(row: number, column: number): string;
   }
-  const workbooks: Workbooks;
+  const excel: Excel;
 
   // ------------------------------------------------------------------ pdf
 

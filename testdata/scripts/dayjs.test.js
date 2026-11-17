@@ -34,11 +34,11 @@ equal(dayjs.fromExcel(1).format("YYYY-MM-DD"), "1900-01-01");
 equal(dayjs.fromExcel(61).format("YYYY-MM-DD"), "1900-03-01");
 
 // Day.js objects are accepted wherever a Date is.
-const book = workbooks.create();
+const book = excel.create();
 const s = book.addSheet("x");
 s.write([{ 日付: d }]);
 s.cell("B1").value = d.add(1, "day");
-s.setValue("C1", d);
+s.cell("C1").value = d;
 s.range("D1:D1").values = [[d]];
 ok(s.cell("A2").value instanceof Date);
 equal(s.cell("A2").text, "2026/4/1");

@@ -2,7 +2,7 @@ import { ok, equal, deepEqual, rejects } from "./_assert.js";
 
 // book.printPreview / sheet.printPreview and toPdf's preview option. The mock
 // has no windows: the settings are asked as a form (printpreview.test.answers.json).
-const pb = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "print.xlsx"));
+const pb = excel.open(path.join(xljs.scriptDir, "..", "xlsx", "print.xlsx"));
 
 // 1: nothing changed: the options as given (the sheets' own settings are kept).
 deepEqual(await pb.printPreview({ title: "x" }), { title: "x" }, "nothing changed");

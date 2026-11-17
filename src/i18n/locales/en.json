@@ -1056,6 +1056,7 @@
     "book.col.textFmt": " (text)",
     "book.col.validation": "has input rules",
     "xlsx.invalidHandle": "not a workbook",
+    "xlsx.lastVisibleSheet": "Cannot hide {0}: a workbook needs at least one visible sheet",
     "xlsx.phoneticNotText": "the furigana are of a text: {0} has none",
     "xlsx.note.hasComment": "{0} has comments: a cell has either a note or comments",
     "xlsx.comment.hasNote": "{0} has a note: a cell has either a note or comments",

@@ -5,7 +5,7 @@
 // aliases, globals) and a resolver that follows the code's syntax tree
 // (CodeMirror's Lezer tree) far enough for the usual script:
 //   ui.form(...)   wb.sheets[0].   for (const s of wb.sheets) s.
-//   const wb = workbooks.open(...); wb.   await fs.readText(...).
+//   const wb = excel.open(...); wb.   await fs.readText(...).
 //   ui.form({ ti|  onSubmit: async (v, ctx) => { ctx.| } })   rows.map((r) => r.|)
 // Unknown types give no completion (CodeMirror's own completion of the local
 // names and keywords stays).

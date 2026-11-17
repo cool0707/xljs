@@ -1,7 +1,7 @@
 import { ok, equal, throws } from "./_assert.js";
 
 // Furigana: set on the text of a cell, kept when saved, read back, and what PHONETIC gives.
-const wb = workbooks.create();
+const wb = excel.create();
 const ws = wb.addSheet("名簿");
 ws.write([["氏名", "よみ"], ["山田太郎"], ["佐藤花子"], ["鈴木一郎"]]);
 equal(ws.cell("A2").phonetic, null, "none yet");
@@ -34,7 +34,7 @@ equal(raw.cell("B5").text, "", "a number has none");
 equal(raw.cell("C1").value, "サトウスズキabcＡＢＣ");
 
 // Kept when saved (as Excel writes them: hiragana are marked as such).
-const back = workbooks.open(wb.toArrayBuffer()).sheet("名簿");
+const back = excel.open(wb.toArrayBuffer()).sheet("名簿");
 equal(back.cell("A2").phonetic, "ヤマダタロウ");
 equal(back.cell("A3").phonetic, "さとうはなこ");
 equal(back.cell("A3").showPhonetic, true);
