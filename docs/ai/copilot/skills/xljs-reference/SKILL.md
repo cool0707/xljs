@@ -311,43 +311,8 @@ if (!v) exit();
 
 - 項目の共通オプション: `label` `default` `required` `placeholder`（`select` では未選択の表示になり、初期値が `""`）`help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`maxLength`（文字数の上限。「12 / 100」と表示）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
 - ウィンドウの大きさは `width` `height`（既定は項目数から決める）。`resizable: false` で大きさを固定する（枠のドラッグ・最大化ができない）。`titleBar: "custom"` で OS のタイトルバーの代わりに自前のタイトルバー（`icon` とタイトル、最小化・最大化・閉じる）を表示する（`ui.table` / `app.open` も同じ。メインウィンドウは `@titlebar custom`）。
-- `onChange(value, values, ctx)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる。`ctx.setValue(name, value)` でほかの項目を埋められる（setValue で変えた項目の onChange は呼ばれない）。
-
-```js
-// 1 つ目のファイルを選ぶと、同じフォルダの対になるファイルを自動で設定する
-await ui.form({
-  title: "突合",
-  fields: [
-    { name: "sales", label: "売上", type: "file", accept: [".csv"], required: true, tooltip: "売上_YYYYMM.csv",
-      onChange(h, v, ctx) {
-        const m = h && /^売上_(\d{6})\.csv$/.exec(h.name);
-        if (!m) return;
-        const dir = path.dirname(h.path);
-        for (const [name, file] of [["purchase", `仕入_${m[1]}.csv`], ["stock", `在庫_${m[1]}.csv`]]) {
-          if (!v[name] && fs.exists(path.join(dir, file))) ctx.setValue(name, path.join(dir, file));
-        }
-      } },
-    { name: "purchase", label: "仕入", type: "file", accept: [".csv"], required: true },
-    { name: "stock", label: "在庫", type: "file", accept: [".csv"], required: true },
-  ],
-});
-```
-- 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`）。onChange・onSubmit・ボタンの `ctx.setDisabled(name, bool)` / `ctx.setEnabled(name)` / `ctx.setHidden(name, bool)` / `ctx.setVisible(name)` でも切り替えられる（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
-
-```js
-// チェックを外している間は宛先をグレーにし、「その他」を選んだときだけ詳細を出す
-await ui.form({
-  title: "送付",
-  fields: [
-    { name: "useMail", label: "メールで送る", type: "checkbox", default: true },
-    { name: "to", label: "宛先", required: true, disabled: (v) => !v.useMail },
-    { name: "kind", label: "種類", type: "select", options: ["請求書", "見積書", "その他"] },
-    { name: "detail", label: "詳細", required: true, hidden: (v) => v.kind !== "その他" },
-    { name: "lock", label: "宛先を固定", type: "switch",
-      onChange(on, v, ctx) { ctx.setDisabled("kind", on); } },
-  ],
-});
-```
+- `onChange(value, values, ctx)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる。`ctx.setValue(name, value)` でほかの項目を埋められる（setValue で変えた項目の onChange は呼ばれない。例: 売上のファイルを選んだら、同じフォルダの対になる仕入のファイルを `ctx.setValue("purchase", path.join(path.dirname(h.path), "仕入_202604.csv"))` で設定する）。
+- 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`、`hidden: (v) => v.kind !== "その他"`）。onChange・onSubmit・ボタンの `ctx.setDisabled(name, bool)` / `ctx.setEnabled(name)` / `ctx.setHidden(name, bool)` / `ctx.setVisible(name)` でも切り替えられる（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
 - 横に並べる: `{ row: "氏名", fields: [{ name: "last", label: "姓" }, { name: "first", label: "名" }] }` を項目と並べて書く（`row` が左のラベル、各項目の `label` は入力欄の前。`""` で出さない）。値はほかの項目と同じオブジェクト。
 - 右上のツールバー: `toolbar: [{ name: "detail", type: "switch", label: "詳細表示" }, { icon: "gear", tooltip: "設定", onClick(values, ctx) { ... } }]`。`name` のあるものは項目（値は `values`）、ないものはボタン（`label` なしならアイコンだけ。検証せずに `onClick` を呼ぶ。`ctx.setValue` で項目を変えられる。`menu: [{ label, onClick }]` も可）。
@@ -402,21 +367,6 @@ await ui.form({
 - `buttons: [{ label, onClick(v, ctx) }]` で送信ボタンの左にボタンを追加できる。押すと onClick が onSubmit と同じように動く（ウィンドウは開いたまま。押したボタンは終わるまでスピナーを表示）。`validate: false` で検証なし、`close: true` で正常終了後に閉じる。`submit: false` で送信ボタンを出さない。`ctx.setValue(name, value)` で項目の値を変えられる。
 - ボタンの `variant`: `"primary"`（塗りつぶし）`"destructive"`（赤。削除など）`"ghost"`（枠なし）。`confirm: "削除しますか？"` で実行前に確認する（検証のあと）。
 - `menu: [{ label, onClick, ... }]` でスプリットボタン（本体と ▼ のメニュー）。`onClick` なしで `menu` だけなら、メニューを開くだけのボタン。
-
-```js
-await ui.form({
-  title: "名簿",
-  fields: [{ name: "file", label: "名簿", type: "file", accept: [".xlsx"], required: true }, { name: "count", label: "件数", type: "number" }],
-  buttons: [
-    { label: "件数を確認", onClick(v, ctx) { ctx.setValue("count", workbooks.open(v.file).sheets[0].toObjects().length); } },
-    { label: "その他", menu: [
-      { label: "名簿を削除", variant: "destructive", confirm: "名簿を削除しますか？", onClick(v) { fs.remove(v.file); } },
-    ] },
-  ],
-  submit: "作成",
-  async onSubmit(v, ctx) { /* ... */ },
-});
-```
 
 ## 表の表示（ui.table）
 
