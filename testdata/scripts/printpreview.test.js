@@ -33,7 +33,9 @@ await rejects(() => pb.printPreview({}, { settings: "paper" }), /settings/, "set
 // 9: toPdf with a preview: the PDF with the settings chosen (the mock logs it).
 const out = await pb.toPdf("preview.pdf", { preview: { settings: ["scaling"], ok: "出力" } });
 ok(typeof out === "string" && out.endsWith("preview.pdf"), "toPdf resolves to the path");
-// 10: cancelled: no PDF.
+// 10: the PDF's preview has the mirrored margins by default (the mock logs ", mirrored").
+ok((await pb.toPdf("mirrored.pdf", { preview: true })).endsWith("mirrored.pdf"), "toPdf with mirrored margins");
+// 11: cancelled: no PDF.
 equal(await pb.toPdf("cancelled.pdf", { preview: true }), null, "toPdf cancelled");
 
 console.log("printpreview ok");

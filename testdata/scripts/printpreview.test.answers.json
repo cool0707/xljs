@@ -10,6 +10,7 @@
     {"margin": "custom", "marginTop": 10, "marginRight": 5, "marginBottom": 10, "marginLeft": 5, "scaling": "scale", "scale": 80, "skipBlankPages": "values", "condense": 4, "charts": false},
     {"mirrorMargins": true},
     {"scaling": "page"},
+    {"mirrorMargins": true},
     null
   ]
 }

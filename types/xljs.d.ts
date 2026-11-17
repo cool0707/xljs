@@ -2403,14 +2403,16 @@ declare global {
     centerHorizontally?: boolean;
     /**
      * 偶数ページの左右の余白を入れ替える（両面印刷で綴じしろを内側にそろえる。Word の「見開きページ」）。
-     * 1 ページ目（奇数ページ）は margin のとおり。ページの数え方は PDF 全体の通し番号（シートが変わっても続く）。
+     * 1 ページ目（奇数ページ）は margin のとおり。奇数・偶数は出力するページの並び（紙の表・裏）で数える（シートが変わっても続く。
+     * pages で選んだときは選んだページの順。print では用紙が変わると別の印刷ジョブになるので、そこから数え直す）。
      * 省略すると、print の duplex で紙がページの左右の辺で裏返るとき（縦向きの "long"、横向きの "short"）は入れ替える。false で入れ替えない
      */
     mirrorMargins?: boolean;
     /**
      * 印刷するページ（1 から数える、シートが変わっても続く通し番号）: "1,3,5-7" や "8-"（8 ページ以降）、"-3"（3 ページまで）の文字列、
      * ページ番号、またはその配列。省略・"all" ですべて。最後のページより後ろの番号は無視する。
-     * 選んだページはページ番号（&P）と奇数・偶数（mirrorMargins）を元のまま印刷する（&N は全体のページ数）
+     * 選んだページはページ番号（&P）を元のまま印刷する（&N は全体のページ数）。mirrorMargins の奇数・偶数は選んだページの順で数える
+     * （"2,4,6" を両面印刷すると 2・6 が表、4 が裏）
      */
     pages?: string | number | (string | number)[];
     /** false でグラフを描かない */
@@ -2446,7 +2448,7 @@ declare global {
   /** printPreview・toPdf の preview のオプション */
   interface PrintPreviewOptions {
     /**
-     * 画面に出す設定（並べた順）。既定: ["sheets", "pages", "paper", "landscape", "scaling", "margin", "blackAndWhite"]（print では続けて "printer", "duplex", "copies"）。
+     * 画面に出す設定（並べた順）。既定: ["sheets", "pages", "paper", "landscape", "scaling", "margin", "blackAndWhite"]（toPdf の preview では "margin" の後に "mirrorMargins"、print では続けて "printer", "duplex", "copies"）。
      * true ですべて、false か [] で設定を出さない（ページの確認だけ）。
      * 設定の初めの値は options を当てたシートのページ設定。利用者が変えなかった設定は options とシートの設定のまま
      */

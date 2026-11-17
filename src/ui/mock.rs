@@ -193,7 +193,9 @@ impl Ui for Mock {
             ));
             return done(Ok(()));
         }
-        self.logf(&format!("pdf({}, {} pages, {}/{} charts)", quote(&job.path), pages, drawn, charts.len()));
+        // ", mirrored" when the even pages swap the left and right margins.
+        let mirrored = if job.html.contains(";--mm:") { ", mirrored" } else { "" };
+        self.logf(&format!("pdf({}, {} pages, {}/{} charts{mirrored})", quote(&job.path), pages, drawn, charts.len()));
         done(Ok(()))
     }
 
