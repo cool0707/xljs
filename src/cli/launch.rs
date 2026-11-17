@@ -74,9 +74,12 @@ pub(super) fn launch(con: &ConsoleState, u: Arc<dyn Ui>, explicit_lang: bool, st
 /// The icons of the choices in the page (web/icons.css), in their order.
 const PAGE_ICONS: [&str; 6] = ["play", "bug", "sparkles", "package", "scroll-text", "link"];
 
-/// The size of the start screen's page (below its title bar).
+/// The size of the start screen's page (below its title bar). The height
+/// fits the six choices without a scroll bar (web/launch.css: 4 + 28 + 16
+/// above them, 24 below, 8 between, 64 each and 80 for the two whose note
+/// takes two lines = 528) with a little room for the fonts' metrics.
 const PAGE_WIDTH: i64 = 600;
-const PAGE_HEIGHT: i64 = 496;
+const PAGE_HEIGHT: i64 = 536;
 
 /// Shows the start screen: a window of its own (web/launch.html) where the
 /// UI has HTML windows, else Ui::choose (also when the window cannot open,
