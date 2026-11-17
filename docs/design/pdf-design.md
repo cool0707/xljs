@@ -207,15 +207,26 @@ Excel の「セルに配置」の画像はリッチ値で、セルの値とし�
 両面印刷用に、偶数ページの左右の余白を入れ替える。ページの幅は変わらないのでページの分け方はそのまま。
 `page_rule` がシートの名前付きページに `@page sN:left{margin-left:R;margin-right:L}` を足す（文書は右ページから始まるので、偶数ページが `:left`。
 Chromium の `printToPDF` は名前付きページと `:left` の組み合わせを守る。Playwright の `page.pdf` で確かめた）。数え方は文書全体の通し番号。
-画面（`@media screen`。プレビューと `toHtml`）では、ページの `style` の `--mm`（入れ替えた余白）を `.xljs-page:nth-of-type(even)` が使う。
+画面（`@media screen`。プレビューと `toHtml`）とプリンター向けの配置では、ページの `style` の `--mm`（入れ替えた余白）を偶数ページ（`mark_pages` が付ける
+属性 `data-even`。元の通し番号で決めるので、ページを選んでも・プリンターで用紙ごとにページを隠しても変わらない）が使う。
+`mirrorMargins` を省くと、`duplex`（prelude の `printOptions` が `print` の `duplex` を渡す）で紙がページの左右の辺で裏返るとき
+（縦向きの `"long"`、横向きの `"short"`。シートごとの向きで決める）に入れ替える。プレビューで余白と両面印刷を選ぶだけで綴じしろがそろう。
+
+## 3.0.1 印刷するページ（`pages`）
+
+`"1,3,5-7"` `"8-"` `"-3"`（全角の数字・区切り、`〜` も可）を `xlsx_print::page_selection` が全体のページ数に当てる（最後より後ろは無視、1 ページも残らなければエラー）。
+ページを選ぶとプリンター向けの配置（`PrintOptions::printer`）にして、`mark_pages` が選ばなかったページ（`<section class="xljs-page">`）を HTML から外し、
+残したページに `counter-set:xljs-page <元の番号>` を付ける（&P は元の番号、&N は全体のページ数、奇数・偶数は `data-even` で元のまま）。
+`papers[].pages` と `pages` は残したページの数（`print` の用紙ごとのジョブの範囲はこれで数える）、`total` は全体の数（プレビューの「n ページ（全 N ページ）」）。
+PDF の `@page` の余白とページの余白ボックス（`counter(page)`）では印刷したページで数え直してしまうので、プリンター向けの配置を使う。
 
 ## 3.1 印刷プレビュー（`printPreview`・`toPdf` の `preview`、`web/print-preview.html` / `print-preview.js`）
 
 Excel の印刷プレビューのように、ページを出して設定を変えてもらう。確定したら変えた設定を重ねた `PrintOptions` を返す（キャンセルは `null`）。
 `toPdf(dest, { preview })` はそれを通してから PDF にする（キャンセルなら PDF を作らずに `null`）。
 
-- **出す設定**（`preview.settings`。prelude の `PREVIEW_SETTINGS`）: `sheets` `paper` `landscape` `scaling` `margin` `blackAndWhite` `gridLines`
-  `centerHorizontally` `charts` `skipBlankPages` `condense`。既定は `PREVIEW_DEFAULT`（シート・用紙・向き・拡大縮小・余白・白黒）。`sheets` はブックで印刷できるシートが 2 つ以上のときだけ。
+- **出す設定**（`preview.settings`。prelude の `PREVIEW_SETTINGS`）: `sheets` `pages`（文字列の入力）`paper` `landscape` `scaling` `margin` `blackAndWhite` `gridLines`
+  `centerHorizontally` `charts` `skipBlankPages` `condense`。既定は `PREVIEW_DEFAULT`（シート・ページ・用紙・向き・拡大縮小・余白・白黒）。`sheets` はブックで印刷できるシートが 2 つ以上のときだけ。
 - **初めの値**: native の `xlsxPrintSetup(book, options)`（`xlsx_print::print_setup`）が、印刷するシートごとに `options` を当てたページ設定
   （用紙の名前（`paper_name`。名前のない用紙は null）・向き・倍率か「次のページ数」・余白 mm・枠線・白黒・左右中央）を返す。
   シートによって違う設定（用紙・向き・拡大縮小・余白）は「シートごとの設定」（値 `""`）から始める（向きはそのときだけセグメントではなく選択）。

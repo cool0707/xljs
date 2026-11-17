@@ -285,7 +285,7 @@ async function drawCharts(charts, m) {
  * Printing on a printer, one paper at a time: shows only the pages from..to
  * (1-based) and answers "shown" with the group. The page numbers (&P, the
  * counter xljs-page) go on from the hidden pages; the even pages stay the
- * even ones (:nth-of-type counts the hidden pages).
+ * even ones (data-even).
  */
 async function showPages(m) {
   const pages = Array.from(document.querySelectorAll(".xljs-page"));

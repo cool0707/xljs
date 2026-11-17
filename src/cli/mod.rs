@@ -97,9 +97,32 @@ fn parse_flags(args: &[String]) -> Result<(Flags, Vec<String>)> {
 /// exit code.
 pub fn main(args: Vec<String>) -> i32 {
     let con = console::setup();
+    let args = args.into_iter().map(long_name).collect();
     let code = run(&con, args);
     con.finish();
     code
+}
+
+/// The long name of a file given by its short (8.3) name: Explorer passes
+/// the files dropped on the exe or on a script (DropHandler) as
+/// "C:\\USERS\\ABCDEF~1\\売上集~1.XLS", which the scripts would show (book.path,
+/// the title of a PDF, a print job). Other arguments as they are.
+fn long_name(arg: String) -> String {
+    #[cfg(windows)]
+    if arg.contains('~') && !arg.starts_with('-') {
+        use windows::Win32::Storage::FileSystem::GetLongPathNameW;
+        let short = windows::core::HSTRING::from(arg.as_str());
+        let mut buf = vec![0u16; 1024];
+        let mut n = unsafe { GetLongPathNameW(&short, Some(&mut buf)) } as usize;
+        if n > buf.len() {
+            buf.resize(n, 0);
+            n = unsafe { GetLongPathNameW(&short, Some(&mut buf)) } as usize;
+        }
+        if n > 0 && n < buf.len() {
+            return String::from_utf16_lossy(&buf[..n]);
+        }
+    }
+    arg
 }
 
 fn env(k: &str) -> String {
