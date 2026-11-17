@@ -13,7 +13,7 @@ const v = await ui.form({
   title: "工程表",
   width: 960,
   fields: [{
-    name: "plan", type: "chart", label: "工程", height: 16,
+    name: "plan", type: "chart", label: "工程", height: 400, // px
     chart: {
       type: "gantt",
       data: tasks,

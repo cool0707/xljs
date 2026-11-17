@@ -28,9 +28,9 @@ Web 標準に合わせたもの（File System Access API・`fetch`・`URL`・`Te
 
 | # | 優先 | 対象 | 要旨 | 状態 |
 |---|---|---|---|---|
-| A1 | A | `ui.form` | 送信ボタン（`submit`・`submitIcon`・`onSubmit`）を `buttons` に統一 | 未着手 |
-| A2 | A | フォームの第 2 引数 | `FormContext` / `FormChangeContext` を 1 つに。対になった重複メソッドの整理 | 未着手 |
-| A3 | A | `FormField` | type ごとの型に分け、意味の違う同名のキーをなくす | 未着手 |
+| A1 | A | `ui.form` | 送信ボタン（`submit`・`submitIcon`・`onSubmit`）を `buttons` に統一 | 完了 |
+| A2 | A | フォームの第 2 引数 | `FormContext` / `FormChangeContext` を 1 つに。対になった重複メソッドの整理 | 完了 |
+| A3 | A | `FormField` | type ごとの型に分け、意味の違う同名のキーをなくす | 完了 |
 | A4 | A | 全体 | 別名の方針（d.ts・ドキュメントに出すのは 1 つ） | 未着手 |
 | B1 | B | グローバル | `workbooks` の名前、JSON は `fs`・CSV は `csv` の不揃い | 未着手 |
 | B2 | B | `fs` / ハンドル | `fs.list` と `dir.list` の戻り値の違い、`walk` / `glob` の重複 | 未着手 |

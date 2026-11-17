@@ -27,8 +27,8 @@
 
 - **ウィンドウは 1 つ。** フォームを順に出さない。結果の表（`ui.table`）を続けて出さない。結果は同じフォームに出す: 経過と件数は `form.log`、一覧はフォームの `table` 項目に `form.table("項目名", rows)`、できたファイルは `return`。
 - **入力させるのは、プログラムが調べられないことだけ。** 実行している人の氏名・所属・メール・役職は入力欄にせず `ad.me()` で取る（`displayName` `department` `mail` `title`。`ad.available()` が false なら `xljs.userName`）。今日の日付は `default: new Date()`。前回と同じ値は `remember: true`。みんなで使うデータ（データベースなど）の場所は毎回選ばせず、`xljs.scriptDir` か設定ファイルで決める。
-- **入力は入力欄で受ける。表は「見る・選ぶ・すでにある行を直す」だけ。** 新しいデータを編集できる表に入力させない（行の追加・削除はできない）。選択肢が決まっていれば `select` / `radio` / `segmented` / `combobox`。
-- **登録・更新のあとは `form.table` で一覧を読み直す。** 「閉じて再実行してください」と案内しない（フォームは処理のあとも続けて実行できる）。`onClick` の中で `alert` を出さない（`form.log`、失敗は `throw`）。
+- **入力は入力欄で受ける。表は「見る・選ぶ・すでにある行を直す」だけ。** 新しいデータを編集できる表に入力させない（行は増減できない）。選択肢が決まっていれば `select` / `radio` / `segmented` / `combobox`。
+- **登録・更新のあとは `form.table` で一覧を読み直す。** 「閉じて再実行してください」と案内しない（フォームは処理のあとも使える）。`onClick` の中で `alert` を出さない（`form.log`、失敗は `throw`）。
 - 全行に同じ値（処理日など）は表の列にせず、表の外に 1 つの項目を置く。表のセルを変えても、ほかのセルを自動では変えられない。
 - 表のセルに打ち込みながら行を増やす明細、その場で計算結果が変わる表、標準の部品にない見た目が要るなら、カスタムアプリ（`@mode app` と HTML。`xljs-app-design.txt`）を提案する。
 
@@ -41,7 +41,7 @@
 - 書いた数式・値を書き換えたあとの数式の結果は、`book.calculate()` を呼ぶと `value` に入る（呼ばなければ Excel で開くまで古いまま）。単純な集計は JavaScript で計算して `value` に入れる。
 - **日付は `dayjs` で扱う**（`new Date("2026-04-01")` は UTC、月は 0 始まり）。書式のない日付の数値は `dayjs.fromExcel(45383)`。
 - 既定値の配列・オブジェクト（定数）を直接 `push`・変更しない。`structuredClone(既定値)` で複製してから使う。ループの終了条件で見ている配列に、ループの中で `push` しない（無限ループになる）。行を足すなら足す数を先に決める（`Array.from({ length: n }, () => ({ ... }))`）。
-- 1 ファイルの失敗で全体を止めない（`try` / `catch` で続行し、最後に知らせる）。
+- 1 ファイルの失敗で全体を止めない（`try` / `catch` で続け、最後に知らせる）。
 - 結果は別名の新しいファイルに保存する。`.xls` は読めない（xlsx / xlsm だけ）。
 
 # 要点
@@ -73,7 +73,7 @@ const groups = Object.groupBy(rows, (r) => dayjs(r.日付).format("YYYY-MM"));
 await ui.table(rows, { title: "結果" }).closed;
 ```
 
-フォーム項目の type: `text` `number` `date` `month` `select` `radio` `segmented` `combobox` `checkbox` `switch` `textarea` `file` `files` `folder` `saveFile` `table` `note`。キーは type ごと（`note` の本文は `text`、`textarea` の行数は `lines`、`height` は px）。`table` 項目に `selectable: "single"` を付けると、行を選ぶと `onChange(row, values, form)` が呼ばれる。
+項目の type: `text` `number` `date` `month` `select` `radio` `segmented` `combobox` `checkbox` `switch` `textarea` `file` `files` `folder` `saveFile` `table` `note`。キーは type ごと（note の本文は `text`、textarea の行数は `lines`）。`table` 項目は `selectable: "single"` なら行を選ぶと `onChange(row, values, form)` が呼ばれる。
 
 # 回答の例
 

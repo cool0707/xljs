@@ -163,7 +163,7 @@ await ui.form({
 });
 ```
 
-項目の type: `text` `number` `date` `month` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table` `chart`。項目・ボタンには Font Awesome のアイコンを付けられる（`icon: "folder-open"`）。`placeholder`・`tooltip`（マウスを重ねたときの説明）も付けられる。項目の `onChange(value, values, form)` は値が変わったときに呼ばれ、`form.setValue(name, value)` でほかの項目を埋められる（選んだファイルと同じフォルダの関連ファイルを設定するなど）。項目の `disabled` / `hidden`（真偽値か `(values) => 真偽値`）で無効化（グレー表示）・非表示にでき、`form.setDisabled(name, bool)` / `form.setHidden(name, bool)` でも切り替えられる（無効・非表示の項目は検証しない）。ボタンの `onClick`・項目の `onChange` の `form.table(name, rows)` で `table` 項目の行を入れ替えられる（結果の一覧、登録後の読み直し、絞り込み）。`table` に `selectable: "single"` を付けると行を選べ、選ぶと `onChange(row, values, form)` が呼ばれる（空でも見出しが出るよう `columns` を書く）。`buttons: [{ label, icon, variant, confirm, validate: false, onClick(v, form) }]` で操作のボタンを並べ、Enter で押すものは `variant: "primary"`。`onClick` のないボタンは閉じて値を返す（`buttons` を省くと「OK」だけ。途中で少し尋ねるとき）。表の行をその場で直させる（`editable: true`）、タブ（`tabs`）、ツールバー（`toolbar`）、サイドメニューでフォームを切り替える `ui.forms({ forms: [...] })` などはリファレンスを参照。
+項目の type: `text` `number` `date` `month` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table` `chart`。キーは type ごと（`textarea` の行数は `lines`、`height` は px）。項目・ボタンには Font Awesome のアイコンを付けられる（`icon: "folder-open"`）。`placeholder`・`tooltip`（マウスを重ねたときの説明）も付けられる。項目の `onChange(value, values, form)` は値が変わったときに呼ばれ、`form.setValue(name, value)` でほかの項目を埋められる。項目の `disabled` / `hidden`（真偽値か `(values) => 真偽値`）で無効化（グレー表示）・非表示にでき、`form.setDisabled(name, bool)` / `form.setHidden(name, bool)` でも切り替えられる（無効・非表示の項目は検証しない）。ボタンの `onClick`・項目の `onChange` の `form.table(name, rows)` で `table` 項目の行を入れ替えられる（結果の一覧、登録後の読み直し、絞り込み）。`table` に `selectable: "single"` を付けると行を選べ、選ぶと `onChange(row, values, form)` が呼ばれる（空でも見出しが出るよう `columns` を書く）。`buttons: [{ label, icon, variant, confirm, validate: false, onClick(v, form) }]` で操作のボタンを並べ、Enter で押すものは `variant: "primary"`。`onClick` のないボタンは閉じて値を返す（`buttons` を省くと「OK」だけ。途中で少し尋ねるとき）。表の編集（`editable: true`）、タブ（`tabs`）、ツールバー（`toolbar`）、サイドメニューで切り替える `ui.forms` などはリファレンスを参照。
 
 ## 表で見せる・選ばせる（フォームなしのとき。フォームがあるならフォームの `table` 項目に出す）
 
@@ -268,7 +268,7 @@ await ui.form({
   title: "商品マスター",
   fields: [
     { name: "word", label: "検索", placeholder: "品名の一部", onChange(word, v, form) { form.table("list", load(word)); } },
-    { name: "list", label: "商品", type: "table", rows: load(), columns: ["コード", "品名", "区分", "単価"], selectable: "single", height: 10, // 開くと一覧が出ている
+    { name: "list", label: "商品", type: "table", rows: load(), columns: ["コード", "品名", "区分", "単価"], selectable: "single", height: 320, // 開くと一覧が出ている
       onChange(row, v, form) { show(form, row); } }, // 行を選ぶと入力欄に出す
     { name: "code", label: "コード", required: true },
     { name: "name", label: "品名", required: true },

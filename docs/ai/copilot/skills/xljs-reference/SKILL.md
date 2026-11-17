@@ -312,7 +312,7 @@ await ui.form({
 | `note` | 値なし。メッセージの表示（`label` が見出し、`text` が本文、`kind: "info" | "success" | "warning" | "error"`） |
 | `image` | 値なし。画像の表示（`src` に画像ファイルのパス・バイト列・URL。`width` `height`（px）`align: "left" | "center" | "right"`。`label` なしならフォームの幅いっぱい） |
 
-使えるキーは type ごとに決まっていて、合わないキー（`text` の `options` など）やないキーを書くとエラーになる（d.ts の `FormTextField` など）。
+使えるキーは type ごとに決まっていて、合わないキー（`text` の `options` など）やないキーを書くとエラーになる。
 
 - 項目の共通オプション: `label` `default` `required` `help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。入力欄のある type には `placeholder`（`select` では未選択の表示になり、初期値が `""`）、`text` `number` `slider` には `prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`text` `textarea` `tags` には `maxLength`（文字数の上限。「12 / 100」と表示）。フォームの `validate(values)` はボタンを押したときだけ。
 - ウィンドウの大きさは `width` `height`（既定は項目数から決める）。`resizable: false` で大きさを固定する（枠のドラッグ・最大化ができない）。`titleBar: "custom"` で OS のタイトルバーの代わりに自前のタイトルバー（`icon` とタイトル、最小化・最大化・閉じる）を表示する（`ui.table` / `app.open` も同じ。メインウィンドウは `@titlebar custom`）。

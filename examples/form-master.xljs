@@ -28,7 +28,7 @@ await ui.form({
     // 開いたときに一覧が出ている。行を選ぶと onChange で入力欄に出す。
     // 1 件もないときにも見出しが出るように、列（columns）を書いておく
     {
-      name: "list", label: "商品", type: "table", rows: load(), selectable: "single", height: 10,
+      name: "list", label: "商品", type: "table", rows: load(), selectable: "single", height: 320, // px（約 10 行）
       columns: ["商品コード", "商品名", "単価", "備考"],
       formats: [{ column: "単価", empty: true, row: true, color: "#9c0006" }], // 単価のない行を目立たせる
       onChange(item: Item | null, v, form) { show(form, item); },

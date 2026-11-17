@@ -31,7 +31,7 @@ const values = await ui.form({
     {
       label: "結果",
       // selectable なしの表は表示だけ（値には入らない）
-      fields: [{ name: "summary", label: "集計結果", type: "table", rows: [], columns: ["支店", "件数", "合計"], height: 6 }],
+      fields: [{ name: "summary", label: "集計結果", type: "table", rows: [], columns: ["支店", "件数", "合計"], height: 200 }],
     },
   ],
   buttons: [{
