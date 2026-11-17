@@ -32,6 +32,7 @@ function show(spec) {
 host.on((m) => {
   switch (m.type) {
     case "init":
+      applyColors(m.accent || {}, m.background || {}, m.radius || "");
       opts = {
         lang: m.lang || "ja",
         texts: m.texts || {},

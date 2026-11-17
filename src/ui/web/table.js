@@ -41,6 +41,7 @@ host.on((m) => {
 });
 
 function init(m) {
+  applyColors(m.accent || {}, m.background || {}, m.radius || "");
   texts = m.texts || {};
   texts.grid = texts.grid || {};
   columns = m.columns || [];

@@ -172,13 +172,14 @@ declare global {
   }
 
   interface Progress {
-    total: number;
+    readonly total: number;
     readonly done: number;
-    message: string;
+    readonly message: string;
     /** ユーザーがキャンセル（またはコンソールで Ctrl+C）したか */
     readonly cancelled: boolean;
-    /** 完了件数とメッセージを更新する */
-    update(done: number, message?: string): this;
+    /** 完了件数（と総数・メッセージ）を更新する。total を省略すると前回の総数。フォームの form.progress と同じ形 */
+    update(done: number, total?: number, message?: string): this;
+    update(done: number, message: string): this;
     /** 完了件数を 1 増やす */
     increment(message?: string): this;
     close(): void;
@@ -624,7 +625,7 @@ declare global {
      * コンソール・mock では表を出力する
      */
     table(name: string, rows: readonly unknown[], columns?: (string | FormTableColumn)[]): void;
-    /** 項目の値を変える（default と同じ形で指定。table は選択する行）。変えた項目は検証される（onChange は呼ばれない） */
+    /** 項目の値を変える（default と同じ形で指定。table は選択する行）。変えた項目は検証される（onChange は呼ばれない）。呼び出し元の values の値も変わる */
     setValue(name: string, value: unknown): void;
     /** 項目を無効にする（グレーで表示。false で有効に戻す）。項目の disabled を置き換える */
     setDisabled(name: string, disabled?: boolean): void;
@@ -680,9 +681,49 @@ declare global {
     close?: boolean;
   }
 
-  interface FormOptions<V extends FormValues = FormValues> {
-    /** ウィンドウのタイトル（既定は @title → スクリプト名） */
+  /** ウィンドウのオプション（ui.form・ui.forms・ui.table・ui.chart・app.open で共通） */
+  interface WindowOptions {
+    /** ウィンドウのタイトル（既定は @title → スクリプト名。グラフはその title が先） */
     title?: string;
+    /**
+     * クライアント領域の幅・高さ（px）。既定は画面ごと（フォームは項目数から、表は 960 × 600、グラフは 900 × 560）。
+     * titleBar: "custom" ならタイトルバーを除いた大きさ
+     */
+    width?: number;
+    height?: number;
+    /** false にするとウィンドウの大きさを固定する（枠のドラッグ・最大化ができない）。既定は true */
+    resizable?: boolean;
+    /**
+     * "custom" にすると OS のタイトルバーを隠し、ページの上端に自前のタイトルバー（icon とタイトル、最小化・最大化・閉じるボタン）を表示する。
+     * 既定は "system"（OS のタイトルバー）
+     */
+    titleBar?: "system" | "custom";
+    /** 自前のタイトルバーでタイトルの前に出す Font Awesome のアイコン（"table" や "fa-regular fa-calendar"）。titleBar が "system" なら無視 */
+    icon?: string;
+  }
+
+  /** 組み込みの画面（ui.form・ui.forms・ui.table・ui.chart）の見た目。コンソール・モックでは無視 */
+  interface PageLooks {
+    /**
+     * アクセントカラー（primary のボタン・タブ・フォーカス枠・チェックボックス・表の選択行・タイトルバーのアイコン）。
+     * "#c42b1c" や "seagreen" のような CSS の色で、ライト・ダークの両方に使う。{ light, dark } で配色ごとに指定できる（省いた側は既定の色）。
+     * ボタンの文字色（黒か白）・ホバー色・選択行の色は指定した色から決める
+     */
+    accent?: string | { light?: string; dark?: string };
+    /**
+     * 背景色（ページとタイトルバーの地の色）。"#fff8e1" や "aliceblue" のような CSS の色で、ライト・ダークの両方に使う。
+     * { light, dark } で配色ごとに指定できる（省いた側は既定の色）。暗い背景色なら文字・入力欄・枠線の色もダークの配色に
+     * （ダークの配色で明るい背景色ならライトの配色に）切り替える
+     */
+    background?: string | { light?: string; dark?: string };
+    /**
+     * 角丸の大きさ（ボタン・入力欄・タブ・表などの角）。ピクセル数か "none"（0）・"small"（4）・"medium"（6。既定）・
+     * "large"（10）・"full"（ボタンと入力欄を丸く。表などの枠は 10 まで）
+     */
+    radius?: number | "none" | "small" | "medium" | "large" | "full";
+  }
+
+  interface FormOptions<V extends FormValues = FormValues> extends WindowOptions, PageLooks {
     /** 項目の上に出す説明 */
     description?: string;
     /** 項目（tabs があればタブの上に常に表示する項目）。{ group, fields } で見出し付きのグループにまとめられる */
@@ -697,8 +738,6 @@ declare global {
      * コンソールではタブごとに見出しを出して順に尋ねる
      */
     tabs?: { label: string; icon?: string; fields: (FormField | FormGroup | FormRow)[] }[];
-    /** 自前のタイトルバー（titleBar: "custom"）でタイトルの前に出す Font Awesome のアイコン（FormField の icon と同じ）。titleBar が "system" なら無視 */
-    icon?: string;
     /**
      * フォームの下に並べるボタン（FormButton）。省略すると「OK」ボタン 1 つ（押すと検証して閉じ、値を返す）。
      * Enter で押されるのは variant: "primary" のボタン（1 つまで）
@@ -715,33 +754,6 @@ declare global {
     remember?: boolean;
     /** remember の保存キー（既定は title）。同じスクリプトで複数のフォームを区別する */
     id?: string;
-    /** ウィンドウの大きさ（既定は項目数から決める） */
-    width?: number;
-    height?: number;
-    /** false にするとウィンドウの大きさを固定する（枠のドラッグ・最大化ができない）。既定は true */
-    resizable?: boolean;
-    /**
-     * "custom" にすると OS のタイトルバーを隠し、ページの上端に自前のタイトルバー（icon とタイトル、最小化・最大化・閉じるボタン）を表示する。
-     * width / height はタイトルバーを除いた大きさ。既定は "system"（OS のタイトルバー）
-     */
-    titleBar?: "system" | "custom";
-    /**
-     * アクセントカラー（primary のボタン・タブ・フォーカス枠・チェックボックス・表の選択行・タイトルバーのアイコン）。
-     * "#c42b1c" や "seagreen" のような CSS の色で、ライト・ダークの両方に使う。{ light, dark } で配色ごとに指定できる（省いた側は既定の色）。
-     * ボタンの文字色（黒か白）・ホバー色・選択行の色は指定した色から決める。コンソール・モックでは無視
-     */
-    accent?: string | { light?: string; dark?: string };
-    /**
-     * 背景色（ページとタイトルバーの地の色）。"#fff8e1" や "aliceblue" のような CSS の色で、ライト・ダークの両方に使う。
-     * { light, dark } で配色ごとに指定できる（省いた側は既定の色）。暗い背景色なら文字・入力欄・枠線の色もダークの配色に
-     * （ダークの配色で明るい背景色ならライトの配色に）切り替える。コンソール・モックでは無視
-     */
-    background?: string | { light?: string; dark?: string };
-    /**
-     * 角丸の大きさ（ボタン・入力欄・タブ・表などの角）。ピクセル数か "none"（0）・"small"（4）・"medium"（6。既定）・
-     * "large"（10）・"full"（ボタンと入力欄を丸く。表などの枠は 10 まで）。コンソール・モックでは無視
-     */
-    radius?: number | "none" | "small" | "medium" | "large" | "full";
   }
 
   /** ui.forms でまとめるフォーム */
@@ -752,9 +764,7 @@ declare global {
     icon?: string;
   }
 
-  interface FormsOptions {
-    /** ウィンドウのタイトル（既定は @title → スクリプト名） */
-    title?: string;
+  interface FormsOptions extends WindowOptions, PageLooks {
     /** まとめるフォーム。各フォームの titleBar / icon / resizable は無視する（ウィンドウはこのオプションのもの） */
     forms: FormsItem[];
     /** サイドメニューの位置（既定 "left"） */
@@ -769,19 +779,6 @@ declare global {
      * （フォームの width / height、なければ項目数から）にウィンドウを合わせる（width / height は無視。最大化中は変えない）
      */
     size?: "fixed" | "each";
-    /** size: "fixed" のウィンドウの大きさ（サイドメニューを含む） */
-    width?: number;
-    height?: number;
-    /** false にするとウィンドウの大きさを固定する */
-    resizable?: boolean;
-    /** FormOptions と同じ。自前のタイトルバー */
-    titleBar?: "system" | "custom";
-    /** 自前のタイトルバーのアイコン */
-    icon?: string;
-    /** FormOptions と同じ。サイドメニューと、指定のないフォームに使う */
-    accent?: string | { light?: string; dark?: string };
-    background?: string | { light?: string; dark?: string };
-    radius?: number | "none" | "small" | "medium" | "large" | "full";
   }
 
   // ------------------------------------------------------------------ ui.table
@@ -883,8 +880,7 @@ declare global {
     validate?(value: any, row: any, index: number): string | null | undefined | void | Promise<string | null | undefined | void>;
   }
 
-  interface TableOptions {
-    title?: string;
+  interface TableOptions extends WindowOptions, PageLooks {
     /**
      * 表示する列と順序。既定はオブジェクトのキー（配列の行なら A, B, C…）。
      * 配列の行に文字列を指定すると、その位置の列の見出しになる
@@ -892,17 +888,6 @@ declare global {
     columns?: (string | TableColumn)[];
     /** 条件付き書式 */
     formats?: readonly TableFormat[];
-    width?: number;
-    height?: number;
-    /** false にするとウィンドウの大きさを固定する。既定は true */
-    resizable?: boolean;
-    /**
-     * "custom" にすると OS のタイトルバーを隠し、ページの上端に自前のタイトルバー（icon とタイトル、最小化・最大化・閉じるボタン）を表示する。
-     * width / height はタイトルバーを除いた大きさ。既定は "system"（OS のタイトルバー）
-     */
-    titleBar?: "system" | "custom";
-    /** 自前のタイトルバーでタイトルの前に出す Font Awesome のアイコン（FormField の icon と同じ）。titleBar が "system" なら無視 */
-    icon?: string;
     /**
      * 行（セル）をダブルクリックしたときに呼ばれる。ファイルを開く・メッセージを出すなどに使う。
      * 指定すると selectable: "single" でもダブルクリックで OK にはならない。
@@ -936,6 +921,8 @@ declare global {
     /** ウィンドウが閉じられると解決する（コンソールではすぐ解決） */
     readonly closed: Promise<void>;
     close(): void;
+    /** 表示する行（と列）を差し替える（並べ替え・絞り込みは解除）。コンソール・mock では表をもう一度出力する */
+    update(rows: Iterable<unknown>, columns?: (string | TableColumn)[]): this;
   }
 
   // ------------------------------------------------------------------ ui.chart
@@ -951,12 +938,23 @@ declare global {
    * data は行オブジェクト（ui.table や sheet.rows() と同じ形。配列の行なら列は位置）で、列はキー名で指定する。
    * 日付は Date（ローカルの日時）。関数（onClick / onChange 以外）は画面に渡せないので使えない
    */
-  interface ChartSpec {
-    /** 既定 "column" */
-    type?: ChartType;
+  type ChartSpec = SeriesChartSpec | GanttChartSpec;
+
+  /** グラフの定義に共通のキー */
+  interface ChartSpecBase {
     data: readonly unknown[];
     title?: string;
     subtitle?: string;
+    /** 点・棒・扇・作業がクリックされたとき（row は data の元の要素。series は系列の名前） */
+    onClick?(row: any, info: { index: number; series: string | null }): unknown;
+    /** ライブラリのオプション（AgChartOptions / Frappe Gantt の options）に重ねる値。JSON で表せるもののみ */
+    options?: Record<string, unknown>;
+  }
+
+  /** 棒・折れ線・面・散布図・バブル・ヒストグラム・円・ドーナツ（AG Charts） */
+  interface SeriesChartSpec extends ChartSpecBase {
+    /** 既定 "column" */
+    type?: Exclude<ChartType, "gantt">;
     /** 分類・X 軸の列（既定は先頭の列）。円・ドーナツでは扇の名前 */
     x?: string | number;
     /**
@@ -979,7 +977,11 @@ declare global {
     labels?: boolean;
     /** histogram の階級の数 */
     bins?: number;
-    // ---- gantt（列の既定はその名前の列。なければ 名前/作業、開始/開始日、終了/終了日、進捗、前提 の列）
+  }
+
+  /** ガントチャート（Frappe Gantt）。列の既定はその名前の列（なければ 名前/作業、開始/開始日、終了/終了日、進捗、前提 の列） */
+  interface GanttChartSpec extends ChartSpecBase {
+    type: "gantt";
     /** 作業名の列（既定 "name"。なければ先頭の列） */
     name?: string | number;
     /** 開始日の列（Date、"2026-04-01"、"2026/4/1 9:00"、Excel のシリアル値） */
@@ -1027,13 +1029,8 @@ declare global {
       /** 実績の線の色（既定 "#ED7D31"） */
       actualColor?: string;
     };
-    // ---- 共通
-    /** 点・棒・扇・作業がクリックされたとき（row は data の元の要素。series は系列の名前） */
-    onClick?(row: any, info: { index: number; series: string | null }): unknown;
     /** ガントチャートで作業の日付・進捗が変えられたとき（row には書き込み済み） */
     onChange?(row: any, changes: { start?: Date; end?: Date; progress?: number }, index: number): unknown;
-    /** ライブラリのオプション（AgChartOptions / Frappe Gantt の options）に重ねる値。JSON で表せるもののみ */
-    options?: Record<string, unknown>;
   }
 
   interface ChartSeries {
@@ -1062,16 +1059,8 @@ declare global {
     log?: boolean;
   }
 
-  interface ChartWindowOptions {
-    /** ウィンドウのタイトル（既定はグラフの title → @title → スクリプト名） */
-    title?: string;
-    /** クライアント領域の幅・高さ（既定 900 x 560） */
-    width?: number;
-    height?: number;
-    resizable?: boolean;
-    titleBar?: "system" | "custom";
-    icon?: string;
-  }
+  /** ui.chart のウィンドウのオプション（WindowOptions と見た目） */
+  interface ChartWindowOptions extends WindowOptions, PageLooks {}
 
   /** グラフのウィンドウ */
   interface ChartView {
@@ -1105,16 +1094,11 @@ declare global {
 
   // ------------------------------------------------------------------ app (HTML windows)
 
-  interface AppWindowOptions {
+  interface AppWindowOptions extends WindowOptions {
     /** 表示する HTML（スクリプトのフォルダからの相対パス）。@html のファイルか @assets のフォルダ内に置く。省略すると空のページ */
     html?: string;
     /** タイトル。既定は @title → スクリプト名 */
     title?: string;
-    /** クライアント領域の幅・高さ（論理ピクセル） */
-    width?: number;
-    height?: number;
-    /** false にするとウィンドウの大きさを固定する（枠のドラッグ・最大化ができない）。既定は true */
-    resizable?: boolean;
     /**
      * "custom" にすると OS のタイトルバーを隠し、ページの <body> の先頭に自前のタイトルバー（icon とタイトル、最小化・最大化・閉じるボタン）を差し込む。
      * ページに data-xljs-titlebar 属性の要素があれば差し込まずにそれをタイトルバーにする（ドラッグで移動。中の data-xljs-window="minimize" / "maximize" / "close" のボタンでウィンドウを操作）。
@@ -1268,15 +1252,14 @@ declare global {
     readText(encoding?: Encoding): string;
     readBytes(): ArrayBuffer;
     /** 既定 "utf8"（.csv / .tsv は Excel 向けに "utf8bom"） */
-    writeText(text: string, encoding?: Encoding): this;
-    appendText(text: string, encoding?: Encoding): this;
+    /** 既定 "utf8"（.csv / .tsv は Excel 向けに "utf8bom"）。{ append: true } で追記 */
+    writeText(text: string, options?: Encoding | WriteTextOptions): this;
     writeBytes(data: ArrayBuffer | ArrayBufferView): this;
   }
 
   interface WalkOptions {
     /** 対象パターン。"/" を含まないパターンは任意の階層のファイル名に一致（大文字小文字無視） */
     glob?: string | string[];
-    include?: string | string[];
     /** 除外パターン。フォルダが一致するとその中も除外 */
     exclude?: string | string[];
     /** フォルダも返す（既定 false） */
@@ -1547,9 +1530,8 @@ declare global {
     isDirectory(path: PathLike): boolean;
     stat(path: PathLike): FileStat | null;
     readText(path: PathLike, encoding?: Encoding): string;
-    /** 既定 "utf8"（.csv / .tsv は Excel 向けに "utf8bom"） */
-    writeText(path: PathLike, text: string, encoding?: Encoding): void;
-    appendText(path: PathLike, text: string, encoding?: Encoding): void;
+    /** 既定 "utf8"（.csv / .tsv は Excel 向けに "utf8bom"）。{ append: true } で追記（BOM はファイルを作るときだけ書く） */
+    writeText(path: PathLike, text: string, options?: Encoding | WriteTextOptions): void;
     readBytes(path: PathLike): ArrayBuffer;
     writeBytes(path: PathLike, data: ArrayBuffer | ArrayBufferView | string): void;
     /** JSON ファイルを読む（BOM・CP932 も自動判定） */
@@ -1560,15 +1542,14 @@ declare global {
     readJSONL<T = any>(src: PathLike | Blob, options?: JsonReadOptions): T[];
     /** 配列を JSON Lines で書き出す */
     writeJSONL(dest: PathLike, rows: Iterable<unknown>, options?: JsonWriteOptions): void;
-    /** 直下の名前一覧（既定では隠しファイル・システムファイルを除く） */
-    list(path?: PathLike, options?: ListOptions): string[];
+    /** 直下のファイルとフォルダのハンドル（dir.list() と同じ。既定では隠しファイル・システムファイルを除く。名前だけなら .map((h) => h.name)） */
+    list(path?: PathLike, options?: ListOptions): (FileSystemFileHandle | FileSystemDirectoryHandle)[];
+    /** サブフォルダを含めて探す。options はパターン（"*.xlsx"）か WalkOptions。fs.walk(".", "*.csv") でカレントフォルダから */
     walk(path: PathLike, options?: WalkOptions | string | string[]): WalkResult<FileSystemFileHandle>;
-    /** カレントフォルダ（または cwd）からの glob */
-    glob(pattern: string, options?: { cwd?: PathLike; exclude?: string | string[]; hidden?: boolean }): FileSystemFileHandle[];
     mkdir(path: PathLike): void;
     remove(path: PathLike, options?: { recursive?: boolean }): void;
+    /** 名前の変更・移動（別のフォルダへのパスも可） */
     rename(from: PathLike, to: PathLike): void;
-    move(from: PathLike, to: PathLike): void;
     copy(from: PathLike, to: PathLike): void;
     cwd(): string;
     chdir(path: PathLike): void;
@@ -1582,6 +1563,12 @@ declare global {
     encoding?: Encoding;
     /** ISO 形式の日時文字列を Date に戻す（既定 false） */
     dates?: boolean;
+  }
+  interface WriteTextOptions {
+    /** 文字コード（既定 "utf8"。.csv / .tsv は "utf8bom"） */
+    encoding?: Encoding;
+    /** 追記する */
+    append?: boolean;
   }
   interface JsonWriteOptions {
     /** インデント（既定 2。JSON Lines では無視） */
@@ -1597,23 +1584,16 @@ declare global {
   interface Shell {
     /** エクスプローラーでファイルを選択した状態で表示する（複数可。フォルダが違えばフォルダごとに開く） */
     showItemInFolder(...items: (PathLike | PathLike[])[]): void;
-    /** showItemInFolder と同じ */
-    showInFolder(...items: (PathLike | PathLike[])[]): void;
-    /** ファイル・フォルダを既定のアプリで開く */
-    openPath(target: PathLike): void;
-    /** URL を既定のブラウザで開く */
-    openExternal(url: string): void;
-    /** URL なら openExternal、それ以外は openPath */
+    /** ファイル・フォルダを既定のアプリで開く。URL（"https://..."）なら既定のブラウザで開く */
     open(target: PathLike): void;
     /**
      * ショートカット（.lnk）を作る・編集する。target が URL なら .url（インターネットショートカット）。
      * 名前が .lnk / .url で終わらなければ付け足す。書いたファイルのパスを返す（失敗は例外）。
-     * operation: "create"（既定。指定した項目だけで作り直す）、"update"（既存のショートカットの指定した項目だけ変える）、
+     * options.mode: "create"（既定。指定した項目だけで作り直す）、"update"（既存のショートカットの指定した項目だけ変える）、
      * "replace"（既存のショートカットを作り直す）
      * @example shell.writeShortcutLink(path.join(fs.knownFolder("desktop"), "売上"), { target: "\\\\server\\共有\\売上.xlsx" })
      */
-    writeShortcutLink(path: PathLike, options: ShortcutOptions): string;
-    writeShortcutLink(path: PathLike, operation: "create" | "update" | "replace", options: ShortcutOptions): string;
+    writeShortcutLink(path: PathLike, options: ShortcutOptions & { mode?: "create" | "update" | "replace" }): string;
     /** ショートカット（.lnk / .url）を読む。リンク先は target（target と icon の環境変数は展開済み） */
     readShortcutLink(path: PathLike): ShortcutDetails;
     /**
@@ -2477,10 +2457,10 @@ declare global {
     toPdf(dest: PathLike, options?: PrintOptions): Promise<string>;
     /**
      * Excel の印刷プレビューのように、options で印刷したときのページを画面に出し、設定（用紙・向き・拡大縮小・余白・白黒など）を変えてもらう。
-     * 出す設定は preview.settings で選ぶ。確定したら、変えた設定を options に重ねたもの（toPdf・toHtml・printPages にそのまま渡せる）を返し、キャンセルなら null。
+     * 出す設定は options.preview.settings で選ぶ。確定したら、変えた設定を options に重ねたもの（toPdf・toHtml・printPages にそのまま渡せる）を返し、キャンセルなら null。
      * ページの表示は WebView2 が必要（Windows のネイティブ UI）。コンソール・mock ではページを出さずに、同じ設定をフォーム（ui.form）で尋ねる
      */
-    printPreview(options?: PrintOptions & PrinterOptions, preview?: PrintPreviewOptions): Promise<(PrintOptions & PrinterOptions) | null>;
+    printPreview(options?: PrintOptions & PrinterOptions & { preview?: PrintPreviewOptions }): Promise<(PrintOptions & PrinterOptions) | null>;
     /**
      * Excel の印刷のように、ダイアログを出さずにプリンターで印刷する（WebView2 が必要。Windows のネイティブ UI のみ）。
      * ページは toPdf と同じ。プリンター・両面・部数・カラーは options（PrinterOptions）で指定し、省略すると既定のプリンターとその設定。
@@ -2675,7 +2655,7 @@ declare global {
     toPdf(dest: PathLike, options: PrintOptions & { preview: boolean | PrintPreviewOptions }): Promise<string | null>;
     toPdf(dest: PathLike, options?: PrintOptions): Promise<string>;
     /** 印刷するシート（toPdf と同じ選び方）の印刷プレビューを出して設定を変えてもらう。設定 "sheets" で印刷するシートも選べる。詳しくは Worksheet.printPreview */
-    printPreview(options?: PrintOptions & PrinterOptions, preview?: PrintPreviewOptions): Promise<(PrintOptions & PrinterOptions) | null>;
+    printPreview(options?: PrintOptions & PrinterOptions & { preview?: PrintPreviewOptions }): Promise<(PrintOptions & PrinterOptions) | null>;
     /** 印刷するシート（toPdf と同じ選び方）をプリンターで印刷する。詳しくは Worksheet.print */
     print(options?: PrintOptions & PrinterOptions & { preview?: boolean | PrintPreviewOptions }): Promise<boolean>;
     /** 印刷したときのページを HTML 文書にする（グラフは空の枠） */

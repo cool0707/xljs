@@ -4231,6 +4231,12 @@
     return out;
   }
 
+  /** The accent, background and radius options of a built-in page (as the form's), checked. */
+  const pageLooks = (options) => ({
+    accent: themeColor(options.accent, "form.badAccent"), background: themeColor(options.background, "form.badBackground"),
+    radius: formRadius(options.radius),
+  });
+
   /** What ui.table returns when nothing is selected: the window, closed, close() and update(rows). */
   class TableView {
     constructor(closed, close, update) {
@@ -4301,6 +4307,7 @@
 
   function tableWindow(data, cols, sel, t, options) {
     let picked = [], answered = false, shown = false;
+    const looks = pageLooks(options);
     const page = openPage("table.html", {
       title: t, width: Number(options.width) || 960, height: Number(options.height) || 600, fixedSize: options.resizable === false,
       titleBar: options.titleBar, icon: faClass(options.icon),
@@ -4376,7 +4383,7 @@
     function sendAll() {
       const fm = options.formats;
       page.send({
-        type: "init", select: sel, total: data.length, texts: tableTexts(), dblclick: !!options.onDoubleClick,
+        type: "init", select: sel, total: data.length, texts: tableTexts(), dblclick: !!options.onDoubleClick, ...looks,
         columns: cols.map((c) => ({ label: c.label, width: c.width })), formats: fm ? fm.wire : undefined,
       });
       const chunk = 2000;
@@ -4622,11 +4629,12 @@
       print();
       return new ChartView(Promise.resolve(), () => {}, (s) => { c = chartOf(chartPatch(c.spec, s)); print(); });
     }
+    const looks = pageLooks(options);
     const page = openPage("chart.html", {
       title: t, width: Number(options.width) || 900, height: Number(options.height) || 560, fixedSize: options.resizable === false,
       titleBar: customTitleBar(options.titleBar), icon: faClass(options.icon),
     }, (m) => {
-      if (m.type === "ready") page.send(Object.assign({ type: "init", lang: native.lang, texts: chartTexts() }, chartInit(c)));
+      if (m.type === "ready") page.send(Object.assign({ type: "init", lang: native.lang, texts: chartTexts() }, looks, chartInit(c)));
       else if (m.type === "click" || m.type === "change") chartEvent(c, m).catch(fail);
     });
     function fail(e) { native.uiError(t, errorText(e)); }
