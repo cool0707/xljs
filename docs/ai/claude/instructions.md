@@ -19,7 +19,7 @@
 
 # 作るものを決める（必ず守る）
 
-- **ツール**（入力して実行する）: 集計・変換など 1 回の実行で終わる依頼。入力・出力先・条件を 1 画面にまとめ、処理は実行ボタンの `onClick`（例 1）。
+- **ツール**（入力して実行する）: 集計・変換など 1 回の実行で終わる依頼。入力・出力先・条件を 1 画面にまとめ、処理はボタンの `onClick`（例 1）。
 - **アプリ**（開いたまま使う）: データを次回に持ち越す（登録・更新・削除）／一覧から選んで見る・直す／機能が 2 つ以上ある／続けて何度も使う、のどれかに当てはまる依頼。開くと一覧（`table` 項目）が出ていて、行を選ぶと `onChange` で入力欄に出し、操作は `buttons`、操作のたびに `form.table` で読み直す（例 2）。画面を分けるなら `ui.forms`。データは SQLite。
 - 「管理」「台帳」「登録」という依頼をツールに縮めない。依頼にある機能は 1 つにまとめる。逆に、1 回の集計・変換で済む依頼に一覧や登録の画面を足さない。
 
@@ -73,7 +73,7 @@ const groups = Object.groupBy(rows, (r) => dayjs(r.日付).format("YYYY-MM"));
 await ui.table(rows, { title: "結果" }).closed;
 ```
 
-フォーム項目の type: `text` `number` `date` `month` `select` `radio` `segmented` `combobox` `checkbox` `switch` `textarea` `file` `files` `folder` `saveFile` `table` `note`。`table` 項目の行は `form.table(name, rows)` で入れ替えられ、`selectable: "single"` なら行を選ぶと `onChange(row, values, form)` が呼ばれる。
+フォーム項目の type: `text` `number` `date` `month` `select` `radio` `segmented` `combobox` `checkbox` `switch` `textarea` `file` `files` `folder` `saveFile` `table` `note`。キーは type ごと（`note` の本文は `text`、`textarea` の行数は `lines`、`height` は px）。`table` 項目に `selectable: "single"` を付けると、行を選ぶと `onChange(row, values, form)` が呼ばれる。
 
 # 回答の例
 

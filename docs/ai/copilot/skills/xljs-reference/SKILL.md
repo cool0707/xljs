@@ -291,7 +291,7 @@ await ui.form({
 
 | type | 値 |
 |---|---|
-| `text` `password` `textarea` | 文字列 |
+| `text` `password` `textarea` | 文字列（`textarea` の行数は `lines`） |
 | `number` | 数値か `null`（`min` `max` `step`） |
 | `date` | `Date` か `null` |
 | `month` | `"2026-04"` か `null` |
@@ -299,9 +299,9 @@ await ui.form({
 | `select` `radio` | 選んだ文字列（`options: ["A", "B"]` または `[{ value, label }]`） |
 | `checkbox` | `true` / `false` |
 | `file` `saveFile` | ファイルハンドルか `null`（`accept: [".xlsx"]`） |
-| `files` | ファイルハンドルの配列 |
+| `files` | ファイルハンドルの配列（行数は `lines`） |
 | `folder` | フォルダハンドルか `null` |
-| `table` | 表から選んだ行（`rows` `columns` `selectable: true | "single"`。色分けは `formats`（下の ui.table）） |
+| `table` | 表から選んだ行（`rows` `columns` `selectable: true | "single"`、`height` は px。色分けは `formats`（下の ui.table）） |
 | `switch` | `true` / `false`（オン・オフのスイッチ） |
 | `checkboxes` | 選んだ文字列の配列（`options` の複数選択。`required` は 1 つ以上） |
 | `segmented` | 選んだ文字列（`options` を横に並べたボタン。`multiple: true` なら配列） |
@@ -309,16 +309,18 @@ await ui.form({
 | `slider` | 数値（`min` `max` 既定 0〜100、`step`） |
 | `dateRange` | `{ from: Date, to: Date }` か `null`（`default: { from, to }`。開始 > 終了はエラー） |
 | `tags` | 文字列の配列（Enter かカンマで区切って入力。`pattern` `maxLength` は 1 つずつ） |
-| `note` | 値なし。メッセージの表示（`label` が見出し、`default` が本文、`variant: "info" | "success" | "warning" | "error"`） |
-| `image` | 値なし。画像の表示（`default` に画像ファイルのパス・バイト列・URL。`width` `height` `align: "left" | "center" | "right"`。`label` なしならフォームの幅いっぱい） |
+| `note` | 値なし。メッセージの表示（`label` が見出し、`text` が本文、`kind: "info" | "success" | "warning" | "error"`） |
+| `image` | 値なし。画像の表示（`src` に画像ファイルのパス・バイト列・URL。`width` `height`（px）`align: "left" | "center" | "right"`。`label` なしならフォームの幅いっぱい） |
 
-- 項目の共通オプション: `label` `default` `required` `placeholder`（`select` では未選択の表示になり、初期値が `""`）`help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`maxLength`（文字数の上限。「12 / 100」と表示）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` はボタンを押したときだけ。
+使えるキーは type ごとに決まっていて、合わないキー（`text` の `options` など）やないキーを書くとエラーになる（d.ts の `FormTextField` など）。
+
+- 項目の共通オプション: `label` `default` `required` `help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。入力欄のある type には `placeholder`（`select` では未選択の表示になり、初期値が `""`）、`text` `number` `slider` には `prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`text` `textarea` `tags` には `maxLength`（文字数の上限。「12 / 100」と表示）。フォームの `validate(values)` はボタンを押したときだけ。
 - ウィンドウの大きさは `width` `height`（既定は項目数から決める）。`resizable: false` で大きさを固定する（枠のドラッグ・最大化ができない）。`titleBar: "custom"` で OS のタイトルバーの代わりに自前のタイトルバー（`icon` とタイトル、最小化・最大化・閉じる）を表示する（`ui.table` / `app.open` も同じ。メインウィンドウは `@titlebar custom`）。
-- `onChange(value, values, form)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる（`table` は行を選んだとき。選んだ行をほかの入力欄に出せる）。`form.setValue(name, value)` でほかの項目を埋められる（setValue で変えた項目の onChange は呼ばれない。例: 売上のファイルを選んだら、同じフォルダの対になる仕入のファイルを `form.setValue("purchase", path.join(path.dirname(h.path), "仕入_202604.csv"))` で設定する）。
-- 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`、`hidden: (v) => v.kind !== "その他"`）。onChange やボタンの onClick から `form.setDisabled(name, bool)` / `form.setEnabled(name)` / `form.setHidden(name, bool)` / `form.setVisible(name)` でも切り替えられる（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
+- `onChange(value, values, form)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる（`table` は行を選んだとき。選んだ行をほかの入力欄に出せる）。`form.setValue(name, value)` でほかの項目を埋められる（`form` はボタンの onClick と同じで、`form.table` `form.chart` `form.log` も使える。setValue で変えた項目の onChange は呼ばれない。例: 売上のファイルを選んだら、同じフォルダの対になる仕入のファイルを `form.setValue("purchase", path.join(path.dirname(h.path), "仕入_202604.csv"))` で設定する）。
+- 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`、`hidden: (v) => v.kind !== "その他"`）。onChange やボタンの onClick から `form.setDisabled(name, bool)` / `form.setHidden(name, bool)` でも切り替えられる（false で戻す）（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
 - 横に並べる: `{ row: "氏名", fields: [{ name: "last", label: "姓" }, { name: "first", label: "名" }] }` を項目と並べて書く（`row` が左のラベル、各項目の `label` は入力欄の前。`""` で出さない）。値はほかの項目と同じオブジェクト。
-- 右上のツールバー: `toolbar: [{ name: "detail", type: "switch", label: "詳細表示" }, { icon: "gear", tooltip: "設定", onClick(values, form) { ... } }]`。`name` のあるものは項目（値は `values`）、ないものはボタン（`label` なしならアイコンだけ。検証せずに `onClick` を呼ぶ。`form.setValue` で項目を変えられる。`menu: [{ label, onClick }]` も可）。
+- 右上のツールバー: `toolbar: [{ name: "detail", type: "switch", label: "詳細表示" }, { icon: "gear", tooltip: "設定", onClick(values, form) { ... } }]`。`name` のあるものは項目（値は `values`）、ないものはボタン（`label` なしならアイコンだけ。検証せずに `onClick` を呼ぶ。`form.setValue` で項目を変えられ、`form.log` はフォームの下に出る。`menu: [{ label, onClick }]` も可）。
 - 複数のフォームを 1 つのウィンドウに: `await ui.forms({ forms: [{ label: "登録", icon: "pen", fields, buttons }, { label: "設定", icon: "gear", fields }], side: "left", size: "fixed" })`。サイドメニュー（ハンバーガーで畳める）で切り替える。`side: "right"` で右、`size: "each"` で切り替えるたびにそのフォームの `width` / `height` にする（`"fixed"` は `ui.forms` の `width` / `height`）。戻り値はフォームごとの最後にボタンを押したときの値（なければ `null`）の配列。
 - `fields` に `{ group: "出力", icon: "file-export", help: "説明", fields: [...] }` を項目と並べて書くと見出し付きのグループになる（タブの中でも可。値は項目と同じく 1 つのオブジェクト）。`collapsed: true` で閉じた状態の「詳細設定」にできる（見出しのクリックで開閉。エラーが出ると開く）。`collapsible: true` は開いた状態で開閉可能。
 - アイコン（Font Awesome Free の名前。`"folder-open"` など）: 項目・タブ・ボタンの `icon`。フォームの `icon` は `titleBar: "custom"` のときだけタイトルバーに出る（それ以外は無視）。

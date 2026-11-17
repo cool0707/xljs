@@ -73,7 +73,7 @@ const user = {
   title: me?.title ?? "",
 };
 // フォームでは確認のために見せるだけ（入力させない）:
-// { name: "user", type: "note", label: "記入者", default: `${user.department} ${user.name}` }
+// { name: "user", type: "note", label: "記入者", text: `${user.department} ${user.name}` }
 // 同じ部署の人から選ばせる:
 // { name: "to", label: "承認者", type: "combobox", options: ad.search({ filter: { department: user.department } }).map((u) => u.displayName) }
 ```
@@ -139,7 +139,7 @@ await ui.form({
       onChange(_, v, form) { form.table("list", pick(v)); } },
     { name: "word", label: "品名に含む文字",
       onChange(_, v, form) { form.table("list", pick(v)); } },
-    { name: "list", label: "一覧", type: "table", rows: all, height: 15 },
+    { name: "list", label: "一覧", type: "table", rows: all, height: 460 },
   ],
   buttons: [{
     label: "Excel に保存", icon: "file-excel", variant: "primary",
@@ -174,7 +174,7 @@ await ui.form({
   width: 760,
   fields: [
     { name: "word", label: "検索", placeholder: "品名の一部", onChange(word, v, form) { form.table("list", load(word)); } },
-    { name: "list", label: "商品", type: "table", rows: load(), columns: ["コード", "品名", "区分", "単価"], selectable: "single", height: 10,
+    { name: "list", label: "商品", type: "table", rows: load(), columns: ["コード", "品名", "区分", "単価"], selectable: "single", height: 320,
       onChange(row, v, form) { show(form, row); } }, // 行を選ぶと入力欄に出す
     { group: "選んだ商品（新しい商品は「新規」を押して入力）", fields: [
       { row: "", fields: [
@@ -229,7 +229,7 @@ await ui.forms({
     { label: "受注の照会", icon: "magnifying-glass",
       fields: [
         { name: "word", label: "顧客名に含む文字", onChange(_, v, form) { form.table("list", find(v)); } },
-        { name: "list", label: "受注", type: "table", rows: find(), columns: ["番号", "日付", "顧客名", "金額"], height: 14 },
+        { name: "list", label: "受注", type: "table", rows: find(), columns: ["番号", "日付", "顧客名", "金額"], height: 440 },
       ],
       buttons: [{ label: "再読み込み", icon: "rotate", validate: false, onClick(v, form) { form.table("list", find(v)); } }] },
   ],
@@ -262,6 +262,7 @@ db.close();
 | 進捗の出ない長い処理 | `form.withProgress(list)`（中止もできる） |
 | 登録・管理・照会の依頼を、入力して実行するだけのツールにする（1 件登録して終わり、一覧が見られない） | アプリにする: 開くと一覧が出て、追加・更新・削除・出力を同じ画面で続けられる |
 | 機能ごとに別のスクリプト・別のフォームに分ける | 1 つのフォームの `buttons` / `tabs`、画面を分けるなら `ui.forms` |
+| 項目に type にないキー（note・image の `default`、textarea の `rows`、`text` の `options`） | type ごとのキー: note は `text` / `kind`、image は `src`、textarea・files の行数は `lines`。`height` は px |
 | 空の画面で「読み込み」を押させる | 起動時に読んで出しておく（`rows: load()`） |
 | `onSubmit`・`submit`・`submitIcon`（古い書き方。いまはなく、書くとエラー） | `buttons` に `onClick` のあるボタンを書き、Enter で押すものに `variant: "primary"` |
 

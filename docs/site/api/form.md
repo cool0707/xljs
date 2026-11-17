@@ -1,6 +1,6 @@
 ---
 title: フォーム（ui.form）
-api: FormOptions, FormField, FormFieldType, FormGroup, FormRow, FormToolbarButton, FormsOptions, FormsItem, FormValues, FormContext, FormButton, FormTableColumn
+api: FormOptions, FormField, FormFieldType, FormFieldBase, FormInputBase, FormOption, FormTextField, FormTextareaField, FormNumberField, FormSliderField, FormDateField, FormDateRangeField, FormSelectField, FormRadioField, FormCheckboxField, FormCheckboxesField, FormSegmentedField, FormComboboxField, FormTagsField, FormFileField, FormFilesField, FormTableField, FormChartField, FormNoteField, FormImageField, FormGroup, FormRow, FormToolbarButton, FormsOptions, FormsItem, FormValues, FormContext, FormButton, FormTableColumn
 ---
 
 HTML を書かずに、項目の定義だけで画面を作れます。フォームは入力のダイアログではなく、入力欄・表・グラフ・ボタン・タブを置ける画面で、処理のあとも開いたまま続けて使えます（Excel VBA のユーザーフォームや C# のフォームアプリに当たります）。同じ `ui.form` で、次のどちらも作れます。
@@ -59,7 +59,7 @@ await ui.form({
   width: 760,
   fields: [
     { name: "word", label: "検索", placeholder: "品名の一部", onChange(word, v, form) { form.table("list", load(word)); } },
-    { name: "list", label: "商品", type: "table", rows: load(), columns: ["コード", "品名", "区分", "単価"], selectable: "single", height: 10,
+    { name: "list", label: "商品", type: "table", rows: load(), columns: ["コード", "品名", "区分", "単価"], selectable: "single", height: 320,
       onChange(row, v, form) { show(form, row); } },   // 行を選ぶと入力欄に出す
     { group: "選んだ商品（新しい商品は「新規」を押して入力）", fields: [
       { row: "", fields: [
@@ -119,8 +119,34 @@ if (!v) exit();              // v.out は FileSystemDirectoryHandle
 
 ## 項目とオプション
 
-- 項目の型: `text` `password` `number`（`min` `max` `step`）`date`（`Date`）`month` `time` `select` `radio`（`options`）`checkbox` `textarea` `file` `files` `folder` `saveFile` `table`。ファイル系は「参照…」ボタンとドラッグ＆ドロップで入力でき、値はハンドルになります（`folder` にファイルを落とすとそのフォルダ、`saveFile` にフォルダを落とすと入力済みのファイル名のままそのフォルダへの保存先になります）。
-- `type: "table"` で表を表示します（`rows` `columns` は `ui.table` と同じ。`height` は表示する行数）。`selectable: true`（複数）/ `"single"` を付けると行をクリックして選べ、値は選んだ行（元のオブジェクト）になります。`selectable` なしは表示だけです。列見出しのクリックで並べ替えできます（列幅は最初に表示したときのまま変わりません）。列見出しのボタンから列ごとのフィルタ、列の固定（左端・右端・この列まで）、列の表示・非表示、境界のドラッグで幅の変更ができ、`formats` で条件付き書式を付けられます（いずれも [表表示](table.md) と同じ）。ボタンの `onClick` の中で `form.table(name, rows)` を呼ぶと行を入れ替えられます（結果の表示など）。
+項目の `type` ごとに、値の型と使えるキーが決まっています。
+
+| type | 値 | その type のキー |
+|---|---|---|
+| `text`（省略時）`password` | 文字列 | `placeholder` `prefix` `suffix` `maxLength` `pattern` `patternMessage` |
+| `textarea` | 文字列 | `placeholder` `maxLength` `pattern` `patternMessage` `lines`（行数。既定 4） |
+| `number` | 数値か `null` | `min` `max` `step` `placeholder` `prefix` `suffix` |
+| `slider` | 数値 | `min` `max`（既定 0〜100）`step` `prefix` `suffix` |
+| `date` `month` `time` | `Date` / `"2026-04"` / `"09:30"` か `null` | `placeholder` |
+| `dateRange` | `{ from, to }` か `null` | |
+| `select` | 選んだ値（文字列） | `options` `placeholder`（未選択の表示） |
+| `radio` | 選んだ値 | `options` |
+| `checkbox` `switch` | `true` / `false` | |
+| `checkboxes` | 選んだ値の配列 | `options` |
+| `segmented` | 選んだ値（`multiple: true` なら配列） | `options` `multiple` |
+| `combobox` | 選んだ値（`allowCustom: true` なら入力した文字列も） | `options` `allowCustom` `placeholder` `pattern` `patternMessage` |
+| `tags` | 文字列の配列 | `placeholder` `maxLength` `pattern` `patternMessage`（1 つずつ） |
+| `file` `folder` `saveFile` | ハンドルか `null` | `accept` `placeholder` |
+| `files` | ハンドルの配列 | `accept` `placeholder` `lines`（行数。既定 3） |
+| `table` | 選んだ行（下） | `rows` `columns` `formats` `selectable` `editable` `validateRow` `height`（px） |
+| `chart` | なし | `chart`（[グラフ](chart.md) の定義）`height`（px。既定 300） |
+| `note` | なし | `text`（本文）`kind`（`"info"` `"success"` `"warning"` `"error"`） |
+| `image` | なし | `src` `width` `height`（px）`align` `alt`（下） |
+
+どの項目にも `name` `label` `icon` `help` `tooltip` `disabled` `hidden` を、値のある項目には `default` `required` `validate` `onChange` `remember` を書けます。type に合わないキー（`text` の `options` など）や、ないキーを書くとエラーになります。`options` は文字列か `{ value, label }` の配列です。
+
+- ファイル系は「参照…」ボタンとドラッグ＆ドロップで入力でき、値はハンドルになります（`folder` にファイルを落とすとそのフォルダ、`saveFile` にフォルダを落とすと入力済みのファイル名のままそのフォルダへの保存先になります）。
+- `type: "table"` で表を表示します（`rows` `columns` は `ui.table` と同じ。`height` は高さ（px。既定は 8 行分まで））。`selectable: true`（複数）/ `"single"` を付けると行をクリックして選べ、値は選んだ行（元のオブジェクト）になります。`selectable` なしは表示だけです。列見出しのクリックで並べ替えできます（列幅は最初に表示したときのまま変わりません）。列見出しのボタンから列ごとのフィルタ、列の固定（左端・右端・この列まで）、列の表示・非表示、境界のドラッグで幅の変更ができ、`formats` で条件付き書式を付けられます（いずれも [表表示](table.md) と同じ）。ボタンの `onClick` の中で `form.table(name, rows)` を呼ぶと行を入れ替えられます（結果の表示など）。
 - `editable: true`（または列ごとに `columns: [{ key, editable: true }]`）でセルをその場で編集できます。列に `type`（`text` `number` `date` `month` `time` `select` `combobox` `checkbox`。既定は値から判断）、`required` `min` `max` `pattern` `options`（`select` と `combobox` のセルは入力した文字を含む選択肢に絞り込んで一覧に出します。選択肢に空欄は書かず（`""`）、入力を消すとセルが空になります。選択肢にない入力は `combobox` の `allowCustom: true` のときだけ受け付けます）、`validate(value, row, index)` を書くと入力のたびに検証し、エラーのセルを赤く表示して表の下に一覧を出します（クリックでそのセルへ）。行全体の検証は項目の `validateRow(row, index)`。エラーが残っているとボタン（`validate: false` のものを除く）を実行できません。検証を通った値は元の行オブジェクトに直接書き込まれます。Enter で下のセルへ移ります。数値は全角数字や「1,000」も受け付けます。コンソールでは表のあとに編集する行の番号を尋ねます。
 - `fields`（タブの `fields` でも可）に `{ group: "見出し", icon, help, fields: [...] }` を項目と並べて書くと、見出しの下に項目をまとめて表示します。値はグループに関係なく 1 つのオブジェクトにまとまります（グループの中にグループは入れられません）。コンソールでは `-- 見出し --` を出してから順に尋ねます。
 - `fields`（タブ・グループの `fields` でも可）に `{ row: "氏名", fields: [...] }` を書くと、`row` を左のラベルにして項目を横に並べます（姓・名、郵便番号と都道府県など）。各項目の `label` は入力欄の前に小さく出ます（`""` で出しません）。幅は等分で、`maxLength` や数値の項目はその幅になります。値はほかの項目と同じく 1 つのオブジェクトにまとまります。
@@ -135,20 +161,20 @@ const v = await ui.form({
 });
 ```
 
-- `type: "image"` で画像を表示します。`default` に画像ファイル（PNG・JPEG・GIF・BMP・WebP・ICO・SVG のパス・ハンドル）、バイト列（`Uint8Array`）、`"https://..."` の URL を指定します。`width` / `height`（px。片方だけなら縦横比を保つ）、`align`（`"left"` `"center"` `"right"`）、`alt` を指定できます。`label` を付けなければフォームの幅いっぱいに置きます。値はありません（`values` に入りません）。`form.setValue(name, 画像)` で差し替えられます。コンソール・モックでは表示しません。
+- `type: "image"` で画像を表示します。`src` に画像ファイル（PNG・JPEG・GIF・BMP・WebP・ICO・SVG のパス・ハンドル）、バイト列（`Uint8Array`）、`"https://..."` の URL を指定します。`width` / `height`（px。片方だけなら縦横比を保つ）、`align`（`"left"` `"center"` `"right"`）、`alt` を指定できます。`label` を付けなければフォームの幅いっぱいに置きます。値はありません（`values` に入りません）。`form.setValue(name, 画像)` で差し替えられます。コンソール・モックでは表示しません。
 
 ```js
 await ui.form({
   title: "商品の確認",
   fields: [
-    { name: "logo", type: "image", default: "logo.png", height: 48, align: "center" },
-    { name: "photo", label: "写真", type: "image", default: "images/item01.jpg", width: 240 },
+    { name: "logo", type: "image", src: "logo.png", height: 48, align: "center" },
+    { name: "photo", label: "写真", type: "image", src: "images/item01.jpg", width: 240 },
     { name: "code", label: "商品コード" },
   ],
 });
 ```
 
-- `toolbar` に項目（`name` のあるもの。`switch` `checkbox` `select` など）とボタンを書くと、フォームの右上に並べます（説明があればその右）。項目の値はほかの項目と同じく `values` に入ります。ボタンは `{ icon: "gear", tooltip: "設定", onClick(values, form) }` のように `label` なしならアイコンだけのボタンになり、押すと検証せずに入力のままの値で `onClick` を呼びます（進捗やログの表示はしません。`form.setValue` などで項目を変えられ、別の `ui.form` を開くこともできます）。`menu: [{ label, onClick }]` でメニューを開くボタンにできます。コンソール・モックではボタンは `label`（なければ `tooltip`）でほかのボタンのあとに並びます。
+- `toolbar` に項目（`name` のあるもの。`switch` `checkbox` `select` など）とボタンを書くと、フォームの右上に並べます（説明があればその右）。項目の値はほかの項目と同じく `values` に入ります。ボタンは `{ icon: "gear", tooltip: "設定", onClick(values, form) }` のように `label` なしならアイコンだけのボタンになり、押すと検証せずに入力のままの値で `onClick` を呼びます（中止ボタンは出しません。`form.setValue` などで項目を変えられ、`form.log` はフォームの下に出ます。別の `ui.form` を開くこともできます）。`menu: [{ label, onClick }]` でメニューを開くボタンにできます。コンソール・モックではボタンは `label`（なければ `tooltip`）でほかのボタンのあとに並びます。
 
 ```js
 const v = await ui.form({
@@ -171,7 +197,8 @@ const v = await ui.form({
 - `background` でフォームの背景色（ページとタイトルバーの地の色）を変えられます。`background: "#fff8e1"` のような CSS の色はライト・ダークの両方に、`background: { light: "#eef6ff", dark: "#1a2533" }` なら配色ごとに使います。暗い背景色を指定すると文字・入力欄・枠線もダークの配色になります（ダークの配色で明るい背景色なら逆）。コンソール・モックでは無視されます。
 - 検証: `required`、`pattern`（＋`patternMessage`）、`min` / `max`、ファイル・フォルダの存在、項目ごとの `validate(value, values)`（メッセージを返す）。これらは入力欄を離れたときに検証して項目の下に表示し、エラーの表示中は入力のたびに検証し直します（直すとすぐ消えます）。フォームの `validate(values)`（`{ 項目名: "メッセージ" }` か全体へのメッセージを返す）はボタンを押したときだけ呼ばれるので、項目をまたぐ検証に使います。
 - `buttons: [{ label, onClick(values, form) }]` でフォームの下にボタンを並べます。押すと検証してから `onClick` を実行し、実行後もウィンドウが開いたままになり、進捗（`form.progress(done, total, message)` / `form.withProgress(iterable)`。中止ボタンで `form.withProgress` のループから onClick が終わる）、ログ（`form.log` / `form.error`）、中止ボタン（`form.cancelled`）を表示します。出力ファイルを返すと完了後に「フォルダを開く」ボタンが出ます。ウィンドウが閉じられると、`ui.form` は最後にボタンを押したときの（検証を通った）値を返します。
-- `onClick` のないボタンは、押すと検証して閉じ、その値を `ui.form` が返します。`variant: "primary"` のボタン（1 つまで）は Enter でも押されます。`validate: false` を付けると検証せずに入力のままの値で実行し（読み込み・クリアなど）、`close: true` を付けると `onClick` が正常に終わったらフォームを閉じます。`form.setValue(name, value)` で項目の値を変えられます。コンソールでは項目のあとにどのボタンを押すか尋ねます（既定は primary のボタン、なければ先頭）。以前の `submit` / `submitIcon` / `onSubmit` はなくなりました（書くとエラー。ボタンにします）。
+- `onClick` のないボタンは、押すと検証して閉じ、その値を `ui.form` が返します。`variant: "primary"` のボタン（1 つまで）は Enter でも押されます。`validate: false` を付けると検証せずに入力のままの値で実行し（読み込み・クリアなど）、`close: true` を付けると `onClick` が正常に終わったらフォームを閉じます。コンソールでは項目のあとにどのボタンを押すか尋ねます（既定は primary のボタン、なければ先頭）。以前の `submit` / `submitIcon` / `onSubmit` はなくなりました（書くとエラー。ボタンにします）。
+- ボタンの `onClick(values, form)`・項目の `onChange(value, values, form)`・ツールバーのボタンの `onClick(values, form)` には、同じ `form`（`FormContext`）が渡ります。`form.setValue(name, value)` で値を、`form.setDisabled(name, bool)` / `form.setHidden(name, bool)` で無効・非表示を、`form.table` / `form.chart` で表とグラフを変えられます。ボタンの処理の外で呼んだ `form.log` / `form.progress` はフォームの下に出ます。
 - `remember` ではパスワードは保存しません。保存したくない項目には `remember: false` を付けます。保存先のフォルダは環境変数 `XLJS_CONFIG_DIR` で変えられます。
 
 ## 複数のフォームをまとめる（ui.forms）
