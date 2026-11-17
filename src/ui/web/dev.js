@@ -1243,17 +1243,27 @@
   }
 
   async function copy(text, done) {
+    await writeClipboard(text);
+    status(done, "ok");
+  }
+
+  // Puts text on the clipboard; false when the page may not. Called while
+  // handling a click, as the page may lose the right to write some time
+  // after it.
+  async function writeClipboard(text) {
     try {
       await navigator.clipboard.writeText(text);
+      return true;
     } catch {
       // Without the clipboard API: through a selected textarea.
       const t = el("textarea", { value: text });
       document.body.append(t);
       t.select();
-      document.execCommand("copy");
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch { /* not allowed */ }
       t.remove();
+      return ok;
     }
-    status(done, "ok");
   }
 
   // ------------------------------------------------------------ tests
@@ -1849,7 +1859,9 @@
 
   // ------------------------------------------------------------ wizard
 
-  const wz = { books: [] };
+  // creating: the prompt copied when "create" was clicked (a promise of
+  // whether it went onto the clipboard) until the script is made.
+  const wz = { books: [], creating: null };
   const radio = (name) => { const r = document.querySelector(`input[name="${name}"]:checked`); return r ? r.value : ""; };
   const setRadio = (name, v) => { const r = document.querySelector(`input[name="${name}"][value="${v}"]`); if (r) r.checked = true; };
 
@@ -2002,6 +2014,18 @@
     $("wz-result").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // The end of "create": the script was made (copied is the message), or
+  // it failed (null).
+  async function wizardCreated(text, copied) {
+    const done = wz.creating;
+    wz.creating = null;
+    $("wz-create").disabled = false;
+    if (!done || !copied) return;
+    // Copied at the click; tried again if the page could not then.
+    if (!(await done)) await writeClipboard(text);
+    status(copied, "ok");
+  }
+
   function initWizard() {
     $("wizard").addEventListener("change", updateWizard);
     $("wz-name").addEventListener("focus", () => setRadio("wz-name-mode", "name"));
@@ -2022,7 +2046,14 @@
     $("wz-create").onclick = () => {
       const a = answers();
       if (!checkAnswers(a)) return;
+      if (wz.creating) return;
       if (!$("wz-folder").value.trim()) { wizardError(L.wzNeedFolder); return; }
+      // Copied now, while the click allows it: making the script (and the
+      // attachment of a port) can take a while. The button stays off until
+      // it is made, so a second click does not make a second script.
+      wz.creating = writeClipboard($("wz-text").value);
+      $("wz-create").disabled = true;
+      status(L.wzCreating);
       send({ op: "wizardCreate", answers: a, path: $("wz-folder").value.trim(), text: $("wz-text").value });
     };
     $("wz-look-preview").onclick = () => ($("wz-look-box").hidden ? lookPreview() : closeLookPreview());
@@ -2174,6 +2205,10 @@
         }
         break;
       case "copy":
+        if (wz.creating && (m.what === "wizard" || m.what === "wizardAttach")) {
+          wizardCreated(m.text, m.what === "wizard" ? L.wzCopied : L.wzCopiedAttach);
+          break;
+        }
         copy(m.text, m.what === "intro" ? L.copiedIntro : m.what === "script" ? L.copiedScript : m.what === "wizard" ? L.wzCopied : m.what === "wizardAttach" ? L.wzCopiedAttach : m.what === "notify" ? L.copiedNotify : m.what === "pick" ? L.copiedPick : m.what === "test" ? L.copiedTest : m.what === "agent" ? L.agentCopied : L.copied);
         break;
       case "runStarted": runStarted(m); updateTests(); break;
@@ -2226,6 +2261,7 @@
         $("chat-failed").textContent = fmt(L.browserFailed, m.message);
         break;
       case "error":
+        if (wz.creating) wizardCreated("", null);
         status(m.message, "error");
         break;
       case "info":
