@@ -8,6 +8,7 @@ if (!target) {
     title: "印刷・PDF にするブックを選択（サンプル: data/売上レポート.xlsx）",
     types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }],
   });
+  if (!target) exit(); // キャンセル
 }
 
 const book = workbooks.open(target);

@@ -9,6 +9,7 @@ if (targets.length === 0) {
     multiple: true,
     types: [{ description: "Excel", accept: [".xlsx", ".xlsm"] }],
   });
+  if (targets.length === 0) exit(); // キャンセル
 }
 const created = [];
 for (const h of ui.withProgress(targets, "PDF に変換中")) {

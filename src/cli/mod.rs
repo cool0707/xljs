@@ -4,6 +4,7 @@
 mod assoc;
 mod console;
 mod launch;
+mod report;
 mod db;
 mod form;
 mod test;
@@ -131,7 +132,8 @@ fn run(con: &ConsoleState, args: Vec<String>) -> i32 {
         if let Err(e) = set_stop(&mut o, &Stop::from_env(), &*u) {
             return con.fail(None, &e);
         }
-        return run_script(con, u, o);
+        let run = report::RunInfo::new(&o.script_path, &o.args, &m_of(&o), true);
+        return run_script_with(con, u, o, run);
     }
 
     let (flags, rest) = match parse_flags(&args) {
@@ -429,15 +431,28 @@ fn choose_ui(mode: &str, answers: &str) -> Result<Arc<dyn Ui>> {
 
 /// Runs the script on its own thread; this (main) thread serves the UI
 /// meanwhile.
-fn run_script(con: &ConsoleState, u: Arc<dyn Ui>, mut o: Options) -> i32 {
+fn run_script(con: &ConsoleState, u: Arc<dyn Ui>, o: Options) -> i32 {
+    let run = report::RunInfo::new(&o.script_path, &o.args, &m_of(&o), false);
+    run_script_with(con, u, o, run)
+}
+
+fn m_of(o: &Options) -> Meta {
+    o.meta.clone().unwrap_or_default()
+}
+
+/// run_script for the run described by run: its output is kept for the
+/// error report.
+fn run_script_with(con: &ConsoleState, u: Arc<dyn Ui>, mut o: Options, run: report::RunInfo) -> i32 {
     o.version = version();
+    o.stdout = Some(run.tee(o.stdout.take().unwrap_or_else(engine::stdout)));
+    o.stderr = Some(run.tee(o.stderr.take().unwrap_or_else(engine::stderr)));
     let r = ui::run(u.clone(), move |su| {
         o.ui = Some(su);
         engine::run(o)
     });
     match r {
         Ok(code) => code,
-        Err(e) => con.fail(Some(&*u), &e),
+        Err(e) => con.fail_run(Some(&*u), &e, Some(&run)),
     }
 }
 

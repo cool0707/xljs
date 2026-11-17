@@ -53,6 +53,21 @@ pub struct FileFilter {
     pub patterns: Vec<String>, // e.g. "*.xlsx"
 }
 
+/// What the error dialog offers when a run of a script failed: the full
+/// report (saved to a file or copied) and a way to reach the author.
+#[derive(Debug, Clone, Default)]
+pub struct ErrorReport {
+    /// The report: the error with what is known about the run.
+    pub text: String,
+    /// The suggested file name to save it as.
+    pub file_name: String,
+    /// A mailto: (with subject and body) or http(s) link to the author.
+    pub contact_link: Option<String>,
+    /// Whether contact_link is a mail: the report is put on the clipboard
+    /// first so that it can be pasted into the mail.
+    pub contact_mail: bool,
+}
+
 /// Configures file and directory pickers.
 #[derive(Debug, Clone, Default)]
 pub struct PickerOptions {
@@ -309,6 +324,12 @@ pub trait Ui: Send + Sync {
     fn progress(&self, o: &ProgressOptions) -> Arc<dyn Progress>;
     /// Reports a fatal script error to the user.
     fn show_error(&self, title: &str, message: &str);
+    /// Reports the error that ended a run of a script, offering to save
+    /// the report (and to contact the script's author). UIs that cannot
+    /// offer that show the message only.
+    fn show_error_report(&self, title: &str, message: &str, _report: &ErrorReport) {
+        self.show_error(title, message);
+    }
     /// Opens the file manager with the given files selected.
     fn show_in_folder(&self, paths: &[String]) -> Result<()>;
     /// Opens a file, folder or URL with its default application.

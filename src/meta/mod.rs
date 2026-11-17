@@ -8,6 +8,8 @@
 //! // @assets  ui/            // folders bundled into the exe (repeatable)
 //! // @title   売上集計ツール
 //! // @version 1.2.0          // shown on the manuals (free text)
+//! // @author  山田太郎         // shown with errors: who to ask
+//! // @contact yamada@example.com  // mail address, URL or free text (内線 1234)
 //! // @size    960x640
 //! // @icon    ui/app.ico     // window icon (.ico or .png), bundled too
 //! // @lang    ja
@@ -56,6 +58,12 @@ pub struct Meta {
     /// The script's version (free text, "1.2.0"): shown on its manuals.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub version: String,
+    /// Who made the script ("山田太郎 (総務課)"): errors tell users to ask them.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub author: String,
+    /// How to reach the author: a mail address, a URL or free text.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub contact: String,
 }
 
 fn is_zero(n: &i64) -> bool {
@@ -64,6 +72,7 @@ fn is_zero(n: &i64) -> bool {
 
 static KEY_LINE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^@([A-Za-z][\w-]*)(?:\s+(.*))?$").unwrap());
 static TRAILING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+//.*$").unwrap());
+static AUTHOR_MAIL: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.*?)\s*<([^<>\s]+@[^<>\s]+)>$").unwrap());
 static SIZE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(\d+)\s*[xX×]\s*(\d+)$").unwrap());
 
 impl Meta {
@@ -180,6 +189,19 @@ pub fn parse(name: &str, src: &[u8]) -> Result<(Meta, Vec<String>)> {
             }
             "lang" => m.lang = val,
             "version" => m.version = val,
+            "author" => {
+                // "山田太郎 <yamada@example.com>" also gives the contact.
+                match AUTHOR_MAIL.captures(&val) {
+                    Some(c) => {
+                        m.author = c[1].trim().to_string();
+                        if m.contact.is_empty() {
+                            m.contact = c[2].to_string();
+                        }
+                    }
+                    None => m.author = val,
+                }
+            }
+            "contact" => m.contact = val,
             _ => warnings.push(t!("meta.unknownKey", at(), format!("@{}", &c[1]))),
         }
     }

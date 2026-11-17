@@ -240,7 +240,13 @@ impl Ui for Native {
     /// Shows the error in a dialog whose text can be selected and copied,
     /// falling back to a message box.
     fn show_error(&self, title: &str, message: &str) {
-        if !dialogs::error_dialog(title, message) {
+        if !dialogs::error_dialog(title, message, None) {
+            message_box(title, message, MB_OK | MB_ICONERROR);
+        }
+    }
+
+    fn show_error_report(&self, title: &str, message: &str, report: &crate::ui::ErrorReport) {
+        if !dialogs::error_dialog(title, message, Some(report)) {
             message_box(title, message, MB_OK | MB_ICONERROR);
         }
     }
