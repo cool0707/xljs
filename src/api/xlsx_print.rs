@@ -137,7 +137,9 @@ pub struct PrintOptions {
     /// wider than Excel shows it on screen. None or 0 = as the font is.
     pub condense: Option<f64>,
     /// Swap the left and right margins of the even pages (for printing on
-    /// both sides; the first page is a right-hand page).
+    /// both sides; the first page is a right-hand page). The pages are
+    /// counted as printed: the pages chosen in order, and on a printer
+    /// anew at each change of paper (a job of its own).
     pub mirror_margins: Option<bool>,
     /// Printing on both sides ("long" / "short" edge; book.print's duplex):
     /// without mirror_margins, the margins are swapped when the paper turns
@@ -146,7 +148,8 @@ pub struct PrintOptions {
     pub duplex: Option<String>,
     /// The pages to print ("1,3,5-7", "8-"; 1-based, counted over all the
     /// sheets). The others are left out of the HTML; the pages kept keep
-    /// their numbers (&P) and sides (the even pages' margins). Lays the
+    /// their numbers (&P), and their sides (the even pages' margins) go by
+    /// their order in the pages printed. Lays the
     /// pages out as for a printer (printer_layout).
     pub pages: Option<String>,
     /// For a printer (Ui::print_pdf with a printer): the pages have no
@@ -1365,10 +1368,23 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
     let total = pages;
     let mut kept = String::with_capacity(body.len());
     let mut number = 0;
+    // The side of the paper a page is printed on goes by the pages printed
+    // before it (not by its number): printing pages 2, 4 and 6 on both sides
+    // puts 2 and 6 on the front. On a printer each run of the same paper is
+    // a job of its own (book.print), which starts on a front.
+    let mut side = 0;
+    let mut last_paper: Option<(f64, f64)> = None;
     pages = 0;
     for (i, &start) in starts.iter().enumerate() {
         let end = starts.get(i + 1).copied().unwrap_or(body.len());
-        let n = mark_pages(&body[start..end], &mut number, chosen.as_deref(), o.printer(), &mut kept);
+        let paper = (papers[i].width, papers[i].height);
+        if o.printer_layout && last_paper.is_some_and(|p| p != paper) {
+            side = 0;
+        }
+        let n = mark_pages(&body[start..end], &mut number, &mut side, chosen.as_deref(), o.printer(), &mut kept);
+        if n > 0 {
+            last_paper = Some(paper);
+        }
         papers[i].pages = n;
         pages += n;
     }
@@ -1394,11 +1410,12 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
 
 const PAGE_START: &str = "<section class=\"xljs-page\" style=\"";
 
-/// Copies the pages (sections) of html to out: the even ones (counted on
-/// from number, which goes on) marked (data-even), and with chosen (1-based
-/// page i at chosen[i - 1]) only those chosen; for a printer they keep
-/// their numbers (counter-set). Returns the number of pages copied.
-fn mark_pages(html: &str, number: &mut usize, chosen: Option<&[bool]>, printer: bool, out: &mut String) -> usize {
+/// Copies the pages (sections) of html to out: with chosen (1-based page i
+/// at chosen[i - 1]) only those chosen (number counts all the pages and goes
+/// on); for a printer they keep their numbers (counter-set). The pages
+/// copied are counted on from side (which goes on) and the even ones, the
+/// backs of the paper, marked (data-even). Returns the number of pages copied.
+fn mark_pages(html: &str, number: &mut usize, side: &mut usize, chosen: Option<&[bool]>, printer: bool, out: &mut String) -> usize {
     let mut n = 0;
     let mut rest = html;
     while let Some(at) = rest.find(PAGE_START) {
@@ -1411,7 +1428,8 @@ fn mark_pages(html: &str, number: &mut usize, chosen: Option<&[bool]>, printer: 
         *number += 1;
         if chosen.is_none_or(|c| c.get(*number - 1).copied().unwrap_or(false)) {
             n += 1;
-            out.push_str(if *number % 2 == 0 { "<section class=\"xljs-page\" data-even style=\"" } else { PAGE_START });
+            *side += 1;
+            out.push_str(if *side % 2 == 0 { "<section class=\"xljs-page\" data-even style=\"" } else { PAGE_START });
             if chosen.is_some() && printer {
                 let _ = write!(out, "counter-set:xljs-page {};", *number);
             }
@@ -2660,17 +2678,28 @@ mod tests {
         let out = workbook_html(&b, &o).unwrap();
         assert_eq!((out.pages, out.total), (2, 4));
         assert_eq!(out.papers.iter().map(|p| p.pages).collect::<Vec<_>>(), vec![1, 1]);
-        // As for a printer, the pages keep their numbers and sides (both even).
+        // As for a printer, the pages keep their numbers; the sides go by the
+        // pages printed (2 on the front, 4 on the back).
         assert!(out.html.contains("<body class=\"xljs-print xljs-printer\">"));
         assert_eq!(out.html.matches("<section class=\"xljs-page").count(), 2);
-        assert_eq!(out.html.matches("<section class=\"xljs-page\" data-even style=\"counter-set:xljs-page ").count(), 2);
-        assert!(out.html.contains("counter-set:xljs-page 2;") && out.html.contains("counter-set:xljs-page 4;"));
+        assert!(out.html.contains("<section class=\"xljs-page\" style=\"counter-set:xljs-page 2;"));
+        assert!(out.html.contains("<section class=\"xljs-page\" data-even style=\"counter-set:xljs-page 4;"));
         assert!(out.html.contains(&format!("\" / \" \"4\"")), "&N is all the pages");
         // All pages: the even ones marked, no counter-set.
         let all = workbook_html(&b, &PrintOptions::default()).unwrap();
         assert_eq!((all.pages, all.total), (4, 4));
         assert_eq!(all.html.matches("<section class=\"xljs-page\" data-even").count(), 2);
         assert!(!all.html.contains("counter-set"));
+        // Pages 2 and 3 (the same paper): 2 on the front, 3 on the back.
+        let out = workbook_html(&b, &PrintOptions { pages: Some("2,3".into()), ..Default::default() }).unwrap();
+        assert!(out.html.contains("<section class=\"xljs-page\" style=\"counter-set:xljs-page 2;"));
+        assert!(out.html.contains("<section class=\"xljs-page\" data-even style=\"counter-set:xljs-page 3;"));
+        // On a printer each paper is a job of its own: the B5 page (4) starts on a front.
+        let out = workbook_html(&b, &PrintOptions { printer_layout: true, ..Default::default() }).unwrap();
+        let even: Vec<bool> = out.html.split("<section class=\"xljs-page\"").skip(1).map(|x| x.starts_with(" data-even")).collect();
+        assert_eq!(even, vec![false, true, false, false]);
+        let out = workbook_html(&b, &PrintOptions { printer_layout: true, pages: Some("3,4".into()), ..Default::default() }).unwrap();
+        assert_eq!(out.html.matches(" data-even").count(), 0);
     }
 
     #[test]

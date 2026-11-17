@@ -4932,7 +4932,12 @@
    */
   function previewSettings(p, mode) {
     const all = mode === "pdf" ? PREVIEW_SETTINGS.filter((x) => !PRINTER_SETTINGS.includes(x)) : PREVIEW_SETTINGS;
-    if (p.settings === undefined || p.settings === null) return mode === "print" ? [...PREVIEW_DEFAULT, "printer", "duplex", "copies"] : PREVIEW_DEFAULT.slice();
+    if (p.settings === undefined || p.settings === null) {
+      if (mode === "print") return [...PREVIEW_DEFAULT, "printer", "duplex", "copies"];
+      // A PDF has no duplex to swap the margins by: the switch for it.
+      if (mode === "pdf") return PREVIEW_DEFAULT.flatMap((x) => (x === "margin" ? [x, "mirrorMargins"] : [x]));
+      return PREVIEW_DEFAULT.slice();
+    }
     if (p.settings === true) return all.slice();
     if (p.settings === false) return [];
     if (!Array.isArray(p.settings)) throw new TypeError(T("preview.badSettings"));
@@ -4949,7 +4954,7 @@
    * page setup with the options applied): { wire, fields }. A select shows
    * "as each sheet is set" ("") when the sheets printed differ.
    */
-  function previewWire(book, base, list, sheets) {
+  function previewWire(book, base, list, sheets, mode) {
     const names = printOptions(book, base, sheets).sheets;
     const setups = JSON.parse(native.xlsxPrintSetup(book._h, JSON.stringify(printOptions(book, base, sheets))));
     const s0 = setups[0] || { paper: "A4", landscape: false, scale: 100, fitToWidth: null, fitToHeight: null,
@@ -5037,7 +5042,7 @@
           break;
         case "mirrorMargins":
           wire.mirrorMargins = base.mirrorMargins === true;
-          add({ name: "mirrorMargins", type: "checkbox", help: T("preview.mirrorMarginsHelp") });
+          add({ name: "mirrorMargins", type: "checkbox", help: T(mode === "pdf" ? "preview.mirrorMarginsPdfHelp" : "preview.mirrorMarginsHelp") });
           break;
         case "charts":
           wire.charts = base.charts !== false;
@@ -5155,7 +5160,7 @@
     delete base.preview;
     printOptions(book, base, sheets);
     const list = previewSettings(p, mode);
-    const { wire: init, fields } = previewWire(book, base, list, sheets);
+    const { wire: init, fields } = previewWire(book, base, list, sheets, mode);
     const title = p.title === undefined || p.title === null ? T("preview.title") : String(p.title);
     const ok = p.ok === undefined || p.ok === null ? (mode === "pdf" ? T("preview.ok") : mode === "print" ? T("print.ok") : T("form.ok")) : String(p.ok);
     if (!native.supportsWindows) {

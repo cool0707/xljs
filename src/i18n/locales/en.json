@@ -1312,6 +1312,7 @@
     "preview.marginBottom": "Bottom",
     "preview.marginLeft": "Left",
     "preview.mirrorMargins": "Mirror margins (double-sided)",
+    "preview.mirrorMarginsPdfHelp": "Odd pages keep the margins as set; even pages swap the left and right ones, for a PDF printed on both sides",
     "preview.mirrorMarginsHelp": "Even pages swap the left and right margins. Printing on both sides flipped on a left or right edge (long edge of portrait pages, short edge of landscape ones) swaps them even when off",
     "preview.blackAndWhite": "Black and white",
     "preview.gridLines": "Print gridlines",

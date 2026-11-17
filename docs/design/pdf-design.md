@@ -208,7 +208,9 @@ Excel の「セルに配置」の画像はリッチ値で、セルの値とし�
 `page_rule` がシートの名前付きページに `@page sN:left{margin-left:R;margin-right:L}` を足す（文書は右ページから始まるので、偶数ページが `:left`。
 Chromium の `printToPDF` は名前付きページと `:left` の組み合わせを守る。Playwright の `page.pdf` で確かめた）。数え方は文書全体の通し番号。
 画面（`@media screen`。プレビューと `toHtml`）とプリンター向けの配置では、ページの `style` の `--mm`（入れ替えた余白）を偶数ページ（`mark_pages` が付ける
-属性 `data-even`。元の通し番号で決めるので、ページを選んでも・プリンターで用紙ごとにページを隠しても変わらない）が使う。
+属性 `data-even`）が使う。表・裏は元のページ番号ではなく出力する並びで数える（ページを選んだら選んだページの順。`"2,4,6"` を両面に印刷すると
+2・6 が紙の表、4 が裏なので、元の番号で決めると綴じしろがそろわない）。プリンター（`printer_layout`）では用紙の続く範囲が別の印刷ジョブ（表から始まる）なので、
+用紙が変わるところで数え直す（prelude の `printBook` のグループと同じ、`papers` の幅・高さが変わるところ）。PDF は 1 つの文書なのでシートが変わっても続ける。
 `mirrorMargins` を省くと、`duplex`（prelude の `printOptions` が `print` の `duplex` を渡す）で紙がページの左右の辺で裏返るとき
 （縦向きの `"long"`、横向きの `"short"`。シートごとの向きで決める）に入れ替える。プレビューで余白と両面印刷を選ぶだけで綴じしろがそろう。
 
@@ -216,7 +218,7 @@ Chromium の `printToPDF` は名前付きページと `:left` の組み合わせ
 
 `"1,3,5-7"` `"8-"` `"-3"`（全角の数字・区切り、`〜` も可）を `xlsx_print::page_selection` が全体のページ数に当てる（最後より後ろは無視、1 ページも残らなければエラー）。
 ページを選ぶとプリンター向けの配置（`PrintOptions::printer`）にして、`mark_pages` が選ばなかったページ（`<section class="xljs-page">`）を HTML から外し、
-残したページに `counter-set:xljs-page <元の番号>` を付ける（&P は元の番号、&N は全体のページ数、奇数・偶数は `data-even` で元のまま）。
+残したページに `counter-set:xljs-page <元の番号>` を付ける（&P は元の番号、&N は全体のページ数、表・裏の `data-even` は残したページの順。3.0）。
 `papers[].pages` と `pages` は残したページの数（`print` の用紙ごとのジョブの範囲はこれで数える）、`total` は全体の数（プレビューの「n ページ（全 N ページ）」）。
 PDF の `@page` の余白とページの余白ボックス（`counter(page)`）では印刷したページで数え直してしまうので、プリンター向けの配置を使う。
 
@@ -226,7 +228,7 @@ Excel の印刷プレビューのように、ページを出して設定を変�
 `toPdf(dest, { preview })` はそれを通してから PDF にする（キャンセルなら PDF を作らずに `null`）。
 
 - **出す設定**（`preview.settings`。prelude の `PREVIEW_SETTINGS`）: `sheets` `pages`（文字列の入力）`paper` `landscape` `scaling` `margin` `blackAndWhite` `gridLines`
-  `centerHorizontally` `charts` `skipBlankPages` `condense`。既定は `PREVIEW_DEFAULT`（シート・ページ・用紙・向き・拡大縮小・余白・白黒）。`sheets` はブックで印刷できるシートが 2 つ以上のときだけ。
+  `centerHorizontally` `charts` `skipBlankPages` `condense`。既定は `PREVIEW_DEFAULT`（シート・ページ・用紙・向き・拡大縮小・余白・白黒）。`toPdf` の `preview`（`"pdf"` のモード）は余白の後に `mirrorMargins` を足す（PDF には `duplex` がなく入れ替えが自動で掛からないため。説明文も PDF 用の `preview.mirrorMarginsPdfHelp`）。`sheets` はブックで印刷できるシートが 2 つ以上のときだけ。
 - **初めの値**: native の `xlsxPrintSetup(book, options)`（`xlsx_print::print_setup`）が、印刷するシートごとに `options` を当てたページ設定
   （用紙の名前（`paper_name`。名前のない用紙は null）・向き・倍率か「次のページ数」・余白 mm・枠線・白黒・左右中央）を返す。
   シートによって違う設定（用紙・向き・拡大縮小・余白）は「シートごとの設定」（値 `""`）から始める（向きはそのときだけセグメントではなく選択）。
@@ -262,7 +264,7 @@ Excel の印刷プレビューのように、ページを出して設定を変�
   ページの範囲は `PageRanges` ではなく、ページにグループのページだけを出させて（`{ type: "pages", group, from, to }` → `print-page.js` の `showPages` が
   ほかの `section` を `display:none` にし、`&P` のカウンターを `from - 1` から始め、出したグラフが描かれるのを待って `shown`）全部を印刷する。
   2 回目以降の `Print` で `PageRanges` の始まりが 4 ページ目以降だと、ジョブが 0 バイトのままスプールされず完了も返らないため
-  （Microsoft Print to PDF・CubePDF とも。2026-11 に実機で確認）。偶数ページの余白は `:nth-of-type` が隠したページも数えるのでそのまま。
+  （Microsoft Print to PDF・CubePDF とも。2026-11 に実機で確認）。偶数ページの余白は `data-even`（用紙のグループごとに数えたもの）で決まるので、ほかのページを隠しても変わらない。
 - **プリンターの一覧**（`Ui::printers`、`src/ui/native/printers.rs`）: `EnumPrintersW`（ローカルと接続、レベル 4）と `GetDefaultPrinterW`、
   両面・カラーは `DeviceCapabilitiesW`（`DC_DUPLEX`・`DC_COLORDEVICE`）。mock とテストの再生は架空の 2 台（`mock::mock_printers`）。
 - **プレビュー**: `print` の `preview` は `printPreview` の `"print"` のモード（既定の設定にプリンター・両面・部数を足す、ボタンは「印刷」）。
