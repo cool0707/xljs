@@ -1254,7 +1254,7 @@ declare global {
     /** 既定 "utf8"（.csv / .tsv は Excel 向けに "utf8bom"） */
     /** 既定 "utf8"（.csv / .tsv は Excel 向けに "utf8bom"）。{ append: true } で追記 */
     writeText(text: string, options?: Encoding | WriteTextOptions): this;
-    writeBytes(data: ArrayBuffer | ArrayBufferView): this;
+    writeBytes(data: ArrayBuffer | ArrayBufferView | string): this;
   }
 
   interface WalkOptions {

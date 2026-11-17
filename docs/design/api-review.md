@@ -31,23 +31,23 @@ Web 標準に合わせたもの（File System Access API・`fetch`・`URL`・`Te
 | A1 | A | `ui.form` | 送信ボタン（`submit`・`submitIcon`・`onSubmit`）を `buttons` に統一 | 完了 |
 | A2 | A | フォームの第 2 引数 | `FormContext` / `FormChangeContext` を 1 つに。対になった重複メソッドの整理 | 完了 |
 | A3 | A | `FormField` | type ごとの型に分け、意味の違う同名のキーをなくす | 完了 |
-| A4 | A | 全体 | 別名の方針（d.ts・ドキュメントに出すのは 1 つ） | 未着手 |
-| B1 | B | グローバル | `workbooks` の名前、JSON は `fs`・CSV は `csv` の不揃い | 未着手 |
-| B2 | B | `fs` / ハンドル | `fs.list` と `dir.list` の戻り値の違い、`walk` / `glob` の重複 | 未着手 |
-| B3 | B | 全体 | キャンセルしたときの戻り値をそろえる | 未着手 |
-| B4 | B | 進捗 | `ui.progress` と `form.progress` の形の違い、`ui.cancelled` | 未着手 |
-| B5 | B | Excel の書式 | `CellStyle` の別名、`Range` と `sheet` のメソッドの重複 | 未着手 |
-| B6 | B | Excel の読み書き | `getValue` / `setValue`、`toObjects` / `rows` / `toArrays` / `Range.values` | 未着手 |
-| B7 | B | 印刷 | `preview` の渡し方と戻り値の違い | 未着手 |
-| B8 | B | ウィンドウ | ウィンドウのオプションの共通化 | 未着手 |
-| B9 | B | 全体 | 読み書きの対がそろっていないもの（書けるのに読めない・2 通りで書ける） | 未着手 |
-| C1 | C | `shell` | `open` / `openPath` / `openExternal` | 未着手 |
-| C2 | C | Excel のメモ | `cell.note`（文字列）と `cell.comment`（オブジェクト） | 未着手 |
-| C3 | C | `ChartSpec` | ガントチャートのキーが同じ型に混在 | 未着手 |
-| C4 | C | `app` | 画面とのやりとりの手段が多い | 未着手 |
-| C5 | C | `ui.table` | 表示だけの表と選ぶ表、`TableView` に `update` がない | 未着手 |
-| C6 | C | `shell.writeShortcutLink` | 位置で渡す `operation` | 未着手 |
-| C7 | C | メタデータ | `@size 900x600` と `width` / `height` | 未着手 |
+| A4 | A | 全体 | 別名の方針（d.ts・ドキュメントに出すのは 1 つ） | 完了 |
+| B1 | B | グローバル | `workbooks` の名前、JSON は `fs`・CSV は `csv` の不揃い | 完了 |
+| B2 | B | `fs` / ハンドル | `fs.list` と `dir.list` の戻り値の違い、`walk` / `glob` の重複 | 完了 |
+| B3 | B | 全体 | キャンセルしたときの戻り値をそろえる | 完了 |
+| B4 | B | 進捗 | `ui.progress` と `form.progress` の形の違い、`ui.cancelled` | 完了 |
+| B5 | B | Excel の書式 | `CellStyle` の別名、`Range` と `sheet` のメソッドの重複 | 完了 |
+| B6 | B | Excel の読み書き | `getValue` / `setValue`、`toObjects` / `rows` / `toArrays` / `Range.values` | 完了 |
+| B7 | B | 印刷 | `preview` の渡し方と戻り値の違い | 完了 |
+| B8 | B | ウィンドウ | ウィンドウのオプションの共通化 | 完了 |
+| B9 | B | 全体 | 読み書きの対がそろっていないもの（書けるのに読めない・2 通りで書ける） | 完了 |
+| C1 | C | `shell` | `open` / `openPath` / `openExternal` | 完了 |
+| C2 | C | Excel のメモ | `cell.note`（文字列）と `cell.comment`（オブジェクト） | 変えない |
+| C3 | C | `ChartSpec` | ガントチャートのキーが同じ型に混在 | 完了 |
+| C4 | C | `app` | 画面とのやりとりの手段が多い | 完了 |
+| C5 | C | `ui.table` | 表示だけの表と選ぶ表、`TableView` に `update` がない | 完了 |
+| C6 | C | `shell.writeShortcutLink` | 位置で渡す `operation` | 完了 |
+| C7 | C | メタデータ | `@size 900x600` と `width` / `height` | 変えない |
 
 ---
 
@@ -382,4 +382,4 @@ API は残し、ドキュメント（`docs/ai/reference.md` の「カスタム�
 1. この文書で各項目の方針を決める（済み。`setStyle` / `getStyle` 以外は書いてあるとおり、「決定」のとおりに進める）。
 2. A から順に直す。1 項目ごとに、d.ts → `prelude.js` / Rust → テスト → `docs/site` → `docs/ai` → `examples` まで直してコミットする
    （`cd tools/docs && npm ci && node build.mjs` と `cargo test --lib`、`examples` の tsc の検査を通す）。
-3. 直したら一覧の「状態」を「完了」にする。リリース後はこの文書を消すか、決めた方針だけを「API の流儀」として CLAUDE.md の規約に移す。
+3. 直したら一覧の「状態」を「完了」にする（C2・C7 は「変えない」、C3 の `name` の改名と B9 のページ設定の読み書きは見送り）。リリース後はこの文書を消すか、決めた方針だけを「API の流儀」として CLAUDE.md の規約に移す。
