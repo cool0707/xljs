@@ -116,7 +116,10 @@ p.src a { color: var(--fg-soft); }
 body.home .wrap { grid-template-columns: 250px minmax(0, 1fr); }
 body.home nav.toc { display: none; }
 body.home main { max-width: 1180px; }
-.hero { padding: 28px 0 8px; }
+.hero { padding: 28px 0 8px; display: flex; align-items: center; gap: 32px; }
+.hero-text { flex: 1 1 auto; min-width: 0; }
+.hero-logo { flex: 0 0 auto; width: clamp(140px, 22vw, 260px); height: auto; }
+@media (max-width: 900px) { .hero-logo { display: none; } }
 .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .badge { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--fg-soft); background: var(--bg-soft); }
 .badge.strong { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: color-mix(in srgb, var(--accent) 9%, transparent); }
