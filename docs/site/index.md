@@ -28,7 +28,7 @@ description: JavaScript / TypeScript のスクリプトで Excel・CSV を処理
 
 ## スクリプト画面のサンプル
 
-画面の項目・ボタン・表・グラフを JavaScript のオブジェクトで書くだけで、Windows の画面になります。どれも xljs に組み込みの画面のスクリーンショットです。
+JavaScript のオブジェクト定義だけで、フォーム画面・表・グラフを表示できます。
 
 <div class="gallery">
 <div class="tabs" role="tablist"><button type="button" role="tab" aria-selected="true">フォームアプリ</button><button type="button" role="tab">表</button><button type="button" role="tab">グラフ</button><button type="button" role="tab">印刷プレビュー</button></div>
