@@ -67,6 +67,8 @@ cargo check --target x86_64-pc-windows-gnu --all-targets   # Windows 専用コ�
 | `docs/design/` | 本体の開発者・Claude Code | 機能ごとの設計メモ |
 | `examples/` | スクリプトを書く人 | サンプル（`.xljs`）と、それで試すサンプルデータ `examples/data/`（`tools/examples/make_data.py` で生成）。配布 zip の `examples/`。サイトの「サンプル」ページは `examples/README.md` をそのまま表示 |
 
+「ファーストステップ」のスクリーンショット（`docs/site/images/first-*.png`）は、`node build.mjs` のあとに `node screenshots.mjs`（`tools/docs`）で撮り直せます（組み込みページを Chromium で開き、Rust 側の応答をスクリプトが返す。AI チャットの画面は灰色の枠で代わりに示す）。画面の文言・配置を変えたら撮り直してください。
+
 サイトは `tools/docs/build.mjs` が生成し、`.github/workflows/docs.yml` が main への push で GitHub Pages に公開します（リポジトリの Settings → Pages の Source を「GitHub Actions」にしておく）。
 
 ```
