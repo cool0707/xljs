@@ -4828,6 +4828,10 @@
     if (o.centerHorizontally !== undefined && o.centerHorizontally !== null) r.centerHorizontally = !!o.centerHorizontally;
     if (o.charts === false) r.charts = false;
     if (o.mirrorMargins !== undefined && o.mirrorMargins !== null) r.mirrorMargins = !!o.mirrorMargins;
+    const duplex = printDuplex(o.duplex);
+    if (duplex) r.duplex = duplex;
+    const chosen = printPageSpec(o.pages);
+    if (chosen) r.pages = chosen;
     if (o.condense !== undefined && o.condense !== null && o.condense !== false) {
       const c = o.condense === true ? 4 : Number(o.condense);
       if (!(c >= 0 && c <= 20)) throw new TypeError(T("pdf.badNumber", "condense"));
@@ -4839,6 +4843,15 @@
       else throw new TypeError(T("pdf.badSkipBlank"));
     }
     return r;
+  }
+
+  /** options.pages as "1,3,5-7" (a number, a string or an array of them); "" for all pages. */
+  function printPageSpec(v) {
+    if (v === undefined || v === null || v === "all") return "";
+    if (typeof v === "number") return String(v);
+    if (typeof v === "string") return v.trim();
+    if (Array.isArray(v) && v.every((x) => typeof x === "number" || typeof x === "string")) return v.map((x) => String(x).trim()).join(",");
+    throw new TypeError(T("print.badPages", inspect(v)));
   }
 
   /** How the pages of the sheets of book are cut (see PrintPages in xljs.d.ts). */
@@ -4895,16 +4908,16 @@
   // (ui.form) without the pages. The settings travel as "wire" values (see
   // previewWire); only those the user changed go into the options.
 
-  const PREVIEW_SETTINGS = ["sheets", "paper", "landscape", "scaling", "margin", "mirrorMargins", "blackAndWhite", "gridLines",
+  const PREVIEW_SETTINGS = ["sheets", "pages", "paper", "landscape", "scaling", "margin", "mirrorMargins", "blackAndWhite", "gridLines",
     "centerHorizontally", "charts", "skipBlankPages", "condense", "printer", "duplex", "copies", "color"];
-  const PREVIEW_DEFAULT = ["sheets", "paper", "landscape", "scaling", "margin", "blackAndWhite"];
+  const PREVIEW_DEFAULT = ["sheets", "pages", "paper", "landscape", "scaling", "margin", "blackAndWhite"];
   const PREVIEW_PAPERS = ["A3", "A4", "A5", "B4", "B5", "Letter", "Legal"];
   /** Excel's margins (mm, top right bottom left): 標準・広い・狭い. */
   const PREVIEW_MARGINS = { normal: [19.1, 17.8, 19.1, 17.8], wide: [25.4, 25.4, 25.4, 25.4], narrow: [19.1, 6.4, 19.1, 6.4] };
   const MARGIN_KEYS = ["marginTop", "marginRight", "marginBottom", "marginLeft"];
   /** The wire values of each setting. */
   const PREVIEW_KEYS = {
-    sheets: ["sheets"], paper: ["paper"], landscape: ["landscape"], scaling: ["scaling", "scale", "fitWidth", "fitHeight"],
+    sheets: ["sheets"], pages: ["pages"], paper: ["paper"], landscape: ["landscape"], scaling: ["scaling", "scale", "fitWidth", "fitHeight"],
     margin: ["margin", ...MARGIN_KEYS], mirrorMargins: ["mirrorMargins"], blackAndWhite: ["blackAndWhite"], gridLines: ["gridLines"],
     centerHorizontally: ["centerHorizontally"], charts: ["charts"], skipBlankPages: ["skipBlankPages"], condense: ["condense"],
     printer: ["printer"], duplex: ["duplex"], copies: ["copies"], color: ["color"],
@@ -4963,6 +4976,10 @@
           add({ name: "sheets", type: "checkboxes", options: all });
           break;
         }
+        case "pages":
+          wire.pages = printPageSpec(base.pages);
+          add({ name: "pages", label: T("preview.pageRange"), type: "text", placeholder: T("preview.pageRangeHelp") });
+          break;
         case "paper": {
           const papers = PREVIEW_PAPERS.slice();
           if (s0.paper && !papers.includes(s0.paper)) papers.push(s0.paper);
@@ -5073,6 +5090,7 @@
       o.sheets = Array.from(w.sheets || []);
       if (!o.sheets.length) throw new TypeError(T("preview.noSheets"));
     }
+    if (changed("pages")) { const t = String(w.pages || "").trim(); if (t) o.pages = t; else delete o.pages; }
     if (changed("paper") && w.paper) o.paper = w.paper;
     if (changed("landscape") && w.landscape) o.landscape = w.landscape === "landscape";
     if (changed("scaling") && w.scaling) {
@@ -5090,7 +5108,9 @@
       const m = w.margin === "custom" ? MARGIN_KEYS.map((k) => num(w[k])) : PREVIEW_MARGINS[w.margin];
       if (m) o.margin = { top: m[0], right: m[1], bottom: m[2], left: m[3] };
     }
-    for (const k of ["blackAndWhite", "gridLines", "centerHorizontally", "mirrorMargins"]) if (changed(k)) o[k] = !!w[k];
+    for (const k of ["blackAndWhite", "gridLines", "centerHorizontally"]) if (changed(k)) o[k] = !!w[k];
+    // Off: as the duplex printing wants (see PrintOptions.mirrorMargins).
+    if (changed("mirrorMargins")) { if (w.mirrorMargins) o.mirrorMargins = true; else delete o.mirrorMargins; }
     if (changed("charts")) { if (w.charts) delete o.charts; else o.charts = false; }
     if (changed("skipBlankPages")) {
       if (w.skipBlankPages === "all") o.skipBlankPages = true;
@@ -5116,7 +5136,7 @@
 
   function previewTexts() {
     return {
-      ok: T("preview.ok"), cancel: T("form.cancel"), pages: T("preview.pageCount"), page: T("preview.pageOf"),
+      ok: T("preview.ok"), cancel: T("form.cancel"), pages: T("preview.pageCount"), pagesOf: T("preview.pageCountOf"), page: T("preview.pageOf"),
       updating: T("preview.updating"), prev: T("preview.prev"), next: T("preview.next"), zoom: T("preview.zoom"),
       zoomPage: T("preview.zoomPage"), zoomWidth: T("preview.zoomWidth"), settings: T("preview.settingsHeading"),
     };
@@ -5171,7 +5191,7 @@
           try {
             const o = previewOptions(base, init, current);
             const layout = printLayout(book, o, sheets);
-            page.send({ type: "layout", seq: m.seq, html: layout.html, charts: printCharts(book, layout), texts: chartTexts(), lang: native.lang, pages: layout.pages });
+            page.send({ type: "layout", seq: m.seq, html: layout.html, charts: printCharts(book, layout), texts: chartTexts(), lang: native.lang, pages: layout.pages, total: layout.total });
           } catch (e) {
             page.send({ type: "layoutError", seq: m.seq, message: e instanceof Error ? e.message : String(e) });
           }

@@ -100,6 +100,14 @@ sparse.setValue("A200", "末尾");
 sparse.range("A100").border({ outline: "thin" });
 sparse.setValue("A150", "  ");
 equal(pages(sparse.toHtml()), 6, "6 pages down");
+// pages: only the pages chosen, with their own numbers.
+const chosen = sparse.toHtml({ pages: "2,4-" });
+equal(pages(chosen), 4, "pages: 2,4-");
+ok(chosen.includes("counter-set:xljs-page 2;") && !chosen.includes("counter-set:xljs-page 3;"), "pages keep their numbers");
+equal(pages(sparse.toHtml({ pages: [1, "3"] })), 2, "pages as an array");
+let badPages = null;
+try { sparse.toHtml({ pages: "3-1" }); } catch (e) { badPages = e; }
+ok(badPages && /3-1/.test(badPages.message), "bad pages: " + badPages);
 const sk = sparse.toHtml({ skipBlankPages: true });
 equal(pages(sk), 3, "skipBlankPages: true keeps the page with a border");
 ok(sk.includes(">先頭<") && sk.includes(">末尾<"), "skipBlankPages: the values are kept");
@@ -150,7 +158,7 @@ equal(pps[1].areas[0].range, "B2:D10", "printPages: the print area");
 // Mirrored margins: the even pages (left-hand pages) swap the left and right margins, on paper and on screen.
 const mm = pb.toHtml({ mirrorMargins: true, margin: { left: 30, right: 10 } });
 ok(/@page s0:left\{margin-left:28\.346pt;margin-right:85\.039pt\}/.test(mm), "the left-hand pages' margins: " + mm.match(/@page s0:left[^}]*\}/));
-ok(mm.includes("--mm:") && mm.includes(".xljs-page:nth-of-type(even){padding:var(--mm,var(--m))}"), "the even pages on screen");
+ok(mm.includes("--mm:") && mm.includes(".xljs-page[data-even]{padding:var(--mm,var(--m))}"), "the even pages on screen");
 ok(!ph.includes(":left{"), "not mirrored by default");
 await pb.toPdf("print.pdf");
 

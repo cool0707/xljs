@@ -73,6 +73,13 @@ function fieldBox(f) {
   switch (f.type) {
     case "number":
       return numberField(f, !!f.showIf);
+    case "text": {
+      const input = el("input", { type: "text", id: "f-" + f.name, value: String(values[f.name] ?? ""), placeholder: f.placeholder || "" });
+      input.addEventListener("input", () => { values[f.name] = input.value; changed(false); });
+      input.addEventListener("change", () => { values[f.name] = input.value; changed(true); });
+      return el("div", { className: "field" }, el("label", { className: "label", htmlFor: input.id, textContent: f.label }), input,
+        f.help ? el("div", { className: "help", textContent: f.help }) : null);
+    }
     case "checkbox": {
       const input = el("input", { type: "checkbox", id: "f-" + f.name, checked: !!values[f.name] });
       input.addEventListener("change", () => { values[f.name] = input.checked; changed(true); });
@@ -253,7 +260,7 @@ async function onLayout(m) {
   pageNumber();
   $("pages").classList.remove("busy");
   $("status").classList.remove("error-text");
-  $("status").textContent = fmt(texts.pages, m.pages);
+  $("status").textContent = m.total && m.total !== m.pages ? fmt(texts.pagesOf, m.pages, m.total) : fmt(texts.pages, m.pages);
   $("ok").disabled = false;
 }
 

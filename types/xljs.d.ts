@@ -2403,9 +2403,16 @@ declare global {
     centerHorizontally?: boolean;
     /**
      * 偶数ページの左右の余白を入れ替える（両面印刷で綴じしろを内側にそろえる。Word の「見開きページ」）。
-     * 1 ページ目（奇数ページ）は margin のとおり。ページの数え方は PDF 全体の通し番号（シートが変わっても続く）
+     * 1 ページ目（奇数ページ）は margin のとおり。ページの数え方は PDF 全体の通し番号（シートが変わっても続く）。
+     * 省略すると、print の duplex で紙がページの左右の辺で裏返るとき（縦向きの "long"、横向きの "short"）は入れ替える。false で入れ替えない
      */
     mirrorMargins?: boolean;
+    /**
+     * 印刷するページ（1 から数える、シートが変わっても続く通し番号）: "1,3,5-7" や "8-"（8 ページ以降）、"-3"（3 ページまで）の文字列、
+     * ページ番号、またはその配列。省略・"all" ですべて。最後のページより後ろの番号は無視する。
+     * 選んだページはページ番号（&P）と奇数・偶数（mirrorMargins）を元のまま印刷する（&N は全体のページ数）
+     */
+    pages?: string | number | (string | number)[];
     /** false でグラフを描かない */
     charts?: boolean;
     /**
@@ -2426,20 +2433,20 @@ declare global {
 
   /**
    * 印刷プレビューで変えられる設定。
-   * "sheets": 印刷するシート（ブックのみ。印刷できるシートが 2 つ以上のとき）、"paper": 用紙サイズ、"landscape": 印刷の向き、
+   * "sheets": 印刷するシート（ブックのみ。印刷できるシートが 2 つ以上のとき）、"pages": 印刷するページ（"1,3,5-7" の形で入力）、"paper": 用紙サイズ、"landscape": 印刷の向き、
    * "scaling": 拡大縮小（拡大縮小なし・シートを 1 ページに・すべての列を 1 ページに・すべての行を 1 ページに・倍率・横 n × 縦 n ページ）、
    * "margin": 余白（標準・広い・狭い・ユーザー設定）、"mirrorMargins": 偶数ページで左右の余白を入れ替える、"blackAndWhite": 白黒印刷、"gridLines": 枠線、"centerHorizontally": ページ中央（水平）、
    * "charts": グラフを印刷、"skipBlankPages": 空のページを飛ばす、"condense": 文字の間隔を詰める、
    * "printer": プリンター、"duplex": 両面印刷（両面に対応したプリンターのときだけ選べる）、"copies": 部数、"color": カラー・白黒（カラーのプリンターのときだけ）。
    * プリンターの設定（printer・duplex・copies・color）は print と printPreview のみ（toPdf のプレビューでは出ない）
    */
-  type PrintPreviewSetting = "sheets" | "paper" | "landscape" | "scaling" | "margin" | "mirrorMargins" | "blackAndWhite" | "gridLines"
+  type PrintPreviewSetting = "sheets" | "pages" | "paper" | "landscape" | "scaling" | "margin" | "mirrorMargins" | "blackAndWhite" | "gridLines"
     | "centerHorizontally" | "charts" | "skipBlankPages" | "condense" | "printer" | "duplex" | "copies" | "color";
 
   /** printPreview・toPdf の preview のオプション */
   interface PrintPreviewOptions {
     /**
-     * 画面に出す設定（並べた順）。既定: ["sheets", "paper", "landscape", "scaling", "margin", "blackAndWhite"]（print では続けて "printer", "duplex", "copies"）。
+     * 画面に出す設定（並べた順）。既定: ["sheets", "pages", "paper", "landscape", "scaling", "margin", "blackAndWhite"]（print では続けて "printer", "duplex", "copies"）。
      * true ですべて、false か [] で設定を出さない（ページの確認だけ）。
      * 設定の初めの値は options を当てたシートのページ設定。利用者が変えなかった設定は options とシートの設定のまま
      */
