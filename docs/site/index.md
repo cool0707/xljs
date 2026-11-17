@@ -7,15 +7,15 @@ description: JavaScript / TypeScript のスクリプトで Excel・CSV を処理
 <div class="badges"><span class="badge strong">Windows 用のシングルバイナリ</span><span class="badge">Excel・Acrobat・Node.js 不要</span></div>
 <h1 class="hero-title">JavaScript / TypeScript で、<br>Excel・PDF・業務の画面まで。</h1>
 <p class="lead">Excel・CSV の集計やデータ変換、Excel で印刷したときと同じページの PDF 出力を、スクリプト 1 本で行います。入力して実行するツールから、一覧・検索・登録の画面を持つ業務アプリまで、HTML を書かずに作れます。作ったものは exe にして配れます。</p>
-<p class="cta"><a class="button primary" href="guide/run.md">インストールと実行</a><a class="button" href="#開発モードを試す">開発モードを試す</a><a class="button" href="guide/examples.md">サンプル</a></p>
+<p class="cta"><a class="button primary" href="guide/run.md">インストールと実行</a><a class="button" href="#開発モードのイメージ">開発モードのイメージ</a><a class="button" href="guide/examples.md">サンプル</a></p>
 </section>
 
-## 開発モードを試す
+## 開発モードのイメージ
 
-開発モード（`xljs dev`）は、AI チャットとスクリプトを並べて作る画面です。AI に頼んで、返ってきたスクリプトの差分を見て置き換え、その場で実行します。下は実際の開発モードの画面をブラウザで動かした体験版です（左の AI チャットは体験用の架空のもので、決まった答えを返します）。
+開発モード（`xljs dev`）は、AI チャットとスクリプトを並べて作る画面です。AI に頼んで、返ってきたスクリプトの差分を見て置き換え、その場で実行します。下は開発モードの動きをブラウザで確認できるモックです（実際にブラウザで動くアプリではありません）。画面は開発モードと同じものですが、左の AI チャットは架空のもので、決まった答えを返します。
 
 <div class="demo" data-demo-page="demo/web/dev-demo.html">
-<div class="demo-frame"><button type="button" class="demo-start">体験版を開く</button></div>
+<div class="demo-frame"><button type="button" class="demo-start">モックを開く</button></div>
 </div>
 
 <ol class="demo-steps">

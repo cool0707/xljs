@@ -90,7 +90,7 @@ node build.mjs --serve    # 生成して http://localhost:8080/ で見る
 
 トップページ（`docs/site/index.md`）:
 
-- 「開発モードを試す」は、組み込みのページ（`src/ui/web`）をそのまま `_site/demo/web/` に写し、`dev.html` の前に `tools/docs/demo/dev-demo.js`（Rust 側の代わり。メモリ上のプロジェクト、架空の AI チャット `chat.html`、実行するとページの中の窓でフォームを開く）を入れた体験版。題材は `examples/form-master.xljs`（チャットの答えが一覧の `formats:` の行を足す）。開発モードのメッセージを変えたら体験版も動かして確かめる。`tools/docs/demo/README.md`。
+- 「開発モードのイメージ」は、組み込みのページ（`src/ui/web`）をそのまま `_site/demo/web/` に写し、`dev.html` の前に `tools/docs/demo/dev-demo.js`（Rust 側の代わり。メモリ上のプロジェクト、架空の AI チャット `chat.html`、実行するとページの中の窓でフォームを開く）を入れたモック（実際に動くアプリではない）。題材は `examples/form-master.xljs`（チャットの答えが一覧の `formats:` の行を足す）。開発モードのメッセージを変えたらモックも動かして確かめる。`tools/docs/demo/README.md`。
 - 画面の写真（`docs/site/images/home-*.png`）は、組み込みのページにスクリプトからの最初のメッセージを渡して Chromium で撮ったもの。ページの見た目を大きく変えたら撮り直す。
 
 API を変えたときの手順: `types/xljs.d.ts` を直す → `docs/site/api/*.md`（例と説明、新しい宣言は `api:`）→ `docs/ai/`（`docs/ai/README.md` の「資料を更新するとき」）。

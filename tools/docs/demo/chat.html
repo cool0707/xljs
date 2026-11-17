@@ -42,7 +42,7 @@ form button { border: 0; width: 32px; height: 32px; border-radius: 50%; backgrou
 </style>
 </head>
 <body>
-<header><span class="logo">AI</span>サンプル AI<span class="note">体験用の架空のチャット</span></header>
+<header><span class="logo">AI</span>サンプル AI<span class="note">モック用の架空のチャット</span></header>
 <div id="log">
   <div class="welcome" id="welcome">
     <h1>何を作りますか？</h1>
@@ -76,7 +76,7 @@ function ask(text) {
     const ai = document.createElement("div");
     ai.className = "msg ai";
     if (answered) {
-      ai.innerHTML = "<p>（体験版のチャットなので、決まった答えしか返せません）</p><p>実際の開発モードでは、Copilot や ChatGPT など普段使っている AI チャットをこの枠で開いて頼みます。</p>";
+      ai.innerHTML = "<p>（モックのチャットなので、決まった答えしか返せません）</p><p>実際の開発モードでは、Copilot や ChatGPT など普段使っている AI チャットをこの枠で開いて頼みます。</p>";
     } else {
       answered = true;
       ai.innerHTML = `<p>一覧の表に <code>formats</code> を付けて、単価が空の行を赤い文字にします。変えたのは次の 1 行です。</p>

@@ -69,7 +69,7 @@
     menu.setAttribute("aria-expanded", open);
   });
 
-  // The top page: the tabs of the pictures, and the development mode to try
+  // The top page: the tabs of the pictures, and the mock of the development mode
   // (demo/web/dev-demo.html at its own size, scaled to the width).
   for (const g of document.querySelectorAll(".gallery")) {
     const tabs = [...g.querySelectorAll(".tabs button")];
@@ -85,7 +85,7 @@
       if (box.querySelector("iframe")) return;
       const f = document.createElement("iframe");
       f.src = base + "/" + d.dataset.demoPage;
-      f.title = "開発モードの体験版";
+      f.title = "開発モードのモック";
       box.replaceChildren(f);
       const fit = () => (f.style.transform = `scale(${box.clientWidth / 1280})`);
       fit();
