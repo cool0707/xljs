@@ -130,7 +130,7 @@ db.close();
 **アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `form.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`。
 
 ```js
-const all = workbooks.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].toObjects();
+const all = excel.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].rows();
 const pick = (v) => all.filter((r) => (v.kind === "すべて" || r.区分 === v.kind) && (!v.word || String(r.品名 ?? "").includes(v.word)));
 await ui.form({
   title: "商品の検索",
@@ -146,7 +146,7 @@ await ui.form({
     async onClick(v, form) {
       const dest = await showSaveFilePicker({ suggestedName: "検索結果.xlsx" });
       if (!dest) return;
-      const out = workbooks.create();
+      const out = excel.create();
       out.addSheet("検索結果").write(pick(v), { table: true });
       out.save(dest);
       return dest;
@@ -268,7 +268,7 @@ db.close();
 
 ### カスタムアプリの方針
 
-- 画面（HTML）は見た目と操作、スクリプト（`.js`）はファイル・Excel・データベースの処理、と分ける。画面の JavaScript から xljs の API（`workbooks` など）は呼べないので、スクリプトの `export` した関数を `data-action` か `xljs.invoke` で呼ぶ。
+- 画面（HTML）は見た目と操作、スクリプト（`.js`）はファイル・Excel・データベースの処理、と分ける。画面の JavaScript から xljs の API（`excel` など）は呼べないので、スクリプトの `export` した関数を `data-action` か `xljs.invoke` で呼ぶ。
 - 1 つのウィンドウの中で画面を切り替える（`data-show` で出し分け）。`app.open` で別のウィンドウを増やすのは、同時に見比べる必要があるときだけ。
 - 起動時に見せるデータ（利用者の名前、一覧）はスクリプトの先頭で `win.state` に入れる。利用者にボタンを押させてから読むのではなく、開いたときに出ているようにする。
 - ファイルの選択は `<input type="file">` ではなく、スクリプトの関数で `showOpenFilePicker` などを呼ぶ（パスが取れる）。ドロップは `e.dataTransfer.files` をそのまま `xljs.invoke` に渡す。

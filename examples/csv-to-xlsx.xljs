@@ -7,7 +7,7 @@ const handles = await showOpenFilePicker({
 });
 if (handles.length === 0) exit();
 
-const book = workbooks.create();
+const book = excel.create();
 for (const h of handles) {
   const rows = csv.read(h); // 数値・日付は自動で変換される（"00123" のようなコードは文字列のまま）
   const name = path.basename(h.name, path.extname(h.name)).slice(0, 31);

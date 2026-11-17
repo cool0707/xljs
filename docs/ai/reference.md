@@ -117,22 +117,22 @@
 
 | API | 説明 |
 |---|---|
-| `workbooks.open(p)` | 開く |
-| `workbooks.create({ font? })` | 新しいブック。最初の `addSheet` が既定のシートを置き換える |
+| `excel.open(p)` | 開く |
+| `excel.create({ font? })` | 新しいブック。最初の `addSheet` が既定のシートを置き換える |
 | `book.sheets[0]` / `book.sheets["名前"]` / `book.sheet(名前か番号)` | シート（無ければ `undefined` / `null`）。大文字小文字・空白・全角半角の違いは許す |
 | `book.sheetNames` | シート名の配列 |
 | `book.addSheet(name)` / `book.removeSheet(name)` / `book.copySheet(sheet, name?)` | 追加・削除・コピー（元の後ろに） |
 | `book.save()` / `book.save(p)` | 上書き保存 / 別名保存 |
 | `book.close()` | 閉じる（メモリ解放） |
 | `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | PDF に書き出す（「PDF 出力」） |
-| `workbooks.readVBA(p)` | マクロブックの VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、なければ `null`。`text` は Markdown |
-| `workbooks.columnName(3)` → `"C"`、`workbooks.cellName(2, 3)` → `"C2"` | 番地の変換 |
+| `excel.readVBA(p)` | マクロブックの VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、なければ `null`。`text` は Markdown |
+| `excel.columnName(3)` → `"C"`、`excel.cellName(2, 3)` → `"C2"` | 番地の変換 |
 
 ### シートの読み取り
 
 | API | 説明 |
 |---|---|
-| `sheet.toObjects({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行（既定 1）。`header: 0, columns: [...]` で見出しなし |
+| `sheet.rows({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行（既定 1）。`header: 0, columns: [...]` で見出しなし |
 | `sheet.toArrays({ text })` | 2 次元配列（0 始まり）。`text: true` で表示の文字列 |
 | `sheet.cell("B2")` / `sheet.cell(行, 列)` | セル（1 から） |
 | `cell.value` | 値: number / string / boolean / Date / null |
@@ -140,9 +140,11 @@
 | `cell.formula` | `"=SUM(A1:A3)"` か `null` |
 | `cell.phonetic` | ふりがな（値の後に代入） |
 | `cell.note` / `cell.comment` | メモ / コメント（`addComment`） |
-| `sheet.getValue("B2")` / `sheet.setValue("B2", v)` | 値の読み書き |
 | `sheet.range("A1:C3").values` | 範囲の 2 次元配列（代入で書く） |
-| `sheet.rowCount` / `sheet.dimension` | 最終行 / 範囲 |
+| `sheet.rowCount` / `sheet.columnCount` / `sheet.dimension` | 最終行 / 最終列 / 範囲 |
+| `sheet.merges` / `sheet.frozen` / `sheet.filter` | 結合範囲の配列 / 固定 `{ rows, columns }` か `null` / フィルターの範囲か `null` |
+| `sheet.getStyle("A1")` / `sheet.getRowHeight(1)` | 書式（`setStyle` と同じ形）/ 行の高さ |
+| `sheet.hidden` | 非表示（代入で切り替え） |
 | `sheet.name` | シート名（代入で変更） |
 
 - 結合セルの値は左上のセルにだけある。
@@ -171,12 +173,12 @@
 ### 書式
 
 ```js
-sheet.style("A1:D1", { bold: true, color: "#FFFFFF", background: "#305496", align: "center" });
-sheet.cell("D10").style({ font: { size: 14, bold: true }, format: "¥#,##0", border: { top: "double" } });
-sheet.range("A3:D10").border({ outline: "medium", inside: { style: "thin", color: "#BFBFBF" } });
+sheet.setStyle("A1:D1", { bold: true, color: "#FFFFFF", background: "#305496", align: "center" });
+sheet.cell("D10").setStyle({ fontSize: 14, bold: true, format: "¥#,##0", border: { top: "double" } });
+sheet.range("A3:D10").setStyle({ border: { outline: "medium", inside: { style: "thin", color: "#BFBFBF" } } });
 sheet.merge("A1:D1");             // セル結合（unmerge で解除）
 sheet.freeze("A2");               // 1 行目を固定（"B2" で 1 行目と A 列）
-sheet.autoFilter("A3:D10");       // フィルター
+sheet.autoFilter("A3:D10");       // フィルター（null で外す）
 sheet.autoFit();                  // 列幅を内容に合わせる
 sheet.setColumnWidth("A:C", 16);  // 列幅（文字数）
 sheet.setRowHeight(1, 30);        // 行の高さ（ポイント）
@@ -184,20 +186,20 @@ sheet.setRowHeight(1, 30);        // 行の高さ（ポイント）
 
 | 項目 | 指定 |
 |---|---|
-| 文字 | `bold` `italic` `underline` `strike` `color` `fontSize` `fontName`、または `font: { name, size, bold, italic, color }` |
+| 文字 | `bold` `italic` `underline` `strike` `color` `fontSize` `fontName` |
 | 塗り | `background: "#DDEBF7"`（`null` で塗りなし） |
 | 配置 | `align`（`left` `center` `right`）、`valign`（`top` `center` `bottom`）、`wrap: true`（折り返し） |
 | 表示形式 | `format`: `"#,##0"` `"#,##0.00"` `"0.0%"` `"¥#,##0"` `"yyyy/m/d"` `"yyyy年m月d日"` `"h:mm"` `"@"`（文字列） |
 | 罫線 | `border: "thin"`（全セルの上下左右）、または `{ outline, inside, horizontal, vertical, top, bottom, left, right }`。線種 `"thin"` `"medium"` `"thick"` `"double"` `"dashed"` `"dotted"`、色付きは `{ style: "thin", color: "#999999" }` |
 
-色は `"#RRGGBB"` か `red` などの色名。書式は既存の書式に重ねて適用される（`{ replace: true }` で置き換え）。
+色は `"#RRGGBB"` か `red` などの色名。書式は既存の書式に重ねて適用される（`{ replace: true }` で置き換え）。入れ子のキー（`font` `fill` など）はない。
 
 ## PDF 出力
 
 Excel がなくても、印刷したときと同じページで PDF にできる（Windows の WebView2 を使う。コンソール・mock では使えない）。
 
 ```js
-const book = workbooks.open("請求書.xlsx");
+const book = excel.open("請求書.xlsx");
 await book.toPdf("請求書.pdf");                                  // 非表示でないすべてのシート
 await book.toPdf("一覧.pdf", { sheets: ["一覧"], fitToWidth: 1 }); // 横 1 ページに収める
 await book.sheets["明細"].toPdf("明細.pdf", { paper: "A4", landscape: true, margin: 10 });
@@ -286,7 +288,7 @@ db.run("INSERT INTO 受注 VALUES (?, ?, ?, ?)", "A001", new Date(2026, 3, 1), "
 db.run("UPDATE 受注 SET 金額 = :金額 WHERE 番号 = :番号", { 番号: "A001", 金額: 15000 });
 const rows = db.all("SELECT * FROM 受注 WHERE 日付 >= ?", new Date(2026, 3, 1)); // オブジェクトの配列
 const one = db.get("SELECT sum(金額) AS 合計 FROM 受注");                         // 最初の行か null
-db.insert("受注", workbooks.open(h).sheet(0).toObjects(), { replace: true });   // まとめて挿入（1 トランザクション）
+db.insert("受注", excel.open(h).sheet(0).rows(), { replace: true });            // まとめて挿入（1 トランザクション）
 db.transaction(() => {                     // 例外なら取り消し。async にはできない
   db.run("DELETE FROM 受注 WHERE 金額 = 0");
 });
@@ -340,7 +342,7 @@ await fetch("https://intra.example.com/upload", { method: "POST", body: form });
 const file = await fetch("https://intra.example.com/files/master.xlsx");
 const data = await file.arrayBuffer();
 fs.writeBytes("master.xlsx", data);
-const book = workbooks.open(data);         // 保存せずに開くこともできる
+const book = excel.open(data);             // 保存せずに開くこともできる
 ```
 
 - `res.text()` は Content-Type の charset（`Shift_JIS` なども）で読む。`res.text("cp932")` で文字コードを指定できる（xljs 拡張）。本文は 1 回しか読めない（2 回読むなら先に `res.clone()`）。
@@ -499,7 +501,7 @@ db.close();
 **アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `form.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`。
 
 ```js
-const all = workbooks.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].toObjects();
+const all = excel.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].rows();
 const pick = (v) => all.filter((r) => (v.kind === "すべて" || r.区分 === v.kind) && (!v.word || String(r.品名 ?? "").includes(v.word)));
 await ui.form({
   title: "商品の検索",
@@ -515,7 +517,7 @@ await ui.form({
     async onClick(v, form) {
       const dest = await showSaveFilePicker({ suggestedName: "検索結果.xlsx" });
       if (!dest) return;
-      const out = workbooks.create();
+      const out = excel.create();
       out.addSheet("検索結果").write(pick(v), { table: true });
       out.save(dest);
       return dest;
@@ -637,7 +639,7 @@ db.close();
 
 ### カスタムアプリの方針
 
-- 画面（HTML）は見た目と操作、スクリプト（`.js`）はファイル・Excel・データベースの処理、と分ける。画面の JavaScript から xljs の API（`workbooks` など）は呼べないので、スクリプトの `export` した関数を `data-action` か `xljs.invoke` で呼ぶ。
+- 画面（HTML）は見た目と操作、スクリプト（`.js`）はファイル・Excel・データベースの処理、と分ける。画面の JavaScript から xljs の API（`excel` など）は呼べないので、スクリプトの `export` した関数を `data-action` か `xljs.invoke` で呼ぶ。
 - 1 つのウィンドウの中で画面を切り替える（`data-show` で出し分け）。`app.open` で別のウィンドウを増やすのは、同時に見比べる必要があるときだけ。
 - 起動時に見せるデータ（利用者の名前、一覧）はスクリプトの先頭で `win.state` に入れる。利用者にボタンを押させてから読むのではなく、開いたときに出ているようにする。
 - ファイルの選択は `<input type="file">` ではなく、スクリプトの関数で `showOpenFilePicker` などを呼ぶ（パスが取れる）。ドロップは `e.dataTransfer.files` をそのまま `xljs.invoke` に渡す。
@@ -792,7 +794,7 @@ ui.table(rows, { formats: [
 ## グラフ（ui.chart）
 
 ```js
-const rows = sheet.toObjects();                              // [{ 月: "4月", 売上: 1200, 原価: 800 }, ...]
+const rows = sheet.rows();                                   // [{ 月: "4月", 売上: 1200, 原価: 800 }, ...]
 ui.chart({ type: "column", data: rows, x: "月", y: ["売上", "原価"], title: "月別売上" }); // 表示するだけ（すぐ次へ進む）
 const view = ui.chart({
   type: "column", data: rows, x: "月",
@@ -804,7 +806,7 @@ view.update({ data: rows.slice(0, 3) });                     // 指定したキ�
 await view.closed;                                           // 閉じるまで待つ
 
 // Excel のブックにあるグラフをそのまま表示する（値はセルから読む）
-for (const c of workbooks.open("売上.xlsx").sheets[0].charts) {
+for (const c of excel.open("売上.xlsx").sheets[0].charts) {
   if (c.supported) ui.chart(c);                              // c.toSpec() で定義（ChartSpec）になる
   else console.log(c.name, c.warnings[0]);                   // レーダーなど表示できないもの
 }
@@ -964,7 +966,7 @@ function aggregate(month) {
 const handles = await showOpenFilePicker({ multiple: true, types: [{ description: "CSV", accept: [".csv", ".tsv", ".txt"] }] });
 if (handles.length === 0) exit();
 
-const book = workbooks.create();
+const book = excel.create();
 for (const h of handles) {
   const rows = csv.read(h);
   const name = path.basename(h.name, path.extname(h.name)).replace(/[\\\/?*\[\]:]/g, "_").slice(0, 31);
@@ -982,9 +984,9 @@ shell.showItemInFolder(dest);
 ```js
 const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx"] }] });
 if (!h) exit();
-const book = workbooks.open(h);
+const book = excel.open(h);
 const sheet = book.sheets[0];
-const rows = sheet.toObjects();
+const rows = sheet.rows();
 const key = prompt("分ける列の名前", Object.keys(rows[0] ?? {})[0] ?? "");
 if (!key) exit();
 
@@ -992,7 +994,7 @@ const outDir = path.join(path.dirname(h), "分割");
 fs.mkdir(outDir);
 const groups = Object.groupBy(rows, (r) => String(r[key] ?? "(空欄)"));
 for (const [name, list] of ui.withProgress(Object.entries(groups), "分割中")) {
-  const out = workbooks.create();
+  const out = excel.create();
   out.addSheet(sheet.name).write(list, { table: true });
   out.save(path.join(outDir, `${name.replace(/[\\\/:*?"<>|]/g, "_")}.xlsx`));
 }
@@ -1014,11 +1016,11 @@ const v = await ui.form({
 });
 if (!v) exit();
 
-const rows = workbooks.open(v.list).sheets[0].toObjects();
+const rows = excel.open(v.list).sheets[0].rows();
 const safe = (s) => String(s ?? "").replace(/[\\\/:*?"<>|]/g, "_");  // ファイル名に使えない文字を置き換える
 let count = 0;
 for (const r of ui.withProgress(rows, "作成中")) {
-  const book = workbooks.open(v.template);   // 毎回ひな形を開き直す
+  const book = excel.open(v.template);       // 毎回ひな形を開き直す
   const ws = book.sheets[0];
   ws.cell("B3").value = r.顧客名;
   ws.cell("B4").value = r.住所;
@@ -1045,7 +1047,7 @@ const v = await ui.form({
 });
 if (!v) exit();
 
-const load = (h) => h.name.toLowerCase().endsWith(".csv") ? csv.read(h) : workbooks.open(h).sheets[0].toObjects();
+const load = (h) => h.name.toLowerCase().endsWith(".csv") ? csv.read(h) : excel.open(h).sheets[0].rows();
 const a = load(v.a);
 const master = new Map(load(v.b).map((r) => [String(r[v.key]).trim(), r]));
 
@@ -1057,7 +1059,7 @@ const missing = result.filter((r) => r.照合結果 === "なし");
 
 const dest = await showSaveFilePicker({ suggestedName: "突き合わせ結果.xlsx", startIn: v.a });
 if (!dest) exit();
-const out = workbooks.create();
+const out = excel.create();
 out.addSheet("結果").write(result, { table: true });
 out.addSheet("見つからない").write(missing, { table: true });
 out.save(dest);
@@ -1070,7 +1072,7 @@ shell.showItemInFolder(dest);
 ```js
 const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx"] }] });
 if (!h) exit();
-const rows = workbooks.open(h).sheets[0].toObjects().filter((r) => r.日付 instanceof Date);
+const rows = excel.open(h).sheets[0].rows().filter((r) => r.日付 instanceof Date);
 
 const ym = (d) => dayjs(d).format("YYYY-MM");
 const months = [...new Set(rows.map((r) => ym(r.日付)))].sort();
@@ -1084,7 +1086,7 @@ const table = Object.entries(Object.groupBy(rows, (r) => r.担当 ?? "(未設定
 
 const dest = await showSaveFilePicker({ suggestedName: "月別集計.xlsx", startIn: h });
 if (!dest) exit();
-const out = workbooks.create();
+const out = excel.create();
 const style = Object.fromEntries([...months, "合計"].map((m) => [m, { format: "#,##0" }]));
 out.addSheet("月別").write(table, { table: true, columnStyles: style });
 out.save(dest);
@@ -1101,7 +1103,7 @@ if (targets.length === 0) exit();
 
 const created = [];
 for (const h of ui.withProgress(targets, "変換中")) {
-  const book = workbooks.open(h);
+  const book = excel.open(h);
   for (const sheet of book.sheets) {
     const dest = path.join(path.dirname(h), `${path.basename(h.name, path.extname(h.name))}_${sheet.name}.csv`);
     csv.write(dest, sheet.toArrays({ text: true }), { encoding: "cp932" });

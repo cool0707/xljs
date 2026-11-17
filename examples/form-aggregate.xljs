@@ -37,14 +37,14 @@ const values = await ui.form({
       // 中止ボタンが押されると onClick はここで終わる（以降の保存は行わない）
       for (const h of form.withProgress(files)) {
         try {
-          const book = workbooks.open(h);
+          const book = excel.open(h);
           const sheet = book.sheets["明細"];
           if (!sheet) {
             form.log(`${h.relativePath}: 「明細」シートがないので飛ばします`);
             book.close();
             continue;
           }
-          for (const r of sheet.toObjects()) {
+          for (const r of sheet.rows()) {
             if (v.from && r.日付 instanceof Date && r.日付 < v.from) continue;
             rows.push({ ...r, ファイル: h.relativePath });
           }
@@ -59,7 +59,7 @@ const values = await ui.form({
         件数: list.length,
         合計: list.reduce((s, r) => s + (Number(r.金額) || 0), 0),
       }));
-      const out = workbooks.create();
+      const out = excel.create();
       out.addSheet("集計").write(summary, { table: true });
       if (v.details) out.addSheet("明細").write(rows, { table: true });
       out.save(v.out);

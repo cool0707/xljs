@@ -87,7 +87,7 @@ await ui.form({
           async onClick(v, form) {
             const dest = await showSaveFilePicker({ suggestedName: `商品マスター_${dayjs().format("YYYYMMDD")}.xlsx` });
             if (!dest) return;
-            const out = workbooks.create();
+            const out = excel.create();
             out.addSheet("商品").write(load(v.word), { table: true, columnStyles: { 単価: { format: "#,##0" } } });
             out.save(dest);
             form.log(`${dest.name} に出力しました`);

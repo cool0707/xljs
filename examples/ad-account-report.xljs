@@ -85,7 +85,7 @@ if (!sheets.some((s) => s.rows.length)) {
 
 const dest = await showSaveFilePicker({ suggestedName: `アカウント点検_${dayjs().format("YYYYMMDD")}.xlsx` });
 if (!dest) exit();
-const book = workbooks.create();
+const book = excel.create();
 for (const s of sheets) {
   const sheet = book.addSheet(s.name);
   if (s.rows.length) sheet.write(s.rows);

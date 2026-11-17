@@ -59,6 +59,8 @@ function init(m) {
   formats = m.formats || [];
   rows = [];
   hits = [];
+  searchText = null;
+  kinds.clear();
   widths = columns.map((c) => c.width || 0);
   cols = new GridKit.Columns(columns.length);
   buildHead();

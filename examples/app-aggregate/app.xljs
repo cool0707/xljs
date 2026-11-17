@@ -69,9 +69,9 @@ export async function aggregate() {
         return;
       }
       try {
-        const book = workbooks.open(h);
+        const book = excel.open(h);
         const sheet = book.sheets["明細"];
-        if (sheet) for (const r of sheet.toObjects()) rows.push({ ...r, ファイル: h.relativePath });
+        if (sheet) for (const r of sheet.rows()) rows.push({ ...r, ファイル: h.relativePath });
         else errors.push(`${h.relativePath}: 「明細」シートがありません`);
         book.close();
       } catch (e) {
@@ -118,7 +118,7 @@ export async function save() {
     types: [{ description: "Excel ブック", accept: [".xlsx"] }],
   });
   if (!dest) return null;
-  const out = workbooks.create();
+  const out = excel.create();
   out.addSheet("集計").write(summary).setColumnWidth("A", 24);
   out.addSheet("明細").write(rows);
   out.save(dest);

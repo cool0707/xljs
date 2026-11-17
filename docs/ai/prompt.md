@@ -52,7 +52,7 @@
 
 - 1 行ずつ訳さない。まず**マクロが何をしているか**を箇条書きで説明し、xljs の流儀で書き直す（集計・転記のマクロはツール: フォームでファイルを選ぶ → 読む → 処理 → 新しいファイルに保存。ユーザーフォームやシートで入力・検索・登録するマクロはアプリ）。
 - xljs は開いている Excel を操作しない。`ThisWorkbook`・`ActiveSheet` のデータはそのブックを選ばせて読む。画面制御（`ScreenUpdating` など）は消す。
-- 対応: `MsgBox` → `alert` / `confirm`、`InputBox` → `prompt`、ユーザーフォーム → `ui.form`、ログオン中のユーザー（`Environ("USERNAME")`・`Application.UserName`）→ `ad.me()`、`Range` / `Cells` → `sheet.cell`、最終行までのループ → `sheet.toObjects()`、`Dir` → `fs.walk`、`VLookup` / `Dictionary` → `Map`、`Format` → `dayjs().format`。
+- 対応: `MsgBox` → `alert` / `confirm`、`InputBox` → `prompt`、ユーザーフォーム → `ui.form`、ログオン中のユーザー（`Environ("USERNAME")`・`Application.UserName`）→ `ad.me()`、`Range` / `Cells` → `sheet.cell`、最終行までのループ → `sheet.rows()`、`Dir` → `fs.walk`、`VLookup` / `Dictionary` → `Map`、`Format` → `dayjs().format`。
 - シートのイベント、ボタン・選択範囲の操作、印刷、グラフ・ピボットの作成、他のアプリの操作は再現できない。はっきり伝えて代わりの方法を示す。PDF 出力（`ExportAsFixedFormat`）は `await book.toPdf("a.pdf")` でできる。PDF の結合・ページの削除・挿入・文字の追加は `pdf.open(p)` の `append` `insert` `removePages` `addText` `save`（リファレンス参照）。
 
 # リファレンス（要点）
@@ -89,18 +89,18 @@ path.join(path.dirname(h), "出力.xlsx");
 ## Excel
 
 ```js
-const book = workbooks.open(h);
+const book = excel.open(h);
 const sheet = book.sheets["明細"] ?? book.sheets[0];
-const rows = sheet.toObjects();                 // 1 行目を見出しにしたオブジェクトの配列（{ header: 3 } で 3 行目）
+const rows = sheet.rows();                      // 1 行目を見出しにしたオブジェクトの配列（{ header: 3 } で 3 行目）
 const grid = sheet.toArrays();                  // 2 次元配列
 sheet.cell("B2").value;                         // number / string / boolean / Date / null。cell(2, 3) も可
 book.close();
 
-const out = workbooks.create();
+const out = excel.create();
 const ws = out.addSheet("集計");
 ws.write(rows, { table: true, columnStyles: { 金額: { format: "#,##0" } } }); // 見出しの色・罫線・列幅・フィルター付き
 ws.cell("A1").value = "タイトル";
-ws.style("A1:D1", { bold: true, background: "#305496", color: "#FFFFFF" });
+ws.setStyle("A1:D1", { bold: true, background: "#305496", color: "#FFFFFF" });
 out.save(dest);
 ```
 
@@ -150,7 +150,7 @@ await ui.form({
       name: "src", label: "売上ファイル", type: "file", accept: [".xlsx"], required: true,
       validate: (h) => { // 空欄でも呼ばれる
         if (!h) return;
-        try { const b = workbooks.open(h); const ok = b.sheets["売上"]; b.close(); if (!ok) return "「売上」シートがありません"; }
+        try { const b = excel.open(h); const ok = b.sheets["売上"]; b.close(); if (!ok) return "「売上」シートがありません"; }
         catch (e) { return `開けません: ${e.message}`; }
       },
     },
@@ -219,9 +219,9 @@ await ui.form({
     const errors = [];
     for (const h of form.withProgress(files)) { // 中止ボタンで終わる
       try {
-        const book = workbooks.open(h);
+        const book = excel.open(h);
         const sheet = book.sheets[v.sheet];
-        if (sheet) for (const r of sheet.toObjects()) rows.push({ ファイル: h.relativePath, ...r });
+        if (sheet) for (const r of sheet.rows()) rows.push({ ファイル: h.relativePath, ...r });
         else errors.push(`${h.relativePath}: 「${v.sheet}」シートがありません`);
         book.close();
       } catch (e) {
@@ -231,7 +231,7 @@ await ui.form({
     for (const e of errors) form.error(e); // フォームのログ欄に赤字で出す
     if (rows.length === 0) throw new Error(`「${v.sheet}」シートのデータが見つかりませんでした`);
 
-    const out = workbooks.create();
+    const out = excel.create();
     out.addSheet(v.sheet).write(rows, { table: true });
     if (errors.length) out.addSheet("エラー").write(errors.map((e) => [e]));
     out.save(v.out);

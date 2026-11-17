@@ -29,7 +29,7 @@ deepEqual(rel(dir.walk({ glob: "*.xlsx", exclude: "skip" }).toArray()),
 deepEqual(rel(dir.walk({ glob: "*.xlsx", exclude: "sub", hidden: true }).toArray()),
   [".hidden/h.xlsx", "B.XLSX", "a.xlsx", "skip/e.xlsx", "~$a.xlsx"]);
 equal(dir.walk({ hidden: true }).length, 9);
-deepEqual(fs.list("data").sort(), ["B.XLSX", "a.xlsx", "note.txt", "skip", "sub"]);
+deepEqual(fs.list("data").map((h) => h.name).sort(), ["B.XLSX", "a.xlsx", "note.txt", "skip", "sub"]);
 equal(fs.list("data", { hidden: true }).length, 8);
 equal(dir.list({ hidden: true }).length, 8);
 equal(fs.glob("data/**/*.xlsx").length, 5);
@@ -98,6 +98,10 @@ fs.writeText("bom.txt", "a", "utf8bom");
 fs.appendText("bom.txt", "b", "utf8bom"); // BOM only once
 equal(fs.readBytes("bom.txt").byteLength, 5);
 equal(fs.readText("bom.txt"), "ab");
+fs.writeText("bom.txt", "c", { encoding: "utf8bom", append: true });
+equal(fs.readText("bom.txt"), "abc", "append: true adds to the file");
+fs.file("bom.txt").writeText("d", { append: true });
+equal(fs.readText("bom.txt"), "abcd");
 // .csv / .tsv get a BOM by default (Excel reads them as UTF-8); other files do not.
 fs.writeText("hand.csv", "名前\r\n");
 fs.appendText("hand.csv", "山田\r\n");

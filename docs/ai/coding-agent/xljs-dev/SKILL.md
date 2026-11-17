@@ -90,10 +90,10 @@ answers.json（キーはどれも省略できる。種類ごとに前から順�
 
 ```js
 // dump.js: xljsc dump.js ブック.xlsx
-const book = workbooks.open(xljs.args[0]);
+const book = excel.open(xljs.args[0]);
 for (const sheet of book.sheets) {
   console.log(`# ${sheet.name}`);
-  for (const r of sheet.toObjects().slice(0, 10)) console.log(JSON.stringify(r));
+  for (const r of sheet.rows().slice(0, 10)) console.log(JSON.stringify(r));
 }
 ```
 

@@ -130,22 +130,22 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 
 | API | 説明 |
 |---|---|
-| `workbooks.open(p)` | 開く |
-| `workbooks.create({ font? })` | 新しいブック。最初の `addSheet` が既定のシートを置き換える |
+| `excel.open(p)` | 開く |
+| `excel.create({ font? })` | 新しいブック。最初の `addSheet` が既定のシートを置き換える |
 | `book.sheets[0]` / `book.sheets["名前"]` / `book.sheet(名前か番号)` | シート（無ければ `undefined` / `null`）。大文字小文字・空白・全角半角の違いは許す |
 | `book.sheetNames` | シート名の配列 |
 | `book.addSheet(name)` / `book.removeSheet(name)` / `book.copySheet(sheet, name?)` | 追加・削除・コピー（元の後ろに） |
 | `book.save()` / `book.save(p)` | 上書き保存 / 別名保存 |
 | `book.close()` | 閉じる（メモリ解放） |
 | `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | PDF に書き出す（「PDF 出力」） |
-| `workbooks.readVBA(p)` | マクロブックの VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、なければ `null`。`text` は Markdown |
-| `workbooks.columnName(3)` → `"C"`、`workbooks.cellName(2, 3)` → `"C2"` | 番地の変換 |
+| `excel.readVBA(p)` | マクロブックの VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、なければ `null`。`text` は Markdown |
+| `excel.columnName(3)` → `"C"`、`excel.cellName(2, 3)` → `"C2"` | 番地の変換 |
 
 ### シートの読み取り
 
 | API | 説明 |
 |---|---|
-| `sheet.toObjects({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行（既定 1）。`header: 0, columns: [...]` で見出しなし |
+| `sheet.rows({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行（既定 1）。`header: 0, columns: [...]` で見出しなし |
 | `sheet.toArrays({ text })` | 2 次元配列（0 始まり）。`text: true` で表示の文字列 |
 | `sheet.cell("B2")` / `sheet.cell(行, 列)` | セル（1 から） |
 | `cell.value` | 値: number / string / boolean / Date / null |
@@ -153,9 +153,11 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 | `cell.formula` | `"=SUM(A1:A3)"` か `null` |
 | `cell.phonetic` | ふりがな（値の後に代入） |
 | `cell.note` / `cell.comment` | メモ / コメント（`addComment`） |
-| `sheet.getValue("B2")` / `sheet.setValue("B2", v)` | 値の読み書き |
 | `sheet.range("A1:C3").values` | 範囲の 2 次元配列（代入で書く） |
-| `sheet.rowCount` / `sheet.dimension` | 最終行 / 範囲 |
+| `sheet.rowCount` / `sheet.columnCount` / `sheet.dimension` | 最終行 / 最終列 / 範囲 |
+| `sheet.merges` / `sheet.frozen` / `sheet.filter` | 結合範囲の配列 / 固定 `{ rows, columns }` か `null` / フィルターの範囲か `null` |
+| `sheet.getStyle("A1")` / `sheet.getRowHeight(1)` | 書式（`setStyle` と同じ形）/ 行の高さ |
+| `sheet.hidden` | 非表示（代入で切り替え） |
 | `sheet.name` | シート名（代入で変更） |
 
 - 結合セルの値は左上のセルにだけある。
@@ -184,12 +186,12 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 ### 書式
 
 ```js
-sheet.style("A1:D1", { bold: true, color: "#FFFFFF", background: "#305496", align: "center" });
-sheet.cell("D10").style({ font: { size: 14, bold: true }, format: "¥#,##0", border: { top: "double" } });
-sheet.range("A3:D10").border({ outline: "medium", inside: { style: "thin", color: "#BFBFBF" } });
+sheet.setStyle("A1:D1", { bold: true, color: "#FFFFFF", background: "#305496", align: "center" });
+sheet.cell("D10").setStyle({ fontSize: 14, bold: true, format: "¥#,##0", border: { top: "double" } });
+sheet.range("A3:D10").setStyle({ border: { outline: "medium", inside: { style: "thin", color: "#BFBFBF" } } });
 sheet.merge("A1:D1");             // セル結合（unmerge で解除）
 sheet.freeze("A2");               // 1 行目を固定（"B2" で 1 行目と A 列）
-sheet.autoFilter("A3:D10");       // フィルター
+sheet.autoFilter("A3:D10");       // フィルター（null で外す）
 sheet.autoFit();                  // 列幅を内容に合わせる
 sheet.setColumnWidth("A:C", 16);  // 列幅（文字数）
 sheet.setRowHeight(1, 30);        // 行の高さ（ポイント）
@@ -197,13 +199,13 @@ sheet.setRowHeight(1, 30);        // 行の高さ（ポイント）
 
 | 項目 | 指定 |
 |---|---|
-| 文字 | `bold` `italic` `underline` `strike` `color` `fontSize` `fontName`、または `font: { name, size, bold, italic, color }` |
+| 文字 | `bold` `italic` `underline` `strike` `color` `fontSize` `fontName` |
 | 塗り | `background: "#DDEBF7"`（`null` で塗りなし） |
 | 配置 | `align`（`left` `center` `right`）、`valign`（`top` `center` `bottom`）、`wrap: true`（折り返し） |
 | 表示形式 | `format`: `"#,##0"` `"#,##0.00"` `"0.0%"` `"¥#,##0"` `"yyyy/m/d"` `"yyyy年m月d日"` `"h:mm"` `"@"`（文字列） |
 | 罫線 | `border: "thin"`（全セルの上下左右）、または `{ outline, inside, horizontal, vertical, top, bottom, left, right }`。線種 `"thin"` `"medium"` `"thick"` `"double"` `"dashed"` `"dotted"`、色付きは `{ style: "thin", color: "#999999" }` |
 
-色は `"#RRGGBB"` か `red` などの色名。書式は既存の書式に重ねて適用される（`{ replace: true }` で置き換え）。
+色は `"#RRGGBB"` か `red` などの色名。書式は既存の書式に重ねて適用される（`{ replace: true }` で置き換え）。入れ子のキー（`font` `fill` など）はない。
 
 ## CSV
 
@@ -442,7 +444,7 @@ d.toDate();                                      // Date に戻す
 const handles = await showOpenFilePicker({ multiple: true, types: [{ description: "CSV", accept: [".csv", ".tsv", ".txt"] }] });
 if (handles.length === 0) exit();
 
-const book = workbooks.create();
+const book = excel.create();
 for (const h of handles) {
   const rows = csv.read(h);
   const name = path.basename(h.name, path.extname(h.name)).replace(/[\\\/?*\[\]:]/g, "_").slice(0, 31);
@@ -460,9 +462,9 @@ shell.showItemInFolder(dest);
 ```js
 const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx"] }] });
 if (!h) exit();
-const book = workbooks.open(h);
+const book = excel.open(h);
 const sheet = book.sheets[0];
-const rows = sheet.toObjects();
+const rows = sheet.rows();
 const key = prompt("分ける列の名前", Object.keys(rows[0] ?? {})[0] ?? "");
 if (!key) exit();
 
@@ -470,7 +472,7 @@ const outDir = path.join(path.dirname(h), "分割");
 fs.mkdir(outDir);
 const groups = Object.groupBy(rows, (r) => String(r[key] ?? "(空欄)"));
 for (const [name, list] of ui.withProgress(Object.entries(groups), "分割中")) {
-  const out = workbooks.create();
+  const out = excel.create();
   out.addSheet(sheet.name).write(list, { table: true });
   out.save(path.join(outDir, `${name.replace(/[\\\/:*?"<>|]/g, "_")}.xlsx`));
 }
@@ -492,11 +494,11 @@ const v = await ui.form({
 });
 if (!v) exit();
 
-const rows = workbooks.open(v.list).sheets[0].toObjects();
+const rows = excel.open(v.list).sheets[0].rows();
 const safe = (s) => String(s ?? "").replace(/[\\\/:*?"<>|]/g, "_");  // ファイル名に使えない文字を置き換える
 let count = 0;
 for (const r of ui.withProgress(rows, "作成中")) {
-  const book = workbooks.open(v.template);   // 毎回ひな形を開き直す
+  const book = excel.open(v.template);       // 毎回ひな形を開き直す
   const ws = book.sheets[0];
   ws.cell("B3").value = r.顧客名;
   ws.cell("B4").value = r.住所;
@@ -523,7 +525,7 @@ const v = await ui.form({
 });
 if (!v) exit();
 
-const load = (h) => h.name.toLowerCase().endsWith(".csv") ? csv.read(h) : workbooks.open(h).sheets[0].toObjects();
+const load = (h) => h.name.toLowerCase().endsWith(".csv") ? csv.read(h) : excel.open(h).sheets[0].rows();
 const a = load(v.a);
 const master = new Map(load(v.b).map((r) => [String(r[v.key]).trim(), r]));
 
@@ -535,7 +537,7 @@ const missing = result.filter((r) => r.照合結果 === "なし");
 
 const dest = await showSaveFilePicker({ suggestedName: "突き合わせ結果.xlsx", startIn: v.a });
 if (!dest) exit();
-const out = workbooks.create();
+const out = excel.create();
 out.addSheet("結果").write(result, { table: true });
 out.addSheet("見つからない").write(missing, { table: true });
 out.save(dest);
@@ -548,7 +550,7 @@ shell.showItemInFolder(dest);
 ```js
 const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx"] }] });
 if (!h) exit();
-const rows = workbooks.open(h).sheets[0].toObjects().filter((r) => r.日付 instanceof Date);
+const rows = excel.open(h).sheets[0].rows().filter((r) => r.日付 instanceof Date);
 
 const ym = (d) => dayjs(d).format("YYYY-MM");
 const months = [...new Set(rows.map((r) => ym(r.日付)))].sort();
@@ -562,7 +564,7 @@ const table = Object.entries(Object.groupBy(rows, (r) => r.担当 ?? "(未設定
 
 const dest = await showSaveFilePicker({ suggestedName: "月別集計.xlsx", startIn: h });
 if (!dest) exit();
-const out = workbooks.create();
+const out = excel.create();
 const style = Object.fromEntries([...months, "合計"].map((m) => [m, { format: "#,##0" }]));
 out.addSheet("月別").write(table, { table: true, columnStyles: style });
 out.save(dest);
@@ -579,7 +581,7 @@ if (targets.length === 0) exit();
 
 const created = [];
 for (const h of ui.withProgress(targets, "変換中")) {
-  const book = workbooks.open(h);
+  const book = excel.open(h);
   for (const sheet of book.sheets) {
     const dest = path.join(path.dirname(h), `${path.basename(h.name, path.extname(h.name))}_${sheet.name}.csv`);
     csv.write(dest, sheet.toArrays({ text: true }), { encoding: "cp932" });

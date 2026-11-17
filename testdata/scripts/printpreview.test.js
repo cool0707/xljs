@@ -18,17 +18,17 @@ deepEqual(await pb.printPreview(), { margin: { top: 19.1, right: 6.4, bottom: 19
 deepEqual(await pb.printPreview(), { sheets: ["印刷範囲"] }, "sheets");
 // 7: the settings chosen by the script; a sheet has no "sheets".
 const one = pb.sheet("一覧");
-deepEqual(await one.printPreview({}, { settings: ["blackAndWhite", "gridLines", "sheets"] }), { blackAndWhite: true }, "black and white");
+deepEqual(await one.printPreview({ preview: { settings: ["blackAndWhite", "gridLines", "sheets"] } }), { blackAndWhite: true }, "black and white");
 // 8: custom margins and a scale.
-deepEqual(await one.printPreview({ fitToPage: true }, { settings: true }),
+deepEqual(await one.printPreview({ fitToPage: true, preview: { settings: true } }),
   { margin: { top: 10, right: 5, bottom: 10, left: 5 }, scale: 80, skipBlankPages: "values", condense: 4, charts: false },
   "custom margins, scale, blank pages, condense, charts");
 // Mirrored margins for printing on both sides.
-deepEqual(await one.printPreview({}, { settings: ["mirrorMargins"] }), { mirrorMargins: true }, "mirror margins");
-// No settings: nothing to ask.
+deepEqual(await one.printPreview({ preview: { settings: ["mirrorMargins"] } }), { mirrorMargins: true }, "mirror margins");
+// No settings: nothing to ask (the preview options as the second argument: the earlier form).
 deepEqual(await one.printPreview({ landscape: false }, { settings: false }), { landscape: false }, "no settings");
-await rejects(() => pb.printPreview({}, { settings: ["paper", "colour"] }), /colour/, "unknown setting");
-await rejects(() => pb.printPreview({}, { settings: "paper" }), /settings/, "settings not an array");
+await rejects(() => pb.printPreview({ preview: { settings: ["paper", "colour"] } }), /colour/, "unknown setting");
+await rejects(() => pb.printPreview({ preview: { settings: "paper" } }), /settings/, "settings not an array");
 
 // 9: toPdf with a preview: the PDF with the settings chosen (the mock logs it).
 const out = await pb.toPdf("preview.pdf", { preview: { settings: ["scaling"], ok: "出力" } });

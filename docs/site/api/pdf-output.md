@@ -6,7 +6,7 @@ api: PrintOptions, PrintPages, PrintPreviewSetting, PrintPreviewOptions, Printer
 Excel がなくても、印刷したときと同じページで PDF にできる（Windows の WebView2 を使う。コンソール・mock では使えない）。
 
 ```js
-const book = workbooks.open("請求書.xlsx");
+const book = excel.open("請求書.xlsx");
 await book.toPdf("請求書.pdf");                                  // 非表示でないすべてのシート
 await book.toPdf("一覧.pdf", { sheets: ["一覧"], fitToWidth: 1 }); // 横 1 ページに収める
 await book.sheets["明細"].toPdf("明細.pdf", { paper: "A4", landscape: true, margin: 10 });
@@ -25,7 +25,7 @@ await xljs.htmlToPdf("<h1>報告書</h1><p>本文</p>", "報告書.pdf", { paper
 ダイアログを出さずにプリンターで印刷できる（Windows の WebView2 を使う）。ページは `toPdf` と同じ。
 
 ```js
-const book = workbooks.open("請求書.xlsx");
+const book = excel.open("請求書.xlsx");
 await book.print();                                                    // 既定のプリンター・プリンターの設定のまま
 await book.print({ duplex: "long", copies: 2, mirrorMargins: true });   // 両面（長辺綴じ）で 2 部、綴じしろを内側に
 await book.sheets["明細"].print({ printer: "経理部 複合機", color: false });
@@ -45,7 +45,7 @@ console.log(xljs.printers().map((p) => p.name));                       // この
 Excel の印刷プレビューのように、ページを画面に出して設定を変えてもらってから PDF にできる。
 
 ```js
-const book = workbooks.open("請求書.xlsx");
+const book = excel.open("請求書.xlsx");
 // プレビューを出してから PDF に（キャンセルなら null）
 const path = await book.toPdf("請求書.pdf", { preview: true });
 if (!path) exit();

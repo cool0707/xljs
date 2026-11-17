@@ -11,7 +11,7 @@ if (!target) {
   if (!target) exit(); // キャンセル
 }
 
-const book = workbooks.open(target);
+const book = excel.open(target);
 const pages = book.printPages() ?? [];
 if (pages.length === 0) {
   alert(`${target.name} には印刷するものがありません。`);

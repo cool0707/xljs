@@ -105,7 +105,7 @@ const r3 = await ui.form({
   title: "ボタン",
   fields: [{ name: "n", type: "number", required: true }, { name: "memo" }],
   buttons: [
-    { label: "読込", validate: false, onClick(values, form) { clicks.push("load:" + values.n); form.setValue("n", 7); form.setValue("memo", "loaded"); } },
+    { label: "読込", validate: false, onClick(values, form) { clicks.push("load:" + values.n); form.setValue("n", 7); form.setValue("memo", "loaded"); equal(values.n, 7, "setValue updates values"); } },
     { label: "確認", onClick(values, form) { clicks.push("check:" + values.n); form.log("checked"); } },
     { label: "完了", close: true, onClick(values) { clicks.push("finish:" + values.memo); } },
   ],

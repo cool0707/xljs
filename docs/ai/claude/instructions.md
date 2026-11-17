@@ -55,16 +55,16 @@ const list = dir.walk("*.xlsx").toArray();       // サブフォルダも含む�
 const text = fs.readText(list[0]);               // UTF-8 / Shift_JIS 自動判定
 path.join(path.dirname(list[0]), "出力.xlsx");
 
-const book = workbooks.open(list[0]);
+const book = excel.open(list[0]);
 const sheet = book.sheets["明細"] ?? book.sheets[0];
-const rows = sheet.toObjects();                  // 1 行目が見出しのオブジェクト配列（{ header: 3 }）
+const rows = sheet.rows();                       // 1 行目が見出しのオブジェクト配列（{ header: 3 }）
 sheet.cell("B2").value;                          // number / string / boolean / Date / null
 book.close();
 
-const out = workbooks.create();
+const out = excel.create();
 const ws = out.addSheet("集計");
 ws.write(rows, { table: true, columnStyles: { 金額: { format: "#,##0" } } });
-ws.style("A1:D1", { bold: true, background: "#305496", color: "#FFFFFF" });
+ws.setStyle("A1:D1", { bold: true, background: "#305496", color: "#FFFFFF" });
 
 const data = csv.read(list[0]);                  // 数値・日付は変換、空欄は null
 csv.write("出力.csv", data, { encoding: "cp932" }); // 既定は BOM 付き UTF-8
@@ -96,9 +96,9 @@ await ui.form({
     const rows = [];
     for (const h of form.withProgress(v.src.walk("*.xlsx").toArray())) {
       try {
-        const book = workbooks.open(h);
+        const book = excel.open(h);
         const sheet = book.sheets[v.sheet];
-        if (sheet) for (const r of sheet.toObjects()) rows.push({ ファイル: h.relativePath, ...r });
+        if (sheet) for (const r of sheet.rows()) rows.push({ ファイル: h.relativePath, ...r });
         else form.error(`${h.relativePath}: 「${v.sheet}」シートがありません`);
         book.close();
       } catch (e) {
@@ -106,7 +106,7 @@ await ui.form({
       }
     }
     if (rows.length === 0) throw new Error("データが見つかりませんでした");
-    const out = workbooks.create();
+    const out = excel.create();
     out.addSheet(v.sheet).write(rows, { table: true });
     out.save(v.out);
     form.log(`${rows.length} 行をまとめました`);

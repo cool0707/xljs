@@ -12,7 +12,7 @@ xljs の PDF 出力と PDF の編集です。基本の API（ファイル・Exce
 Excel がなくても、印刷したときと同じページで PDF にできる（Windows の WebView2 を使う。コンソール・mock では使えない）。
 
 ```js
-const book = workbooks.open("請求書.xlsx");
+const book = excel.open("請求書.xlsx");
 await book.toPdf("請求書.pdf");                                  // 非表示でないすべてのシート
 await book.toPdf("一覧.pdf", { sheets: ["一覧"], fitToWidth: 1 }); // 横 1 ページに収める
 await book.sheets["明細"].toPdf("明細.pdf", { paper: "A4", landscape: true, margin: 10 });

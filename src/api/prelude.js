@@ -1412,6 +1412,12 @@
     return /\.(csv|tsv)$/i.test(String(p)) ? "utf8bom" : "utf8";
   }
 
+  /** Writes text to a file. options: an encoding, or { encoding, append }. */
+  function writeTextAt(path, text, options) {
+    const o = options !== null && typeof options === "object" ? options : { encoding: options };
+    native.fsWriteText(path, String(text), textEncodingFor(path, o.encoding), !!o.append);
+  }
+
   class FileSystemFileHandle extends FileSystemHandle {
     constructor(path, relativePath) { super("file", path, relativePath); }
     async getFile() {
@@ -1427,8 +1433,10 @@
     stat() { return native.fsStat(this._path); }
     readText(encoding = "auto") { return native.fsReadText(this._path, encoding); }
     readBytes() { return native.fsReadBytes(this._path); }
-    writeText(text, encoding) { native.fsWriteText(this._path, String(text), textEncodingFor(this._path, encoding), false); return this; }
-    appendText(text, encoding) { native.fsWriteText(this._path, String(text), textEncodingFor(this._path, encoding), true); return this; }
+    /** options: an encoding, or { encoding, append } */
+    writeText(text, options) { writeTextAt(this._path, text, options); return this; }
+    /** writeText(text, { append: true }) (not documented). */
+    appendText(text, encoding) { writeTextAt(this._path, text, { encoding, append: true }); return this; }
     writeBytes(data) { native.fsWriteBytes(this._path, toUint8(data), false); return this; }
   }
 
@@ -1588,8 +1596,10 @@
     isFile: (p) => { const s = native.fsStat(toPath(p)); return !!s && s.isFile; },
     isDirectory: (p) => { const s = native.fsStat(toPath(p)); return !!s && s.isDirectory; },
     readText: (p, encoding = "auto") => native.fsReadText(toPath(p), encoding),
-    writeText: (p, text, encoding) => native.fsWriteText(toPath(p), String(text), textEncodingFor(toPath(p), encoding), false),
-    appendText: (p, text, encoding) => native.fsWriteText(toPath(p), String(text), textEncodingFor(toPath(p), encoding), true),
+    /** options: an encoding, or { encoding, append } */
+    writeText: (p, text, options) => writeTextAt(toPath(p), text, options),
+    /** writeText(p, text, { append: true }) (not documented). */
+    appendText: (p, text, encoding) => writeTextAt(toPath(p), text, { encoding, append: true }),
     readBytes: (p) => native.fsReadBytes(toPath(p)),
     writeBytes: (p, data) => native.fsWriteBytes(toPath(p), toUint8(data), false),
     /** Reads a JSON file (path, handle, File or Blob). opts: { encoding = "auto", dates = false } */
@@ -1612,12 +1622,15 @@
       const text = Array.from(rows || []).map((r) => jsonStringify(r, opts)).join("\n") + "\n";
       native.fsWriteText(toPath(dest), text, opts.encoding || "utf8", !!opts.append);
     },
-    list: (p = ".", opts = {}) => native.fsReadDir(toPath(p), !!opts.hidden).map((e) => e.name),
+    /** The direct children as handles (as dir.list()). */
+    list: (p = ".", opts = {}) => new FileSystemDirectoryHandle(toPath(p))._list(opts),
     walk: (p, opts) => walkEntries(toPath(p), opts),
+    /** walk(cwd, pattern) as an array (not documented). */
     glob: (pattern, opts = {}) => walkEntries(opts.cwd ? toPath(opts.cwd) : native.fsCwd(), { glob: pattern, exclude: opts.exclude, hidden: opts.hidden }).toArray(),
     mkdir: (p) => native.fsMkdir(toPath(p)),
     remove: (p, opts = {}) => native.fsRemove(toPath(p), !!opts.recursive),
     rename: (from, to) => native.fsRename(toPath(from), toPath(to)),
+    /** Alias of rename() (not documented). */
     move: (from, to) => native.fsRename(toPath(from), toPath(to)),
     copy: (from, to) => native.fsCopy(toPath(from), toPath(to)),
     cwd: () => native.fsCwd(),
@@ -1750,8 +1763,10 @@
   const linkPath = (x) => (typeof x === "string" ? x : toPath(x));
   shellObj.readShortcutLink = (p) => JSON.parse(native.shellReadShortcut(toPath(p)));
   shellObj.writeShortcutLink = (p, operation, options) => {
-    if (operation !== null && typeof operation === "object") [operation, options] = ["create", operation];
+    // writeShortcutLink(path, { mode, ... }); the operation as the second argument is the earlier form (not documented).
+    if (operation !== null && typeof operation === "object") [operation, options] = [operation.mode, operation];
     const o = Object.assign({}, options || {});
+    delete o.mode;
     for (const k of ["target", "cwd", "icon"]) if (o[k] !== undefined && o[k] !== null) o[k] = linkPath(o[k]);
     for (const k of ["args", "description", "windowState", "hotkey"]) if (o[k] !== undefined && o[k] !== null) o[k] = String(o[k]);
     if (o.iconIndex !== undefined && o.iconIndex !== null) o.iconIndex = Math.trunc(Number(o.iconIndex)) || 0;
@@ -1863,6 +1878,7 @@
   };
   shellObj.spawn = (command, args, options) => new ChildProcess(native.procSpawn(...procSpec("shell.spawn()", command, args, options)));
   defineGlobal("ChildProcess", ChildProcess);
+  // Aliases (not documented).
   shellObj.showInFolder = shellObj.showItemInFolder;
   shellObj.open = (target) => (isURL(target) ? shellObj.openExternal(target) : shellObj.openPath(target));
   defineGlobal("shell", shellObj);
@@ -1905,10 +1921,8 @@
       lastCancelled = false;
     }
     get total() { return this._total; }
-    set total(n) { this._total = Math.max(0, Math.floor(Number(n) || 0)); this._push(); }
     get done() { return this._done; }
     get message() { return this._message; }
-    set message(m) { this._message = String(m); this._push(); }
     get cancelled() {
       if (this._closed) return lastCancelled;
       const c = this._n.cancelled();
@@ -1916,9 +1930,11 @@
       return c;
     }
     _push() { if (!this._closed) this._n.update(this._done, this._total, this._message); }
-    /** Sets the number of completed items and optionally the message. */
-    update(done, message) {
+    /** update(done, total?, message?) or update(done, message): as the form's progress(). */
+    update(done, total, message) {
+      if (typeof total === "string") { message = total; total = undefined; }
       this._done = Math.max(0, Math.floor(Number(done) || 0));
+      if (total !== undefined && total !== null) this._total = Math.max(0, Math.floor(Number(total) || 0));
       if (message !== undefined) this._message = String(message);
       this._push();
       return this;
@@ -3076,12 +3092,16 @@
       f.chart = chartOf(chartPatch(f.chart.spec, spec));
       this._i.chart(f);
     }
-    /** Sets the value of a field (as its default would be given). */
+    /** Sets the value of a field (as its default would be given); the handler's values follow. */
     setValue(name, value) {
       const f = this._i.fields.find((x) => x.name === String(name));
       if (!f) throw new TypeError(T("form.noField", name));
-      this._i.setValue(f, toWire(f, value));
+      const w = toWire(f, value);
+      this._i.setValue(f, w);
+      if (this._values && f.name in this._values) this._values[f.name] = fromWire(f, w);
     }
+    /** The values given to the handler, which setValue keeps up to date. */
+    _bind(values) { define(this, "_values", values); return values; }
     /** Disables (grays out) a field, or enables it with false; replaces its disabled option. */
     setDisabled(name, disabled = true) {
       const f = this._i.fields.find((x) => x.name === String(name));
@@ -3388,7 +3408,7 @@
         if (f.onChange && !(await checkField(fields, f, wire))) {
           const ctx = promptContext(o, fields, wire);
           try {
-            await f.onChange(fromWire(f, wire[f.name]), rawValues(fields, wire), ctx);
+            await f.onChange(fromWire(f, wire[f.name]), ctx._bind(rawValues(fields, wire)), ctx);
           } finally {
             ctx._i.close();
           }
@@ -3403,7 +3423,7 @@
       if (b && b.tool) {
         const ctx = promptContext(o, fields, wire);
         try {
-          await b.onClick(rawValues(fields, wire), ctx);
+          await b.onClick(ctx._bind(rawValues(fields, wire)), ctx);
         } finally {
           ctx._i.close();
         }
@@ -3423,7 +3443,7 @@
       if (handler) {
         const ctx = promptContext(o, fields, wire);
         try {
-          await handler(c.values, ctx);
+          await handler(ctx._bind(c.values), ctx);
           ok = !ctx.cancelled;
         } catch (e) {
           ok = false;
@@ -3516,8 +3536,7 @@
       state() {}, // asked again with the fields as they are
       progress(done, total, message) {
         if (!p) p = new Progress({ title: o.title, total: total || 0 });
-        else if (total !== undefined) p.total = total;
-        p.update(done, message);
+        p.update(done, total, message);
       },
       log: (text, level) => (level === "error" ? err : out)(text),
       cancelled: () => (p ? p.cancelled : false),
@@ -3883,7 +3902,7 @@
               }
               const ctx = windowContext(page, fields, wire, sets, refresh);
               try {
-                await b.onClick(rawValues(fields, wire), ctx);
+                await b.onClick(ctx._bind(rawValues(fields, wire)), ctx);
               } catch (e) {
                 if (!(e instanceof FormCancel) && !page.n.isClosed()) page.send({ type: "formError", error: errorText(e).split("\n")[0] });
               }
@@ -3933,7 +3952,7 @@
       async function changed(f) {
         const ctx = windowContext(page, fields, wire, sets, refresh);
         try {
-          await f.onChange(fromWire(f, wire[f.name]), rawValues(fields, wire), ctx);
+          await f.onChange(fromWire(f, wire[f.name]), ctx._bind(rawValues(fields, wire)), ctx);
         } catch (e) {
           if (!(e instanceof FormCancel) && !page.n.isClosed()) {
             page.send({ type: "fieldError", field: f.name, error: errorText(e).split("\n")[0] });
@@ -3950,7 +3969,7 @@
         const ctx = windowContext(page, fields, wire, sets, refresh);
         let done;
         try {
-          outputs = outputsOf(await handler(values, ctx));
+          outputs = outputsOf(await handler(ctx._bind(values), ctx));
           done = { type: "done", ok: true, cancelled: ctx.cancelled, output: outputs.length > 0 };
         } catch (e) {
           done = e instanceof FormCancel ? { type: "done", ok: true, cancelled: true, output: false }
@@ -4212,13 +4231,16 @@
     return out;
   }
 
-  /** What ui.table returns when nothing is selected: the window, closed and close(). */
+  /** What ui.table returns when nothing is selected: the window, closed, close() and update(rows). */
   class TableView {
-    constructor(closed, close) {
+    constructor(closed, close, update) {
       define(this, "closed", closed);
       define(this, "_close", close);
+      define(this, "_update", update);
     }
     close() { this._close(); }
+    /** Replaces the rows (and the columns, if given) shown. */
+    update(rows, columns) { this._update(rows, columns); return this; }
   }
 
   function tableTexts() {
@@ -4263,17 +4285,22 @@
     const t = options.title === undefined ? title() : String(options.title);
     const titleBar = customTitleBar(options.titleBar);
     const formats = tableFormats(options.formats, cols, "ui.table");
-    if (native.supportsWindows) return tableWindow(data, cols, sel, t, Object.assign({}, options, { titleBar, formats }));
+    if (native.supportsWindows) return tableWindow(data, cols, sel, t, Object.assign({}, options, { titleBar, formats, rawFormats: options.formats }));
     const text = (v) => { const w = cellWire(v); return w === null ? "" : String(w); };
-    const picked = native.uiTable(JSON.stringify({
+    const print = (data, cols) => native.uiTable(JSON.stringify({
       title: t, select: sel, columns: cols.map((c) => c.label), rows: data.map((r) => cols.map((c) => text(c.get(r)))),
     }));
-    if (!sel) return new TableView(Promise.resolve(), () => {});
+    const picked = print(data, cols);
+    // Console and mock: update() prints the table again.
+    if (!sel) return new TableView(Promise.resolve(), () => {}, (rows, columns) => {
+      const d = Array.from(rows || []);
+      print(d, tableColumns(d, columns === undefined ? options.columns : columns));
+    });
     return Promise.resolve((picked || []).filter((i) => i >= 0 && i < data.length).map((i) => data[i]));
   }
 
   function tableWindow(data, cols, sel, t, options) {
-    let picked = [], answered = false;
+    let picked = [], answered = false, shown = false;
     const page = openPage("table.html", {
       title: t, width: Number(options.width) || 960, height: Number(options.height) || 600, fixedSize: options.resizable === false,
       titleBar: options.titleBar, icon: faClass(options.icon),
@@ -4282,22 +4309,10 @@
 
     async function handle(m) {
       switch (m.type) {
-        case "ready": {
-          const fm = options.formats;
-          page.send({
-            type: "init", select: sel, total: data.length, texts: tableTexts(), dblclick: !!options.onDoubleClick,
-            columns: cols.map((c) => ({ label: c.label, width: c.width })), formats: fm ? fm.wire : undefined,
-          });
-          const chunk = 2000;
-          for (let i = 0; i < data.length; i += chunk) {
-            const part = data.slice(i, i + chunk);
-            page.send({
-              type: "rows", rows: part.map((r) => cols.map((c) => cellWire(c.get(r)))),
-              hits: fm && fm.fns.length ? part.map((r, k) => formatHits(fm, cols, r, i + k)) : undefined,
-            });
-          }
+        case "ready":
+          shown = true;
+          sendAll();
           break;
-        }
         case "ok": {
           let chosen = sel ? Array.from(m.indices || []).filter((i) => i >= 0 && i < data.length) : [];
           if (sel === "single") chosen = chosen.slice(0, 1);
@@ -4357,7 +4372,30 @@
       page.send({ type: "saved", path: h.path });
     }
 
-    if (!sel) return new TableView(page.n.closed, () => page.n.close());
+    /** Sends the table (init, then the rows in chunks). */
+    function sendAll() {
+      const fm = options.formats;
+      page.send({
+        type: "init", select: sel, total: data.length, texts: tableTexts(), dblclick: !!options.onDoubleClick,
+        columns: cols.map((c) => ({ label: c.label, width: c.width })), formats: fm ? fm.wire : undefined,
+      });
+      const chunk = 2000;
+      for (let i = 0; i < data.length; i += chunk) {
+        const part = data.slice(i, i + chunk);
+        page.send({
+          type: "rows", rows: part.map((r) => cols.map((c) => cellWire(c.get(r)))),
+          hits: fm && fm.fns.length ? part.map((r, k) => formatHits(fm, cols, r, i + k)) : undefined,
+        });
+      }
+    }
+
+    if (!sel) return new TableView(page.n.closed, () => page.n.close(), (rows, columns) => {
+      data = Array.from(rows || []);
+      if (columns !== undefined) options.columns = columns;
+      cols = tableColumns(data, options.columns);
+      options.formats = tableFormats(options.rawFormats, cols, "ui.table");
+      if (shown && !page.n.isClosed()) sendAll();
+    });
     return page.n.closed.then(() => {
       // (recording a test case) Closed without choosing.
       if (!answered && native.recording) native.testRecord("table", "null", "{}");
@@ -5221,6 +5259,10 @@
    * settings; resolves to the options chosen, or null when cancelled.
    * forPdf: the button says that a PDF is made.
    */
+  /** The preview options of printPreview: options.preview (an object), or the earlier second argument. */
+  const previewOf = (options, preview) => (preview !== undefined ? preview
+    : options && typeof options === "object" && options.preview && typeof options.preview === "object" ? options.preview : undefined);
+
   async function printPreview(book, options, preview, sheets, mode) {
     if (options !== undefined && options !== null && (typeof options !== "object" || Array.isArray(options))) throw new TypeError(T("pdf.badOptions"));
     if (preview !== undefined && preview !== null && (typeof preview !== "object" || Array.isArray(preview))) throw new TypeError(T("preview.badPreview"));
@@ -6057,7 +6099,8 @@
     toHtml(options) { return printLayout(this._book, options, [this._name]).html; }
 
     printPages(options) { return printPages(this._book, options, [this._name])[0] ?? null; }
-    printPreview(options, preview) { return printPreview(this._book, options, preview, [this._name]); }
+    /** printPreview({ ...options, preview: { settings, title, ok } }); preview as the second argument is the earlier form. */
+    printPreview(options, preview) { return printPreview(this._book, options, previewOf(options, preview), [this._name]); }
     print(options) { return printBook(this._book, options, [this._name]); }
     /** Writes the sheet as Excel would print it to a PDF file (WebView2); resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this._book, dest, options, [this._name]); }
@@ -6187,7 +6230,7 @@
     toHtml(options) { return printLayout(this, options).html; }
 
     printPages(options) { return printPages(this, options); }
-    printPreview(options, preview) { return printPreview(this, options, preview, undefined); }
+    printPreview(options, preview) { return printPreview(this, options, previewOf(options, preview), undefined); }
     print(options) { return printBook(this, options); }
     /** Writes the sheets (every visible one, or options.sheets) as Excel would print them to a PDF file; resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this, dest, options); }

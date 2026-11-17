@@ -20,7 +20,7 @@ equal(await pb.print({ preview: true }), false, "preview cancelled: nothing prin
 // The simple printer cannot print on both sides: duplex is left out.
 equal(await pb.print({ preview: { settings: ["printer", "duplex", "color"] } }), true, "preview: another printer");
 // printPreview with the printer's settings: options for print.
-deepEqual(await pb.printPreview({}, { settings: ["copies", "color"] }), { copies: 5, color: false }, "printPreview: the printer's settings");
+deepEqual(await pb.printPreview({ preview: { settings: ["copies", "color"] } }), { copies: 5, color: false }, "printPreview: the printer's settings");
 // toPdf's preview never shows the printer's settings (nothing to ask here).
 ok((await pb.toPdf("p.pdf", { preview: { settings: ["printer", "copies"] } })).endsWith("p.pdf"), "toPdf: no printer settings");
 

@@ -21,7 +21,7 @@ equal(d.runAsAdmin, false);
 equal(d.path, p);
 
 // update changes only what is given.
-shell.writeShortcutLink(p, "update", { args: "", runAsAdmin: true, icon: file, iconIndex: 3 });
+shell.writeShortcutLink(p, { mode: "update", args: "", runAsAdmin: true, icon: file, iconIndex: 3 });
 d = shell.readShortcutLink(fs.file(p));
 equal(d.args, "");
 equal(d.description, "集計表");
@@ -30,12 +30,12 @@ ok(isFile(d.icon), d.icon);
 equal(d.iconIndex, 3);
 
 // replace starts over (the shortcut must exist).
-shell.writeShortcutLink(p, "replace", { target: "売上.xlsx" });
+shell.writeShortcutLink(p, "replace", { target: "売上.xlsx" }); // the earlier form (not documented)
 d = shell.readShortcutLink(p);
 ok(isFile(d.target), d.target);
 equal(d.description, "");
 equal(d.hotkey, "");
-throws(() => shell.writeShortcutLink("ない.lnk", "update", { args: "x" }), /ない\.lnk/);
+throws(() => shell.writeShortcutLink("ない.lnk", { mode: "update", args: "x" }), /ない\.lnk/);
 throws(() => shell.writeShortcutLink("x", { description: "no target" }), /target/);
 throws(() => shell.writeShortcutLink("x", "move", { target: file }), /move/);
 throws(() => shell.writeShortcutLink("x", { target: file, hotkey: "Win+K" }), /Win\+K/);
