@@ -44,6 +44,8 @@ console.log(xljs.printers().map((p) => p.name));                       // この
 
 Excel の印刷プレビューのように、ページを画面に出して設定を変えてもらってから PDF にできる。
 
+<figure class="shot"><img src="../images/home-print.png" alt="印刷プレビュー。左にシート・用紙サイズ・印刷の向き・拡大縮小・余白・白黒印刷・空のページの設定、右に表とグラフが載った横向きの A4 のページ。下に PDF に出力 とキャンセルのボタン" width="1102" loading="lazy"><figcaption><code>book.printPreview</code> の印刷プレビュー（examples/xlsx-print-preview.xljs）。左の設定を変えるとページがすぐに描き直されます。<code>toPdf</code> の <code>preview: true</code> でも同じ画面が出ます。ページの描き方は印刷プレビューなしの <code>toPdf</code> と同じです。</figcaption></figure>
+
 ```js
 const book = excel.open("請求書.xlsx");
 // プレビューを出してから PDF に（キャンセルなら null）

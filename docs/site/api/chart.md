@@ -3,6 +3,8 @@ title: グラフ（ui.chart）
 api: ChartSpec, ChartSpecBase, SeriesChartSpec, GanttChartSpec, ChartType, ChartSeries, ChartAxis, ChartWindowOptions, ChartView, ExcelChart
 ---
 
+<figure class="shot"><img src="../images/home-chart.png" alt="月別の売上を棒グラフ、粗利を折れ線グラフで重ねた 2 軸のグラフ" width="962" loading="lazy"><figcaption>棒と折れ線を組み合わせた 2 軸のグラフ（examples/chart-sales.xljs）。Excel のブックにあるグラフも、このように表示できます。</figcaption></figure>
+
 ```js
 const rows = sheet.rows();                                   // [{ 月: "4月", 売上: 1200, 原価: 800 }, ...]
 ui.chart({ type: "column", data: rows, x: "月", y: ["売上", "原価"], title: "月別売上" }); // 表示するだけ（すぐ次へ進む）
@@ -34,6 +36,8 @@ await ui.form({
   buttons: [{ label: "集計", variant: "primary", async onClick(v, form) { form.chart("g", { data: aggregate() }); } }],
 });
 ```
+
+<figure class="shot"><img src="../images/chart-gantt.png" alt="フォームの中のガントチャート。要件定義・基本設計・詳細設計・実装のバーと前提の矢印、今日の位置の縦線、赤い進捗線（イナズマ線）、青い出来高累計曲線。右上に 今日 と 週 の切り替え" width="960" loading="lazy"><figcaption>フォームの中のガントチャート（examples/chart-gantt.xljs）。バーをドラッグして日付・進捗を変えられ、進捗線と出来高累計曲線を重ねています。</figcaption></figure>
 
 - 種類（`type`）: `column`（縦棒、既定）`bar`（横棒）`line` `area` `scatter` `bubble`（系列に `size`）`histogram`（`bins`）`pie` `donut` `gantt`。`stacked: true` / `"percent"` で積み上げ。
 - `data` は行オブジェクトの配列（`ui.table` と同じ）。`x` を省くと先頭の列、`y` を省くと数値の列すべて。日付の列は時間の軸になる（折れ線・面）。

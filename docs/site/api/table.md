@@ -1,9 +1,11 @@
 ---
-title: 表表示（ui.table）
+title: テーブル（ui.table）
 api: TableOptions, TableSelectOptions, TableColumn, TableFormat, TableView, TableDoubleClickEvent
 ---
 
 PowerShell の `Out-GridView` のように、配列を表で表示します。列見出しのクリックで並べ替え、上の欄で絞り込み（空白区切りで AND）、列の境界のドラッグで幅を変更、Ctrl+C でコピー（タブ区切り）、CSV / Excel に保存できます。数十万行でも表示できます。
+
+<figure class="shot"><img src="../images/home-table.png" alt="顧客一覧のテーブル。顧客コード・顧客名・支店・担当・電話番号・取引開始日の列と、絞り込み欄、コピー・CSV に保存・Excel に保存のボタン。2 行目が選ばれていて、下に OK とキャンセルのボタン" width="902" loading="lazy"><figcaption>行を選んで返すテーブル（<code>selectable: "single"</code>）。表示だけのテーブルでは下のボタンが［閉じる］になります。</figcaption></figure>
 
 ```js
 ui.table(rows, { title: "集計結果", columns: ["顧客名", "件数", "合計"] });   // 表示のみ。すぐに戻る
@@ -25,6 +27,8 @@ const picked = await ui.table(files, { title: "処理するファイル", select
 - **表示する列**: 「この列を非表示」と、列の一覧のチェックで列を隠します。「すべて表示」「初期状態に戻す」（列の表示・固定・幅と並べ替え・列フィルタを最初の状態に）もあります。
 - 列の境界のドラッグで幅を変え、ダブルクリックで内容に合わせます。
 
+<figure class="shot"><img src="../images/table-filter.png" alt="支店の列のフィルタを開いたところ。含む・大阪 の条件で、8 件のうち 2 件が表示され、上に 列フィルタを解除 のボタンが出ている" width="820" loading="lazy"><figcaption>支店の列のフィルタで「大阪」を含む行だけにしたところ。件数は「表示している行 / 全体」になります。</figcaption></figure>
+
 コピーと CSV / Excel への保存は、表示している列を表示している順に、表示している行（並べ替え・絞り込みのあと）を書き出します。
 
 ## 条件付き書式
@@ -45,6 +49,8 @@ ui.table(rows, {
 ```
 
 条件は `equals` `notEquals` `gt` `gte` `lt` `lte` `between: [下限, 上限]` `contains` `notContains` `startsWith` `endsWith` `empty`（すべてを満たすとき）、または `when(value, row, index)` 関数です。書式は `color` `background` `bold` `italic` `underline` `strike` `dataBar`（`true` か色。`{ color, height }` で太さを行の高さに対する割合で指定、既定 0.75）`colorScale`（2 色か 3 色）。フォームの `table` 項目にも同じ `formats` が使えます。
+
+<figure class="shot"><img src="../images/table-formats.png" alt="売上一覧のテーブル。状態が未達の行が赤い背景と赤い文字、金額の列に青いデータバー、達成率の列に赤から黄、緑のカラースケール" width="820" loading="lazy"><figcaption>状態が「未達」の行を赤く（<code>equals</code> と <code>row: true</code>）、金額にデータバー、達成率にカラースケールを付けたテーブル。</figcaption></figure>
 
 行やセルのダブルクリックには `onDoubleClick` で処理を登録できます（ネイティブ UI のみ）。
 

@@ -34,9 +34,9 @@ description: JavaScript / TypeScript のスクリプトで Excel・CSV を処理
 JavaScript のオブジェクト定義だけで、フォーム画面・表・グラフを表示できます。
 
 <div class="gallery">
-<div class="tabs" role="tablist"><button type="button" role="tab" aria-selected="true">フォームアプリ</button><button type="button" role="tab">表</button><button type="button" role="tab">グラフ</button><button type="button" role="tab">印刷プレビュー</button></div>
+<div class="tabs" role="tablist"><button type="button" role="tab" aria-selected="true">フォームアプリ</button><button type="button" role="tab">テーブル</button><button type="button" role="tab">グラフ</button><button type="button" role="tab">印刷プレビュー</button></div>
 <figure role="tabpanel"><img src="images/home-form.png" alt="商品マスターのフォームアプリ。上に検索欄と商品の一覧、下に選んだ商品の入力欄と、新規・削除・保存のボタン" width="820" loading="lazy"><figcaption><code>ui.form</code> の一覧・検索・登録の画面（examples/form-master.xljs）。開いたまま使うアプリも、入力して実行するツールも作れます。→ <a href="api/form.md">フォーム</a></figcaption></figure>
-<figure role="tabpanel" hidden><img src="images/home-table.png" alt="顧客の一覧の表。顧客コード・顧客名・支店・担当などの列と、絞り込み欄、コピー・CSV に保存・Excel に保存のボタン" width="900" loading="lazy"><figcaption><code>ui.table</code> の表（CSV を読んで表示）。並べ替え・絞り込み・列の固定・コピーができ、選んだ行がスクリプトに返ります。→ <a href="api/table.md">表</a></figcaption></figure>
+<figure role="tabpanel" hidden><img src="images/home-table.png" alt="顧客の一覧の表。顧客コード・顧客名・支店・担当などの列と、絞り込み欄、コピー・CSV に保存・Excel に保存のボタン" width="900" loading="lazy"><figcaption><code>ui.table</code> のテーブル（CSV を読んで表示）。並べ替え・絞り込み・列の固定・コピーができ、選んだ行がスクリプトに返ります。→ <a href="api/table.md">テーブル</a></figcaption></figure>
 <figure role="tabpanel" hidden><img src="images/home-chart.png" alt="月別の売上を棒グラフ、粗利を折れ線グラフで重ねた 2 軸のグラフ" width="900" loading="lazy"><figcaption><code>ui.chart</code> のグラフ。Excel のブックにあるグラフもそのまま表示できます（examples/chart-sales.xljs）。→ <a href="api/chart.md">グラフ</a></figcaption></figure>
 <figure role="tabpanel" hidden><img src="images/home-print.png" alt="印刷プレビュー。左に用紙・向き・余白などの設定、右に表とグラフが載った A4 のページ" width="1100" loading="lazy"><figcaption><code>book.printPreview</code> の印刷プレビュー。ブックの印刷の設定どおりのページを確かめてから、印刷や PDF 出力ができます（examples/xlsx-print-preview.xljs）。→ <a href="api/pdf-output.md">PDF 出力・印刷</a></figcaption></figure>
 </div>
