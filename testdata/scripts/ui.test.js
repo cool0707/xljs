@@ -51,6 +51,8 @@ const p = ui.progress({ title: "manual", total: 3 });
 p.update(1, "one");
 p.increment("two");
 equal(p.done, 2);
+p.update(2, 5, "総数も");
+deepEqual([p.done, p.total, p.message], [2, 5, "総数も"], "update(done, total, message)");
 equal(p.cancelled, false);
 p.close();
 p.close(); // idempotent

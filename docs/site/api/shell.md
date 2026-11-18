@@ -8,9 +8,9 @@ api: Shell, shell, RunOptions, RunResult, ProcessIO, ChildProcess, ShortcutOptio
 ```js
 shell.showItemInFolder(dest);                 // 保存したファイルを選択した状態でエクスプローラーを開く
 shell.showItemInFolder([a, b, c]);            // 複数選択（フォルダが違えばフォルダごとに開く）
-shell.openPath("集計.xlsx");                  // 既定のアプリ（Excel など）で開く
-shell.openPath(dir);                          // フォルダを開く
-shell.openExternal("https://example.com/");   // ブラウザで開く
+shell.open("集計.xlsx");                      // 既定のアプリ（Excel など）で開く
+shell.open(dir);                              // フォルダを開く
+shell.open("https://example.com/");           // URL はブラウザで開く
 ```
 
 パス・ハンドル・`File` のどれでも渡せます。mock UI では実際には開かず、ログに出すだけです。
@@ -79,11 +79,11 @@ shell.writeShortcutLink(path.join(desktop, "社内ポータル"), { target: "htt
 const link = shell.readShortcutLink(path.join(desktop, "売上集計.lnk"));
 console.log(link.target, link.args, link.cwd, link.description, link.hotkey);
 
-// 編集: "update" は指定した項目だけ変える（"create" は作り直し、"replace" は既存のものを作り直す）
-shell.writeShortcutLink(path.join(desktop, "売上集計.lnk"), "update", { target: "\\\\server2\\共有\\売上.xlsx" });
+// 編集: mode: "update" は指定した項目だけ変える（"create"（既定）は作り直し、"replace" は既存のものを作り直す）
+shell.writeShortcutLink(path.join(desktop, "売上集計.lnk"), { mode: "update", target: "\\\\server2\\共有\\売上.xlsx" });
 
 // フォルダ内のショートカットのリンク先を一覧にする
 for (const h of fs.dir(desktop).walk({ glob: "*.lnk" })) console.log(h.name, shell.readShortcutLink(h).target);
 ```
 
-Electron の `shell.readShortcutLink` / `shell.writeShortcutLink` と同じ形です（`windowState` `hotkey` `runAsAdmin` と .url は xljs の追加）。`writeShortcutLink` は書いたファイルのパスを返し、失敗すると例外を投げます。リンク先・アイコンの `%SystemRoot%` などの環境変数はそのまま保存され、読み取ると展開された値が返ります（Windows はアイコンの `C:\Windows\...` を `%SystemRoot%\...` として保存しますが、読み取ると元のパスになります）。
+Electron の `shell.readShortcutLink` / `shell.writeShortcutLink` に近い形です（操作は 2 番目の引数ではなく `mode` で指定します。`windowState` `hotkey` `runAsAdmin` と .url は xljs の追加）。`writeShortcutLink` は書いたファイルのパスを返し、失敗すると例外を投げます。リンク先・アイコンの `%SystemRoot%` などの環境変数はそのまま保存され、読み取ると展開された値が返ります（Windows はアイコンの `C:\Windows\...` を `%SystemRoot%\...` として保存しますが、読み取ると元のパスになります）。

@@ -13,7 +13,7 @@ if (targets.length === 0) {
 }
 const created = [];
 for (const h of ui.withProgress(targets, "PDF に変換中")) {
-  const book = workbooks.open(h);
+  const book = excel.open(h);
   const dest = path.join(path.dirname(h), path.basename(h.name, path.extname(h.name)) + ".pdf");
   // 非表示でないすべてのシートを 1 つの PDF に。シートを選ぶなら { sheets: ["請求書"] }
   await book.toPdf(dest);

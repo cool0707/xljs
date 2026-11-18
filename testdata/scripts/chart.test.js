@@ -40,7 +40,7 @@ throws(() => ui.chart({ type: "gantt", data: plan, baseDate: "明日" }), /baseD
 throws(() => ui.chart({ data: rows, progressLine: true }), /progressLine はガントチャート/);
 
 // Excel's charts.
-const book = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "charts.xlsx"));
+const book = excel.open(path.join(xljs.scriptDir, "..", "xlsx", "charts.xlsx"));
 const charts = book.sheets["売上"].charts;
 equal(charts.length, 9);
 const [col, combo, pct, pie, donut, area, d3, radar, line] = charts;
@@ -116,7 +116,7 @@ throws(() => pie.toSpec({ gantt: true }), /ガントチャートとして読め�
 deepEqual(book.sheets["工程"].charts.length, 1);
 deepEqual(book.addSheet("新規").charts, []);
 book.close();
-deepEqual(workbooks.create().addSheet("x").charts, []);
+deepEqual(excel.create().addSheet("x").charts, []);
 
 // A chart field in a form (mock): shown as a table, no value unless an editable Gantt chart.
 const tasks = [{ 名前: "設計", 開始: new Date(2026, 10, 2), 終了: new Date(2026, 10, 6) }];
@@ -127,11 +127,11 @@ const v = await ui.form({
     { name: "g", type: "chart", label: "売上", chart: { data: rows } },
     { name: "t", type: "chart", chart: { type: "gantt", data: tasks, editable: true } },
   ],
-  onSubmit(values, ctx) {
-    ctx.chart("g", { type: "line" });
-    throws(() => ctx.chart("a", {}), /グラフの項目/);
-    throws(() => ctx.chart("g", { type: "x" }), /種類/);
-  },
+  buttons: [{ label: "実行", variant: "primary", onClick(values, form) {
+    form.chart("g", { type: "line" });
+    throws(() => form.chart("a", {}), /グラフの項目/);
+    throws(() => form.chart("g", { type: "x" }), /種類/);
+  } }],
 });
 deepEqual(Object.keys(v), ["a", "t"]);
 equal(v.t[0], tasks[0]);

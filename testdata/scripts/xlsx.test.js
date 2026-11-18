@@ -1,6 +1,6 @@
 import { ok, equal, deepEqual, throws } from "./_assert.js";
 
-const wb = workbooks.create();
+const wb = excel.create();
 equal(wb.path, null);
 deepEqual(wb.sheetNames, ["Sheet1"]);
 const ws = wb.addSheet("売上"); // replaces the untouched default sheet
@@ -16,9 +16,9 @@ equal(ws.rowCount, 4);
 // Cell access by address and (row, column).
 equal(ws.cell("B2").value, "A社");
 equal(ws.cell(3, 3).value, 800.5);
-equal(ws.getValue("D2"), true);
-equal(ws.getValue(4, 1), null);
-const d = ws.getValue("A3");
+equal(ws.cell("D2").value, true);
+equal(ws.cell(4, 1).value, null);
+const d = ws.cell("A3").value;
 ok(d instanceof Date, "date cells come back as Date");
 equal(d.getHours(), 13);
 equal(d.getMinutes(), 30);
@@ -32,11 +32,11 @@ equal(ws.cell("E2").calc(), "12795.5");
 equal(ws.cell("A1").formula, null);
 
 // Strings starting with "=" are text, not formulas.
-ws.setValue("F1", "=not formula");
+ws.cell("F1").value = "=not formula";
 equal(ws.cell("F1").formula, null);
-equal(ws.getValue("F1"), "=not formula");
-ws.setValue("F1", null);
-equal(ws.getValue("F1"), null);
+equal(ws.cell("F1").value, "=not formula");
+ws.cell("F1").value = null;
+equal(ws.cell("F1").value, null);
 
 // More sheets, append, arrays.
 const s2 = wb.addSheet("集計");
@@ -44,11 +44,11 @@ s2.write([["a", "b"], [1, 2]], { start: "B2" });
 deepEqual(s2.toArrays(), [[], [null, "a", "b"], [null, 1, 2]]);
 deepEqual(s2.toArrays({ skipEmpty: true }), [[null, "a", "b"], [null, 1, 2]]);
 s2.append([[3, 4]]);
-equal(s2.getValue("A4"), 3);
+equal(s2.cell("A4").value, 3);
 const s3 = wb.addSheet("tmp");
 s3.append([{ x: 1 }]);
 s3.append([{ x: 2 }]);
-deepEqual(s3.toObjects(), [{ x: 1 }, { x: 2 }]);
+deepEqual(s3.rows(), [{ x: 1 }, { x: 2 }]);
 // Renaming a sheet renames the references to it, as in Excel.
 ws.cell("G1").formula = "=SUM(tmp!A2:A3)+LEN(\"tmp!A1\")";
 s3.name = "tmp 2";
@@ -76,37 +76,37 @@ wb.close();
 throws(() => wb.sheetNames, /閉じ/);
 
 // Re-open from a handle and read objects with typed values.
-const b = await workbooks.open(fs.file("out.xlsx"));
-const rows = b.sheets["売上"].toObjects();
+const b = await excel.open(fs.file("out.xlsx"));
+const rows = b.sheets["売上"].rows();
 equal(rows.length, 3);
 deepEqual(rows[0], { 日付: new Date(2026, 3, 1), 顧客: "A社", 金額: 12000, 確定: true, 合計: null });
 equal(rows[1].金額, 800.5);
 equal(rows[2].日付, null);
 equal(rows[2].金額, -5);
-deepEqual(b.sheet(0).toObjects({ text: true })[0].日付, "2026/4/1");
-deepEqual(b.sheet(0).toObjects({ header: 0, columns: ["d", "c"] })[1], { d: new Date(2026, 3, 1), c: "A社" });
+deepEqual(b.sheet(0).rows({ text: true })[0].日付, "2026/4/1");
+deepEqual(b.sheet(0).rows({ header: 0, columns: ["d", "c"] })[1], { d: new Date(2026, 3, 1), c: "A社" });
 
 // toBlob / open from Blob and File.
 const blob = b.toBlob();
 ok(blob.size > 0 && blob.type.includes("spreadsheetml"));
-const b2 = workbooks.open(blob);
+const b2 = excel.open(blob);
 deepEqual(b2.sheetNames, ["売上", "集計"]);
 const file = await fs.file("out.xlsx").getFile();
-equal(workbooks.open(file).sheet(0).getValue("B2"), "A社");
+equal(excel.open(file).sheet(0).cell("B2").value, "A社");
 
 // Save through a save-picker style handle.
 const dest = fs.file("copy.xlsx");
-b2.sheet(0).setValue("B2", "Z社");
+b2.sheet(0).cell("B2").value = "Z社";
 b2.save(dest);
-equal(workbooks.open("copy.xlsx").sheet(0).getValue("B2"), "Z社");
-throws(() => workbooks.create().save(), /保存先/);
+equal(excel.open("copy.xlsx").sheet(0).cell("B2").value, "Z社");
+throws(() => excel.create().save(), /保存先/);
 
-equal(workbooks.columnName(28), "AB");
-equal(workbooks.cellName(3, 2), "B3");
+equal(excel.columnName(28), "AB");
+equal(excel.cellName(3, 2), "B3");
 
 // Sheet names match ignoring case, surrounding spaces and full/half width
 // when only one sheet fits; exact names win.
-const names = workbooks.create();
+const names = excel.create();
 names.addSheet("明細 ");
 names.addSheet("Data");
 names.addSheet("DATA2");
@@ -119,10 +119,17 @@ equal(names.sheet("none"), null);
 equal(names.sheets.length, 3);
 ok(Array.isArray(names.sheets));
 deepEqual(names.sheets.map((s) => s.name), ["明細 ", "Data", "DATA2"]);
-const twins = workbooks.create();
+const twins = excel.create();
 twins.addSheet("a");
 twins.addSheet("ａ");
 equal(twins.sheets["ａ"].name, "ａ");
 equal(twins.sheet(" A "), null, "ambiguous");
 
+// The earlier names still work (not documented): workbooks, toObjects(), style().
+equal(workbooks, excel);
+const alias = excel.create().addSheet("a");
+alias.write([{ x: 1 }]);
+deepEqual(alias.toObjects(), alias.rows());
+alias.style("A1", { bold: true });
+equal(alias.getStyle("A1").bold, true);
 console.log("xlsx ok");

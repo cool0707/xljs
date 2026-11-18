@@ -12,7 +12,7 @@ xljs の PDF 出力と PDF の編集です。基本の API（ファイル・Exce
 Excel がなくても、印刷したときと同じページで PDF にできる（Windows の WebView2 を使う。コンソール・mock では使えない）。
 
 ```js
-const book = workbooks.open("請求書.xlsx");
+const book = excel.open("請求書.xlsx");
 await book.toPdf("請求書.pdf");                                  // 非表示でないすべてのシート
 await book.toPdf("一覧.pdf", { sheets: ["一覧"], fitToWidth: 1 }); // 横 1 ページに収める
 await book.sheets["明細"].toPdf("明細.pdf", { paper: "A4", landscape: true, margin: 10 });
@@ -25,7 +25,7 @@ await xljs.htmlToPdf("<h1>報告書</h1><p>本文</p>", "報告書.pdf", { paper
 - 値・表示形式・フォント・塗り・罫線・結合・折り返し・回転・画像・図形とテキストボックス（Excel の既定の形すべてとフリーフォーム。影・3-D は描かない）・線と矢印・グラフ（`sheet.charts` で描けるもの）を描く。条件付き書式・SmartArt・Excel 2016 以降のグラフは描かない。自動の改ページの位置は Excel と少し違うことがある。
 - `toHtml(options?)` は同じページを HTML の文字列で返す（グラフは空の枠）。
 - 印刷: `await book.print(options?)` / `sheet.print(options?)` でダイアログなしにプリンターで印刷する（ページは `toPdf` と同じ。印刷したら `true`）。プリンターの設定は `printer`（名前。`xljs.printers()` の `name`）`duplex`（`"none"` `"long"`（長辺綴じ） `"short"`）`copies` `collate` `color`（`false` で白黒）。`preview: true` で先に印刷プレビュー（プリンター・両面・部数も選べる。キャンセルなら `false`）。両面（縦向きの長辺綴じ・横向きの短辺綴じ）では偶数ページの左右の余白が自動で入れ替わる（`mirrorMargins: false` で止める）。
-- 印刷プレビュー: `await book.toPdf(p, { preview: true })` で書き出す前に Excel の印刷プレビューのような画面を出す（キャンセルなら `null` を返し、PDF は作らない）。出す設定は `preview: { settings: ["paper", "landscape", "scaling", "margin", "blackAndWhite"] }` のように選ぶ（ほかに `"sheets"` `"pages"` `"mirrorMargins"` `"gridLines"` `"centerHorizontally"` `"charts"` `"skipBlankPages"` `"condense"`。`true` ですべて、`false` で設定なし。`toPdf` のプレビューは既定で「左右の余白を偶数ページで入れ替える」も出す）。`await book.printPreview(options?, preview?)` / `sheet.printPreview(...)` は設定だけを選んでもらい、変えた設定を重ねた options（キャンセルは `null`）を返す。
+- 印刷プレビュー: `await book.toPdf(p, { preview: true })` で書き出す前に Excel の印刷プレビューのような画面を出す（キャンセルなら `null` を返し、PDF は作らない）。出す設定は `preview: { settings: ["paper", "landscape", "scaling", "margin", "blackAndWhite"] }` のように選ぶ（ほかに `"sheets"` `"pages"` `"mirrorMargins"` `"gridLines"` `"centerHorizontally"` `"charts"` `"skipBlankPages"` `"condense"`。`true` ですべて、`false` で設定なし。`toPdf` のプレビューは既定で「左右の余白を偶数ページで入れ替える」も出す）。`await book.printPreview({ ...options, preview: { settings } })` / `sheet.printPreview(...)` は設定だけを選んでもらい、変えた設定を重ねた options（キャンセルは `null`）を返す。
 
 ## PDF の編集（pdf）
 

@@ -1,12 +1,12 @@
 ---
 title: Excel
-api: Workbooks, workbooks, Workbook, Worksheet, Cell, Range, CellValue, ToObjectsOptions, WriteOptions, CalcResult, CalcSkipped, VBAProject, VBAModule, CellComment, CommentReply, CommentEntry, CommentOptions, CellNote
+api: Excel, excel, Workbook, Worksheet, Cell, Range, CellValue, RowsOptions, WriteOptions, CellStyle, StyleOptions, BorderSpec, BorderSide, BorderStyleName, Color, CalcResult, CalcSkipped, VBAProject, VBAModule, CellComment, CommentReply, CommentEntry, CommentOptions, CellNote
 ---
 
 ```js
-const book = workbooks.open(h);              // パス・ハンドル・File・Blob
+const book = excel.open(h);                  // パス・ハンドル・File・Blob
 const sheet = book.sheets["売上"] ?? book.sheets[0]; // 名前は大文字小文字・前後の空白・全角半角の違いも許す
-const rows = sheet.toObjects();              // [{ 日付: Date, 金額: 1200, ... }]
+const rows = sheet.rows();                   // [{ 日付: Date, 金額: 1200, ... }]
 const grid = sheet.toArrays({ text: true }); // 表示形式を適用した文字列
 
 sheet.cell("B2").value = 100;
@@ -15,16 +15,17 @@ sheet.cell("C10").formula = "=SUM(C2:C9)";
 sheet.append([{ 日付: new Date(), 金額: 500 }]);
 book.save();                                 // 上書き（save(パスやハンドル) で別名保存）
 
-const out = workbooks.create();
+const out = excel.create();
 out.addSheet("集計").write(summary).setColumnWidth("A:C", 16);
 out.save("集計.xlsx");
 ```
 
-- 新しいブック（`workbooks.create()`）の既定フォントは表示言語に合わせます（日本語では Excel と同じ游ゴシック）。`workbooks.create({ font: "Meiryo UI" })` で変更できます。
+- 新しいブック（`excel.create()`）の既定フォントは表示言語に合わせます（日本語では Excel と同じ游ゴシック）。`excel.create({ font: "Meiryo UI" })` で変更できます。
 - 日付の書式が付いた数値セルは `Date` になります（Excel の日付はタイムゾーンを持たないので、ローカル時刻として扱います）。
 - 数式は保存時に「開いたときに再計算」フラグを立てるので、Excel で開けば計算結果が表示されます。スクリプトの中で結果が必要なとき・計算済みの値をファイルに入れておきたいときは `book.calculate()`（下の「数式の計算」）。
 - xlsx / xlsm に対応しています（旧形式の .xls は不可）。マクロ、ピボットテーブルなどは読み書きの過程で失われることがあります（グラフは開いて保存しても残ります）。
 - シートの名前は `sheet.name = "新しい名前"` で変えられます。Excel で名前を変えたときと同じく、そのシートを参照する数式・名前の定義・入力規則・条件付き書式・グラフ・スパークライン・ピボットテーブルの元データ・フォームコントロールも新しい名前を指すようになります（ハイパーリンクの行き先と、`INDIRECT("Sheet1!A1")` のような文字列の中は変わりません）。
+- シートの状態は、`sheet.hidden`（非表示。代入で切り替えます。表示しているシートがなくなる変更はエラー）、`sheet.rowCount` / `sheet.columnCount`（値のある最後の行・列の番号）、`sheet.dimension`（使用範囲）、`sheet.merges`（結合しているセル範囲の配列）、`sheet.frozen`（ウィンドウ枠の固定。`{ rows, columns }` か `null`）、`sheet.filter`（フィルターの範囲か `null`）、`sheet.getRowHeight(行)`・`sheet.getColumnWidth(列)` で読めます（下の「シートの表示」）。セルの書式は `sheet.getStyle("A1")`（下の「セルの書式」）。
 - シートのコピーは `book.copySheet(シート, 名前?)`（元のシートのすぐ後ろに置き、名前を省くと「売上 (2)」）。テーブルは「売上表_2」のような名前になり、コピーの数式もそれを使います。グラフ・スパークラインはコピーのセルを指し、数式は元と同じシートを参照します（Excel と同じ）。
 - 行・列の挿入と削除は `sheet.insertRows(行, 数?)`・`sheet.deleteRows(行, 数?)`・`sheet.insertColumns(列, 数?)`・`sheet.deleteColumns(列, 数?)`（列は `"C"` か `3`）。Excel と同じく、ずれたセルを参照する数式（ほかのシートの数式・絶対参照も）・名前の定義・印刷範囲・入力規則・条件付き書式・テーブル・グラフ・スパークライン・ピボットテーブルの元データが付いてきます。範囲の途中に挿入すると範囲が広がり、削除したセルだけを参照していた数式は `#REF!` になります。挿入した行（列）は上の行（左の列）の書式を引き継ぎます。
 
@@ -36,14 +37,56 @@ sheet.insertColumns("C");        // C 列の前に 1 列
 const may = book.copySheet("4月", "5月");
 ```
 
-- `workbooks.readVBA(src)` はマクロブック（.xlsm / .xlsb / .xlam など）の VBA コードを、ブックを開かずに読みます。`{ name, codePage, modules: [{ name, type, code, sheet }], text }` を返し、マクロがなければ `null` です。`type` は `"standard"`（標準モジュール）・`"class"`・`"document"`（ThisWorkbook とシート）・`"form"`、`sheet` はシートのモジュールのシート名（.xlsm などで分かる場合）、`text` は `xljs vba` と同じ Markdown です。
+- `excel.readVBA(src)` はマクロブック（.xlsm / .xlsb / .xlam など）の VBA コードを、ブックを開かずに読みます。`{ name, codePage, modules: [{ name, type, code, sheet }], text }` を返し、マクロがなければ `null` です。`type` は `"standard"`（標準モジュール）・`"class"`・`"document"`（ThisWorkbook とシート）・`"form"`、`sheet` はシートのモジュールのシート名（.xlsm などで分かる場合）、`text` は `xljs vba` と同じ Markdown です。
+
+## セルの書式
+
+文字・塗りつぶし・罫線・配置・表示形式（Excel の「セルの書式設定」）を付けます。
+
+```js
+// 表の体裁をまとめて付ける（見出しの太字・塗り・罫線、列幅自動、先頭行固定、フィルター）
+sheet.write(rows, { table: true, columnStyles: { 金額: { format: "#,##0" } } });
+
+// 範囲・セル単位（指定した項目だけが既存の書式に重なる）
+sheet.setStyle("A1:D1", { bold: true, color: "#FFFFFF", background: "#305496", align: "center" });
+sheet.cell("D10").setStyle({ fontSize: 14, bold: true, format: "¥#,##0", border: { top: "double" } });
+sheet.range("A3:D10").setStyle({ border: { outline: "medium", inside: { style: "thin", color: "#BFBFBF" } } });
+sheet.cell("A1").getStyle();   // 現在の書式（setStyle に渡せる形。sheet.getStyle("A1") も同じ）
+```
+
+| 項目 | 指定方法 |
+|---|---|
+| 文字 | `bold` `italic` `strike` `underline`（`true` / `"double"` など）`color` `fontSize` `fontName` `vertAlign`（`"superscript"` `"subscript"`） |
+| 塗りつぶし | `background: "#RRGGBB"`（`null` で塗りなし） |
+| 罫線 | `border: "thin"` など（全セルの上下左右）、または `{ all, outline, inside, horizontal, vertical, top, bottom, left, right, diagonalUp, diagonalDown }`。各辺は `"thin"` `"medium"` `"thick"` `"double"` `"dashed"` `"dotted"` `"hair"` など、または `{ style, color }` |
+| 配置 | `align`（`"left"` `"center"` `"right"` など）`valign`（`"top"` `"center"` `"bottom"` など）`wrap` `shrink` `indent` `rotation` |
+| 表示形式 | `format: "#,##0"`・`"yyyy/m/d"`・`"0.0%"`・`"¥#,##0"` など（`"General"` で標準）。漢数字の `"[DBNum1]G/標準"`（一万二千三百四十五）・`"[DBNum2]G/標準"`（壱萬弐阡参百四拾伍）・`"[DBNum3]0"`（全角数字）も `cell.text` と PDF に出ます |
+| 保護 | `locked`（シートの保護でセルをロックするか） |
+
+- 色は `"#RRGGBB"`・`"#RGB"`・`red` などの色名で指定します。
+- 既定では既存の書式に重ねます。`{ replace: true }` を渡すと書式を置き換えます。
+- 範囲の端に引いた罫線は、隣の（書式が設定済みの）セルの接する辺にも反映するので、線が食い違いません。
+- サンプル: `examples/xlsx-style-report.xljs`
+
+## シートの表示
+
+セルの結合、ウィンドウ枠の固定、フィルター、行の高さと列幅です。それぞれ今の状態を読めます。
+
+```js
+sheet.merge("A1:D1");          // セル結合（unmerge で解除。sheet.merges で結合範囲の一覧）
+sheet.freeze("A2");            // 1 行目を固定（freeze({ rows: 1, columns: 1 }) も可。unfreeze で解除。sheet.frozen で読める）
+sheet.autoFilter("A3:D10");    // フィルター（null で外す。sheet.filter で範囲を読める）
+sheet.autoFit();               // 列幅を内容に合わせる（全角は 2 文字分）
+sheet.setColumnWidth("A:C", 16); // getColumnWidth("A") で読める
+sheet.setRowHeight(1, 30);     // getRowHeight(1) で読める（ポイント）
+```
 
 ## コメントとメモ
 
 いまの Excel には、返信を付けられる**コメント**（スレッド形式のコメント）と、以前の Excel のコメントにあたる**メモ**があります。1 つのセルにはどちらか一方を付けられます。
 
 ```js
-const book = workbooks.open("申請一覧.xlsx");
+const book = excel.open("申請一覧.xlsx");
 const sheet = book.sheet("申請");
 
 // 読む
@@ -71,7 +114,7 @@ book.save();
 Excel がなくても、ブックの数式を xljs が計算できます。
 
 ```js
-const book = workbooks.open("見積書.xlsx");
+const book = excel.open("見積書.xlsx");
 const sheet = book.sheets["見積"] ?? book.sheets[0];
 sheet.cell("C5").value = 30;             // 数式が参照しているセルを書き換える
 sheet.cell("E20").formula = "=SUM(E5:E19)";
@@ -84,7 +127,7 @@ if (r.skipped.length) {
 book.save("見積書_記入済み.xlsx");        // 計算済みの値がファイルに入る
 ```
 
-- `cell.value`・`toObjects()` などで読めるのは、セルに保存されている計算結果です。数式を書いたあと・数式が参照しているセルを書き換えたあとは、`book.calculate()` を呼ぶまで前の結果のまま（スクリプトが書いたばかりの数式は `null`）です。
+- `cell.value`・`sheet.rows()` などで読めるのは、セルに保存されている計算結果です。数式を書いたあと・数式が参照しているセルを書き換えたあとは、`book.calculate()` を呼ぶまで前の結果のまま（スクリプトが書いたばかりの数式は `null`）です。
 - `book.calculate()` はブックのすべての数式を計算し、`{ formulas, changed, skipped }` を返します。`formulas` は計算した数式の数、`changed` は値が変わったセルの数です。
 - `cell.calc()` は、そのセルの数式をいまのセルの値で計算した結果を文字列で返します（セルには保存しません）。1 つ 2 つの結果を見るだけならこちらで足ります。
 - `book.toPdf()`・`sheet.toPdf()`・`toHtml()` は、スクリプトが書き換えたセルに依存する数式・結果が保存されていない数式・`TODAY()` や `NOW()` を使う数式を自動で計算してから印刷します（計算結果はセルにも入ります）。
@@ -109,7 +152,7 @@ book.save("見積書_記入済み.xlsx");        // 計算済みの値がファ�
 `cell.formula` は、いまの Excel のセルに入力するのと同じ数式として読み書きします。`FILTER`・`UNIQUE`・`SORT` や `=B2:B100*1.1` のように複数の値を返す数式は**スピル**します（結果が下・右のセルに広がります）。
 
 ```js
-const book = workbooks.open("売上.xlsx");
+const book = excel.open("売上.xlsx");
 const sheet = book.sheet("明細");
 sheet.cell("H1").formula = "=SORT(UNIQUE(B2:B100))";   // 担当者の一覧が H1 から下に広がる
 book.calculate();

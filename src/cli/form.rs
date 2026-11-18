@@ -79,8 +79,8 @@ fn window(u: &dyn Ui, o: &FormOptions, (width, height): (i64, i64), check: Check
         "type": "init",
         "description": o.description,
         "texts": texts(),
-        "submit": o.submit,
-        "tabs": [], "groups": [], "buttons": [],
+        "tabs": [], "groups": [], "buttons": o.buttons, "buttonVariants": o.buttons.iter().map(|_| "primary").collect::<Vec<_>>(),
+        "enter": o.main,
         "fields": o.fields.iter().map(|f| json!({
             "name": f.name, "label": f.label, "type": f.kind, "options": f.options,
             "required": f.required, "help": f.help, "value": f.value, "tab": -1, "group": -1,

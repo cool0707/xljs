@@ -20,3 +20,5 @@ for await (const h of ui.withProgress(dir.values())) { /* 総数不明ならマ�
 ```
 
 Windows では標準の進捗ダイアログ（IProgressDialog）、コンソールでは標準エラー出力にバーを表示します。
+
+`p.update(done, total?, message?)`（`p.update(done, message)` も可）で完了件数・総数・メッセージを変えます（フォームの `form.progress` と同じ形。総数を省くと前回のまま）。`p.total` `p.done` `p.message` は読み取りだけです。`p.increment(message?)` は完了件数を 1 増やします。

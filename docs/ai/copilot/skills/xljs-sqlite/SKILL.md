@@ -16,7 +16,7 @@ db.run("INSERT INTO 受注 VALUES (?, ?, ?, ?)", "A001", new Date(2026, 3, 1), "
 db.run("UPDATE 受注 SET 金額 = :金額 WHERE 番号 = :番号", { 番号: "A001", 金額: 15000 });
 const rows = db.all("SELECT * FROM 受注 WHERE 日付 >= ?", new Date(2026, 3, 1)); // オブジェクトの配列
 const one = db.get("SELECT sum(金額) AS 合計 FROM 受注");                         // 最初の行か null
-db.insert("受注", workbooks.open(h).sheet(0).toObjects(), { replace: true });   // まとめて挿入（1 トランザクション）
+db.insert("受注", excel.open(h).sheet(0).rows(), { replace: true });            // まとめて挿入（1 トランザクション）
 db.transaction(() => {                     // 例外なら取り消し。async にはできない
   db.run("DELETE FROM 受注 WHERE 金額 = 0");
 });

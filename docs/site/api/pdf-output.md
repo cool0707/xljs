@@ -6,7 +6,7 @@ api: PrintOptions, PrintPages, PrintPreviewSetting, PrintPreviewOptions, Printer
 Excel がなくても、印刷したときと同じページで PDF にできる（Windows の WebView2 を使う。コンソール・mock では使えない）。
 
 ```js
-const book = workbooks.open("請求書.xlsx");
+const book = excel.open("請求書.xlsx");
 await book.toPdf("請求書.pdf");                                  // 非表示でないすべてのシート
 await book.toPdf("一覧.pdf", { sheets: ["一覧"], fitToWidth: 1 }); // 横 1 ページに収める
 await book.sheets["明細"].toPdf("明細.pdf", { paper: "A4", landscape: true, margin: 10 });
@@ -25,7 +25,7 @@ await xljs.htmlToPdf("<h1>報告書</h1><p>本文</p>", "報告書.pdf", { paper
 ダイアログを出さずにプリンターで印刷できる（Windows の WebView2 を使う）。ページは `toPdf` と同じ。
 
 ```js
-const book = workbooks.open("請求書.xlsx");
+const book = excel.open("請求書.xlsx");
 await book.print();                                                    // 既定のプリンター・プリンターの設定のまま
 await book.print({ duplex: "long", copies: 2, mirrorMargins: true });   // 両面（長辺綴じ）で 2 部、綴じしろを内側に
 await book.sheets["明細"].print({ printer: "経理部 複合機", color: false });
@@ -45,7 +45,7 @@ console.log(xljs.printers().map((p) => p.name));                       // この
 Excel の印刷プレビューのように、ページを画面に出して設定を変えてもらってから PDF にできる。
 
 ```js
-const book = workbooks.open("請求書.xlsx");
+const book = excel.open("請求書.xlsx");
 // プレビューを出してから PDF に（キャンセルなら null）
 const path = await book.toPdf("請求書.pdf", { preview: true });
 if (!path) exit();
@@ -54,7 +54,7 @@ if (!path) exit();
 await book.toPdf("一覧.pdf", { fitToWidth: 1, preview: { settings: ["scaling", "blackAndWhite"] } });
 
 // 設定だけ選んでもらい、あとで使う
-const options = await book.printPreview({ paper: "A4" }, { settings: true, ok: "決定" });
+const options = await book.printPreview({ paper: "A4", preview: { settings: true, ok: "決定" } });
 if (options) {
   await book.toPdf("控え.pdf", options);
   await book.toPdf("配布用.pdf", { ...options, blackAndWhite: true });
@@ -62,7 +62,7 @@ if (options) {
 ```
 
 - `toPdf(dest, { preview })`: `preview` が `true` かオブジェクト（`PrintPreviewOptions`）なら、書き出す前にプレビューを出す。キャンセルされたら PDF を作らずに `null` を返す。
-- `book.printPreview(options?, preview?)` / `sheet.printPreview(options?, preview?)`: プレビューを出し、確定したら `options` に利用者が変えた設定を重ねたものを返す（キャンセルは `null`）。`toPdf`・`toHtml`・`printPages` にそのまま渡せる。
+- `book.printPreview(options?)` / `sheet.printPreview(options?)`: プレビューを出し、確定したら `options` に利用者が変えた設定を重ねたものを返す（キャンセルは `null`）。プレビューの設定は `toPdf` と同じく `options.preview` に書く。`toPdf`・`toHtml`・`printPages` にそのまま渡せる。
 - `print` の `preview` も同じ画面（ボタンは「印刷」）。既定の設定に続けて、プリンター・両面・部数も出る。
 - 出す設定は `preview.settings` で選ぶ: `"sheets"`（印刷するシート。ブックで印刷できるシートが 2 つ以上のとき）`"pages"`（印刷するページ。`1,3,5-7` の形で入力）`"paper"` `"landscape"`（向き）`"scaling"`（拡大縮小なし・シートを 1 ページに印刷・すべての列 / 行を 1 ページに印刷・倍率・横 n × 縦 n ページ）`"margin"`（標準・広い・狭い・ユーザー設定）`"mirrorMargins"` `"blackAndWhite"` `"gridLines"` `"centerHorizontally"` `"charts"` `"skipBlankPages"` `"condense"`、プリンターの設定 `"printer"` `"duplex"`（両面に対応したプリンターのときだけ選べる）`"copies"` `"color"`（`print` と `printPreview` のみ）。既定は `["sheets", "pages", "paper", "landscape", "scaling", "margin", "blackAndWhite"]`（`toPdf` の `preview` では `"margin"` の後に `"mirrorMargins"`。PDF には両面印刷の設定がないので、偶数ページの左右の余白を入れ替えるかをここで選ぶ）、`true` ですべて、`false` で設定なし（ページの確認だけ）。
 - 設定の初めの値は、`options` を当てたシートのページ設定。シートによって違う設定（用紙・向き・拡大縮小・余白）は「シートごとの設定」になる。利用者が変えなかった設定は `options` に入れない（シートごとの設定のまま印刷される）。

@@ -54,10 +54,10 @@ xljs のフォーム（`ui.form`）は入力ダイアログではなく、画面
 2. **入力させるのは、プログラムが調べられないことだけ。** 利用者の氏名・所属・メール・役職は Active Directory から取る（下）。今日の日付・今月は初期値にする。ファイルを見れば分かること（シート名・対象の件数）は読んで決める。前回と同じになりやすい値は `remember: true`。
 3. **入力は入力欄で受ける。** 値に合った `type` を選ぶ: 決まった選択肢は `select` / `radio` / `segmented`、多い候補から選ぶなら `combobox`、日付は `date` / `month` / `dateRange`、はい・いいえは `checkbox` / `switch`。選べるものを文字で打たせない。
 4. **表は「見る・選ぶ・すでにある行を直す」ためのもの。** 新しいデータの入力欄の代わりにしない（フォームの表は行の追加・削除ができない）。新しい 1 件は入力欄で受け、ボタンで一覧に足す。表のセルに打ち込みながら何行も入れるならカスタムアプリにする。
-5. **結果は同じウィンドウに出す。** 経過と件数は `ctx.log`、一覧は同じフォームの `table` 項目に `ctx.table(name, rows)`、グラフは `chart` 項目に `ctx.chart(name, { data })`、できたファイルは `return`（「フォルダを開く」ボタンが出る）。`ui.table` の別ウィンドウは、利用者が頼んだときと、1 行をダブルクリックして開く明細のような補助の表示だけ。
-6. **処理のあとも画面を最新にする。** 登録・更新のあとは `ctx.table` で一覧を読み直す。「閉じてもう一度実行してください」と案内しない（フォームは処理のあとも入力に戻り、続けて実行できる）。
-7. **`onSubmit` / `onClick` の中で `alert` を出さない。** 知らせることは `ctx.log`、失敗は `throw new Error("…")`（フォームに赤字で出る）、取り消せない操作の確認はボタンの `confirm`。
-8. **機能が複数あるなら 1 つのウィンドウにまとめる。** 同じ一覧への操作（保存・削除・出力）は `buttons`（数が多ければ `menu`）、項目が多ければ `tabs`、機能ごとに画面を分けるなら `ui.forms`。操作がいくつもあるフォームは `submit: false` にして、どのボタンも動作の名前にする（「保存」「削除」「Excel に出力」）。めったに使わない管理用の機能は、条件付きで足す（`buttons: [...(admin ? [管理用のボタン] : [])]`）か、別のスクリプトにする。ボタンから別のフォームを開かない。
+5. **結果は同じウィンドウに出す。** 経過と件数は `form.log`、一覧は同じフォームの `table` 項目に `form.table(name, rows)`、グラフは `chart` 項目に `form.chart(name, { data })`、できたファイルは `return`（「フォルダを開く」ボタンが出る）。`ui.table` の別ウィンドウは、利用者が頼んだときと、1 行をダブルクリックして開く明細のような補助の表示だけ。
+6. **処理のあとも画面を最新にする。** 登録・更新のあとは `form.table` で一覧を読み直す。「閉じてもう一度実行してください」と案内しない（フォームは処理のあとも入力に戻り、続けて実行できる）。
+7. **ボタンの `onClick` の中で `alert` を出さない。** 知らせることは `form.log`、失敗は `throw new Error("…")`（フォームに赤字で出る）、取り消せない操作の確認はボタンの `confirm`。
+8. **機能が複数あるなら 1 つのウィンドウにまとめる。** 同じ一覧への操作（保存・削除・出力）は `buttons`（数が多ければ `menu`）、項目が多ければ `tabs`、機能ごとに画面を分けるなら `ui.forms`。ボタンはどれも動作の名前にする（「保存」「削除」「Excel に出力」）。Enter で押されるのは `variant: "primary"` のボタン（1 つまで）だけなので、主な操作に付ける（同格の操作が並ぶなら付けない）。めったに使わない管理用の機能は、条件付きで足す（`buttons: [...(admin ? [管理用のボタン] : [])]`）か、別のスクリプトにする。ボタンから別のフォームを開かない。
 9. **アプリは開いたときに使える状態にする。** 一覧は起動時に読んで出しておく（`rows: load()`）。何も出ていない画面で「読み込み」を押させない。1 件もないときにも見出しが出るように、一覧の列は `columns` に書く。
 
 ### 利用者の情報は Active Directory から
@@ -73,7 +73,7 @@ const user = {
   title: me?.title ?? "",
 };
 // フォームでは確認のために見せるだけ（入力させない）:
-// { name: "user", type: "note", label: "記入者", default: `${user.department} ${user.name}` }
+// { name: "user", type: "note", label: "記入者", text: `${user.department} ${user.name}` }
 // 同じ部署の人から選ばせる:
 // { name: "to", label: "承認者", type: "combobox", options: ad.search({ filter: { department: user.department } }).map((u) => u.displayName) }
 ```
@@ -84,7 +84,7 @@ const user = {
 
 依頼に近い型から始め、組み合わせる（一覧の上に条件、下に入力欄、など）。
 
-**ツール: 入力 → 実行 → 結果**: ファイル・条件・保存先を 1 画面で受け、`onSubmit` で処理する（「フォーム（ui.form）」の例）。結果の一覧も見せるなら、空の `table` 項目を置いて `ctx.table` で入れる。
+**ツール: 入力 → 実行 → 結果**: ファイル・条件・保存先を 1 画面で受け、実行ボタン（`variant: "primary"`）の `onClick` で処理する（「フォーム（ui.form）」の例）。結果の一覧も見せるなら、空の `table` 項目を置いて `form.table` で入れる。
 
 **アプリ: 一覧を見て、直して、登録する**: 起動時に一覧を読んでフォームの表に出し、登録のあと同じ表を読み直す。
 
@@ -115,40 +115,38 @@ await ui.form({
     },
   ],
   validate: (v) => (v.items.some((r) => r.出荷) ? null : { items: "出荷したものにチェックを付けてください" }),
-  submit: "登録",
-  onSubmit(v, ctx) {
+  buttons: [{ label: "登録", variant: "primary", onClick(v, form) {
     const done = v.items.filter((r) => r.出荷);
     db.transaction(() => {
       for (const r of done) db.run("UPDATE 受注 SET 出荷日 = ?, 配送 = ? WHERE 受注番号 = ?", v.date, r.配送, r.受注番号);
     });
-    ctx.log(`${done.length} 件を登録しました`);
-    ctx.table("items", load()); // 同じ画面のまま、残りの一覧に入れ替える
-  },
+    form.log(`${done.length} 件を登録しました`);
+    form.table("items", load()); // 同じ画面のまま、残りの一覧に入れ替える
+  } }],
 });
 db.close();
 ```
 
-**アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `ctx.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`、送信ボタンが要らなければ `submit: false`。
+**アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `form.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`。
 
 ```js
-const all = workbooks.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].toObjects();
+const all = excel.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].rows();
 const pick = (v) => all.filter((r) => (v.kind === "すべて" || r.区分 === v.kind) && (!v.word || String(r.品名 ?? "").includes(v.word)));
 await ui.form({
   title: "商品の検索",
   fields: [
     { name: "kind", label: "区分", type: "segmented", options: ["すべて", "製品", "部品", "消耗品"], default: "すべて",
-      onChange(_, v, ctx) { ctx.table("list", pick(v)); } },
+      onChange(_, v, form) { form.table("list", pick(v)); } },
     { name: "word", label: "品名に含む文字",
-      onChange(_, v, ctx) { ctx.table("list", pick(v)); } },
-    { name: "list", label: "一覧", type: "table", rows: all, height: 15 },
+      onChange(_, v, form) { form.table("list", pick(v)); } },
+    { name: "list", label: "一覧", type: "table", rows: all, height: 460 },
   ],
-  submit: false,
   buttons: [{
     label: "Excel に保存", icon: "file-excel", variant: "primary",
-    async onClick(v, ctx) {
+    async onClick(v, form) {
       const dest = await showSaveFilePicker({ suggestedName: "検索結果.xlsx" });
       if (!dest) return;
-      const out = workbooks.create();
+      const out = excel.create();
       out.addSheet("検索結果").write(pick(v), { table: true });
       out.save(dest);
       return dest;
@@ -164,20 +162,20 @@ await ui.form({
 const db = sqlite.open(path.join(xljs.scriptDir, "商品.db"));
 db.exec("CREATE TABLE IF NOT EXISTS 商品 (コード TEXT PRIMARY KEY, 品名 TEXT NOT NULL, 区分 TEXT, 単価 INTEGER)");
 const load = (word) => db.all("SELECT * FROM 商品 WHERE 品名 LIKE ? ORDER BY コード", `%${word ?? ""}%`);
-const show = (ctx, r) => { // 入力欄に 1 件を出す（r なしは空にする）
-  ctx.setValue("code", r?.コード ?? "");
-  ctx.setValue("name", r?.品名 ?? "");
-  ctx.setValue("kind", r?.区分 ?? "製品");
-  ctx.setValue("price", r?.単価 ?? null);
+const show = (form, r) => { // 入力欄に 1 件を出す（r なしは空にする）
+  form.setValue("code", r?.コード ?? "");
+  form.setValue("name", r?.品名 ?? "");
+  form.setValue("kind", r?.区分 ?? "製品");
+  form.setValue("price", r?.単価 ?? null);
 };
 
 await ui.form({
   title: "商品マスター",
   width: 760,
   fields: [
-    { name: "word", label: "検索", placeholder: "品名の一部", onChange(word, v, ctx) { ctx.table("list", load(word)); } },
-    { name: "list", label: "商品", type: "table", rows: load(), columns: ["コード", "品名", "区分", "単価"], selectable: "single", height: 10,
-      onChange(row, v, ctx) { show(ctx, row); } }, // 行を選ぶと入力欄に出す
+    { name: "word", label: "検索", placeholder: "品名の一部", onChange(word, v, form) { form.table("list", load(word)); } },
+    { name: "list", label: "商品", type: "table", rows: load(), columns: ["コード", "品名", "区分", "単価"], selectable: "single", height: 320,
+      onChange(row, v, form) { show(form, row); } }, // 行を選ぶと入力欄に出す
     { group: "選んだ商品（新しい商品は「新規」を押して入力）", fields: [
       { row: "", fields: [
         { name: "code", label: "コード", required: true, pattern: "[A-Z]\\d{3}", patternMessage: "英大文字 1 字と数字 3 桁で入力してください" },
@@ -187,22 +185,21 @@ await ui.form({
       { name: "name", label: "品名", required: true },
     ] },
   ],
-  submit: false, // 操作はボタンに分ける（Enter で送信されない）
-  buttons: [
-    { label: "新規", icon: "plus", validate: false, onClick(v, ctx) { show(ctx); } },
+  buttons: [ // Enter で押されるのは primary の「保存」
+    { label: "新規", icon: "plus", validate: false, onClick(v, form) { show(form); } },
     { label: "削除", icon: "trash", variant: "destructive", validate: false, confirm: "選んだ商品を削除しますか？",
-      onClick(v, ctx) {
+      onClick(v, form) {
         if (!v.list) throw new Error("削除する商品を一覧から選んでください");
         db.run("DELETE FROM 商品 WHERE コード = ?", v.list.コード);
-        ctx.log(`${v.list.コード} ${v.list.品名} を削除しました`);
-        ctx.table("list", load(v.word));
-        show(ctx);
+        form.log(`${v.list.コード} ${v.list.品名} を削除しました`);
+        form.table("list", load(v.word));
+        show(form);
       } },
     { label: "保存", icon: "floppy-disk", variant: "primary",
-      onClick(v, ctx) { // 同じコードがあれば更新、なければ追加
+      onClick(v, form) { // 同じコードがあれば更新、なければ追加
         db.run("INSERT OR REPLACE INTO 商品 VALUES (?, ?, ?, ?)", v.code, v.name, v.kind, v.price);
-        ctx.log(`${v.code} ${v.name} を保存しました`);
-        ctx.table("list", load(v.word));
+        form.log(`${v.code} ${v.name} を保存しました`);
+        form.table("list", load(v.word));
       } },
   ],
 });
@@ -219,22 +216,22 @@ await ui.forms({
   title: "受注管理",
   width: 900, height: 600,
   forms: [
-    { label: "受注の登録", icon: "pen", submit: "登録",
+    { label: "受注の登録", icon: "pen",
       fields: [
         { name: "date", label: "受注日", type: "date", default: new Date(), required: true },
         { name: "customer", label: "顧客名", required: true },
         { name: "amount", label: "金額", type: "number", min: 0, suffix: "円", required: true },
       ],
-      onSubmit(v, ctx) {
+      buttons: [{ label: "登録", variant: "primary", onClick(v, form) {
         db.run("INSERT INTO 受注 (日付, 顧客名, 金額) VALUES (?, ?, ?)", v.date, v.customer, v.amount);
-        ctx.log(`${v.customer} の受注を登録しました`);
-      } },
-    { label: "受注の照会", icon: "magnifying-glass", submit: false,
+        form.log(`${v.customer} の受注を登録しました`);
+      } }] },
+    { label: "受注の照会", icon: "magnifying-glass",
       fields: [
-        { name: "word", label: "顧客名に含む文字", onChange(_, v, ctx) { ctx.table("list", find(v)); } },
-        { name: "list", label: "受注", type: "table", rows: find(), columns: ["番号", "日付", "顧客名", "金額"], height: 14 },
+        { name: "word", label: "顧客名に含む文字", onChange(_, v, form) { form.table("list", find(v)); } },
+        { name: "list", label: "受注", type: "table", rows: find(), columns: ["番号", "日付", "顧客名", "金額"], height: 440 },
       ],
-      buttons: [{ label: "再読み込み", icon: "rotate", validate: false, onClick(v, ctx) { ctx.table("list", find(v)); } }] },
+      buttons: [{ label: "再読み込み", icon: "rotate", validate: false, onClick(v, form) { form.table("list", find(v)); } }] },
   ],
 });
 db.close();
@@ -253,25 +250,27 @@ db.close();
 |---|---|
 | 氏名・所属・役職・メールの入力欄 | `ad.me()`（上）。見せるだけなら `note` |
 | フォームを閉じてから次のフォームや表を出す、の繰り返し | 1 つのフォーム（`tabs`・グループ・`hidden` / `disabled` で出し分け） |
-| 結果を `ui.table` で次々に出す（件数の表 → 明細の表 → `alert`） | 件数は `ctx.log`、明細は同じフォームの `table` 項目に `ctx.table` |
+| 結果を `ui.table` で次々に出す（件数の表 → 明細の表 → `alert`） | 件数は `form.log`、明細は同じフォームの `table` 項目に `form.table` |
 | 新しいデータを入力させるために編集できる表を出す | 入力欄を並べ、ボタンで一覧に足す。表に打ち込みながら何行も入力するならカスタムアプリ |
 | 選択肢が決まっているのに `text` | `select` / `radio` / `segmented` / `combobox` |
 | 全行に同じ値（今日の日付など）を入れる列を表に作る | 表の外に 1 つの項目（`default: new Date()`）を置き、保存のときに全行へ使う |
 | 表のセルを変えたら同じ行のほかのセルを書き換えようとする（その仕組みはない） | 保存のときに計算する。その場で見せる必要があるならカスタムアプリ |
-| 「閉じて再実行してください」という案内 | `ctx.table` で読み直す |
-| 処理の中の `alert`（特にループの中） | `ctx.log` / `ctx.error`、最後に件数をまとめて 1 行 |
+| 「閉じて再実行してください」という案内 | `form.table` で読み直す |
+| 処理の中の `alert`（特にループの中） | `form.log` / `form.error`、最後に件数をまとめて 1 行 |
 | 起動のたびに同じファイル・データベースを選ばせる | `remember: true`、`xljs.scriptDir`、設定ファイル |
 | 説明のためだけの `note` を並べる | `description` に 1〜2 行、項目ごとの補足は `help` |
-| 進捗の出ない長い処理 | `ctx.withProgress(list)`（中止もできる） |
+| 進捗の出ない長い処理 | `form.withProgress(list)`（中止もできる） |
 | 登録・管理・照会の依頼を、入力して実行するだけのツールにする（1 件登録して終わり、一覧が見られない） | アプリにする: 開くと一覧が出て、追加・更新・削除・出力を同じ画面で続けられる |
 | 機能ごとに別のスクリプト・別のフォームに分ける | 1 つのフォームの `buttons` / `tabs`、画面を分けるなら `ui.forms` |
+| 項目に type にないキー（note・image の `default`、textarea の `rows`、`text` の `options`） | type ごとのキー: note は `text` / `kind`、image は `src`、textarea・files の行数は `lines`。`height` は px |
 | 空の画面で「読み込み」を押させる | 起動時に読んで出しておく（`rows: load()`） |
+| `onSubmit`・`submit`・`submitIcon`（古い書き方。いまはなく、書くとエラー） | `buttons` に `onClick` のあるボタンを書き、Enter で押すものに `variant: "primary"` |
 
 ### カスタムアプリの方針
 
-- 画面（HTML）は見た目と操作、スクリプト（`.js`）はファイル・Excel・データベースの処理、と分ける。画面の JavaScript から xljs の API（`workbooks` など）は呼べないので、スクリプトの `export` した関数を `data-action` か `xljs.invoke` で呼ぶ。
+- 画面（HTML）は見た目と操作、スクリプト（`.js`）はファイル・Excel・データベースの処理、と分ける。画面の JavaScript から xljs の API（`excel` など）は呼べないので、スクリプトの `export` した関数を `data-action` か `xljs.invoke` で呼ぶ。
 - 1 つのウィンドウの中で画面を切り替える（`data-show` で出し分け）。`app.open` で別のウィンドウを増やすのは、同時に見比べる必要があるときだけ。
-- 起動時に見せるデータ（利用者の名前、一覧）はスクリプトの先頭で `win.state` に入れる。利用者にボタンを押させてから読むのではなく、開いたときに出ているようにする。
+- 値の表示は `win.state`（画面の `data-bind`）が基本。表など大きな描画は `win.invoke` で画面の関数（`xljs.handle`）に渡す。`win.$` / `win.evaluate` は補助。起動時に見せるデータ（利用者の名前、一覧）はスクリプトの先頭で `win.state` に入れ、開いたときに出ているようにする。
 - ファイルの選択は `<input type="file">` ではなく、スクリプトの関数で `showOpenFilePicker` などを呼ぶ（パスが取れる）。ドロップは `e.dataTransfer.files` をそのまま `xljs.invoke` に渡す。
 - 入力の検査は HTML の `required` `min` `max` `pattern`（`data-action` は送信の前に検査する）と、スクリプトの関数の中の両方で行う。エラーは `throw new Error("…")`。
 - 長い処理は進捗を `win.state` に入れ、ループの中で `await sleep(0)` して中止のボタンを受け取れるようにする。処理中はボタンを `data-show` / `disabled` で押せなくする（`data-action` のボタンは処理が終わるまで自動で無効になる）。
@@ -365,7 +364,7 @@ function aggregate(month) {
 | `export function 名前(...)` | 画面から呼べる関数（エントリのファイルの export だけ）。`app.handle(name, fn)` でも登録できる |
 | `win.state.key = 値` / `win.state = { ... }` | 画面へ送る（代入したキーだけが変わる）。同期するのは最上位のキーだけなので、中身を変えたら `win.state.list = [...list]` のように代入し直す |
 | `await win.invoke(name, ...args)` / `win.emit(name, ...args)` / `win.on(name, fn)` | 画面の関数を呼ぶ / イベントを送る / 画面の `xljs.emit` を受け取る |
-| `win.$(selector).text(v)` `.html(v)` `.val(v)` `.attr(n, v)` `.addClass(c)` `.show()` `.hide()` `.on("click", fn)` | 画面の要素を直接変える・イベントを受ける簡易 DOM（読み取りは `await win.$(sel).val()`） |
+| `win.$(selector).text(v)` `.html(v)` `.val(v)` `.attr(n, v)` `.addClass(c)` `.show()` `.hide()` `.on("click", fn)` | 補助: 画面の要素を直接変える・イベントを受ける簡易 DOM（読み取りは `await win.$(sel).val()`）。表示は `win.state`、描画は `win.invoke` を先に考える |
 | `app.open({ html, title, width, height })` | 別のウィンドウを開く（`await w.closed` で閉じるまで待つ） |
 | `await win.closed` / `win.close()` | メインウィンドウが閉じるとスクリプトも終わる |
 

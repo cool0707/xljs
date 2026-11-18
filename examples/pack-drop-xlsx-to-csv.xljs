@@ -12,7 +12,7 @@ if (targets.length === 0) {
 }
 const created = [];
 for (const h of ui.withProgress(targets, "CSV に変換中")) {
-  const book = workbooks.open(h);
+  const book = excel.open(h);
   const rows = book.sheet(0).toArrays({ text: true }); // 表示どおりの文字列で出力
   const dest = path.join(path.dirname(h), path.basename(h.name, path.extname(h.name)) + ".csv");
   csv.write(dest, rows, { encoding: "cp932" });

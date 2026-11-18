@@ -51,13 +51,13 @@ await rejects(() => ui.form({ fields: [{ name: "x" }], tabs: [{ fields: [{ name:
 await rejects(() => ui.form({ tabs: [1] }), /タブ/);
 await rejects(() => ui.form({ fields: [{ name: "t", type: "table", selectable: "some" }] }), /some/);
 
-// ctx.table replaces a table's rows while onSubmit runs.
+// form.table replaces a table's rows while a button's onClick runs.
 await ui.form({
   title: "結果",
   fields: [{ name: "result", label: "結果", type: "table", rows: [] }],
-  async onSubmit(values, ctx) {
-    ctx.table("result", customers.map((c) => ({ 顧客名: c.顧客名, 合計: c.合計 })));
-    throws(() => ctx.table("missing", []), /missing/);
-  },
+  buttons: [{ label: "実行", variant: "primary", async onClick(values, form) {
+    form.table("result", customers.map((c) => ({ 顧客名: c.顧客名, 合計: c.合計 })));
+    throws(() => form.table("missing", []), /missing/);
+  } }],
 });
 console.log("formtable ok");

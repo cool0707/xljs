@@ -425,11 +425,11 @@ impl Ui for Replay {
         if !o.description.is_empty() {
             e["description"] = o.description.clone().into();
         }
-        if !o.submit.is_empty() {
-            e["submit"] = o.submit.clone().into();
-        }
         if !o.buttons.is_empty() {
             e["buttons"] = json!(o.buttons);
+        }
+        if let Some(m) = o.main {
+            e["main"] = m.into();
         }
         self.t.push(e);
         for f in &o.fields {

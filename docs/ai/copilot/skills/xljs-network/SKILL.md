@@ -35,7 +35,7 @@ await fetch("https://intra.example.com/upload", { method: "POST", body: form });
 const file = await fetch("https://intra.example.com/files/master.xlsx");
 const data = await file.arrayBuffer();
 fs.writeBytes("master.xlsx", data);
-const book = workbooks.open(data);         // 保存せずに開くこともできる
+const book = excel.open(data);             // 保存せずに開くこともできる
 ```
 
 - `res.text()` は Content-Type の charset（`Shift_JIS` なども）で読む。`res.text("cp932")` で文字コードを指定できる（xljs 拡張）。本文は 1 回しか読めない（2 回読むなら先に `res.clone()`）。

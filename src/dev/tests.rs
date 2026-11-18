@@ -536,8 +536,8 @@ fn templates_run() {
     write_text(&answers, r#"{"form": [{"name": "山田"}]}"#).unwrap();
     let r = crate::engine::tests::run_script(&form.to_string_lossy(), &answers.to_string_lossy(), &[]);
     assert_eq!(r.code, 0, "{:?} {}", r.err, r.stderr);
-    // The form stays open: onSubmit writes in its log.
-    assert!(text.contains("onSubmit(values, ctx)") && text.contains("submit: \"実行\""), "{text}");
+    // The form stays open: the button's onClick writes in its log.
+    assert!(text.contains("onClick(values, form)") && text.contains("label: \"実行\", variant: \"primary\""), "{text}");
     assert!(r.stdout.contains("山田 さん、こんにちは！"), "{} {}", r.stdout, r.stderr);
 
     let app = dir.join("新しいカスタムアプリ.js");

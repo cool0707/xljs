@@ -45,7 +45,7 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 | `xljs.args` | 引数の配列（exe にドロップしたファイルのパスなど） |
 | `xljs.script` / `xljs.scriptDir` | スクリプトのパス / フォルダ |
 | `xljs.env(name)` | 環境変数（無ければ `null`）。例 `xljs.env("USERPROFILE")` |
-| `path.expandEnv(s)` | `%NAME%` を環境変数で置き換えた文字列。パスを受け取る API は自動で展開する（`fs.readText("%USERPROFILE%\\Desktop\\a.txt")`） |
+| `path.expandEnv(s)` | `%NAME%` を環境変数で置き換えた文字列。パスを受け取る API は自動で展開する（`"%USERPROFILE%\\Desktop"` など） |
 | `xljs.title` | ダイアログのタイトル（代入で変更可） |
 | `exit(code?)` | スクリプトを終了する |
 
@@ -65,6 +65,7 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 - `types`: `[{ description: "Excel", accept: [".xlsx", ".xlsm"] }]`
 - `startIn`: `"desktop"` `"documents"` `"downloads"`、パス、ハンドル（そのファイルのフォルダから開く）
 - 他のアプリで作業中に `alert` が開くと、同じ内容の通知が自動で出る（`ui.autoNotify = false` で止める）。長い処理の終わりは `alert` で十分。
+- キャンセルすると、1 つを返すもの（上のほか `ui.form`・`printPreview`・`toPdf` の `preview`）は `null`、一覧を返すもの（`showOpenFilePicker`・選択の `ui.table`）は `[]`、`print({ preview })` は `false`。
 - `showSaveFilePicker` は保存先を決めるだけで、ファイルはまだ作られない。`types` を省略すると `suggestedName` の拡張子が付く（利用者が `集計` と入力しても `集計.xlsx`）。
 
 ## ファイル・フォルダ
@@ -77,7 +78,7 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 | `h.relativePath` | `walk()` の起点からの相対パス（`"2026/4月.xlsx"`） |
 | `h.exists()` | 存在するか |
 | `h.stat()` | `{ size, mtimeMs, isFile, isDirectory }`（無ければ `null`）。更新日時は `new Date(h.stat().mtimeMs)` |
-| `h.readText(enc?)` / `h.writeText(text, enc?)` / `h.appendText(text, enc?)` | テキストの読み書き（書き込みは UTF-8、`.csv` / `.tsv` は BOM 付き） |
+| `h.readText(enc?)` / `h.writeText(text, enc?)` | テキストの読み書き（書き込みは UTF-8、`.csv` / `.tsv` は BOM 付き。追記は `{ append: true }`） |
 | `dir.walk(options)` | サブフォルダも含めて走査。`.toArray()` で配列、`for...of` でも回せる |
 | `dir.list()` | 直下の項目のハンドルの配列 |
 | `dir.file(name)` / `dir.dir(name)` | 直下のファイル / フォルダのハンドル（存在確認なし） |
@@ -92,14 +93,14 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 |---|---|
 | `fs.file(p)` / `fs.dir(p)` | パスからハンドルを作る |
 | `fs.exists(p)` / `fs.isFile(p)` / `fs.isDirectory(p)` / `fs.stat(p)` | 確認 |
-| `fs.readText(p, enc?)` / `fs.writeText(p, text, enc?)` / `fs.appendText(p, text, enc?)` | テキスト |
+| `fs.readText(p, enc?)` / `fs.writeText(p, text, enc?)` | テキスト（追記は `fs.writeText(p, text, { append: true })`。文字コードは `{ encoding }` でも） |
 | `fs.readBytes(p)` / `fs.writeBytes(p, data)` | バイナリ（`ArrayBuffer`） |
 | `fs.readJSON(p, { dates })` / `fs.writeJSON(p, value, { space, encoding })` | JSON |
 | `fs.readJSONL(p)` / `fs.writeJSONL(p, rows, { append })` | JSON Lines |
-| `fs.list(p)` | 直下の名前（文字列）の配列（隠しファイルも含めるなら `fs.list(p, { hidden: true })`） |
-| `fs.walk(p, options)` / `fs.glob(pattern, { cwd })` | 走査 |
+| `fs.list(p)` | 直下のハンドルの配列（名前は `.map((h) => h.name)`。隠しファイルも含めるなら `{ hidden: true }`） |
+| `fs.walk(p, options)` | 走査（`fs.walk(".", "*.csv")` でカレントフォルダから） |
 | `fs.mkdir(p)` | フォルダ作成（途中のフォルダも作る） |
-| `fs.copy(from, to)` / `fs.rename(from, to)` / `fs.move(from, to)` | コピー・名前変更・移動 |
+| `fs.copy(from, to)` / `fs.rename(from, to)` | コピー / 名前変更・移動 |
 | `fs.remove(p, { recursive })` | 削除（ごみ箱には入らない） |
 | `fs.cwd()` / `fs.chdir(p)` | カレントフォルダ |
 
@@ -114,9 +115,8 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 | API | 説明 |
 |---|---|
 | `shell.showItemInFolder(p)` | エクスプローラーでファイルを選択した状態で開く（配列で複数可） |
-| `shell.openPath(p)` | 既定のアプリで開く（.xlsx なら Excel、フォルダならエクスプローラー） |
-| `shell.openExternal(url)` | ブラウザで開く |
-| `shell.writeShortcutLink(p, [op], { target, args, cwd, description, icon, iconIndex, windowState, hotkey, runAsAdmin })` | ショートカット（.lnk。URL なら .url）を作る・編集する。op は "create"（既定）/ "update"（指定した項目だけ変更）/ "replace"。書いたパスを返す |
+| `shell.open(p)` | 既定のアプリで開く（.xlsx なら Excel、フォルダならエクスプローラー、URL ならブラウザ） |
+| `shell.writeShortcutLink(p, { mode, target, args, cwd, description, icon, iconIndex, windowState, hotkey, runAsAdmin })` | ショートカット（.lnk。URL なら .url）を作る・編集する。mode は "create"（既定）/ "update"（指定した項目だけ変更）/ "replace"。書いたパスを返す |
 | `shell.readShortcutLink(p)` | ショートカットを読む（`target` がリンク先。ほかは上と同じ項目） |
 | `await shell.run(cmd, [args], { cwd, env, window, input, timeout, encoding, onStdout, onStderr, stdout, stderr })` | プログラムを実行して終わるのを待つ。`{ exitCode, ok, stdout, stderr, timedOut, pid }` を返す（0 以外でも例外にしない）。args（配列）があれば直接起動、なければ cmd.exe /c のコマンドライン。window は "default"（コンソールはウィンドウなし）/ "hidden" / "normal" など。出力は既定で受け取り、CP932 も自動で読む |
 | `shell.runSync(cmd, [args], opts)` | run の同期版 |
@@ -130,22 +130,22 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 
 | API | 説明 |
 |---|---|
-| `workbooks.open(p)` | 開く |
-| `workbooks.create({ font? })` | 新しいブック。最初の `addSheet` が既定のシートを置き換える |
+| `excel.open(p)` | 開く |
+| `excel.create({ font? })` | 新しいブック。最初の `addSheet` が既定のシートを置き換える |
 | `book.sheets[0]` / `book.sheets["名前"]` / `book.sheet(名前か番号)` | シート（無ければ `undefined` / `null`）。大文字小文字・空白・全角半角の違いは許す |
 | `book.sheetNames` | シート名の配列 |
 | `book.addSheet(name)` / `book.removeSheet(name)` / `book.copySheet(sheet, name?)` | 追加・削除・コピー（元の後ろに） |
 | `book.save()` / `book.save(p)` | 上書き保存 / 別名保存 |
 | `book.close()` | 閉じる（メモリ解放） |
 | `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | PDF に書き出す（「PDF 出力」） |
-| `workbooks.readVBA(p)` | マクロブックの VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、なければ `null`。`text` は Markdown |
-| `workbooks.columnName(3)` → `"C"`、`workbooks.cellName(2, 3)` → `"C2"` | 番地の変換 |
+| `excel.readVBA(p)` | マクロブックの VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、なければ `null`。`text` は Markdown |
+| `excel.columnName(3)` → `"C"`、`excel.cellName(2, 3)` → `"C2"` | 番地の変換 |
 
 ### シートの読み取り
 
 | API | 説明 |
 |---|---|
-| `sheet.toObjects({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行（既定 1）。`header: 0, columns: [...]` で見出しなし |
+| `sheet.rows({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行（既定 1）。`header: 0, columns: [...]` で見出しなし |
 | `sheet.toArrays({ text })` | 2 次元配列（0 始まり）。`text: true` で表示の文字列 |
 | `sheet.cell("B2")` / `sheet.cell(行, 列)` | セル（1 から） |
 | `cell.value` | 値: number / string / boolean / Date / null |
@@ -153,9 +153,11 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 | `cell.formula` | `"=SUM(A1:A3)"` か `null` |
 | `cell.phonetic` | ふりがな（値の後に代入） |
 | `cell.note` / `cell.comment` | メモ / コメント（`addComment`） |
-| `sheet.getValue("B2")` / `sheet.setValue("B2", v)` | 値の読み書き |
 | `sheet.range("A1:C3").values` | 範囲の 2 次元配列（代入で書く） |
-| `sheet.rowCount` / `sheet.dimension` | 最終行 / 範囲 |
+| `sheet.rowCount` / `sheet.columnCount` / `sheet.dimension` | 最終行 / 最終列 / 範囲 |
+| `sheet.merges` / `sheet.frozen` / `sheet.filter` | 結合範囲の配列 / 固定 `{ rows, columns }` か `null` / フィルターの範囲か `null` |
+| `sheet.getStyle("A1")` / `sheet.getRowHeight(1)` | 書式（`setStyle` と同じ形）/ 行の高さ |
+| `sheet.hidden` | 非表示（代入で切り替え） |
 | `sheet.name` | シート名（代入で変更） |
 
 - 結合セルの値は左上のセルにだけある。
@@ -184,12 +186,12 @@ xljs のスクリプトの基本の API とレシピです。ここに書いて�
 ### 書式
 
 ```js
-sheet.style("A1:D1", { bold: true, color: "#FFFFFF", background: "#305496", align: "center" });
-sheet.cell("D10").style({ font: { size: 14, bold: true }, format: "¥#,##0", border: { top: "double" } });
-sheet.range("A3:D10").border({ outline: "medium", inside: { style: "thin", color: "#BFBFBF" } });
+sheet.setStyle("A1:D1", { bold: true, color: "#FFFFFF", background: "#305496", align: "center" });
+sheet.cell("D10").setStyle({ fontSize: 14, bold: true, format: "¥#,##0", border: { top: "double" } });
+sheet.range("A3:D10").setStyle({ border: { outline: "medium", inside: { style: "thin", color: "#BFBFBF" } } });
 sheet.merge("A1:D1");             // セル結合（unmerge で解除）
 sheet.freeze("A2");               // 1 行目を固定（"B2" で 1 行目と A 列）
-sheet.autoFilter("A3:D10");       // フィルター
+sheet.autoFilter("A3:D10");       // フィルター（null で外す）
 sheet.autoFit();                  // 列幅を内容に合わせる
 sheet.setColumnWidth("A:C", 16);  // 列幅（文字数）
 sheet.setRowHeight(1, 30);        // 行の高さ（ポイント）
@@ -197,13 +199,13 @@ sheet.setRowHeight(1, 30);        // 行の高さ（ポイント）
 
 | 項目 | 指定 |
 |---|---|
-| 文字 | `bold` `italic` `underline` `strike` `color` `fontSize` `fontName`、または `font: { name, size, bold, italic, color }` |
+| 文字 | `bold` `italic` `underline` `strike` `color` `fontSize` `fontName` |
 | 塗り | `background: "#DDEBF7"`（`null` で塗りなし） |
 | 配置 | `align`（`left` `center` `right`）、`valign`（`top` `center` `bottom`）、`wrap: true`（折り返し） |
 | 表示形式 | `format`: `"#,##0"` `"#,##0.00"` `"0.0%"` `"¥#,##0"` `"yyyy/m/d"` `"yyyy年m月d日"` `"h:mm"` `"@"`（文字列） |
 | 罫線 | `border: "thin"`（全セルの上下左右）、または `{ outline, inside, horizontal, vertical, top, bottom, left, right }`。線種 `"thin"` `"medium"` `"thick"` `"double"` `"dashed"` `"dotted"`、色付きは `{ style: "thin", color: "#999999" }` |
 
-色は `"#RRGGBB"` か `red` などの色名。書式は既存の書式に重ねて適用される（`{ replace: true }` で置き換え）。
+色は `"#RRGGBB"` か `red` などの色名。書式は既存の書式に重ねて適用される（`{ replace: true }` で置き換え）。入れ子のキー（`font` `fill` など）はない。
 
 ## CSV
 
@@ -264,7 +266,7 @@ p.close();
 
 ## フォーム（ui.form）
 
-画面は原則このフォームで作る。入力して実行するツールも、開いたまま使うアプリも同じ `ui.form` で、置くもの（入力欄・表・グラフ・ボタン・タブ）と `onSubmit` / `buttons` / `onChange` の書き方で決まる（形の選び方と型は「画面の設計」。バッチ・他のアプリから自動で呼ばれるときは画面を出さず `xljs.args` や設定ファイルから、使い捨ての処理はダイアログで）。`required` `min` `max` `pattern` と `validate` で入力チェックを必ず入れ、ファイルは中身（シート・列）まで `validate` で確かめる。
+画面は原則このフォームで作る。入力して実行するツールも、開いたまま使うアプリも同じ `ui.form` で、置くもの（入力欄・表・グラフ・ボタン・タブ）と `buttons` / `onChange` の書き方で決まる（形の選び方と型は「画面の設計」。バッチ・他のアプリから自動で呼ばれるときは画面を出さず `xljs.args` や設定ファイルから、使い捨ての処理はダイアログで）。`required` `min` `max` `pattern` と `validate` で入力チェックを必ず入れ、ファイルは中身（シート・列）まで `validate` で確かめる。
 
 ```js
 await ui.form({
@@ -277,22 +279,21 @@ await ui.form({
     { name: "prefix", label: "ファイル名の先頭", type: "text", default: "請求書_", pattern: "[^\\\\/:*?\"<>|]*", patternMessage: "使えない文字があります" },
     { name: "rate", label: "税率(%)", type: "number", default: 10, min: 0, max: 100 },
   ],
-  submit: "作成",
   remember: true,
   validate(v) {                                        // 追加の検証。問題があれば { 項目名: "メッセージ" } を返す
     if (v.rate !== 8 && v.rate !== 10) return { rate: "8 か 10 を入力してください" };
   },
-  async onSubmit(v, ctx) {                             // 処理はここに書く（フォームは開いたまま。下の onSubmit）
-    ctx.log(`${v.list.name} から請求書を作ります`);
-  },
+  buttons: [{ label: "作成", variant: "primary", async onClick(v, form) { // 処理はここに書く（フォームは開いたまま。下の buttons）
+    form.log(`${v.list.name} から請求書を作ります`);
+  } }],
 });
 ```
 
-`onSubmit` も `buttons` もないフォームは、送信すると閉じて値を返す（`const v = await ui.form({ ... }); if (!v) exit();`）。処理の途中で少し尋ねるだけのときに使い、ツールやアプリの画面は `onSubmit` / `buttons` で開いたままにする。
+`buttons` を省いたフォームは「OK」ボタンだけになり、押すと閉じて値を返す（`const v = await ui.form({ ... }); if (!v) exit();`。`onClick` のないボタンも同じく閉じる）。処理の途中で少し尋ねるだけのときに使い、ツールやアプリの画面は `onClick` のあるボタンで開いたままにする。
 
 | type | 値 |
 |---|---|
-| `text` `password` `textarea` | 文字列 |
+| `text` `password` `textarea` | 文字列（`textarea` の行数は `lines`） |
 | `number` | 数値か `null`（`min` `max` `step`） |
 | `date` | `Date` か `null` |
 | `month` | `"2026-04"` か `null` |
@@ -300,9 +301,9 @@ await ui.form({
 | `select` `radio` | 選んだ文字列（`options: ["A", "B"]` または `[{ value, label }]`） |
 | `checkbox` | `true` / `false` |
 | `file` `saveFile` | ファイルハンドルか `null`（`accept: [".xlsx"]`） |
-| `files` | ファイルハンドルの配列 |
+| `files` | ファイルハンドルの配列（行数は `lines`） |
 | `folder` | フォルダハンドルか `null` |
-| `table` | 表から選んだ行（`rows` `columns` `selectable: true | "single"`。色分けは `formats`（下の ui.table）） |
+| `table` | 表から選んだ行（`rows` `columns` `selectable: true | "single"`、`height` は px。色分けは `formats`（下の ui.table）） |
 | `switch` | `true` / `false`（オン・オフのスイッチ） |
 | `checkboxes` | 選んだ文字列の配列（`options` の複数選択。`required` は 1 つ以上） |
 | `segmented` | 選んだ文字列（`options` を横に並べたボタン。`multiple: true` なら配列） |
@@ -310,23 +311,23 @@ await ui.form({
 | `slider` | 数値（`min` `max` 既定 0〜100、`step`） |
 | `dateRange` | `{ from: Date, to: Date }` か `null`（`default: { from, to }`。開始 > 終了はエラー） |
 | `tags` | 文字列の配列（Enter かカンマで区切って入力。`pattern` `maxLength` は 1 つずつ） |
-| `note` | 値なし。メッセージの表示（`label` が見出し、`default` が本文、`variant: "info" | "success" | "warning" | "error"`） |
-| `image` | 値なし。画像の表示（`default` に画像ファイルのパス・バイト列・URL。`width` `height` `align: "left" | "center" | "right"`。`label` なしならフォームの幅いっぱい） |
+| `note` | 値なし。メッセージの表示（`label` が見出し、`text` が本文、`kind: "info" | "success" | "warning" | "error"`） |
+| `image` | 値なし。画像の表示（`src` に画像ファイルのパス・バイト列・URL。`width` `height`（px）`align: "left" | "center" | "right"`。`label` なしならフォームの幅いっぱい） |
 
-- 項目の共通オプション: `label` `default` `required` `placeholder`（`select` では未選択の表示になり、初期値が `""`）`help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`maxLength`（文字数の上限。「12 / 100」と表示）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。フォームの `validate(values)` は送信時だけ。
-- ウィンドウの大きさは `width` `height`（既定は項目数から決める）。`resizable: false` で大きさを固定する（枠のドラッグ・最大化ができない）。`titleBar: "custom"` で OS のタイトルバーの代わりに自前のタイトルバー（`icon` とタイトル、最小化・最大化・閉じる）を表示する（`ui.table` / `app.open` も同じ。メインウィンドウは `@titlebar custom`）。
-- `onChange(value, values, ctx)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる（`table` は行を選んだとき。選んだ行をほかの入力欄に出せる）。`ctx.setValue(name, value)` でほかの項目を埋められる（setValue で変えた項目の onChange は呼ばれない。例: 売上のファイルを選んだら、同じフォルダの対になる仕入のファイルを `ctx.setValue("purchase", path.join(path.dirname(h.path), "仕入_202604.csv"))` で設定する）。
-- 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`、`hidden: (v) => v.kind !== "その他"`）。onChange・onSubmit・ボタンの `ctx.setDisabled(name, bool)` / `ctx.setEnabled(name)` / `ctx.setHidden(name, bool)` / `ctx.setVisible(name)` でも切り替えられる（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
+使えるキーは type ごとに決まっていて、合わないキー（`text` の `options` など）やないキーを書くとエラーになる。
+
+- 項目の共通オプション: `label` `default` `required` `help`（説明文）`tooltip`（マウスを重ねたときの説明。ボタンにも付けられる）、`validate(value, values)`（項目ごとの検証。メッセージを返す。入力欄を離れたときにも検証される）。入力欄のある type には `placeholder`（`select` では未選択の表示になり、初期値が `""`）、`text` `number` `slider` には `prefix` / `suffix`（入力欄の中の単位。`{ type: "number", prefix: "¥", suffix: "円" }`）、`text` `textarea` `tags` には `maxLength`（文字数の上限。「12 / 100」と表示）。フォームの `validate(values)` はボタンを押したときだけ。
+- ウィンドウの大きさは `width` `height`（既定は項目数から決める）。`resizable: false` で大きさを固定する。`titleBar: "custom"` で OS のタイトルバーの代わりに自前のタイトルバー（`icon` とタイトル）を表示する（ここまで `ui.table` / `ui.chart` / `app.open` も同じ。メインウィンドウは `@titlebar custom`）。
+- `onChange(value, values, form)`: ユーザーが値を変え、その項目の検証が通ったときに呼ばれる（`table` は行を選んだとき。選んだ行をほかの入力欄に出せる）。`form.setValue(name, value)` でほかの項目を埋められる（`values` も変わる。`form` はボタンの onClick と同じで、`form.table` `form.chart` `form.log` も使える。setValue で変えた項目の onChange は呼ばれない。例: 売上のファイルを選んだら、同じフォルダの対になる仕入のファイルを `form.setValue("purchase", path.join(path.dirname(h.path), "仕入_202604.csv"))` で設定する）。
+- 項目の無効化・非表示: `disabled: true` でグレー表示（入力できない）、`hidden: true` で非表示。関数にするとほかの項目の値から決まり、値が変わるたびに見直される（`disabled: (v) => !v.useMail`、`hidden: (v) => v.kind !== "その他"`）。onChange やボタンの onClick から `form.setDisabled(name, bool)` / `form.setHidden(name, bool)` でも切り替えられる（false で戻す）（項目の `disabled` / `hidden` を置き換える）。無効・非表示の項目は `required` などの検証をしない（値はそのまま `values` に入る）。コンソール・mock では尋ねない。
 - `tabs: [{ label: "基本", fields: [...] }, { label: "詳細", fields: [...] }]` でタブ分け。
 - 横に並べる: `{ row: "氏名", fields: [{ name: "last", label: "姓" }, { name: "first", label: "名" }] }` を項目と並べて書く（`row` が左のラベル、各項目の `label` は入力欄の前。`""` で出さない）。値はほかの項目と同じオブジェクト。
-- 右上のツールバー: `toolbar: [{ name: "detail", type: "switch", label: "詳細表示" }, { icon: "gear", tooltip: "設定", onClick(values, ctx) { ... } }]`。`name` のあるものは項目（値は `values`）、ないものはボタン（`label` なしならアイコンだけ。検証せずに `onClick` を呼ぶ。`ctx.setValue` で項目を変えられる。`menu: [{ label, onClick }]` も可）。
-- 複数のフォームを 1 つのウィンドウに: `await ui.forms({ forms: [{ label: "登録", icon: "pen", fields, onSubmit }, { label: "設定", icon: "gear", fields }], side: "left", size: "fixed" })`。サイドメニュー（ハンバーガーで畳める）で切り替える。`side: "right"` で右、`size: "each"` で切り替えるたびにそのフォームの `width` / `height` にする（`"fixed"` は `ui.forms` の `width` / `height`）。戻り値はフォームごとの最後に送信された値（なければ `null`）の配列。
+- 右上のツールバー: `toolbar: [{ name: "detail", type: "switch", label: "詳細表示" }, { icon: "gear", tooltip: "設定", onClick(values, form) { ... } }]`。`name` のあるものは項目（値は `values`）、ないものはボタン（`label` なしならアイコンだけ。検証せずに `onClick` を呼ぶ。`form.setValue` で項目を変えられ、`form.log` はフォームの下に出る。`menu: [{ label, onClick }]` も可）。
+- 複数のフォームを 1 つのウィンドウに: `await ui.forms({ forms: [{ label: "登録", icon: "pen", fields, buttons }, { label: "設定", icon: "gear", fields }], side: "left", size: "fixed" })`。サイドメニュー（ハンバーガーで畳める）で切り替える。`side: "right"` で右、`size: "each"` で切り替えるたびにそのフォームの `width` / `height` にする（`"fixed"` は `ui.forms` の `width` / `height`）。戻り値はフォームごとの最後にボタンを押したときの値（なければ `null`）の配列。
 - `fields` に `{ group: "出力", icon: "file-export", help: "説明", fields: [...] }` を項目と並べて書くと見出し付きのグループになる（タブの中でも可。値は項目と同じく 1 つのオブジェクト）。`collapsed: true` で閉じた状態の「詳細設定」にできる（見出しのクリックで開閉。エラーが出ると開く）。`collapsible: true` は開いた状態で開閉可能。
-- アイコン（Font Awesome Free の名前。`"folder-open"` など）: 項目・タブ・ボタンの `icon`、送信ボタンは `submitIcon`。フォームの `icon` は `titleBar: "custom"` のときだけタイトルバーに出る（それ以外は無視）。
-- アクセントカラー: `accent: "#c42b1c"`（CSS の色。ライト・ダーク共通）か `accent: { light, dark }`。送信ボタン・タブ・フォーカス枠などの色が変わる。
-- 角丸: `radius: "large"`（`"none"` `"small"` `"medium"`（既定）`"large"` `"full"` かピクセル数）。ボタン・入力欄・タブ・表の角の丸み。
-- 背景色: `background: "#fff8e1"`（CSS の色。ライト・ダーク共通）か `background: { light, dark }`。暗い色なら文字・入力欄もダークの配色になる。
-- `table` に `editable: true` を付けるとセルをその場で編集でき、入力のたびに検証してエラーのセルを赤く表示する（エラーが残っていると送信できない）。検証を通った値は元の行オブジェクトに書き込まれる。
+- アイコン（Font Awesome Free の名前。`"folder-open"` など）: 項目・タブ・ボタンの `icon`。フォームの `icon` は `titleBar: "custom"` のときだけタイトルバーに出る（それ以外は無視）。
+- 見た目（`ui.table`・`ui.chart` でも同じ）: `accent`（アクセントカラー）・`background`（背景色。暗い色なら文字もダークの配色）は CSS の色か `{ light, dark }`、`radius`（角丸）は `"none"`〜`"full"` かピクセル数。
+- `table` に `editable: true` を付けるとセルをその場で編集でき、入力のたびに検証してエラーのセルを赤く表示する（エラーが残っているとボタンを実行できない）。検証を通った値は元の行オブジェクトに書き込まれる。
 
 ```js
 const v = await ui.form({
@@ -342,34 +343,33 @@ const v = await ui.form({
     ],
     validateRow: (r) => (r.区分 === "返品" && r.金額 > 10000 ? { 金額: "返品は 1 万円まで" } : ""),
   }],
-  submit: "修正を反映",
+  buttons: [{ label: "修正を反映", variant: "primary" }], // onClick なしは押すと閉じて値を返す
 });
 if (!v) exit();
 // v.rows は（編集済みの）全行。badRows の各オブジェクトも書き換わっている
 ```
-- `onSubmit(v, ctx)` を書くと、送信後もフォームが開いたまま処理し、進捗・ログ・中止ボタンを表示する。出力ファイルを `return` すると「フォルダを開く」ボタンが出る。
+- ボタンに `onClick(v, form)` を書くと、押したあともフォームが開いたまま処理し、進捗・ログ・中止ボタンを表示する。出力ファイルを `return` すると「フォルダを開く」ボタンが出る。
 
 ```js
 await ui.form({
   title: "集計",
   fields: [{ name: "src", label: "フォルダ", type: "folder", required: true }],
-  async onSubmit(v, ctx) {
+  buttons: [{ label: "集計", variant: "primary", async onClick(v, form) {
     const files = v.src.walk("*.xlsx").toArray();
-    for (const h of ctx.withProgress(files)) {  // 中止ボタンが押されると onSubmit はここで終わる
-      ctx.log(h.relativePath);      // ログ欄に表示（ctx.error で赤字）
+    for (const h of form.withProgress(files)) {  // 中止ボタンが押されると onClick はここで終わる
+      form.log(h.relativePath);      // ログ欄に表示（form.error で赤字）
     }
     // ... 保存
     // return dest;
-  },
+  } }],
 });
 ```
 
-- `ctx.table(name, rows, columns?)` で `table` 項目の行（と列）を入れ替えられる（`onSubmit`・ボタンの `onClick`・項目の `onChange` のどれからでも）。結果の一覧を同じウィンドウに出す、登録のあとに一覧を読み直す、条件を変えたら絞り込む、に使う。最初は `rows: []` で空の表を置いておける。
-- 処理が終わるとフォームは入力できる状態に戻り、値を変えて続けて実行できる（閉じるのは利用者）。
-- フォームの表でできないこと: 表の上での行の追加・削除（スクリプトが `ctx.table` で行を入れ替えることはできる）、セルを変えたときにほかのセルを変えること（セルの `onChange` はない。検査は `validate` / `validateRow`）。これらが要るならカスタムアプリ（アプリモード）。
+- `form.table(name, rows, columns?)` で `table` 項目の行（と列）を入れ替えられる（ボタンの `onClick`・項目の `onChange` のどちらからでも）。結果の一覧を同じウィンドウに出す、登録のあとに一覧を読み直す、条件を変えたら絞り込む、に使う。最初は `rows: []` で空の表を置いておける。
+- フォームの表でできないこと: 表の上での行の追加・削除（スクリプトが `form.table` で行を入れ替えることはできる）、セルを変えたときにほかのセルを変えること（セルの `onChange` はない。検査は `validate` / `validateRow`）。これらが要るならカスタムアプリ（アプリモード）。
 
-- `buttons: [{ label, onClick(v, ctx) }]` で送信ボタンの左にボタンを追加できる。押すと onClick が onSubmit と同じように動く（ウィンドウは開いたまま。押したボタンは終わるまでスピナーを表示）。`validate: false` で検証なし、`close: true` で正常終了後に閉じる。`submit: false` で送信ボタンを出さない。`ctx.setValue(name, value)` で項目の値を変えられる。
-- ボタンの `variant`: `"primary"`（塗りつぶし）`"destructive"`（赤。削除など）`"ghost"`（枠なし）。`confirm: "削除しますか？"` で実行前に確認する（検証のあと）。
+- `buttons: [{ label, onClick(v, form) }]` でフォームの下にボタンを並べる。押すと検証してから onClick が動く（ウィンドウは開いたまま。押したボタンは終わるまでスピナーを表示）。`onClick` のないボタンは検証して閉じ、値を返す。`validate: false` で検証なし、`close: true` で onClick の正常終了後に閉じる。`onSubmit`・`submit`・`submitIcon` はない（書くとエラー）。`form.setValue(name, value)` で項目の値を変えられる。
+- ボタンの `variant`: `"primary"`（塗りつぶし。Enter で押されるボタンで 1 つまで。なければ Enter では何も押されない）`"destructive"`（赤。削除など）`"ghost"`（枠なし）。`confirm: "削除しますか？"` で実行前に確認する（検証のあと）。
 - `menu: [{ label, onClick, ... }]` でスプリットボタン（本体と ▼ のメニュー）。`onClick` なしで `menu` だけなら、メニューを開くだけのボタン。
 
 ## 表の表示（ui.table）
@@ -381,7 +381,7 @@ const picked = await ui.table(rows, { title: "選択", selectable: "multiple" })
 const [one] = await ui.table(rows, { selectable: "single" });
 ui.table(rows, {
   columns: ["名前", { key: "size", label: "サイズ", width: 80 }],
-  onDoubleClick(e) { shell.openPath(e.row.handle); },      // e: { row, index, column, value, close() }
+  onDoubleClick(e) { shell.open(e.row.handle); },          // e: { row, index, column, value, close() }
 });
 ```
 
@@ -399,6 +399,7 @@ ui.table(rows, { formats: [
 ] });
 ```
 
+- 表示だけの表は `const view = ui.table(rows)` の `view.update(rows)` で行を差し替えられる（並べ替え・絞り込みは解除）。
 - `ui.table` は表示と選択だけで、セルは編集できない。編集させるときは `ui.form` の `type: "table"` に `editable: true`（上の「フォーム」）。
 - `onDoubleClick` は `ui.table` だけにある（フォームの表にはない）。`e.column` はダブルクリックした列の見出し（行番号の欄なら `null`）、`e.key` は列のキー。`selectable: "single"` と一緒に指定すると、ダブルクリックでは OK にならない。
 
@@ -441,7 +442,7 @@ d.toDate();                                      // Date に戻す
 const handles = await showOpenFilePicker({ multiple: true, types: [{ description: "CSV", accept: [".csv", ".tsv", ".txt"] }] });
 if (handles.length === 0) exit();
 
-const book = workbooks.create();
+const book = excel.create();
 for (const h of handles) {
   const rows = csv.read(h);
   const name = path.basename(h.name, path.extname(h.name)).replace(/[\\\/?*\[\]:]/g, "_").slice(0, 31);
@@ -459,9 +460,9 @@ shell.showItemInFolder(dest);
 ```js
 const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx"] }] });
 if (!h) exit();
-const book = workbooks.open(h);
+const book = excel.open(h);
 const sheet = book.sheets[0];
-const rows = sheet.toObjects();
+const rows = sheet.rows();
 const key = prompt("分ける列の名前", Object.keys(rows[0] ?? {})[0] ?? "");
 if (!key) exit();
 
@@ -469,12 +470,12 @@ const outDir = path.join(path.dirname(h), "分割");
 fs.mkdir(outDir);
 const groups = Object.groupBy(rows, (r) => String(r[key] ?? "(空欄)"));
 for (const [name, list] of ui.withProgress(Object.entries(groups), "分割中")) {
-  const out = workbooks.create();
+  const out = excel.create();
   out.addSheet(sheet.name).write(list, { table: true });
   out.save(path.join(outDir, `${name.replace(/[\\\/:*?"<>|]/g, "_")}.xlsx`));
 }
 alert(`${Object.keys(groups).length} ファイルに分けました`);
-shell.openPath(outDir);
+shell.open(outDir);
 ```
 
 ### 3. ひな形（テンプレート）に 1 行ずつ差し込んで、行の数だけファイルを作る
@@ -491,11 +492,11 @@ const v = await ui.form({
 });
 if (!v) exit();
 
-const rows = workbooks.open(v.list).sheets[0].toObjects();
+const rows = excel.open(v.list).sheets[0].rows();
 const safe = (s) => String(s ?? "").replace(/[\\\/:*?"<>|]/g, "_");  // ファイル名に使えない文字を置き換える
 let count = 0;
 for (const r of ui.withProgress(rows, "作成中")) {
-  const book = workbooks.open(v.template);   // 毎回ひな形を開き直す
+  const book = excel.open(v.template);       // 毎回ひな形を開き直す
   const ws = book.sheets[0];
   ws.cell("B3").value = r.顧客名;
   ws.cell("B4").value = r.住所;
@@ -506,7 +507,7 @@ for (const r of ui.withProgress(rows, "作成中")) {
   count++;
 }
 alert(`${count} 件作成しました`);
-shell.openPath(v.outDir);
+shell.open(v.outDir);
 ```
 
 ### 4. 2 つの一覧を突き合わせる（VLOOKUP の代わり）
@@ -522,7 +523,7 @@ const v = await ui.form({
 });
 if (!v) exit();
 
-const load = (h) => h.name.toLowerCase().endsWith(".csv") ? csv.read(h) : workbooks.open(h).sheets[0].toObjects();
+const load = (h) => h.name.toLowerCase().endsWith(".csv") ? csv.read(h) : excel.open(h).sheets[0].rows();
 const a = load(v.a);
 const master = new Map(load(v.b).map((r) => [String(r[v.key]).trim(), r]));
 
@@ -534,7 +535,7 @@ const missing = result.filter((r) => r.照合結果 === "なし");
 
 const dest = await showSaveFilePicker({ suggestedName: "突き合わせ結果.xlsx", startIn: v.a });
 if (!dest) exit();
-const out = workbooks.create();
+const out = excel.create();
 out.addSheet("結果").write(result, { table: true });
 out.addSheet("見つからない").write(missing, { table: true });
 out.save(dest);
@@ -547,7 +548,7 @@ shell.showItemInFolder(dest);
 ```js
 const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx"] }] });
 if (!h) exit();
-const rows = workbooks.open(h).sheets[0].toObjects().filter((r) => r.日付 instanceof Date);
+const rows = excel.open(h).sheets[0].rows().filter((r) => r.日付 instanceof Date);
 
 const ym = (d) => dayjs(d).format("YYYY-MM");
 const months = [...new Set(rows.map((r) => ym(r.日付)))].sort();
@@ -561,11 +562,11 @@ const table = Object.entries(Object.groupBy(rows, (r) => r.担当 ?? "(未設定
 
 const dest = await showSaveFilePicker({ suggestedName: "月別集計.xlsx", startIn: h });
 if (!dest) exit();
-const out = workbooks.create();
+const out = excel.create();
 const style = Object.fromEntries([...months, "合計"].map((m) => [m, { format: "#,##0" }]));
 out.addSheet("月別").write(table, { table: true, columnStyles: style });
 out.save(dest);
-shell.openPath(dest);
+shell.open(dest);
 ```
 
 ### 6. exe にドロップしたファイルを処理する（`xljs pack` 用）
@@ -578,7 +579,7 @@ if (targets.length === 0) exit();
 
 const created = [];
 for (const h of ui.withProgress(targets, "変換中")) {
-  const book = workbooks.open(h);
+  const book = excel.open(h);
   for (const sheet of book.sheets) {
     const dest = path.join(path.dirname(h), `${path.basename(h.name, path.extname(h.name))}_${sheet.name}.csv`);
     csv.write(dest, sheet.toArrays({ text: true }), { encoding: "cp932" });

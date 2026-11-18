@@ -44,9 +44,9 @@ ok(rows[1].d instanceof Date);
 equal(rows[2].id, 3);
 
 // Round trip with a worksheet.
-const wb = workbooks.create();
+const wb = excel.create();
 wb.addSheet("s").write(fs.readJSONL("rows.jsonl", { dates: true }));
-ok(wb.sheet(0).getValue("B3") instanceof Date, "revived dates become date cells");
+ok(wb.sheet(0).cell("B3").value instanceof Date, "revived dates become date cells");
 
 // Parse errors are reported in Japanese.
 fs.writeText("bad.json", "{oops}");

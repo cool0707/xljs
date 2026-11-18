@@ -1,7 +1,7 @@
 import { ok, equal, deepEqual, throws } from "./_assert.js";
 
 // A workbook made by the script: formulas have no result until they are calculated.
-const wb = workbooks.create();
+const wb = excel.create();
 const ws = wb.addSheet("見積");
 ws.write([
   ["品名", "単価", "数量", "金額"],
@@ -95,7 +95,7 @@ equal(fx.cell("E5").formula, null);
 
 // The stored results are in the file: they are there without calculating again.
 wb.save("calc.xlsx");
-const again = workbooks.open("calc.xlsx");
+const again = excel.open("calc.xlsx");
 equal(again.sheet("見積").cell("D8").value, 5940);
 equal(again.sheet("関数").cell("C1").value, 800);
 equal(again.sheet("関数").cell("C1").formula, '=XLOOKUP("みかん",見積!A2:A4,見積!D2:D4)');
@@ -111,7 +111,7 @@ equal(again.sheet("メモ").cell("A1").value, 14080);
 
 // A workbook Excel saved (testdata/xlsx/make_calc.py): results are kept until
 // something they depend on changes; printing calculates what changed.
-const saved = workbooks.open(path.join(xljs.scriptDir, "..", "xlsx", "calc.xlsx"));
+const saved = excel.open(path.join(xljs.scriptDir, "..", "xlsx", "calc.xlsx"));
 const keep = saved.sheet("保存値");
 equal(keep.cell("B1").value, 123, "a function of a macro: the result Excel saved");
 keep.cell("A1").value = 7;
@@ -127,7 +127,7 @@ deepEqual(arr.toArrays().map((row) => row[4] ?? null), [3, 4, 5, null, null], "F
 equal(saved.sheet("表").cell("F1").value, 5500, "the table's column by name");
 
 // A formula that gives several values spills, as when it is typed into Excel.
-const sb = workbooks.create();
+const sb = excel.create();
 const sp = sb.addSheet("スピル");
 sp.write([
   ["品名", "数量"],
@@ -168,7 +168,7 @@ sb.calculate();
 deepEqual(sp.range("D1:E3").values, [["りんご", 3], ["ぶどう", 2], [null, null]]);
 // The file has the formulas as Excel saves them: opened again they spill the same.
 sb.save("spill.xlsx");
-const sb2 = workbooks.open("spill.xlsx");
+const sb2 = excel.open("spill.xlsx");
 const sp2 = sb2.sheet("スピル");
 equal(sp2.cell("D1").formula, "=FILTER(A2:B4,B2:B4>0)");
 equal(sp2.cell("I2").formula, "=@B2:B4");
@@ -182,7 +182,7 @@ sp2.cell("D1").value = "なし";
 deepEqual(sp2.range("D1:E3").values, [["なし", null], [null, null], [null, null]]);
 // The spills of a workbook Excel saved are still spills after a save here.
 saved.save("calc-saved.xlsx");
-const resaved = workbooks.open("calc-saved.xlsx");
+const resaved = excel.open("calc-saved.xlsx");
 const arr2 = resaved.sheet("配列");
 equal(arr2.cell("E1").formula, "=FILTER(A1:A5,B1:B5>20)");
 equal(arr2.cell("I3").formula, "=@A1:A5", "saved without the metadata: one value, as Excel shows it");
@@ -206,10 +206,10 @@ kj.cell("A2").value = new Date(2026, 9, 7);
   equal(kj.cell(i + 1, 3).calc(), want, f);
 });
 equal(sb.calculate().skipped.length, 0, "NUMBERSTRING is calculated");
-kj.cell("A1").style({ numberFormat: "[DBNum2][$-411]G/標準" });
+kj.cell("A1").setStyle({ numberFormat: "[DBNum2][$-411]G/標準" });
 equal(kj.cell("A1").text, "壱萬弐阡参百四拾伍");
-equal(kj.cell("A1").getStyle().numberFormat, "[DBNum2][$-411]General", "as the file holds it");
-kj.cell("A2").style({ numberFormat: '[DBNum1]yyyy"年"m"月"d"日"' });
+equal(kj.cell("A1").getStyle().format, "[DBNum2][$-411]General", "as the file holds it");
+kj.cell("A2").setStyle({ numberFormat: '[DBNum1]yyyy"年"m"月"d"日"' });
 equal(kj.cell("A2").text, "二〇二六年十月七日");
 
 console.log("calc ok");

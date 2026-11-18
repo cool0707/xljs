@@ -1412,6 +1412,12 @@
     return /\.(csv|tsv)$/i.test(String(p)) ? "utf8bom" : "utf8";
   }
 
+  /** Writes text to a file. options: an encoding, or { encoding, append }. */
+  function writeTextAt(path, text, options) {
+    const o = options !== null && typeof options === "object" ? options : { encoding: options };
+    native.fsWriteText(path, String(text), textEncodingFor(path, o.encoding), !!o.append);
+  }
+
   class FileSystemFileHandle extends FileSystemHandle {
     constructor(path, relativePath) { super("file", path, relativePath); }
     async getFile() {
@@ -1427,8 +1433,10 @@
     stat() { return native.fsStat(this._path); }
     readText(encoding = "auto") { return native.fsReadText(this._path, encoding); }
     readBytes() { return native.fsReadBytes(this._path); }
-    writeText(text, encoding) { native.fsWriteText(this._path, String(text), textEncodingFor(this._path, encoding), false); return this; }
-    appendText(text, encoding) { native.fsWriteText(this._path, String(text), textEncodingFor(this._path, encoding), true); return this; }
+    /** options: an encoding, or { encoding, append } */
+    writeText(text, options) { writeTextAt(this._path, text, options); return this; }
+    /** writeText(text, { append: true }) (not documented). */
+    appendText(text, encoding) { writeTextAt(this._path, text, { encoding, append: true }); return this; }
     writeBytes(data) { native.fsWriteBytes(this._path, toUint8(data), false); return this; }
   }
 
@@ -1588,8 +1596,10 @@
     isFile: (p) => { const s = native.fsStat(toPath(p)); return !!s && s.isFile; },
     isDirectory: (p) => { const s = native.fsStat(toPath(p)); return !!s && s.isDirectory; },
     readText: (p, encoding = "auto") => native.fsReadText(toPath(p), encoding),
-    writeText: (p, text, encoding) => native.fsWriteText(toPath(p), String(text), textEncodingFor(toPath(p), encoding), false),
-    appendText: (p, text, encoding) => native.fsWriteText(toPath(p), String(text), textEncodingFor(toPath(p), encoding), true),
+    /** options: an encoding, or { encoding, append } */
+    writeText: (p, text, options) => writeTextAt(toPath(p), text, options),
+    /** writeText(p, text, { append: true }) (not documented). */
+    appendText: (p, text, encoding) => writeTextAt(toPath(p), text, { encoding, append: true }),
     readBytes: (p) => native.fsReadBytes(toPath(p)),
     writeBytes: (p, data) => native.fsWriteBytes(toPath(p), toUint8(data), false),
     /** Reads a JSON file (path, handle, File or Blob). opts: { encoding = "auto", dates = false } */
@@ -1612,12 +1622,15 @@
       const text = Array.from(rows || []).map((r) => jsonStringify(r, opts)).join("\n") + "\n";
       native.fsWriteText(toPath(dest), text, opts.encoding || "utf8", !!opts.append);
     },
-    list: (p = ".", opts = {}) => native.fsReadDir(toPath(p), !!opts.hidden).map((e) => e.name),
+    /** The direct children as handles (as dir.list()). */
+    list: (p = ".", opts = {}) => new FileSystemDirectoryHandle(toPath(p))._list(opts),
     walk: (p, opts) => walkEntries(toPath(p), opts),
+    /** walk(cwd, pattern) as an array (not documented). */
     glob: (pattern, opts = {}) => walkEntries(opts.cwd ? toPath(opts.cwd) : native.fsCwd(), { glob: pattern, exclude: opts.exclude, hidden: opts.hidden }).toArray(),
     mkdir: (p) => native.fsMkdir(toPath(p)),
     remove: (p, opts = {}) => native.fsRemove(toPath(p), !!opts.recursive),
     rename: (from, to) => native.fsRename(toPath(from), toPath(to)),
+    /** Alias of rename() (not documented). */
     move: (from, to) => native.fsRename(toPath(from), toPath(to)),
     copy: (from, to) => native.fsCopy(toPath(from), toPath(to)),
     cwd: () => native.fsCwd(),
@@ -1750,8 +1763,10 @@
   const linkPath = (x) => (typeof x === "string" ? x : toPath(x));
   shellObj.readShortcutLink = (p) => JSON.parse(native.shellReadShortcut(toPath(p)));
   shellObj.writeShortcutLink = (p, operation, options) => {
-    if (operation !== null && typeof operation === "object") [operation, options] = ["create", operation];
+    // writeShortcutLink(path, { mode, ... }); the operation as the second argument is the earlier form (not documented).
+    if (operation !== null && typeof operation === "object") [operation, options] = [operation.mode, operation];
     const o = Object.assign({}, options || {});
+    delete o.mode;
     for (const k of ["target", "cwd", "icon"]) if (o[k] !== undefined && o[k] !== null) o[k] = linkPath(o[k]);
     for (const k of ["args", "description", "windowState", "hotkey"]) if (o[k] !== undefined && o[k] !== null) o[k] = String(o[k]);
     if (o.iconIndex !== undefined && o.iconIndex !== null) o.iconIndex = Math.trunc(Number(o.iconIndex)) || 0;
@@ -1863,6 +1878,7 @@
   };
   shellObj.spawn = (command, args, options) => new ChildProcess(native.procSpawn(...procSpec("shell.spawn()", command, args, options)));
   defineGlobal("ChildProcess", ChildProcess);
+  // Aliases (not documented).
   shellObj.showInFolder = shellObj.showItemInFolder;
   shellObj.open = (target) => (isURL(target) ? shellObj.openExternal(target) : shellObj.openPath(target));
   defineGlobal("shell", shellObj);
@@ -1905,10 +1921,8 @@
       lastCancelled = false;
     }
     get total() { return this._total; }
-    set total(n) { this._total = Math.max(0, Math.floor(Number(n) || 0)); this._push(); }
     get done() { return this._done; }
     get message() { return this._message; }
-    set message(m) { this._message = String(m); this._push(); }
     get cancelled() {
       if (this._closed) return lastCancelled;
       const c = this._n.cancelled();
@@ -1916,9 +1930,11 @@
       return c;
     }
     _push() { if (!this._closed) this._n.update(this._done, this._total, this._message); }
-    /** Sets the number of completed items and optionally the message. */
-    update(done, message) {
+    /** update(done, total?, message?) or update(done, message): as the form's progress(). */
+    update(done, total, message) {
+      if (typeof total === "string") { message = total; total = undefined; }
       this._done = Math.max(0, Math.floor(Number(done) || 0));
+      if (total !== undefined && total !== null) this._total = Math.max(0, Math.floor(Number(total) || 0));
       if (message !== undefined) this._message = String(message);
       this._push();
       return this;
@@ -2451,7 +2467,7 @@
     return native.displayText([`${e.name}: ${e.message}`, ...frames].join("\n"));
   }
 
-  /** Existing paths among the values returned by onSubmit (paths, handles, Files, arrays). */
+  /** Existing paths among the values returned by a button's onClick (paths, handles, Files, arrays). */
   function outputsOf(r) {
     const out = [];
     for (const x of [r].flat(Infinity)) {
@@ -2486,6 +2502,62 @@
     return native.imageDataUrl(native.fsReadBytes(p), p);
   }
 
+  /**
+   * The keys a field may have: those of every field, and those of some
+   * types only (others are an error, so that a key meant for another type
+   * or a misspelt one does not pass unnoticed).
+   */
+  const FIELD_KEYS = ["name", "label", "icon", "type", "default", "required", "help", "tooltip", "disabled", "hidden",
+    "onChange", "validate", "remember"];
+  const TEXTS = ["text", "password", "textarea", "tags", "combobox"];
+  const FILES = ["file", "files", "folder", "saveFile"];
+  const TYPE_KEYS = {
+    options: ["select", "radio", "checkboxes", "segmented", "combobox"],
+    multiple: ["segmented"], allowCustom: ["combobox"],
+    placeholder: ["text", "password", "number", "textarea", "select", "combobox", "tags", "date", "month", "time", ...FILES],
+    prefix: ["text", "password", "number", "slider"], suffix: ["text", "password", "number", "slider"],
+    maxLength: ["text", "password", "textarea", "tags"], pattern: TEXTS, patternMessage: TEXTS,
+    min: ["number", "slider"], max: ["number", "slider"], step: ["number", "slider"],
+    lines: ["textarea", "files"], accept: FILES,
+    rows: ["table"], columns: ["table"], formats: ["table"], selectable: ["table"], editable: ["table"], validateRow: ["table"],
+    chart: ["chart"], height: ["table", "chart", "image"],
+    text: ["note"], kind: ["note"], src: ["image"], align: ["image"], alt: ["image"], width: ["image"],
+  };
+  /** Keys renamed: { key: { types, now } }. */
+  const RENAMED_KEYS = {
+    rows: { types: ["textarea", "files"], now: "lines" },
+    variant: { types: ["note"], now: "kind" },
+    default: { types: ["note", "image"], now: { note: "text", image: "src" } },
+  };
+
+  /** Throws for a key a field of its type does not have. */
+  function checkFieldKeys(f, name, type) {
+    for (const k of Object.keys(f)) {
+      const r = RENAMED_KEYS[k];
+      if (r && r.types.includes(type)) {
+        throw new TypeError(T("form.renamedKey", name, type, k, typeof r.now === "string" ? r.now : r.now[type]));
+      }
+      if (FIELD_KEYS.includes(k)) continue;
+      const types = TYPE_KEYS[k];
+      if (types && types.includes(type)) continue;
+      if (types) throw new TypeError(T("form.keyForType", name, type, k, types.join(", ")));
+      const known = FIELD_KEYS.concat(Object.keys(TYPE_KEYS));
+      const near = known.find((x) => x.toLowerCase() === k.toLowerCase()) || known.find((x) => editDistance(x, k) <= 2);
+      throw new TypeError(near ? T("form.unknownKeyNear", name, k, near) : T("form.unknownKey", name, k));
+    }
+  }
+
+  /** The Levenshtein distance of two short strings. */
+  function editDistance(a, b) {
+    let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+    for (let i = 1; i <= a.length; i++) {
+      const cur = [i];
+      for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[b.length];
+  }
+
   /** Looks of a note field and of buttons. */
   const NOTE_VARIANTS = ["info", "success", "warning", "error"];
   const BUTTON_VARIANTS = ["default", "primary", "destructive", "ghost"];
@@ -2515,7 +2587,9 @@
         type = typeof v === "number" ? "number" : typeof v === "boolean" ? "checkbox" : v instanceof Date ? "date" : "text";
       }
       if (!CELL_TYPES.includes(String(type))) throw new TypeError(T("form.cellType", c.label, type));
-      const cf = normField(Object.assign({}, s, { name: c.label, type: String(type) }), i, -1);
+      // The column's own keys aside, the rest is checked as a field's.
+      const { key, label, width, editable, validate, ...rest } = s;
+      const cf = normField(Object.assign(rest, { name: c.label, type: String(type) }), i, -1);
       cf.col = i;
       cf.validate = typeof s.validate === "function" ? s.validate : null;
       return cf;
@@ -2662,13 +2736,14 @@
     const name = String(f.name);
     const type = f.type === undefined ? "text" : String(f.type);
     if (!FIELD_TYPES.includes(type)) throw new TypeError(T("form.fieldType", name, type));
+    checkFieldKeys(f, name, type);
     const options = Array.from(f.options || []).map((o) => (o !== null && typeof o === "object"
       ? { value: String(o.value), label: String(o.label === undefined ? o.value : o.label) }
       : { value: String(o), label: String(o) }));
     if (["select", "radio", "checkboxes", "segmented"].includes(type) && !options.length) throw new TypeError(T("form.noOptions", name));
     if (type === "combobox" && !options.length && !f.allowCustom) throw new TypeError(T("form.noOptions", name));
-    const variant = f.variant === undefined || f.variant === null || f.variant === "" ? "info" : String(f.variant);
-    if (type === "note" && !NOTE_VARIANTS.includes(variant)) throw new TypeError(T("form.badNoteVariant", name, variant));
+    const variant = f.kind === undefined || f.kind === null || f.kind === "" ? "info" : String(f.kind);
+    if (type === "note" && !NOTE_VARIANTS.includes(variant)) throw new TypeError(T("form.badNoteKind", name, variant));
     const align = f.align === undefined || f.align === null || f.align === "" ? "left" : String(f.align);
     if (type === "image" && !IMAGE_ALIGNS.includes(align)) throw new TypeError(T("form.badAlign", name, align));
     const accept = (typeof f.accept === "string" ? [f.accept] : Array.from(f.accept || []))
@@ -2684,9 +2759,9 @@
       multiple: type === "segmented" && !!f.multiple, custom: type === "combobox" && !!f.allowCustom,
       variant: type === "note" ? variant : "",
       align: type === "image" ? align : "", alt: f.alt ? String(f.alt) : "",
-      // The size of an image (px; 0: its own, never wider than the form).
+      // The width of an image (px; 0: its own, never wider than the form); the height of an image, a table or a chart (px; 0: the default).
       width: type === "image" ? Math.max(0, Number(f.width) || 0) : 0,
-      height: type === "image" ? Math.max(0, Number(f.height) || 0) : 0,
+      height: Math.max(0, Number(f.height) || 0),
       prefix: f.prefix === undefined || f.prefix === null ? "" : String(f.prefix),
       suffix: f.suffix === undefined || f.suffix === null ? "" : String(f.suffix),
       maxLength: Number.isFinite(maxLength) && maxLength > 0 ? Math.floor(maxLength) : 0,
@@ -2699,7 +2774,8 @@
       help: f.help ? String(f.help) : "",
       tooltip: f.tooltip ? String(f.tooltip) : "",
       min: num(f.min) ?? (slider ? 0 : null), max: num(f.max) ?? (slider ? 100 : null), step: f.step === undefined ? null : f.step,
-      rows: type === "table" || type === "chart" ? Number(f.height) || 0 : type === "image" ? 0 : Number(f.rows) || 0,
+      // Lines of a textarea or a files field.
+      rows: Number(f.lines) || 0,
       pattern: f.pattern === undefined || f.pattern === null || f.pattern === "" ? null
         : f.pattern instanceof RegExp ? f.pattern : new RegExp("^(?:" + f.pattern + ")$"),
       patternMessage: f.patternMessage ? String(f.patternMessage) : "",
@@ -2709,7 +2785,8 @@
       // disabled / hidden: true, or a function of the values (checked again as they change); ctx.setDisabled / setHidden replace it.
       disabled: typeof f.disabled === "function" ? f.disabled : !!f.disabled,
       hidden: typeof f.hidden === "function" ? f.hidden : !!f.hidden,
-      default: f.default,
+      // A note's text and an image are given as text / src (form.setValue changes them).
+      default: type === "note" ? f.text : type === "image" ? f.src : f.default,
     };
   }
 
@@ -2986,7 +3063,7 @@
     }
   }
 
-  /** The ctx argument of onSubmit. */
+  /** The form argument of a button's onClick, a field's onChange and a toolbar button's onClick. */
   class FormContext {
     constructor(impl) { define(this, "_i", impl); }
     /** Whether the user asked to stop (or closed the window). */
@@ -3015,12 +3092,16 @@
       f.chart = chartOf(chartPatch(f.chart.spec, spec));
       this._i.chart(f);
     }
-    /** Sets the value of a field (as its default would be given). */
+    /** Sets the value of a field (as its default would be given); the handler's values follow. */
     setValue(name, value) {
       const f = this._i.fields.find((x) => x.name === String(name));
       if (!f) throw new TypeError(T("form.noField", name));
-      this._i.setValue(f, toWire(f, value));
+      const w = toWire(f, value);
+      this._i.setValue(f, w);
+      if (this._values && f.name in this._values) this._values[f.name] = fromWire(f, w);
     }
+    /** The values given to the handler, which setValue keeps up to date. */
+    _bind(values) { define(this, "_values", values); return values; }
     /** Disables (grays out) a field, or enables it with false; replaces its disabled option. */
     setDisabled(name, disabled = true) {
       const f = this._i.fields.find((x) => x.name === String(name));
@@ -3028,8 +3109,6 @@
       f.disabled = !!disabled;
       this._i.state();
     }
-    /** Enables a field, or disables it with false. */
-    setEnabled(name, enabled = true) { this.setDisabled(name, !enabled); }
     /** Hides a field, or shows it with false; replaces its hidden option. */
     setHidden(name, hidden = true) {
       const f = this._i.fields.find((x) => x.name === String(name));
@@ -3037,10 +3116,8 @@
       f.hidden = !!hidden;
       this._i.state();
     }
-    /** Shows a field, or hides it with false. */
-    setVisible(name, visible = true) { this.setHidden(name, !visible); }
     /**
-     * Like ui.withProgress, shown in the form. Cancelling ends onSubmit
+     * Like ui.withProgress, shown in the form. Cancelling ends onClick
      * (the form shows that it was aborted) unless onCancel: "break".
      */
     withProgress(iterable, options = {}) {
@@ -3055,7 +3132,7 @@
     }
   }
 
-  /** Thrown by ctx.withProgress when the run is aborted; ends onSubmit quietly. */
+  /** Thrown by ctx.withProgress when the run is aborted; ends onClick quietly. */
   class FormCancel {}
 
   function formTexts() {
@@ -3151,33 +3228,45 @@
     const remembered = options.remember ? loadRemembered(key) : {};
     const wire = {};
     for (const f of fields) wire[f.name] = f.remember && f.name in remembered ? remembered[f.name] : toWire(f, f.default);
-    // Buttons beside the submit button; each runs its onClick like onSubmit.
-    // A button's menu (a split button, or a menu button without onClick) holds more of them.
+    // The submit button of earlier versions is now one of the buttons.
+    for (const k of ["onSubmit", "submit", "submitIcon"]) if (options[k] !== undefined) throw new TypeError(T("form.noSubmitOption", k));
+    // The buttons: each runs its onClick (with the run's progress and log); one without
+    // onClick checks the values and closes the form. A button's menu (a split button,
+    // or a menu button without onClick) holds more of them. Without buttons: an OK button.
     const button = (b, label, menu) => {
       const variant = b.variant === undefined || b.variant === null || b.variant === "" ? "default" : String(b.variant);
       if (!BUTTON_VARIANTS.includes(variant)) throw new TypeError(T("form.badVariant", label, variant));
+      const onClick = typeof b.onClick === "function" ? b.onClick : null;
       return {
         label, icon: faClass(b.icon), tooltip: b.tooltip ? String(b.tooltip) : "", variant,
         confirm: b.confirm ? String(b.confirm) : "",
-        onClick: typeof b.onClick === "function" ? b.onClick : null, validate: b.validate !== false, close: !!b.close, menu,
+        // press: the button itself runs (or closes); a menu button without onClick only opens its menu.
+        onClick, validate: b.validate !== false, close: !!b.close || (!onClick && !menu.length), menu, press: !!onClick || !menu.length,
       };
     };
-    const buttons = Array.from(options.buttons || []).map((b, k) => {
-      if (!b || typeof b !== "object") throw new TypeError(T("form.badButton", k + 1));
-      const label = b.label === undefined ? String(k + 1) : String(b.label);
-      const menu = Array.from(b.menu || []).map((x, j) => {
-        if (!x || typeof x !== "object" || typeof x.onClick !== "function") throw new TypeError(T("form.badMenuItem", label, j + 1));
-        return button(x, x.label === undefined ? String(j + 1) : String(x.label), []);
+    const buttons = options.buttons === undefined || options.buttons === null
+      ? [button({ variant: "primary" }, T("form.ok"), [])]
+      : Array.from(options.buttons).map((b, k) => {
+        if (!b || typeof b !== "object") throw new TypeError(T("form.badButton", k + 1));
+        const label = b.label === undefined ? String(k + 1) : String(b.label);
+        const menu = Array.from(b.menu || []).map((x, j) => {
+          if (!x || typeof x !== "object" || typeof x.onClick !== "function") throw new TypeError(T("form.badMenuItem", label, j + 1));
+          return button(x, x.label === undefined ? String(j + 1) : String(x.label), []);
+        });
+        return button(b, label, menu);
       });
-      if (typeof b.onClick !== "function" && !menu.length) throw new TypeError(T("form.badButton", k + 1));
-      return button(b, label, menu);
-    });
-    // What can be pressed, in order: the buttons with onClick and the items of their menus ("label ▸ item").
+    // Enter presses the primary button (at most one).
+    const primaries = buttons.filter((b) => b.variant === "primary");
+    if (primaries.length > 1) throw new TypeError(T("form.twoPrimary", primaries[0].label, primaries[1].label));
+    const enter = primaries.length && primaries[0].press ? buttons.indexOf(primaries[0]) : -1;
+    // What can be pressed, in order: the buttons and the items of their menus ("label ▸ item").
     const actions = [];
     for (const b of buttons) {
-      if (b.onClick) actions.push(b);
+      if (b.press) actions.push(b);
       for (const x of b.menu) actions.push(Object.assign({}, x, { path: b.label + " ▸ " + x.label }));
     }
+    // Pressed when the console or an answer names no button: the primary one, else the first.
+    const main = enter >= 0 ? buttons[enter] : actions[0] || null;
     // The toolbar's buttons after the form's buttons, for the console and mock.
     for (const t of tools) {
       if (t.onClick) actions.push(Object.assign({}, t, { path: t.text }));
@@ -3186,9 +3275,7 @@
     const o = {
       title: options.title === undefined ? title() : String(options.title),
       description: options.description ? String(options.description) : "",
-      submit: options.submit ? String(options.submit) : "",
-      noSubmit: options.submit === false && buttons.length > 0,
-      titleBar: customTitleBar(options.titleBar), icon: faClass(options.icon), submitIcon: faClass(options.submitIcon),
+      titleBar: customTitleBar(options.titleBar), icon: faClass(options.icon), enter, main,
       accent: themeColor(options.accent, "form.badAccent"), background: themeColor(options.background, "form.badBackground"),
       radius: formRadius(options.radius), key, tabs, tabIcons, groups, rows, buttons, actions, tools,
     };
@@ -3213,12 +3300,12 @@
   }
 
   /**
-   * The values for a press of the submit button (b = null) or a button:
-   * checked unless the button has validate: false. Returns { values } or
+   * The values for a press of a button: checked unless the button has
+   * validate: false. Returns { values } or
    * { errors, error }.
    */
   async function pressValues(o, b, fields, wire, options) {
-    if (b && !b.validate) return { values: rawValues(fields, wire) };
+    if (!b.validate) return { values: rawValues(fields, wire) };
     const c = await checkForm(fields, wire, options.validate);
     if (!c.ok) return { errors: c.errors, error: c.error, cells: c.cells };
     if (options.remember) saveRemembered(o.key, fields, wire);
@@ -3244,12 +3331,12 @@
   /** The values a form shows in a run of a test case: the defaults (nothing is remembered there). */
   const defaultWire = (fields) => Object.fromEntries(fields.map((f) => [f.name, toWire(f, f.default)]));
 
-  // Console and mock: ask until the values pass, then run onSubmit (or the
-  // button's onClick) with a progress indicator. After a button without
-  // close: true the form is asked again.
+  // Console and mock: ask until the values pass, then run the button's
+  // onClick with a progress indicator. After a button with onClick and
+  // without close: true the form is asked again.
   //
   // A run of a test case (native.testMode) plays the form window instead:
-  // the form stays open after onSubmit, and an error of onSubmit is shown.
+  // the form stays open after onClick, and an error of onClick is shown.
   async function formPrompt(o, fields, wire, options) {
     let errors = {}, error = "", result = null;
     const seen = native.recording ? defaultWire(fields) : null;
@@ -3259,7 +3346,7 @@
       for (const f of fields) if (f.chart) printChart(f.chart);
       const spec = {
         title: o.title, description: o.description, error,
-        submit: o.noSubmit ? "" : o.submit || T("form.ok"), buttons: o.actions.map((b) => b.path || b.label),
+        main: o.main ? o.actions.indexOf(o.main) : null, buttons: o.actions.map((b) => b.path || b.label),
         names: fields.map((f) => f.name),
         fields: fields.filter((f) => !f.chart && f.type !== "image" && !inactive(fields, f, wire)).map((f) => Object.assign({
           name: f.name, label: promptLabel(f), type: promptType(f), options: f.options, required: f.required, custom: f.custom,
@@ -3282,11 +3369,12 @@
       const answer = JSON.parse(r);
       const edited = Object.keys(answer.$cells || {});
       const extra = {};
-      if (seen && answer.$button !== null && answer.$button !== undefined) extra.$button = answer.$button;
+      // (recording) The button pressed, unless it is the one pressed by default.
+      if (seen && answer.$button !== null && answer.$button !== undefined && o.actions[answer.$button] !== o.main) extra.$button = answer.$button;
       if (seen && answer.$cells) extra.$cells = answer.$cells;
-      // "$button": the index or label of the button pressed (none: the submit button).
+      // "$button": the index or label of the button pressed (none: the primary button, else the first).
       // The items of the buttons' menus are listed after their button ("label ▸ item"; the item's label alone also works).
-      let b = o.noSubmit ? o.actions[0] : null;
+      let b = o.main;
       if ("$button" in answer) {
         const x = answer.$button;
         delete answer.$button;
@@ -3320,7 +3408,7 @@
         if (f.onChange && !(await checkField(fields, f, wire))) {
           const ctx = promptContext(o, fields, wire);
           try {
-            await f.onChange(fromWire(f, wire[f.name]), rawValues(fields, wire), ctx);
+            await f.onChange(fromWire(f, wire[f.name]), ctx._bind(rawValues(fields, wire)), ctx);
           } finally {
             ctx._i.close();
           }
@@ -3335,7 +3423,7 @@
       if (b && b.tool) {
         const ctx = promptContext(o, fields, wire);
         try {
-          await b.onClick(rawValues(fields, wire), ctx);
+          await b.onClick(ctx._bind(rawValues(fields, wire)), ctx);
         } finally {
           ctx._i.close();
         }
@@ -3348,14 +3436,14 @@
       errors = c.errors || {};
       error = c.error || "";
       if (!c.values) continue;
-      if (b && b.confirm && !native.uiConfirm(o.title, b.confirm)) continue;
-      if (!b || b.validate || b.close) result = c.values;
-      const handler = b ? b.onClick : options.onSubmit;
+      if (b.confirm && !native.uiConfirm(o.title, b.confirm)) continue;
+      if (b.validate || b.close) result = c.values;
+      const handler = b.onClick;
       let ok = true;
-      if (typeof handler === "function") {
+      if (handler) {
         const ctx = promptContext(o, fields, wire);
         try {
-          await handler(c.values, ctx);
+          await handler(ctx._bind(c.values), ctx);
           ok = !ctx.cancelled;
         } catch (e) {
           ok = false;
@@ -3368,12 +3456,12 @@
         }
         if (seen) Object.assign(seen, wire);
       }
-      const closes = b ? b.close && ok : typeof handler !== "function";
+      const closes = b.close && ok;
       if (native.testMode) {
         if (closes) return result;
         continue;
       }
-      if (!b || b.close) {
+      if (b.close) {
         // (recording a test case) A run of the case asks again here.
         if (seen && !closes) native.testRecord("form", "null", "{}");
         return result;
@@ -3381,9 +3469,9 @@
     }
   }
 
-  /** (making a manual) The button of the form page that is the action b (none: the submit button). */
+  /** (making a manual) The button of the form page that is the action b. */
   function shotButton(o, b) {
-    if (!b) return o.noSubmit ? null : { kind: "submit" };
+    if (!b) return null;
     const top = (list, name) => list.findIndex((x) => x === b || (b.path && (b.path === name(x) || b.path.startsWith(name(x) + " \u25b8 "))));
     if (b.tool) return { kind: "tool", index: top(o.tools, (t) => t.text) };
     return { kind: "button", index: top(o.buttons, (x) => x.label) };
@@ -3435,7 +3523,7 @@
     native.uiTable(JSON.stringify(Object.assign(chartTable(c), { select: "" })));
   }
 
-  /** onSubmit's (and onChange's) ctx for the console and mock: a progress indicator once it reports progress. */
+  /** A button's onClick's (and onChange's) form argument for the console and mock: a progress indicator once it reports progress. */
   function promptContext(o, fields, wire) {
     let p = null;
     return new FormContext({
@@ -3448,8 +3536,7 @@
       state() {}, // asked again with the fields as they are
       progress(done, total, message) {
         if (!p) p = new Progress({ title: o.title, total: total || 0 });
-        else if (total !== undefined) p.total = total;
-        p.update(done, message);
+        p.update(done, total, message);
       },
       log: (text, level) => (level === "error" ? err : out)(text),
       cancelled: () => (p ? p.cancelled : false),
@@ -3472,7 +3559,7 @@
       if (f.group >= 0 && o.groups[f.group].collapsed) continue; // opened by the user
       const lines = (t) => String(t || "").split("\n").reduce((n, l) => n + 1 + Math.floor(l.length / 40), 0);
       let fh = 16 + (f.type === "textarea" ? 12 + 20 * (f.rows || 4) : f.type === "files" ? 12 + 20 * Math.max(3, f.rows || 3)
-        : f.type === "table" ? 36 + 29 * tableLines(f) : f.type === "chart" ? 12 + chartHeight(f)
+        : f.type === "table" ? (f.height ? 4 + f.height : 36 + 29 * tableLines(f)) : f.type === "chart" ? 12 + chartHeight(f)
           : f.type === "note" ? 24 + 20 * (lines(wireStr(f.default)) + (f.label ? 1 : 0))
             : f.type === "image" ? f.height || 120
             : ["checkbox", "radio", "switch", "checkboxes"].includes(f.type) ? 28 : 32);
@@ -3500,26 +3587,29 @@
     };
   }
 
-  /** The height of a chart field in pixels: height lines (default 12) of 25 px, as the page draws it. */
-  const chartHeight = (f) => 25 * (f.rows || 12);
+  /** Whether a form shows the progress and log of a run: one of its buttons has onClick. */
+  const hasRun = (o) => o.buttons.some((b) => b.onClick || b.menu.length);
 
-  /** Visible rows of a table field: height, or up to 8 (at least 3). */
-  const tableLines = (f) => f.rows || Math.min(8, Math.max(3, f.table.data.length));
+  /** The height of a chart field in pixels (default 300). */
+  const chartHeight = (f) => f.height || 300;
+
+  /** Visible rows of a table field: as many as its height (px) holds, or up to 8 (at least 3). */
+  const tableLines = (f) => (f.height ? Math.max(1, Math.round((f.height - 32) / 29)) : Math.min(8, Math.max(3, f.table.data.length)));
 
   /** The form page's first message: the form and its fields. */
   function formInit(o, fields, wire) {
     const states = fieldStates(fields, wire);
     return {
       type: "init", description: o.description, texts: formTexts(),
-      submit: o.submit, submitIcon: o.submitIcon, accent: o.accent, background: o.background, radius: o.radius, tabs: o.tabs, tabIcons: o.tabIcons,
+      accent: o.accent, background: o.background, radius: o.radius, tabs: o.tabs, tabIcons: o.tabIcons,
       groups: o.groups,
-      noSubmit: o.noSubmit, buttons: o.buttons.map((b) => b.label), buttonIcons: o.buttons.map((b) => b.icon),
+      enter: o.enter, buttons: o.buttons.map((b) => b.label), buttonIcons: o.buttons.map((b) => b.icon),
       buttonTooltips: o.buttons.map((b) => b.tooltip),
       // Only when used, so that forms without them send what they did.
       buttonVariants: o.buttons.some((b) => b.variant !== "default") ? o.buttons.map((b) => b.variant) : undefined,
-      buttonMenus: o.buttons.some((b) => b.menu.length || !b.onClick)
+      buttonMenus: o.buttons.some((b) => b.menu.length)
         ? o.buttons.map((b) => ({
-          split: !!b.onClick,
+          split: b.press,
           items: b.menu.map((x) => ({ label: x.label, icon: x.icon, tooltip: x.tooltip, variant: x.variant })),
         }))
         : undefined,
@@ -3600,7 +3690,7 @@
   }
 
   function formsWindow(options, forms, side, size, start) {
-    const sizes = forms.map((x) => formSize(x.o, x.fields, typeof x.opts.onSubmit === "function" || x.o.buttons.length > 0, x.opts));
+    const sizes = forms.map((x) => formSize(x.o, x.fields, hasRun(x.o), x.opts));
     const collapsed = !!options.collapsed;
     const sideWidth = collapsed ? SIDE_CLOSED : SIDE_OPEN;
     // fixed: the set's size (by default the largest form's); each: the size of the form shown.
@@ -3663,8 +3753,6 @@
   // embed(onMessage): the page of a form in a set (ui.forms) instead of a window of its own.
   function formWindow(o, fields, wire, options, embed) {
     const byName = new Map(fields.map((f) => [f.name, f]));
-    const onSubmit = typeof options.onSubmit === "function" ? options.onSubmit : null;
-    const hasRun = !!onSubmit || o.buttons.length > 0;
     return new Promise((resolve, reject) => {
       let result = null, failed = null, running = false, outputs = [];
       // ctx.setValue calls: their count and, per field, the last one.
@@ -3679,7 +3767,7 @@
       let cellEdits = {}, autoClosed = false;
       const onMessage = (m, files) => { handle(m, files).catch(fail); };
       const page = embed ? embed(onMessage)
-        : openPage("form.html", Object.assign({ title: o.title, titleBar: o.titleBar, icon: o.icon }, formSize(o, fields, hasRun, options)), onMessage);
+        : openPage("form.html", Object.assign({ title: o.title, titleBar: o.titleBar, icon: o.icon }, formSize(o, fields, hasRun(o), options)), onMessage);
       const finish = () => (failed ? reject(failed) : resolve(result));
       function fail(e) {
         if (!failed) failed = e;
@@ -3759,15 +3847,16 @@
             break;
           }
           case "submit": {
-            // button: the index of the button pressed (none: the submit button); item: the index in its menu.
-            const top = typeof m.button === "number" ? o.buttons[m.button] : null;
+            // button: the index of the button pressed (none: Enter's, the primary one); item: the index in its menu.
+            const top = typeof m.button === "number" ? o.buttons[m.button] : o.enter >= 0 ? o.buttons[o.enter] : null;
             const b = top && typeof m.item === "number" ? top.menu[m.item] : top;
-            if (b === undefined || (b && !b.onClick) || (!b && o.noSubmit) || running) return;
+            if (!b || !b.press || running) return;
             await editQueue;
             takeValues(m);
             refresh();
             if (seen) {
-              const extra = b ? { $button: b === top ? top.label : top.label + " ▸ " + b.label } : {};
+              // The button pressed, unless it is the one an answer presses by default.
+              const extra = b === o.main ? {} : { $button: b === top ? top.label : top.label + " ▸ " + b.label };
               if (Object.keys(cellEdits).length) extra.$cells = cellEdits;
               cellEdits = {};
               recordForm(fields, wire, seen, extra);
@@ -3780,16 +3869,15 @@
               return;
             }
             // confirm: asked once the values pass; "no" goes back to the form.
-            if (b && b.confirm && !native.uiConfirm(o.title, b.confirm)) {
+            if (b.confirm && !native.uiConfirm(o.title, b.confirm)) {
               if (!page.n.isClosed()) page.send({ type: "errors", errors: {}, error: "" });
               return;
             }
-            if (!b || b.validate || b.close) result = c.values;
-            const handler = b ? b.onClick : onSubmit;
-            const ok = handler ? await run(handler, c.values) : true;
+            if (b.validate || b.close) result = c.values;
+            const ok = b.onClick ? await run(b.onClick, c.values) : true;
             if (seen) Object.assign(seen, wire);
-            // Without onSubmit the submit button closes the form; a button with close: true does once it succeeds.
-            if (b ? b.close && ok : !handler) {
+            // A button without onClick closes the form; one with close: true does once onClick succeeds.
+            if (b.close && ok) {
               autoClosed = true;
               page.n.close();
             }
@@ -3814,7 +3902,7 @@
               }
               const ctx = windowContext(page, fields, wire, sets, refresh);
               try {
-                await b.onClick(rawValues(fields, wire), ctx);
+                await b.onClick(ctx._bind(rawValues(fields, wire)), ctx);
               } catch (e) {
                 if (!(e instanceof FormCancel) && !page.n.isClosed()) page.send({ type: "formError", error: errorText(e).split("\n")[0] });
               }
@@ -3864,7 +3952,7 @@
       async function changed(f) {
         const ctx = windowContext(page, fields, wire, sets, refresh);
         try {
-          await f.onChange(fromWire(f, wire[f.name]), rawValues(fields, wire), ctx);
+          await f.onChange(fromWire(f, wire[f.name]), ctx._bind(rawValues(fields, wire)), ctx);
         } catch (e) {
           if (!(e instanceof FormCancel) && !page.n.isClosed()) {
             page.send({ type: "fieldError", field: f.name, error: errorText(e).split("\n")[0] });
@@ -3873,7 +3961,7 @@
         ctx._i.flush();
       }
 
-      /** Runs onSubmit or a button's onClick; true if it ended without an error or being stopped. */
+      /** Runs a button's onClick; true if it ended without an error or being stopped. */
       async function run(handler, values) {
         running = true;
         page.n.clearCancel();
@@ -3881,7 +3969,7 @@
         const ctx = windowContext(page, fields, wire, sets, refresh);
         let done;
         try {
-          outputs = outputsOf(await handler(values, ctx));
+          outputs = outputsOf(await handler(ctx._bind(values), ctx));
           done = { type: "done", ok: true, cancelled: ctx.cancelled, output: outputs.length > 0 };
         } catch (e) {
           done = e instanceof FormCancel ? { type: "done", ok: true, cancelled: true, output: false }
@@ -3897,7 +3985,7 @@
   }
 
   /**
-   * onSubmit's (and onChange's) ctx for a form window: updates are sent at
+   * A button's onClick's (and onChange's) form argument for a form window: updates are sent at
    * most every 50 ms. sets counts the setValue calls (see takeValues).
    */
   function windowContext(page, fields, wire, sets, refresh) {
@@ -4143,13 +4231,22 @@
     return out;
   }
 
-  /** What ui.table returns when nothing is selected: the window, closed and close(). */
+  /** The accent, background and radius options of a built-in page (as the form's), checked. */
+  const pageLooks = (options) => ({
+    accent: themeColor(options.accent, "form.badAccent"), background: themeColor(options.background, "form.badBackground"),
+    radius: formRadius(options.radius),
+  });
+
+  /** What ui.table returns when nothing is selected: the window, closed, close() and update(rows). */
   class TableView {
-    constructor(closed, close) {
+    constructor(closed, close, update) {
       define(this, "closed", closed);
       define(this, "_close", close);
+      define(this, "_update", update);
     }
     close() { this._close(); }
+    /** Replaces the rows (and the columns, if given) shown. */
+    update(rows, columns) { this._update(rows, columns); return this; }
   }
 
   function tableTexts() {
@@ -4194,17 +4291,23 @@
     const t = options.title === undefined ? title() : String(options.title);
     const titleBar = customTitleBar(options.titleBar);
     const formats = tableFormats(options.formats, cols, "ui.table");
-    if (native.supportsWindows) return tableWindow(data, cols, sel, t, Object.assign({}, options, { titleBar, formats }));
+    if (native.supportsWindows) return tableWindow(data, cols, sel, t, Object.assign({}, options, { titleBar, formats, rawFormats: options.formats }));
     const text = (v) => { const w = cellWire(v); return w === null ? "" : String(w); };
-    const picked = native.uiTable(JSON.stringify({
+    const print = (data, cols) => native.uiTable(JSON.stringify({
       title: t, select: sel, columns: cols.map((c) => c.label), rows: data.map((r) => cols.map((c) => text(c.get(r)))),
     }));
-    if (!sel) return new TableView(Promise.resolve(), () => {});
+    const picked = print(data, cols);
+    // Console and mock: update() prints the table again.
+    if (!sel) return new TableView(Promise.resolve(), () => {}, (rows, columns) => {
+      const d = Array.from(rows || []);
+      print(d, tableColumns(d, columns === undefined ? options.columns : columns));
+    });
     return Promise.resolve((picked || []).filter((i) => i >= 0 && i < data.length).map((i) => data[i]));
   }
 
   function tableWindow(data, cols, sel, t, options) {
-    let picked = [], answered = false;
+    let picked = [], answered = false, shown = false;
+    const looks = pageLooks(options);
     const page = openPage("table.html", {
       title: t, width: Number(options.width) || 960, height: Number(options.height) || 600, fixedSize: options.resizable === false,
       titleBar: options.titleBar, icon: faClass(options.icon),
@@ -4213,22 +4316,10 @@
 
     async function handle(m) {
       switch (m.type) {
-        case "ready": {
-          const fm = options.formats;
-          page.send({
-            type: "init", select: sel, total: data.length, texts: tableTexts(), dblclick: !!options.onDoubleClick,
-            columns: cols.map((c) => ({ label: c.label, width: c.width })), formats: fm ? fm.wire : undefined,
-          });
-          const chunk = 2000;
-          for (let i = 0; i < data.length; i += chunk) {
-            const part = data.slice(i, i + chunk);
-            page.send({
-              type: "rows", rows: part.map((r) => cols.map((c) => cellWire(c.get(r)))),
-              hits: fm && fm.fns.length ? part.map((r, k) => formatHits(fm, cols, r, i + k)) : undefined,
-            });
-          }
+        case "ready":
+          shown = true;
+          sendAll();
           break;
-        }
         case "ok": {
           let chosen = sel ? Array.from(m.indices || []).filter((i) => i >= 0 && i < data.length) : [];
           if (sel === "single") chosen = chosen.slice(0, 1);
@@ -4288,7 +4379,30 @@
       page.send({ type: "saved", path: h.path });
     }
 
-    if (!sel) return new TableView(page.n.closed, () => page.n.close());
+    /** Sends the table (init, then the rows in chunks). */
+    function sendAll() {
+      const fm = options.formats;
+      page.send({
+        type: "init", select: sel, total: data.length, texts: tableTexts(), dblclick: !!options.onDoubleClick, ...looks,
+        columns: cols.map((c) => ({ label: c.label, width: c.width })), formats: fm ? fm.wire : undefined,
+      });
+      const chunk = 2000;
+      for (let i = 0; i < data.length; i += chunk) {
+        const part = data.slice(i, i + chunk);
+        page.send({
+          type: "rows", rows: part.map((r) => cols.map((c) => cellWire(c.get(r)))),
+          hits: fm && fm.fns.length ? part.map((r, k) => formatHits(fm, cols, r, i + k)) : undefined,
+        });
+      }
+    }
+
+    if (!sel) return new TableView(page.n.closed, () => page.n.close(), (rows, columns) => {
+      data = Array.from(rows || []);
+      if (columns !== undefined) options.columns = columns;
+      cols = tableColumns(data, options.columns);
+      options.formats = tableFormats(options.rawFormats, cols, "ui.table");
+      if (shown && !page.n.isClosed()) sendAll();
+    });
     return page.n.closed.then(() => {
       // (recording a test case) Closed without choosing.
       if (!answered && native.recording) native.testRecord("table", "null", "{}");
@@ -4515,11 +4629,12 @@
       print();
       return new ChartView(Promise.resolve(), () => {}, (s) => { c = chartOf(chartPatch(c.spec, s)); print(); });
     }
+    const looks = pageLooks(options);
     const page = openPage("chart.html", {
       title: t, width: Number(options.width) || 900, height: Number(options.height) || 560, fixedSize: options.resizable === false,
       titleBar: customTitleBar(options.titleBar), icon: faClass(options.icon),
     }, (m) => {
-      if (m.type === "ready") page.send(Object.assign({ type: "init", lang: native.lang, texts: chartTexts() }, chartInit(c)));
+      if (m.type === "ready") page.send(Object.assign({ type: "init", lang: native.lang, texts: chartTexts() }, looks, chartInit(c)));
       else if (m.type === "click" || m.type === "change") chartEvent(c, m).catch(fail);
     });
     function fail(e) { native.uiError(t, errorText(e)); }
@@ -5152,6 +5267,10 @@
    * settings; resolves to the options chosen, or null when cancelled.
    * forPdf: the button says that a PDF is made.
    */
+  /** The preview options of printPreview: options.preview (an object), or the earlier second argument. */
+  const previewOf = (options, preview) => (preview !== undefined ? preview
+    : options && typeof options === "object" && options.preview && typeof options.preview === "object" ? options.preview : undefined);
+
   async function printPreview(book, options, preview, sheets, mode) {
     if (options !== undefined && options !== null && (typeof options !== "object" || Array.isArray(options))) throw new TypeError(T("pdf.badOptions"));
     if (preview !== undefined && preview !== null && (typeof preview !== "object" || Array.isArray(preview))) throw new TypeError(T("preview.badPreview"));
@@ -5167,7 +5286,7 @@
       // Console and mock: the settings as a form (nothing to change: the options as given).
       if (!fields.length) return base;
       const values = await showForm({
-        title, submit: ok,
+        title, buttons: [{ label: ok, variant: "primary" }],
         fields: fields.map((f) => {
           const x = Object.assign({}, f, { default: init[f.name] });
           delete x.showIf;
@@ -5668,17 +5787,18 @@
   const XLSX_MIME = MIME[".xlsx"];
 
   /**
-   * Normalizes a style spec. Besides the full form
-   * { font, fill, border, alignment, numberFormat } it accepts shorthands:
-   * bold, italic, underline, strike, color, fontSize, fontName,
-   * background (= fill), align, valign, wrap, format (= numberFormat).
+   * Normalizes a style spec to the native form { font, fill, border,
+   * alignment, numberFormat, protection }. The documented form is flat
+   * (bold, italic, underline, strike, color, fontSize, fontName, vertAlign,
+   * background, align, valign, wrap, shrink, indent, rotation, border,
+   * format, locked); the nested form (font, fill, alignment, numberFormat,
+   * protection) is accepted too.
    */
   function normStyle(s) {
     if (!s || typeof s !== "object") return {};
     const out = {};
     const font = Object.assign({}, s.font);
-    for (const k of ["bold", "italic", "underline", "strike"]) if (s[k] !== undefined) font[k] = s[k];
-    if (s.color !== undefined) font.color = s.color;
+    for (const k of ["bold", "italic", "underline", "strike", "color", "vertAlign"]) if (s[k] !== undefined) font[k] = s[k];
     if (s.fontSize !== undefined) font.size = s.fontSize;
     if (s.fontName !== undefined) font.name = s.fontName;
     if (Object.keys(font).length) out.font = font;
@@ -5687,12 +5807,32 @@
     const al = Object.assign({}, s.alignment);
     if (s.align !== undefined) al.horizontal = s.align;
     if (s.valign !== undefined) al.vertical = s.valign;
-    if (s.wrap !== undefined) al.wrap = s.wrap;
+    for (const k of ["wrap", "shrink", "indent", "rotation"]) if (s[k] !== undefined) al[k] = s[k];
     if (Object.keys(al).length) out.alignment = al;
     if (s.border !== undefined) out.border = s.border;
     const nf = s.numberFormat !== undefined ? s.numberFormat : s.format;
     if (nf !== undefined) out.numberFormat = nf;
-    if (s.protection !== undefined) out.protection = s.protection;
+    const prot = Object.assign({}, s.protection);
+    if (s.locked !== undefined) prot.locked = s.locked;
+    if (Object.keys(prot).length) out.protection = prot;
+    return out;
+  }
+
+  /** A style as getStyle() returns it: the flat form of setStyle(). */
+  function flatStyle(n) {
+    const out = {};
+    const f = n.font || {};
+    for (const k of ["bold", "italic", "underline", "strike", "color", "vertAlign"]) if (f[k] !== undefined) out[k] = f[k];
+    if (f.size !== undefined) out.fontSize = f.size;
+    if (f.name !== undefined) out.fontName = f.name;
+    if (n.fill) out.background = n.fill;
+    const al = n.alignment || {};
+    if (al.horizontal !== undefined) out.align = al.horizontal;
+    if (al.vertical !== undefined) out.valign = al.vertical;
+    for (const k of ["wrap", "shrink", "indent", "rotation"]) if (al[k] !== undefined) out[k] = al[k];
+    if (n.border !== undefined) out.border = n.border;
+    if (n.numberFormat !== undefined) out.format = n.numberFormat;
+    if (n.protection && n.protection.locked !== undefined) out.locked = n.protection.locked;
     return out;
   }
 
@@ -5710,15 +5850,16 @@
     get address() { return this._address; }
     get sheet() { return this._sheet; }
     /** Applies (merges) a style; opts.replace discards the existing style first. */
-    style(spec, opts = {}) {
+    setStyle(spec, opts = {}) {
       native.xlsxStyle(this._sheet._book._h, this._sheet._name, this._address, normStyle(spec), !!opts.replace);
       return this;
     }
-    font(spec) { return this.style({ font: spec }); }
-    fill(color) { return this.style({ fill: color }); }
-    border(spec) { return this.style({ border: spec }); }
-    align(horizontal, vertical) { return this.style({ alignment: { horizontal, vertical } }); }
-    numberFormat(format) { return this.style({ numberFormat: format }); }
+    /** Alias of setStyle() (not documented). */
+    style(spec, opts) { return this.setStyle(spec, opts); }
+    /** The style of the range's top-left cell, as setStyle() takes it. */
+    getStyle() {
+      return flatStyle(native.xlsxGetStyle(this._sheet._book._h, this._sheet._name, this._address.split(":")[0]));
+    }
     merge() { native.xlsxMerge(this._sheet._book._h, this._sheet._name, this._address, false); return this; }
     unmerge() { native.xlsxMerge(this._sheet._book._h, this._sheet._name, this._address, true); return this; }
     /** Values of the range as a 2-D array; assigning writes from the top-left cell. */
@@ -5824,9 +5965,11 @@
     /** Evaluates the formula with excelize's calculation engine (subset of Excel functions). */
     calc() { return native.xlsxCalc(this._sheet._book._h, this._sheet._name, this._address); }
     /** Applies (merges) a style to the cell. */
-    style(spec, opts) { new Range(this._sheet, this._address).style(spec, opts); return this; }
+    setStyle(spec, opts) { new Range(this._sheet, this._address).setStyle(spec, opts); return this; }
+    /** Alias of setStyle() (not documented). */
+    style(spec, opts) { return this.setStyle(spec, opts); }
     /** The cell's current style ({ font, fill, border, alignment, numberFormat }). */
-    getStyle() { return native.xlsxGetStyle(this._sheet._book._h, this._sheet._name, this._address); }
+    getStyle() { return flatStyle(native.xlsxGetStyle(this._sheet._book._h, this._sheet._name, this._address)); }
     [inspectSymbol]() { return `Cell ${this._sheet._name}!${this._address} ${inspect(this.value)}`; }
   }
 
@@ -5867,12 +6010,6 @@
     }
     /** cell("B2") or cell(row, column) (1-based). */
     cell(a, b) { return new Cell(this, refOf(a, b)); }
-    getValue(a, b) { return native.xlsxGet(this._book._h, this._name, refOf(a, b)); }
-    setValue(a, b, c) {
-      if (typeof a === "number") native.xlsxSet(this._book._h, this._name, refOf(a, b), plainDate(c));
-      else native.xlsxSet(this._book._h, this._name, String(a), plainDate(b));
-      return this;
-    }
     /** All used rows as arrays of typed values. opts: { text: true } returns displayed strings. */
     toArrays(opts = {}) {
       const rows = native.xlsxReadAll(this._book._h, this._name, !!opts.text);
@@ -5882,7 +6019,7 @@
      * Rows as objects keyed by the header row.
      * opts: { header = 1 (row number), columns, skipEmpty = true, text = false }
      */
-    toObjects(opts = {}) {
+    rows(opts = {}) {
       const rows = native.xlsxReadAll(this._book._h, this._name, !!opts.text);
       const headerRow = opts.header === undefined ? 1 : opts.header;
       let keys, body;
@@ -5901,8 +6038,8 @@
         return o;
       });
     }
-    /** Alias of toObjects(). */
-    rows(opts) { return this.toObjects(opts); }
+    /** Alias of rows() (not documented). */
+    toObjects(opts) { return this.rows(opts); }
     /**
      * Writes rows (array of objects or array of arrays) starting at opts.start ("A1").
      * Objects get a header row unless opts.header === false.
@@ -5934,16 +6071,16 @@
       const c2 = c1 + nCols - 1, r2 = r1 + data.length - 1;
       const ref = (c, r) => native.xlsxCellName(c, r);
       const bodyTop = hasHeader ? r1 + 1 : r1;
-      if (bodyStyle) this.style(`${ref(c1, r1)}:${ref(c2, r2)}`, bodyStyle);
+      if (bodyStyle) this.setStyle(`${ref(c1, r1)}:${ref(c2, r2)}`, bodyStyle);
       if (opts.columnStyles && bodyTop <= r2) {
         for (const [key, spec] of Object.entries(opts.columnStyles)) {
           let idx = cols ? cols.indexOf(key) : -1;
           if (idx < 0 && /^\d+$/.test(key)) idx = Number(key);
           if (idx < 0 && /^[A-Z]+$/i.test(key)) idx = native.xlsxParseRef(key + "1")[0] - c1;
-          if (idx >= 0 && idx < nCols) this.style(`${ref(c1 + idx, bodyTop)}:${ref(c1 + idx, r2)}`, spec);
+          if (idx >= 0 && idx < nCols) this.setStyle(`${ref(c1 + idx, bodyTop)}:${ref(c1 + idx, r2)}`, spec);
         }
       }
-      if (hasHeader && headerStyle) this.style(`${ref(c1, r1)}:${ref(c2, r1)}`, headerStyle);
+      if (hasHeader && headerStyle) this.setStyle(`${ref(c1, r1)}:${ref(c2, r1)}`, headerStyle);
       const want = (k) => opts[k] !== undefined ? opts[k] : !!preset;
       if (want("autoFit")) this.autoFit(`${native.xlsxColumnName(c1)}:${native.xlsxColumnName(c2)}`);
       if (want("freeze") && hasHeader) this.freeze(ref(1, r1 + 1));
@@ -5970,12 +6107,21 @@
     toHtml(options) { return printLayout(this._book, options, [this._name]).html; }
 
     printPages(options) { return printPages(this._book, options, [this._name])[0] ?? null; }
-    printPreview(options, preview) { return printPreview(this._book, options, preview, [this._name]); }
+    /** printPreview({ ...options, preview: { settings, title, ok } }); preview as the second argument is the earlier form. */
+    printPreview(options, preview) { return printPreview(this._book, options, previewOf(options, preview), [this._name]); }
     print(options) { return printBook(this._book, options, [this._name]); }
     /** Writes the sheet as Excel would print it to a PDF file (WebView2); resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this._book, dest, options, [this._name]); }
     get dimension() { return native.xlsxDimension(this._book._h, this._name); }
     get rowCount() { return native.xlsxRowCount(this._book._h, this._name); }
+    /** The number of the last used column (0 for an empty sheet). */
+    get columnCount() {
+      const d = this.dimension;
+      return d ? native.xlsxParseRef(d.split(":")[1] || d)[0] : 0;
+    }
+    /** Whether the sheet is hidden (Excel's "非表示"); assigning hides or shows it. */
+    get hidden() { return native.xlsxSheetHidden(this._book._h, this._name, null); }
+    set hidden(v) { native.xlsxSheetHidden(this._book._h, this._name, !!v); }
     /** Inserts count rows before row (1-based); what refers to the cells moves with them, as in Excel. */
     insertRows(row, count = 1) { return editLines(this, "insertRows", false, row, count, true); }
     deleteRows(row, count = 1) { return editLines(this, "deleteRows", false, row, count, false); }
@@ -5993,6 +6139,8 @@
       native.xlsxSetRowHeight(this._book._h, this._name, row, height);
       return this;
     }
+    /** The height of a row in points (the sheet's default for a row without a height of its own). */
+    getRowHeight(row) { return native.xlsxGetRowHeight(this._book._h, this._name, row); }
     /** Sets column widths from the cell contents. cols: "A:D" (default: all used columns). */
     autoFit(cols, opts = {}) {
       if (typeof cols === "object" && cols !== null) { opts = cols; cols = undefined; }
@@ -6008,7 +6156,13 @@
     /** range("A1:D10") */
     range(address) { return new Range(this, address); }
     /** style("A1:D1", { bold: true, background: "#DDEBF7", border: "thin" }) */
-    style(address, spec, opts) { new Range(this, address).style(spec, opts); return this; }
+    setStyle(address, spec, opts) { new Range(this, address).setStyle(spec, opts); return this; }
+    /** Alias of setStyle() (not documented). */
+    style(address, spec, opts) { return this.setStyle(address, spec, opts); }
+    /** The style of a cell (of the top-left cell of a range), as setStyle() takes it. */
+    getStyle(address) { return new Range(this, address).getStyle(); }
+    /** The merged ranges ("A1:C1", ...). */
+    get merges() { return native.xlsxMerges(this._book._h, this._name); }
     merge(address) { new Range(this, address).merge(); return this; }
     unmerge(address) { new Range(this, address).unmerge(); return this; }
     /** Freezes the rows above and columns left of the cell: freeze("A2") freezes row 1. */
@@ -6018,11 +6172,18 @@
       return this;
     }
     unfreeze() { native.xlsxFreeze(this._book._h, this._name, ""); return this; }
-    /** Adds filter buttons to the header row of the range (default: the used range). */
+    /** The rows and columns frozen ({ rows, columns }), or null. */
+    get frozen() {
+      const [rows, columns] = native.xlsxGetFreeze(this._book._h, this._name);
+      return rows || columns ? { rows, columns } : null;
+    }
+    /** Adds filter buttons to the header row of the range (default: the used range); null removes them. */
     autoFilter(address) {
-      native.xlsxAutoFilter(this._book._h, this._name, address || this.dimension);
+      native.xlsxAutoFilter(this._book._h, this._name, address === null ? "" : address || this.dimension);
       return this;
     }
+    /** The range of the filter buttons, or null. */
+    get filter() { return native.xlsxGetAutoFilter(this._book._h, this._name) || null; }
     [inspectSymbol]() { return `Worksheet ${JSON.stringify(this._name)}`; }
   }
 
@@ -6077,7 +6238,7 @@
     toHtml(options) { return printLayout(this, options).html; }
 
     printPages(options) { return printPages(this, options); }
-    printPreview(options, preview) { return printPreview(this, options, preview, undefined); }
+    printPreview(options, preview) { return printPreview(this, options, previewOf(options, preview), undefined); }
     print(options) { return printBook(this, options); }
     /** Writes the sheets (every visible one, or options.sheets) as Excel would print them to a PDF file; resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this, dest, options); }
@@ -6094,7 +6255,7 @@
     open(src) {
       if (src instanceof Blob && !(src instanceof File && src.path)) return new Workbook(native.xlsxOpenBytes(src._bytes(), src.name || ""));
       if (src instanceof ArrayBuffer || ArrayBuffer.isView(src)) return new Workbook(native.xlsxOpenBytes(src, ""));
-      return new Workbook(native.xlsxOpen(toPath(src, "workbooks.open()")));
+      return new Workbook(native.xlsxOpen(toPath(src, "excel.open()")));
     },
     /**
      * Reads the VBA code of a macro workbook (.xlsm, .xlsb, .xlam ...)
@@ -6104,7 +6265,7 @@
     readVBA(src) {
       if (src instanceof Blob && !(src instanceof File && src.path)) return native.vbaReadBytes(src._bytes(), src.name || "");
       if (src instanceof ArrayBuffer || ArrayBuffer.isView(src)) return native.vbaReadBytes(src, "");
-      return native.vbaRead(toPath(src, "workbooks.readVBA()"));
+      return native.vbaRead(toPath(src, "excel.readVBA()"));
     },
     /** Creates an empty workbook. The first addSheet() replaces the default sheet. */
     create(options) { return new Workbook(native.xlsxCreate(options)); },
@@ -6117,6 +6278,8 @@
     /** Builds a cell reference from (row, column), 1-based. */
     cellName: (row, column) => native.xlsxCellName(column, row),
   };
+  defineGlobal("excel", workbooksObj);
+  // The earlier name (not documented).
   defineGlobal("workbooks", workbooksObj);
 
   // ---------------------------------------------------------------- sqlite

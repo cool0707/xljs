@@ -1,6 +1,6 @@
 "use strict";
-// The accent, background and radius options of the built-in form pages
-// (form.js, forms.js).
+// The accent, background and radius options of the built-in pages
+// (form.js, forms.js, table.js, chart-page.js).
 // The accent option: the accent color (buttons, tabs, focus, checkboxes,
 // selected rows, the title bar icon) per theme, with its hover color, the
 // text on it (black or white, whichever reads better) and the selection

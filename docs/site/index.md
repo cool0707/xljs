@@ -60,13 +60,13 @@ if (!dir) exit();
 
 const rows = [];
 for (const h of ui.withProgress(dir.walk("*.xlsx"), { title: "集計中" })) {
-  const book = workbooks.open(h);
-  for (const r of book.sheets["明細"]?.toObjects() ?? []) rows.push({ ...r, ファイル: h.relativePath });
+  const book = excel.open(h);
+  for (const r of book.sheets["明細"]?.rows() ?? []) rows.push({ ...r, ファイル: h.relativePath });
 }
 
 const dest = await showSaveFilePicker({ suggestedName: "集計結果.xlsx" });
 if (dest) {
-  const out = workbooks.create();
+  const out = excel.create();
   out.addSheet("明細").write(rows);
   out.save(dest);
   alert(`${rows.length} 件を集計しました`);

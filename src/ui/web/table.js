@@ -41,6 +41,7 @@ host.on((m) => {
 });
 
 function init(m) {
+  applyColors(m.accent || {}, m.background || {}, m.radius || "");
   texts = m.texts || {};
   texts.grid = texts.grid || {};
   columns = m.columns || [];
@@ -59,6 +60,8 @@ function init(m) {
   formats = m.formats || [];
   rows = [];
   hits = [];
+  searchText = null;
+  kinds.clear();
   widths = columns.map((c) => c.width || 0);
   cols = new GridKit.Columns(columns.length);
   buildHead();

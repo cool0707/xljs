@@ -164,15 +164,13 @@ fn field_label(f: &Value) -> String {
 }
 
 /// The label of the button pressed: "$button" of an answer (an index in
-/// the form's "buttons" or a label), else the submit button's.
+/// the form's "buttons" or a label), else the one pressed by default ("main").
 fn button_label(form: &Value, values: &Value) -> String {
+    let nth = |n: u64| get(form, "buttons").get(n as usize).map(quoted);
     match values.get("$button") {
-        Some(Value::Number(n)) => get(form, "buttons").get(n.as_u64().unwrap_or(0) as usize).map(quoted).unwrap_or_else(|| n.to_string()),
+        Some(Value::Number(n)) => nth(n.as_u64().unwrap_or(0)).unwrap_or_else(|| n.to_string()),
         Some(Value::String(s)) => s.clone(),
-        _ => match text(form, "submit") {
-            "" => t!("form.ok"),
-            s => s.to_string(),
-        },
+        _ => get(form, "main").as_u64().and_then(nth).unwrap_or_else(|| t!("form.ok")),
     }
 }
 
@@ -749,7 +747,7 @@ mod tests {
     fn steps_of_a_run() {
         let _g = crate::testutil::lock_lang("ja");
         let events = vec![
-            ev(json!({"type": "form", "title": "受注入力", "submit": "登録", "buttons": ["下書き"]})),
+            ev(json!({"type": "form", "title": "受注入力", "buttons": ["下書き", "登録"], "main": 1})),
             ev(json!({"type": "field", "name": "customer", "label": "得意先", "kind": "text"})),
             ev(json!({"type": "field", "name": "kind", "label": "区分", "kind": "select", "options": [["a", "通常"], ["b", "至急"]]})),
             ev(json!({"type": "field", "name": "mail", "label": "メールで送る", "kind": "checkbox"})),

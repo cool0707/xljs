@@ -1,5 +1,5 @@
 // フォームで集計の条件を入力し、フォルダ内の Excel ファイルを集計する。
-// フォームは実行後も開いたままで、進捗とログを表示する（ネイティブ UI の場合）。
+// 集計ボタン（onClick のあるボタン）を押してもフォームは開いたままで、進捗とログを表示する（ネイティブ UI の場合）。
 // 前回の入力内容は remember: true で次回の初期値になる。
 const values = await ui.form({
   title: "売上集計",
@@ -24,48 +24,49 @@ const values = await ui.form({
       ],
     },
   ],
-  submit: "集計",
-  submitIcon: "play",
   remember: true,
   validate(v) {
     if (v.out && !v.out.name.toLowerCase().endsWith(".xlsx")) return { out: "拡張子は .xlsx にしてください" };
   },
-  async onSubmit(v, ctx) {
-    const files: FileSystemFileHandle[] = v.src.walk("*.xlsx").toArray();
-    ctx.log(`${files.length} ファイルが見つかりました`);
-    const rows: any[] = [];
-    // 中止ボタンが押されると onSubmit はここで終わる（以降の保存は行わない）
-    for (const h of ctx.withProgress(files)) {
-      try {
-        const book = workbooks.open(h);
-        const sheet = book.sheets["明細"];
-        if (!sheet) {
-          ctx.log(`${h.relativePath}: 「明細」シートがないので飛ばします`);
+  buttons: [{
+    label: "集計", icon: "play", variant: "primary", // Enter でも押される
+    async onClick(v, form) {
+      const files: FileSystemFileHandle[] = v.src.walk("*.xlsx").toArray();
+      form.log(`${files.length} ファイルが見つかりました`);
+      const rows: any[] = [];
+      // 中止ボタンが押されると onClick はここで終わる（以降の保存は行わない）
+      for (const h of form.withProgress(files)) {
+        try {
+          const book = excel.open(h);
+          const sheet = book.sheets["明細"];
+          if (!sheet) {
+            form.log(`${h.relativePath}: 「明細」シートがないので飛ばします`);
+            book.close();
+            continue;
+          }
+          for (const r of sheet.rows()) {
+            if (v.from && r.日付 instanceof Date && r.日付 < v.from) continue;
+            rows.push({ ...r, ファイル: h.relativePath });
+          }
           book.close();
-          continue;
+        } catch (e) {
+          form.error(`${h.relativePath}: ${e.message}`);
         }
-        for (const r of sheet.toObjects()) {
-          if (v.from && r.日付 instanceof Date && r.日付 < v.from) continue;
-          rows.push({ ...r, ファイル: h.relativePath });
-        }
-        book.close();
-      } catch (e) {
-        ctx.error(`${h.relativePath}: ${e.message}`);
       }
-    }
-    const groups = Object.groupBy(rows, (r) => r[v.key] ?? "(未設定)");
-    const summary = Object.entries(groups).map(([name, list]) => ({
-      [v.key]: name,
-      件数: list.length,
-      合計: list.reduce((s, r) => s + (Number(r.金額) || 0), 0),
-    }));
-    const out = workbooks.create();
-    out.addSheet("集計").write(summary, { table: true });
-    if (v.details) out.addSheet("明細").write(rows, { table: true });
-    out.save(v.out);
-    out.close();
-    ctx.log(`${rows.length} 件を集計して保存しました: ${v.out.path}`);
-    return v.out; // 完了後に「フォルダを開く」ボタンを表示
-  },
+      const groups = Object.groupBy(rows, (r) => r[v.key] ?? "(未設定)");
+      const summary = Object.entries(groups).map(([name, list]) => ({
+        [v.key]: name,
+        件数: list.length,
+        合計: list.reduce((s, r) => s + (Number(r.金額) || 0), 0),
+      }));
+      const out = excel.create();
+      out.addSheet("集計").write(summary, { table: true });
+      if (v.details) out.addSheet("明細").write(rows, { table: true });
+      out.save(v.out);
+      out.close();
+      form.log(`${rows.length} 件を集計して保存しました: ${v.out.path}`);
+      return v.out; // 完了後に「フォルダを開く」ボタンを表示
+    },
+  }],
 });
 if (!values) console.log("キャンセルされました");

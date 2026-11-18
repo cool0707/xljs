@@ -768,15 +768,69 @@ pub(super) fn install(n: &N) {
         with_book(h, a, |b| freeze(b, &sheet, &r).map_err(|e| a.throw(&e)))?;
         a.undefined()
     });
+    // xlsxAutoFilter(book, sheet, range) — "" removes the filter.
     n.set("xlsxAutoFilter", |h, a| {
         let (sheet, r) = (a.str(1), a.str(2));
         with_book(h, a, |b| {
+            if r.is_empty() {
+                b.sheet_mut(&sheet).map_err(|e| a.throw(&e))?.remove_auto_filter();
+                return Ok(());
+            }
             let (c1, r1, c2, r2) = parse_range(&r).map_err(|e| a.throw(&e))?;
             let ws = b.sheet_mut(&sheet).map_err(|e| a.throw(&e))?;
             ws.set_auto_filter(format!("{}:{}", cell(c1, r1), cell(c2, r2)));
             Ok(())
         })?;
         a.undefined()
+    });
+    // xlsxGetAutoFilter(book, sheet) -> the range of the filter, or ""
+    n.set("xlsxGetAutoFilter", |h, a| {
+        let sheet = a.str(1);
+        let r = with_book(h, a, |b| Ok(b.sheet(&sheet).map_err(|e| a.throw(&e))?.auto_filter().map(|f| f.range().range()).unwrap_or_default()))?;
+        a.ret(r)
+    });
+    // xlsxMerges(book, sheet) -> the merged ranges ("A1:C1", ...)
+    n.set("xlsxMerges", |h, a| {
+        let sheet = a.str(1);
+        let list = with_book(h, a, |b| Ok(b.sheet(&sheet).map_err(|e| a.throw(&e))?.merge_cells().iter().map(|m| m.range()).collect::<Vec<_>>()))?;
+        a.ret(list)
+    });
+    // xlsxGetFreeze(book, sheet) -> [rows, columns] frozen ([0, 0]: none)
+    n.set("xlsxGetFreeze", |h, a| {
+        use umya_spreadsheet::structs::PaneStateValues;
+        let sheet = a.str(1);
+        let rc = with_book(h, a, |b| {
+            let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            let pane = ws.sheets_views().sheet_view_list().first().and_then(|v| v.pane());
+            Ok(match pane {
+                Some(p) if matches!(p.state(), PaneStateValues::Frozen | PaneStateValues::FrozenSplit) => {
+                    vec![p.vertical_split().max(0.0), p.horizontal_split().max(0.0)]
+                }
+                _ => vec![0.0, 0.0],
+            })
+        })?;
+        a.ret(rc)
+    });
+    // xlsxSheetHidden(book, sheet[, hidden]) -> whether the sheet is hidden; with hidden, hides or shows it.
+    n.set("xlsxSheetHidden", |h, a| {
+        use umya_spreadsheet::structs::SheetStateValues;
+        let sheet = a.str(1);
+        let set = if js::nullish(&a.arg(2)) { None } else { Some(a.bool(2)) };
+        let hidden = with_book(h, a, |b| {
+            if let Some(hide) = set {
+                if hide {
+                    // Excel keeps at least one sheet shown.
+                    let shown = b.wb.sheet_collection().iter().filter(|s| s.name() != sheet && matches!(s.state(), SheetStateValues::Visible)).count();
+                    if shown == 0 {
+                        return Err(a.throw(&crate::err!("xlsx.lastVisibleSheet", sheet)));
+                    }
+                }
+                let ws = b.layout_mut(&sheet).map_err(|e| a.throw(&e))?;
+                ws.set_state(if hide { SheetStateValues::Hidden } else { SheetStateValues::Visible });
+            }
+            Ok(!matches!(b.sheet(&sheet).map_err(|e| a.throw(&e))?.state(), SheetStateValues::Visible))
+        })?;
+        a.ret(hidden)
     });
     n.set("xlsxSetRowHeight", |h, a| {
         let (sheet, row, ht) = (a.str(1), a.int(2), a.f64(3));
@@ -794,6 +848,19 @@ pub(super) fn install(n: &N) {
             Ok(())
         })?;
         a.undefined()
+    });
+    // xlsxGetRowHeight(book, sheet, row) -> points (the sheet's default for rows without a height of their own)
+    n.set("xlsxGetRowHeight", |h, a| {
+        let (sheet, row) = (a.str(1), a.int(2));
+        let ht = with_book(h, a, |b| {
+            if !(1..=1_048_576).contains(&row) {
+                return Err(a.throw(&Error::msg(format!("invalid row number {row}"))));
+            }
+            let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            let own = ws.row_dimension(row as u32).map(|r| r.height()).filter(|h| *h > 0.0);
+            Ok(own.unwrap_or_else(|| super::xlsx_print::default_row_height(&b.default_font, ws.sheet_format_properties())))
+        })?;
+        a.ret(ht)
     });
     n.set("xlsxGetColWidth", |h, a| {
         let (sheet, col) = (a.str(1), a.str(2).to_uppercase());

@@ -60,34 +60,39 @@ equal(again.secret, "", "password starts empty");
 // Cancel.
 equal(await ui.form({ title: "取消", fields: [{ name: "x" }] }), null);
 
-// onSubmit runs with a context; the form returns the values afterwards.
+// A button's onClick runs with the form; the form returns the values afterwards.
 const seen = [];
 const r = await ui.form({
   title: "実行",
   fields: [{ name: "n", type: "number", default: 3 }],
-  async onSubmit(values, ctx) {
-    for (const i of ctx.withProgress([1, 2, 3])) seen.push(i);
-    ctx.progress(3, 3, "done");
-    ctx.log("finished", values.n);
-    equal(ctx.cancelled, false);
-  },
+  buttons: [{ label: "実行", variant: "primary", async onClick(values, form) {
+    for (const i of form.withProgress([1, 2, 3])) seen.push(i);
+    form.progress(3, 3, "done");
+    form.log("finished", values.n);
+    equal(form.cancelled, false);
+  } }],
 });
 deepEqual(seen, [1, 2, 3]);
 equal(r.n, 3);
 
-// Errors in onSubmit reach the caller (no window to show them in).
-await rejects(() => ui.form({ fields: [], onSubmit() { throw new Error("boom"); } }), /boom/);
+// Errors in onClick reach the caller (no window to show them in).
+await rejects(() => ui.form({ fields: [], buttons: [{ label: "実行", variant: "primary", onClick() { throw new Error("boom"); } }] }), /boom/);
 
-// Aborting ctx.withProgress ends onSubmit (the rest does not run) without an error.
+// The submit button of earlier versions is gone; only one button can be primary.
+await rejects(() => ui.form({ fields: [], onSubmit() {} }), /onSubmit はなくなりました/);
+await rejects(() => ui.form({ fields: [], submit: "実行" }), /submit はなくなりました/);
+await rejects(() => ui.form({ fields: [], buttons: [{ label: "a", variant: "primary" }, { label: "b", variant: "primary" }] }), /primary のボタンは 1 つだけ/);
+
+// Aborting form.withProgress ends onClick (the rest does not run) without an error.
 const aborted = [];
 let reachedEnd = false;
 const r2 = await ui.form({
   title: "中止",
   fields: [{ name: "n", type: "number", default: 1 }],
-  onSubmit(values, ctx) {
-    for (const i of ctx.withProgress([1, 2, 3])) aborted.push(i);
+  buttons: [{ label: "実行", variant: "primary", onClick(values, form) {
+    for (const i of form.withProgress([1, 2, 3])) aborted.push(i);
     reachedEnd = true;
-  },
+  } }],
 });
 deepEqual(aborted, [1]);
 equal(reachedEnd, false);
@@ -100,24 +105,31 @@ const r3 = await ui.form({
   title: "ボタン",
   fields: [{ name: "n", type: "number", required: true }, { name: "memo" }],
   buttons: [
-    { label: "読込", validate: false, onClick(values, ctx) { clicks.push("load:" + values.n); ctx.setValue("n", 7); ctx.setValue("memo", "loaded"); } },
-    { label: "確認", onClick(values, ctx) { clicks.push("check:" + values.n); ctx.log("checked"); } },
+    { label: "読込", validate: false, onClick(values, form) { clicks.push("load:" + values.n); form.setValue("n", 7); form.setValue("memo", "loaded"); equal(values.n, 7, "setValue updates values"); } },
+    { label: "確認", onClick(values, form) { clicks.push("check:" + values.n); form.log("checked"); } },
     { label: "完了", close: true, onClick(values) { clicks.push("finish:" + values.memo); } },
   ],
-  onSubmit() { clicks.push("submit"); },
 });
 deepEqual(clicks, ["load:null", "check:7", "finish:x"]);
 equal(r3.n, 8);
 
-// submit: false hides the submit button; closing the form returns the values of the last checked press.
+// Without a primary button an answer without "$button" presses the first one; closing the form returns the values of the last checked press.
 const r4 = await ui.form({
   title: "ボタンのみ",
-  submit: false,
   fields: [{ name: "x", default: "a" }],
   buttons: [{ label: "実行", onClick(values) { clicks.push("run:" + values.x); } }],
 });
 deepEqual(clicks.slice(3), ["run:a"]);
 equal(r4.x, "a");
+
+// A button without onClick checks the values and closes the form; an answer without "$button" presses the primary one.
+const r4b = await ui.form({
+  title: "閉じるボタン",
+  fields: [{ name: "x", default: "b" }],
+  buttons: [{ label: "下書き", onClick() { clicks.push("draft"); } }, { label: "登録", variant: "primary" }],
+});
+deepEqual(clicks.slice(4), []);
+equal(r4b.x, "b");
 
 // A field's own validate gets its value and all the values; it runs once the field passes its checks.
 const fieldChecks = [];
@@ -139,9 +151,9 @@ const changes = [];
 const pair = {
   title: "変更時",
   fields: [
-    { name: "sales", type: "file", tooltip: "売上の CSV", onChange(h, values, ctx) {
+    { name: "sales", type: "file", tooltip: "売上の CSV", onChange(h, values, form) {
       changes.push(h ? h.name : null);
-      if (h && !values.purchase) ctx.setValue("purchase", h.path.replace("売上_", "仕入_"));
+      if (h && !values.purchase) form.setValue("purchase", h.path.replace("売上_", "仕入_"));
     } },
     { name: "purchase", type: "file" },
     { name: "kind", type: "select", options: ["a", "b"], placeholder: "選んでください" },
@@ -156,7 +168,7 @@ deepEqual(changes, ["売上_04.csv", null], "no onChange for a missing file; cle
 equal(r7.purchase.name, "b.xlsx");
 
 // Bad definitions.
-await rejects(() => ui.form({ fields: [], buttons: [{ label: "x" }] }), /onClick/);
+await rejects(() => ui.form({ fields: [], buttons: ["x"] }), /オブジェクト/);
 await rejects(() => ui.form({ fields: [{ name: "a", type: "colour" }] }), /colour/);
 await rejects(() => ui.form({ fields: [{ name: "a" }, { name: "a" }] }), /重複/);
 await rejects(() => ui.form({ fields: [{ name: "a", type: "select" }] }), /options/);

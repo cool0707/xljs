@@ -9,6 +9,8 @@ const rows = [
 
 // Display only: returns at once with a closed promise.
 const view = ui.table(rows, { title: "集計結果" });
+equal(view.update(rows.slice(0, 1)), view, "update() replaces the rows shown");
+view.update(rows, ["顧客名"]);
 ok(view.closed instanceof Promise);
 await view.closed;
 view.close();

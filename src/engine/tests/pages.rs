@@ -240,14 +240,14 @@ fn form_and_table_windows() {
             // The form icon goes to the custom title bar (not to the page).
             check!(
                 p,
-                p.w.o.custom_title_bar && p.w.o.title_icon == "fa-solid fa-table" && p.w.o.title == "窓" && init["submitIcon"] == "fa-regular fa-circle-play" && init.get("icon").is_none()
+                p.w.o.custom_title_bar && p.w.o.title_icon == "fa-solid fa-table" && p.w.o.title == "窓" && init["buttonIcons"] == json!(["fa-regular fa-circle-play"]) && init["enter"] == 0 && init.get("icon").is_none()
                     && init["accent"] == json!({"light": "#c42b1c", "dark": "#c42b1c"})
                     && init["background"] == json!({"light": "oldlace", "dark": ""}),
-                "title bar = {} {:?} {:?}, submitIcon = {}",
+                "title bar = {} {:?} {:?}, buttonIcons = {}",
                 p.w.o.custom_title_bar,
                 p.w.o.title_icon,
                 p.w.o.title,
-                init["submitIcon"]
+                init["buttonIcons"]
             );
             check!(p, got.contains(r#""icon":"fa-solid fa-folder-open""#) && got.contains(r#""icon":"fa-brands fa-windows""#), "field icons = {got}");
             check!(p, init["texts"]["browse"] == "参照…", "texts = {}", init["texts"]);
@@ -276,7 +276,7 @@ fn form_and_table_windows() {
             p.send(json!({"type": "submit", "values": {"src": "data", "n": "2", "mode": "商品別", "day": "2026-05-06", "inputs": ["data/a.xlsx"]}}), &[]);
             p.wait_closed();
         }),
-        // 2. onSubmit: progress and log, output folder, run again, close.
+        // 2. a button's onClick: progress and log, output folder, run again, close.
         Box::new(|p| {
             p.expect("init");
             p.send(json!({"type": "submit", "values": {"n": "3"}}), &[]);
@@ -303,7 +303,7 @@ fn form_and_table_windows() {
             p.send(json!({"type": "close"}), &[]);
             p.wait_closed();
         }),
-        // 4. An error in onSubmit is shown in the window.
+        // 4. An error in onClick is shown in the window.
         Box::new(|p| {
             p.expect("init");
             p.send(json!({"type": "submit", "values": {}}), &[]);
@@ -345,7 +345,7 @@ fn form_and_table_windows() {
     ];
     let u = PageUi::new(r#"{"showDirectoryPicker": ["data"], "showSaveFilePicker": ["out.csv", "out.xlsx"]}"#, Some(log.sink()), pages);
     let src = r#"
-const v = await ui.form({ title: "窓", titleBar: "custom", icon: "table", accent: " #c42b1c ", background: { light: "oldlace" }, submitIcon: "fa-regular fa-circle-play", fields: [
+const v = await ui.form({ title: "窓", titleBar: "custom", icon: "table", accent: " #c42b1c ", background: { light: "oldlace" }, buttons: [{ label: "OK", icon: "fa-regular fa-circle-play", variant: "primary" }], fields: [
   { name: "src", label: "フォルダ", type: "folder", required: true, icon: "folder-open" },
   { name: "n", type: "number", icon: "bad<icon> fa-brands  fa-windows" },
   { name: "mode", type: "select", options: ["顧客別", "商品別"] },
@@ -355,24 +355,24 @@ const v = await ui.form({ title: "窓", titleBar: "custom", icon: "table", accen
 ]});
 console.log("1", v.src.name, v.n, v.mode, v.day.getDate(), v.inputs.map((h) => h.name).join());
 
-const v2 = await ui.form({ title: "実行", fields: [{ name: "n", type: "number" }], async onSubmit(values, ctx) {
-  for (const i of ctx.withProgress([1, 2, 3])) ctx.log("item " + i);
+const v2 = await ui.form({ title: "実行", fields: [{ name: "n", type: "number" }], buttons: [{ label: "実行", variant: "primary", async onClick(values, form) {
+  for (const i of form.withProgress([1, 2, 3])) form.log("item " + i);
   return fs.file("data/a.xlsx");
-}});
+} }] });
 console.log("2", v2.n);
 
-const v3 = await ui.form({ title: "中止", fields: [], async onSubmit(values, ctx) {
-  for (let i = 0; i < 200 && !ctx.cancelled; i++) await sleep(5);
-}});
+const v3 = await ui.form({ title: "中止", fields: [], buttons: [{ label: "実行", variant: "primary", async onClick(values, form) {
+  for (let i = 0; i < 200 && !form.cancelled; i++) await sleep(5);
+} }] });
 console.log("3", v3 !== null);
 
-await ui.form({ fields: [], onSubmit() { throw new Error("失敗"); } });
+await ui.form({ fields: [], buttons: [{ label: "実行", variant: "primary", onClick() { throw new Error("失敗"); } }] });
 
 const rows = [{ 名前: "a", 数: 1, 日: new Date(2026, 3, 1) }, { 名前: "b", 数: 2 }, { 名前: "c", 日: new Date(2026, 3, 1, 12, 30) }];
 const picked = await ui.table(rows, { title: "表", selectable: true });
 console.log("5", picked.map((r) => r.名前).join());
 console.log("csv", JSON.stringify(fs.readText("out.csv")));
-console.log("xlsx", workbooks.open("out.xlsx").sheets[0].toArrays().length);
+console.log("xlsx", excel.open("out.xlsx").sheets[0].toArrays().length);
 
 const view = ui.table(rows, { onDoubleClick(e) {
   console.log("dbl", e.index, e.row.名前, e.column, e.key, e.value);
@@ -487,7 +487,7 @@ fn form_window_menus_and_new_fields() {
     let src = r#"
 const v = await ui.form({
   fields: [
-    { name: "n", type: "note", variant: "warning", default: "注意書き" },
+    { name: "n", type: "note", kind: "warning", text: "注意書き" },
     { name: "s", type: "slider" },
     { name: "p", type: "number", prefix: "¥" },
     { name: "r", type: "dateRange", default: ["2026-04-01", ""] },
@@ -544,7 +544,7 @@ const v = await ui.form({
     { label: "基本", fields: [{ name: "a" }, { name: "pick", type: "table", rows, selectable: "single", required: true, default: 1 }] },
     { label: "詳細", fields: [{ name: "out", type: "table", rows: [] }] },
   ],
-  onSubmit(values, ctx) { ctx.table("out", [{ 結果: values.pick.名前 }]); },
+  buttons: [{ label: "実行", variant: "primary", onClick(values, form) { form.table("out", [{ 結果: values.pick.名前 }]); } }],
 });
 console.log(v.common, v.a, v.pick.名前, "out" in v);
 "#;
@@ -556,8 +556,8 @@ fn form_window_buttons() {
     let pages: Vec<PageFn> = vec![
         Box::new(|p| {
             let init = p.expect("init");
-            check!(p, as_json(&init["buttons"]) == r#"["読込","確認","完了"]"# && init["noSubmit"] == false, "init = {init}");
-            // validate: false runs with the values as entered; ctx.setValue updates the page.
+            check!(p, as_json(&init["buttons"]) == r#"["読込","確認","完了"]"# && init["enter"] == -1, "init = {init}");
+            // validate: false runs with the values as entered; form.setValue updates the page.
             p.send(json!({"type": "submit", "button": 0, "values": {"n": ""}}), &[]);
             p.expect("running");
             let got = as_json(&p.expect("picked"));
@@ -578,8 +578,8 @@ fn form_window_buttons() {
         }),
         Box::new(|p| {
             let init = p.expect("init");
-            check!(p, init["noSubmit"] == true, "init = {init}");
-            p.send(json!({"type": "submit", "values": {}}), &[]); // the hidden submit button: ignored
+            check!(p, init["enter"] == -1, "init = {init}");
+            p.send(json!({"type": "submit", "values": {}}), &[]); // Enter without a primary button: ignored
             p.send(json!({"type": "submit", "button": 0, "values": {}}), &[]);
             p.expect("done");
             p.send(json!({"type": "close"}), &[]);
@@ -590,13 +590,13 @@ fn form_window_buttons() {
 const v = await ui.form({
   fields: [{ name: "n", type: "number", required: true }],
   buttons: [
-    { label: "読込", validate: false, onClick(values, ctx) { console.log("load", values.n); ctx.setValue("n", 7); } },
+    { label: "読込", validate: false, onClick(values, form) { console.log("load", values.n); form.setValue("n", 7); } },
     { label: "確認", onClick(values) { console.log("check", values.n); } },
     { label: "完了", close: true, onClick(values) { console.log("finish", values.n); } },
   ],
 });
 console.log("v", v.n);
-const w = await ui.form({ submit: false, fields: [], buttons: [{ label: "実行", onClick() { console.log("run"); } }] });
+const w = await ui.form({ fields: [], buttons: [{ label: "実行", onClick() { console.log("run"); } }] });
 console.log("w", JSON.stringify(w));
 "#;
     form_case("buttons.js", src, "load null\ncheck 7\nfinish 8\nv 8\nrun\nw {}\n", pages);
@@ -689,7 +689,7 @@ fn form_window_on_change() {
         let f = &init["fields"][2];
         check!(p, f["value"] == "" && f["placeholder"] == "選んでください", "select = {}", as_json(f));
         let tips = as_json(&init["buttonTooltips"]);
-        check!(p, tips == r#"["説明"]"#, "buttonTooltips = {tips}");
+        check!(p, tips == r#"["説明",""]"#, "buttonTooltips = {tips}");
         // Typing (no change) does not run onChange.
         p.send(json!({"type": "check", "field": "sales", "values": {"sales": sales, "purchase": "", "kind": ""}}), &[]);
         p.expect("fieldError");
@@ -711,15 +711,15 @@ fn form_window_on_change() {
 let changes = 0;
 const v = await ui.form({
   fields: [
-    { name: "sales", type: "file", tooltip: "売上の CSV", required: true, onChange(h, values, ctx) {
+    { name: "sales", type: "file", tooltip: "売上の CSV", required: true, onChange(h, values, form) {
       changes++;
       const other = h.path.replace("売上_", "仕入_");
-      if (!values.purchase && fs.exists(other)) ctx.setValue("purchase", other);
+      if (!values.purchase && fs.exists(other)) form.setValue("purchase", other);
     } },
     { name: "purchase", type: "file", required: true },
     { name: "kind", type: "select", options: ["a", "b"], placeholder: "選んでください", required: true },
   ],
-  buttons: [{ label: "?", tooltip: "説明", validate: false, onClick() {} }],
+  buttons: [{ label: "?", tooltip: "説明", validate: false, onClick() {} }, { label: "OK", variant: "primary" }],
 });
 console.log(changes, v.purchase.name, v.kind);
 "#;
@@ -742,7 +742,7 @@ fn form_window_disabled_hidden() {
         let st = as_json(&p.expect("fieldState"));
         check!(p, st == r#"{"fields":{"to":{"disabled":false,"hidden":false}},"type":"fieldState"}"#, "fieldState = {st}");
         p.expect("fieldError");
-        // onChange: ctx.setVisible / setDisabled.
+        // onChange: form.setHidden / setDisabled.
         p.send(json!({"type": "check", "field": "lock", "change": true, "values": {"use": true, "to": "", "memo": "", "lock": true}}), &[]);
         p.expect("fieldError");
         let st = as_json(&p.expect("fieldState"));
@@ -762,7 +762,7 @@ const v = await ui.form({
     { name: "use", type: "checkbox" },
     { name: "to", required: true, disabled: (v) => !v.use },
     { name: "memo", required: true, hidden: true },
-    { name: "lock", type: "switch", onChange(on, v, ctx) { ctx.setVisible("memo", on); ctx.setDisabled("use", on); } },
+    { name: "lock", type: "switch", onChange(on, v, form) { form.setHidden("memo", !on); form.setDisabled("use", on); } },
   ],
 });
 console.log(v.to, v.memo);
@@ -832,11 +832,11 @@ const tasks = [{ 名前: "設計", 開始: new Date(2026, 10, 2), 終了: new Da
 const v = await ui.form({
   fields: [
     { name: "a" },
-    { name: "g", type: "chart", height: 10, chart: { type: "gantt", data: tasks, editable: true,
+    { name: "g", type: "chart", height: 250, chart: { type: "gantt", data: tasks, editable: true,
       onChange(row, changes) { console.log("change", Object.keys(changes).join(","), row === tasks[0]); },
       onClick() { throw new Error("クリックの失敗"); } } },
   ],
-  onSubmit(values, ctx) { ctx.chart("g", { view: "week" }); },
+  buttons: [{ label: "実行", variant: "primary", onClick(values, form) { form.chart("g", { view: "week" }); } }],
 });
 console.log(v.a, v.g.length, v.g[0].開始.getTime() === 1794268800000, v.g[0].進捗);
 "#;
@@ -881,12 +881,12 @@ fn form_window_image_row_toolbar() {
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 const v = await ui.form({
   toolbar: [
-    { icon: "gear", tooltip: "設定", onClick(values, ctx) { console.log("gear", values.dark, values.first); ctx.setValue("last", "山田"); } },
+    { icon: "gear", tooltip: "設定", onClick(values, form) { console.log("gear", values.dark, values.first); form.setValue("last", "山田"); } },
     { label: "その他", menu: [{ label: "A", onClick() { throw new Error("失敗"); } }] },
     { name: "dark", type: "switch", label: "ダーク" },
   ],
   fields: [
-    { name: "logo", type: "image", default: png, height: 40, align: "center" },
+    { name: "logo", type: "image", src: png, height: 40, align: "center" },
     { row: "氏名", fields: [{ name: "last", label: "姓", required: true }, { name: "first", label: "名" }] },
     { name: "memo" },
   ],
@@ -917,7 +917,7 @@ fn forms_window() {
         let got = p.expect("to");
         check!(p, got["form"] == 1 && got["msg"]["fields"][0]["name"] == "b", "to = {}", as_json(&got));
         check!(p, *p.w.sizes.lock().unwrap() == vec![(700 + 48, 400)], "sizes = {:?}", p.w.sizes.lock().unwrap());
-        // The second form runs its onSubmit; the first one's submit button closes the window.
+        // The second form runs its button's onClick; the first one's OK button closes the window.
         p.send(json!({"type": "from", "form": 1, "msg": {"type": "submit", "values": {"b": "x"}}}), &[]);
         let got = p.expect("to");
         check!(p, got["form"] == 1 && got["msg"]["type"] == "running", "to = {}", as_json(&got));
@@ -936,7 +936,7 @@ const r = await ui.forms({
   side: "right", size: "each",
   forms: [
     { label: "基本", icon: "user", width: 500, height: 300, fields: [{ name: "a" }] },
-    { label: "詳細", width: 700, height: 400, fields: [{ name: "b" }], onSubmit(v, ctx) { ctx.log("ok"); console.log("b", v.b); } },
+    { label: "詳細", width: 700, height: 400, fields: [{ name: "b" }], buttons: [{ label: "実行", variant: "primary", onClick(v, form) { form.log("ok"); console.log("b", v.b); } }] },
   ],
 });
 console.log(r.map((x) => x && Object.values(x).join()).join("|"));

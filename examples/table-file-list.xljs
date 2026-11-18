@@ -24,6 +24,6 @@ await ui.table(counts, {
   title: "行数",
   onDoubleClick(e) {
     if (e.column === "行数") alert(`${e.row.名前}: ${e.value} 行`);
-    else shell.openPath(picked[e.index].handle);
+    else shell.open(picked[e.index].handle);
   },
 }).closed;

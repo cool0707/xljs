@@ -134,7 +134,7 @@ xljs test --approve 集計.js
 
 ## 比べるもの
 
-- 画面: フォームの項目（ラベル・種類・既定値・選択肢）、入力チェックのエラー、`alert`・`confirm` の文面、`ctx.log`・`console.log`、`ui.table`・`ctx.table` の行。
+- 画面: フォームの項目（ラベル・種類・既定値・選択肢）、入力チェックのエラー、`alert`・`confirm` の文面、`form.log`・`console.log`、`ui.table`・`form.table` の行。
 - ファイル: 増えた・変わったファイル。Excel はセルに表示される文字と数式（書式は比べません）、CSV・テキスト・JSON は行ごと。
 
 ## 手順書を作る

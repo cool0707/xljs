@@ -40,6 +40,27 @@ pub struct RawPrint {
     pub black_and_white: bool,
 }
 
+/// The height (points) of the rows of a sheet without a height of their
+/// own. Excel sizes rows by the Normal font unless the sheet says otherwise
+/// (customHeight); new workbooks of umya-spreadsheet say 13.5 whatever the font.
+pub(crate) fn default_row_height(font: &(String, f64), fmt: &umya_spreadsheet::structs::SheetFormatProperties) -> f64 {
+    let by_font = if font.0.contains("游") || font.0.starts_with("Yu Gothic") {
+        Some(18.75 / 11.0)
+    } else if font.0.starts_with("ＭＳ") || font.0.starts_with("MS ") {
+        Some(13.5 / 11.0)
+    } else if font.0 == "Calibri" {
+        Some(15.0 / 11.0)
+    } else {
+        None
+    };
+    match by_font {
+        Some(k) if !fmt.custom_height() => ((font.1 * k) / 0.75).round() * 0.75,
+        _ if fmt.default_row_height() > 0.0 => fmt.default_row_height(),
+        Some(k) => ((font.1 * k) / 0.75).round() * 0.75,
+        None => ((font.1 * 15.0 / 11.0) / 0.75).round() * 0.75,
+    }
+}
+
 /// Reads the page setup of every sheet of an xlsx file (see RawPrint).
 pub fn collect_raw(data: &[u8]) -> HashMap<String, RawPrint> {
     let mut out = HashMap::new();
@@ -613,23 +634,7 @@ impl<'a> Sheet<'a> {
             let base = if fmt.base_column_width() > 0 { fmt.base_column_width() as f64 } else { 8.0 };
             ((base * mdw + 5.0) / 8.0).ceil() * 8.0
         } * 0.75;
-        // Excel sizes rows by the Normal font unless the sheet says otherwise
-        // (customHeight); new workbooks of umya-spreadsheet say 13.5 whatever the font.
-        let by_font = if font.0.contains("游") || font.0.starts_with("Yu Gothic") {
-            Some(18.75 / 11.0)
-        } else if font.0.starts_with("ＭＳ") || font.0.starts_with("MS ") {
-            Some(13.5 / 11.0)
-        } else if font.0 == "Calibri" {
-            Some(15.0 / 11.0)
-        } else {
-            None
-        };
-        let default_h = match by_font {
-            Some(k) if !fmt.custom_height() => ((font.1 * k) / 0.75).round() * 0.75,
-            _ if fmt.default_row_height() > 0.0 => fmt.default_row_height(),
-            Some(k) => ((font.1 * k) / 0.75).round() * 0.75,
-            None => ((font.1 * 15.0 / 11.0) / 0.75).round() * 0.75,
-        };
+        let default_h = default_row_height(&font, fmt);
         let mut col_w = HashMap::new();
         for c in ws.column_dimensions() {
             let w = if c.hidden() { 0.0 } else { px(c.width()) * 0.75 };
