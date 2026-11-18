@@ -572,7 +572,7 @@ fn form_icon() {
 /// The skills for Copilot agents (docs/ai/copilot/skills/xljs-*): the
 /// reference split by feature, each skill a handwritten header and some
 /// `## ` sections of reference.md.
-const REFERENCE_SKILLS: [&str; 6] = ["xljs-reference", "xljs-app-design", "xljs-pdf", "xljs-sqlite", "xljs-network", "xljs-chart"];
+const REFERENCE_SKILLS: [&str; 7] = ["xljs-reference", "xljs-excel", "xljs-app-design", "xljs-pdf", "xljs-sqlite", "xljs-network", "xljs-chart"];
 
 /// Splits markdown into the text before the first `## ` heading and the
 /// `## ` sections (heading, text), skipping code blocks.
@@ -666,7 +666,7 @@ const KNOWLEDGE_CHATS: [&str; 3] = ["chatgpt", "gemini", "claude"];
 fn knowledge_instructions(copilot: &str) -> String {
     let (first, rest) = copilot.split_once('\n').unwrap();
     assert!(first.starts_with("あなたは「xljs」"), "copilot/instructions.md: the first line changed; update knowledge_instructions");
-    let head = "あなたは「xljs」用のスクリプトを書くアシスタントです。以下の決まりに従って、利用者の業務のためのプログラム（Excel・CSV の集計や変換をするツールから、一覧・登録の画面を持つ業務アプリまで）を JavaScript で書いてください。詳しい API は知識のファイルにあります。画面のあるスクリプトを作る・直すときは、コードを書く前に `xljs-app-design.txt`（作るものの決め方、画面の設計の方針・型・アンチパターン、アプリモード）を必ず読んでください。API の詳細は `xljs-reference.txt`（PDF は `xljs-pdf.txt`、SQLite は `xljs-sqlite.txt`、fetch と Active Directory は `xljs-network.txt`、グラフは `xljs-chart.txt`）、Excel マクロ（VBA）の移植は `vba-port.txt` を必ず参照してください。知識のファイルの中で「スキル `xljs-pdf`」などとあるのは、同じ名前の知識のファイル（`xljs-pdf.txt`）のことです。";
+    let head = "あなたは「xljs」用のスクリプトを書くアシスタントです。以下の決まりに従って、利用者の業務のためのプログラム（Excel・CSV の集計や変換をするツールから、一覧・登録の画面を持つ業務アプリまで）を JavaScript で書いてください。画面のあるスクリプトを作る・直すときは、コードを書く前に `xljs-app-design.txt`（作るものの決め方、画面の設計の方針・型・アンチパターン、アプリモード）を必ず読んでください。API の詳細は `xljs-reference.txt`（Excel は `xljs-excel.txt`、PDF は `xljs-pdf.txt`、SQLite は `xljs-sqlite.txt`、fetch と Active Directory は `xljs-network.txt`、グラフは `xljs-chart.txt`）、Excel マクロ（VBA）の移植は `vba-port.txt` を必ず参照してください。知識のファイルの中で「スキル `xljs-pdf`」などとあるのは、同じ名前の知識のファイル（`xljs-pdf.txt`）のことです。";
     let out = rest
         .replace("8. リファレンスに無い関数やオプションを作らない。", "8. 知識のファイルに無い関数やオプションを作らない。")
         .replace("スキル `xljs-app-design`", "`xljs-app-design.txt`");

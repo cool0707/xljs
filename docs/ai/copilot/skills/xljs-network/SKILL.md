@@ -5,7 +5,7 @@ description: xljs の Web API（fetch・Request・Response・FormData・URL・Ab
 
 # xljs API リファレンス: Web API と Active Directory
 
-xljs の `fetch` と `ad` です。基本の API（ファイル・Excel・CSV・JSON・フォーム・表・日付など）はスキル `xljs-reference` にあります。ここに書いていない関数・オプションは存在しないものとして扱ってください。
+xljs の `fetch` と `ad` です。基本の API（ファイル・CSV・JSON・フォーム・表・日付など）はスキル `xljs-reference`、Excel は `xljs-excel` にあります。ここに書いていない関数・オプションは存在しないものとして扱ってください。
 
 ## Web API（fetch）
 

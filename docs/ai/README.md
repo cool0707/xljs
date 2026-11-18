@@ -6,16 +6,17 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 | ファイル | 内容 | 大きさ |
 |---|---|---|
 | [`prompt.md`](prompt.md) | AI への指示（回答の決まり・作るものの決め方・よくある間違い）＋要点のリファレンス＋回答例（ツールとアプリ）。**これだけで基本的な集計・変換のツールと、一覧・登録のあるアプリは書ける** | 約 15,000 字 |
-| [`reference.md`](reference.md) | 詳しいリファレンス（全オプション・書式・フォーム・表・画面の設計の方針・アプリモード）とレシピ 6 本 | 約 59,000 字 |
+| [`reference.md`](reference.md) | 詳しいリファレンス（全オプション・書式・フォーム・表・画面の設計の方針・アプリモード）とレシピ 6 本 | 約 61,000 字 |
 | [`copilot/instructions.md`](copilot/instructions.md) | Copilot のエージェント用の指示（`prompt.md` を 8,000 字以内に縮めたもの） | 約 7,700 字 |
 | [`chatgpt/instructions.md`](chatgpt/instructions.md)・[`gemini/instructions.md`](gemini/instructions.md)・[`claude/instructions.md`](claude/instructions.md) | ChatGPT・Gemini・Claude 用の指示（3 つとも同じ中身。`copilot/instructions.md` のスキルの呼び方を、知識のファイル `xljs-reference.txt` などに替えたもの） | 約 7,800 字 |
-| [`copilot/skills/xljs-reference/SKILL.md`](copilot/skills/xljs-reference/SKILL.md) | スキル版のリファレンス（`reference.md` から下の 5 つを除いたもの） | 約 29,000 字 |
+| [`copilot/skills/xljs-reference/SKILL.md`](copilot/skills/xljs-reference/SKILL.md) | スキル版のリファレンス（`reference.md` から下の 6 つを除いたもの） | 約 26,000 字 |
+| [`copilot/skills/xljs-excel/SKILL.md`](copilot/skills/xljs-excel/SKILL.md) | スキル版のリファレンス: Excel（ブック・シート・セルの読み書き、表の読み書き、セルの検索、結合セル、書式） | 約 5,700 字 |
 | [`copilot/skills/xljs-app-design/SKILL.md`](copilot/skills/xljs-app-design/SKILL.md) | スキル版のリファレンス: 画面の設計（ツールかアプリかの決め方、フォームアプリ・カスタムアプリの方針、型、アンチパターン）とアプリモード | 約 18,000 字 |
-| [`copilot/skills/xljs-pdf/SKILL.md`](copilot/skills/xljs-pdf/SKILL.md) | スキル版のリファレンス: PDF 出力と PDF の編集 | 約 4,000 字 |
+| [`copilot/skills/xljs-pdf/SKILL.md`](copilot/skills/xljs-pdf/SKILL.md) | スキル版のリファレンス: PDF 出力と PDF の編集 | 約 5,000 字 |
 | [`copilot/skills/xljs-sqlite/SKILL.md`](copilot/skills/xljs-sqlite/SKILL.md) | スキル版のリファレンス: SQLite | 約 3,300 字 |
 | [`copilot/skills/xljs-network/SKILL.md`](copilot/skills/xljs-network/SKILL.md) | スキル版のリファレンス: Web API（fetch）と Active Directory | 約 3,500 字 |
 | [`copilot/skills/xljs-chart/SKILL.md`](copilot/skills/xljs-chart/SKILL.md) | スキル版のリファレンス: グラフ（ui.chart） | 約 2,900 字 |
-| [`copilot/skills/vba-port/SKILL.md`](copilot/skills/vba-port/SKILL.md) | Excel マクロ（VBA）移植用のスキル。素直な書き方への置き換え、不要なコードの省略、手順の見直しの提案 | 約 4,600 字 |
+| [`copilot/skills/vba-port/SKILL.md`](copilot/skills/vba-port/SKILL.md) | Excel マクロ（VBA）移植用のスキル。素直な書き方への置き換え、不要なコードの省略、手順の見直しの提案 | 約 5,400 字 |
 | [`coding-agent/xljs-dev/SKILL.md`](coding-agent/xljs-dev/SKILL.md) | 開発モードを使わず、自分の AI 開発環境（Claude Code・GitHub Copilot のエージェント・Cursor など）で作るときのスキル。開発モードがしていること（履歴、モックの UI での実行とエラーの読み取り、テストの再生、exe の作成）を AI に自分で行わせる | 約 5,900 字 |
 
 配布 zip にも `prompt/` として同梱しています（このフォルダの中身がそのまま入ります）。
@@ -34,13 +35,13 @@ AI は xljs を知らないので、そのままだと Node.js 用のコード�
 
 | サービス | 設定する場所 |
 |---|---|
-| Claude | プロジェクトを作り、「指示」に `claude/instructions.md`、「ファイル（ナレッジ）」に下の 7 つのファイル |
-| Gemini | Gem（スキル）を作り、「カスタム指示」に `gemini/instructions.md`、「知識」に下の 7 つのファイル |
-| ChatGPT | GPT（またはプロジェクト）の「指示」に `chatgpt/instructions.md`（指示は 8,000 字まで）、「知識」に下の 7 つのファイル |
-| Microsoft 365 Copilot | エージェントを作れる場合は「指示」に `copilot/instructions.md`（8,000 字の上限に収まる）、スキルに `copilot/skills/` の 7 つ（スキルは 30,000 字までなので、リファレンスは機能ごとに分けてある。スキルが使えなければ「知識」に `reference.md`） |
+| Claude | プロジェクトを作り、「指示」に `claude/instructions.md`、「ファイル（ナレッジ）」に下の 8 つのファイル |
+| Gemini | Gem（スキル）を作り、「カスタム指示」に `gemini/instructions.md`、「知識」に下の 8 つのファイル |
+| ChatGPT | GPT（またはプロジェクト）の「指示」に `chatgpt/instructions.md`（指示は 8,000 字まで）、「知識」に下の 8 つのファイル |
+| Microsoft 365 Copilot | エージェントを作れる場合は「指示」に `copilot/instructions.md`（8,000 字の上限に収まる）、スキルに `copilot/skills/` の 8 つ（スキルは 30,000 字までなので、リファレンスは機能ごとに分けてある。スキルが使えなければ「知識」に `reference.md`） |
 | GitHub Copilot（VS Code） | スクリプトのフォルダに `.github/copilot-instructions.md` として `prompt.md` を置く。`xljs init` で型定義も出すと補完が効く |
 
-ChatGPT・Gemini・Claude の「知識」には、`copilot/skills/` の 7 つの `SKILL.md` を `<フォルダ名>.txt`（`xljs-reference.txt`・`xljs-app-design.txt`・`xljs-pdf.txt`・`xljs-sqlite.txt`・`xljs-network.txt`・`xljs-chart.txt`・`vba-port.txt`）に名前を変えて入れます。指示がこの名前で呼びます。拡張子を .txt にするのは、.md だと「サポートされていないファイル形式」になることがあるためです（Gemini のスキルなど。Windows に .md の種類の登録がないと、ブラウザーがファイルの種類を空にする）。
+ChatGPT・Gemini・Claude の「知識」には、`copilot/skills/` の 8 つの `SKILL.md` を `<フォルダ名>.txt`（`xljs-reference.txt`・`xljs-excel.txt`・`xljs-app-design.txt`・`xljs-pdf.txt`・`xljs-sqlite.txt`・`xljs-network.txt`・`xljs-chart.txt`・`vba-port.txt`）に名前を変えて入れます。指示がこの名前で呼びます。拡張子を .txt にするのは、.md だと「サポートされていないファイル形式」になることがあるためです（Gemini のスキルなど。Windows に .md の種類の登録がないと、ブラウザーがファイルの種類を空にする）。
 
 開発モード（`xljs dev`）では、これらのサービスのふつうのチャットを開くと「xljs 用のエージェント（Gem・GPT・プロジェクト）を作成しましょう」と案内が出ます。［作成用のプロンプト］で、名前・説明の例、指示のコピー、スキル・知識のファイル（チャットの画面へドラッグして添付）をまとめて表示します。
 
@@ -49,7 +50,7 @@ ChatGPT・Gemini・Claude の「知識」には、`copilot/skills/` の 7 つの
 ファイルを読み書きしてコマンドを実行できる AI（Claude Code、VS Code の GitHub Copilot のエージェント、Cursor、Codex など）で作るときは、開発モードの代わりに `coding-agent/xljs-dev/SKILL.md` を渡します。AI が、書き換える前の履歴の保存、`xljsc check` と画面を出さない実行（`--ui=mock`）での確認、エラーの読み取り、テスト（`.xljs/tests`）の再生を自分で行うようになります（テストの承認は利用者が行います）。
 
 1. スクリプトのフォルダで `xljsc init` を実行し、型定義（`xljs.d.ts`）を置く。AI はこれで API を確かめます。
-2. スキルを置く。xljs の API はほかのスキル（`copilot/skills/` の 7 つ）が持つので、一緒に置きます。
+2. スキルを置く。xljs の API はほかのスキル（`copilot/skills/` の 8 つ）が持つので、一緒に置きます。
    - Claude Code: `.claude/skills/xljs-dev/SKILL.md`、ほかは `.claude/skills/<フォルダ名>/SKILL.md`
    - GitHub Copilot（VS Code）: `.github/skills/` の下に同じ形で置く
    - スキルを使えないツール: `AGENTS.md`（または `CLAUDE.md`・`.github/copilot-instructions.md`）に `prompt.md` と `xljs-dev/SKILL.md` の本文（先頭の `---` の間を除く）を貼り、`reference.md` を同じフォルダに置く

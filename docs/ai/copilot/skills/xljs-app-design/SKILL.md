@@ -5,7 +5,7 @@ description: xljs の画面のあるスクリプトの設計。作るものの�
 
 # xljs の画面の設計とアプリモード
 
-xljs の画面のあるスクリプトで何を作り、どう組み立てるかの方針と、アプリモード（HTML の画面）の API です。フォーム・表の全オプションはスキル `xljs-reference`、Active Directory は `xljs-network`、SQLite は `xljs-sqlite` にあります。ここに書いていない関数・オプションは存在しないものとして扱ってください。
+xljs の画面のあるスクリプトで何を作り、どう組み立てるかの方針と、アプリモード（HTML の画面）の API です。フォーム・表の全オプションはスキル `xljs-reference`、Excel は `xljs-excel`、Active Directory は `xljs-network`、SQLite は `xljs-sqlite` にあります。ここに書いていない関数・オプションは存在しないものとして扱ってください。
 
 コードを書く前に、次を決めて回答の最初に 1〜2 行ずつ書いてください。
 
