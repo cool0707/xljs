@@ -33,7 +33,7 @@ summary.setStyle("A1:D1", {
   background: "#305496",
   align: "center", valign: "center",
 });
-summary.setRowHeight(1, 30);
+summary.rows(1).height = 30;
 
 const byBranch = Object.entries(Object.groupBy(sales, (r) => r.支店)).map(([支店, list]) => ({
   支店,
@@ -67,7 +67,9 @@ summary.cell(`A${total + 2}`).value = "※ 金額は税抜。数式は Excel で
 summary.merge(`A${total + 2}:D${total + 3}`);
 summary.setStyle(`A${total + 2}`, { italic: true, color: "#7F7F7F", wrap: true, valign: "top" });
 
-summary.setColumnWidth("A", 14).setColumnWidth("B:C", 10).setColumnWidth("D", 16);
+summary.columns("A").width = 14;
+summary.columns("B:C").width = 10;
+summary.columns("D").width = 16;
 
 // ---- 保存してエクスプローラーで表示 ----
 const dest = await showSaveFilePicker({

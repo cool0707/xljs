@@ -205,7 +205,7 @@ ok(/width:42pt;height:15pt"><span class="xljs-shrink" style="zoom:[0-9.]+">と�
 // Set by a script, and kept when the book is saved and opened again.
 const sb = excel.create();
 const ss = sb.addSheet("s");
-ss.setColumnWidth("A", 8);
+ss.columns("A").width = 8;
 ss.cell("A1").value = "スクリプトで縮小する長い文字列";
 ss.setStyle("A1", { alignment: { shrink: true } });
 ok(/xljs-shrink[^>]*>スクリプト/.test(ss.toHtml()), "shrink set by a script is printed");

@@ -530,7 +530,7 @@ pub(crate) fn cell_value<'js>(ctx: &Ctx<'js>, b: &Book, c: Option<&umya_spreadsh
     }
 }
 
-fn has_value(c: &umya_spreadsheet::Cell) -> bool {
+pub(crate) fn has_value(c: &umya_spreadsheet::Cell) -> bool {
     match c.raw_value() {
         CellRawValue::Empty => false,
         CellRawValue::String(s) | CellRawValue::Lazy(s) => !s.is_empty(),
@@ -983,7 +983,9 @@ pub(super) fn install(n: &N) {
             if rs.is_empty() || max_col == 0 {
                 return Ok(String::new());
             }
-            Ok(format!("A1:{}", cell(max_col, rs.len() as u32)))
+            let min_col = rs.iter().filter_map(|r| r.first().map(|(c, _)| *c)).min().unwrap_or(1);
+            let min_row = rs.iter().position(|r| !r.is_empty()).map_or(1, |i| i as u32 + 1);
+            Ok(format!("{}:{}", cell(min_col, min_row), cell(max_col, rs.len() as u32)))
         })?;
         a.ret(d)
     });
@@ -1034,6 +1036,9 @@ pub(super) fn install(n: &N) {
     });
 }
 
+/// The width of a column without a width of its own.
+pub(crate) const DEFAULT_COL_WIDTH: f64 = 9.140625;
+
 pub(crate) fn set_col_width(b: &mut Book, sheet: &str, c1: &str, c2: &str, w: f64) -> Result<()> {
     let (mut x, mut y) = (column_number(c1)?, column_number(c2)?);
     if y < x {
@@ -1054,5 +1059,5 @@ pub(crate) fn col_width(b: &Book, sheet: &str, col: &str) -> Result<f64> {
     let n = column_number(col)?;
     let ws = b.sheet(sheet)?;
     let name = column_name(n as i64)?;
-    Ok(ws.column_dimension(&name).map(|c| c.width()).filter(|w| *w > 0.0).unwrap_or(9.140625))
+    Ok(ws.column_dimension(&name).map(|c| c.width()).filter(|w| *w > 0.0).unwrap_or(DEFAULT_COL_WIDTH))
 }

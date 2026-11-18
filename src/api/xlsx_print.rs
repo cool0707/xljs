@@ -1896,7 +1896,7 @@ fn blank_page(sh: &Sheet, cs: Seg, rs: Seg, objects: &[(Anchor, String, String)]
             if values_only {
                 continue;
             }
-            let st = sh.cells.get(&(c, r)).map(|x| x.style()).or_else(|| sh.ws.row_dimension(r).map(|x| x.style()));
+            let st = sh.cells.get(&(c, r)).map(|x| x.style()).or_else(|| super::xlsx_style::line_style(sh.ws, c, r));
             if let Some(st) = st {
                 if sh.fill(st).is_some() {
                     return false;
@@ -2316,7 +2316,7 @@ fn page_table(sh: &Sheet, cols: &[u32], rows: &[u32], grid: bool, classes: &mut 
                 }
                 None => (c, r, 1, 1),
             };
-            let st = st_of(vc, vr).or_else(|| sh.ws.row_dimension(r).map(|x| x.style())).unwrap_or(&default_style);
+            let st = st_of(vc, vr).or_else(|| super::xlsx_style::line_style(sh.ws, vc, vr)).unwrap_or(&default_style);
             let val = sh.val(vc, vr);
             let cf = sh.cond.get(&(vc, vr));
             let css = cell_css(sh, st, &val, sh.table.get(&(vc, vr)), cf);

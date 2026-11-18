@@ -11,7 +11,7 @@ ws.write([
   { 日付: null, 顧客: "C社", 金額: -5 },
 ]);
 equal(ws.dimension, "A1:D4");
-equal(ws.rowCount, 4);
+equal(ws.lastRow, 4);
 
 // Cell access by address and (row, column).
 equal(ws.cell("B2").value, "A社");
@@ -48,7 +48,7 @@ equal(s2.cell("A4").value, 3);
 const s3 = wb.addSheet("tmp");
 s3.append([{ x: 1 }]);
 s3.append([{ x: 2 }]);
-deepEqual(s3.rows(), [{ x: 1 }, { x: 2 }]);
+deepEqual(s3.toRowObjects(), [{ x: 1 }, { x: 2 }]);
 // Renaming a sheet renames the references to it, as in Excel.
 ws.cell("G1").formula = "=SUM(tmp!A2:A3)+LEN(\"tmp!A1\")";
 s3.name = "tmp 2";
@@ -60,7 +60,7 @@ ws.cell("G1").value = null;
 deepEqual(wb.sheetNames, ["売上", "集計", "renamed"]);
 wb.removeSheet("renamed");
 throws(() => wb.addSheet("集計"), /既に存在/);
-s2.setColumnWidth("A:C", 20);
+s2.columns("A:C").width = 20;
 
 // sheets array with name lookup.
 equal(wb.sheets.length, 2);
@@ -77,14 +77,14 @@ throws(() => wb.sheetNames, /閉じ/);
 
 // Re-open from a handle and read objects with typed values.
 const b = await excel.open(fs.file("out.xlsx"));
-const rows = b.sheets["売上"].rows();
+const rows = b.sheets["売上"].toRowObjects();
 equal(rows.length, 3);
 deepEqual(rows[0], { 日付: new Date(2026, 3, 1), 顧客: "A社", 金額: 12000, 確定: true, 合計: null });
 equal(rows[1].金額, 800.5);
 equal(rows[2].日付, null);
 equal(rows[2].金額, -5);
-deepEqual(b.sheet(0).rows({ text: true })[0].日付, "2026/4/1");
-deepEqual(b.sheet(0).rows({ header: 0, columns: ["d", "c"] })[1], { d: new Date(2026, 3, 1), c: "A社" });
+deepEqual(b.sheet(0).toRowObjects({ text: true })[0].日付, "2026/4/1");
+deepEqual(b.sheet(0).toRowObjects({ header: 0, columns: ["d", "c"] })[1], { d: new Date(2026, 3, 1), c: "A社" });
 
 // toBlob / open from Blob and File.
 const blob = b.toBlob();
@@ -125,11 +125,12 @@ twins.addSheet("ａ");
 equal(twins.sheets["ａ"].name, "ａ");
 equal(twins.sheet(" A "), null, "ambiguous");
 
-// The earlier names still work (not documented): workbooks, toObjects(), style().
+// The earlier names still work (not documented): workbooks, toObjects(), rows(), style().
 equal(workbooks, excel);
 const alias = excel.create().addSheet("a");
 alias.write([{ x: 1 }]);
-deepEqual(alias.toObjects(), alias.rows());
+deepEqual(alias.toObjects(), alias.toRowObjects());
+deepEqual(alias.rows(), alias.toRowObjects());
 alias.style("A1", { bold: true });
 equal(alias.getStyle("A1").bold, true);
 console.log("xlsx ok");

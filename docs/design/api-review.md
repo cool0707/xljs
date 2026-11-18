@@ -48,6 +48,7 @@ Web 標準に合わせたもの（File System Access API・`fetch`・`URL`・`Te
 | C5 | C | `ui.table` | 表示だけの表と選ぶ表、`TableView` に `update` がない | 完了 |
 | C6 | C | `shell.writeShortcutLink` | 位置で渡す `operation` | 完了 |
 | C7 | C | メタデータ | `@size 900x600` と `width` / `height` | 変えない |
+| D1 | B | Excel の行と列 | 行・列のメソッドを `sheet.rows(...)` / `sheet.columns(...)` にまとめる。表を読むのは `toRowObjects()` | 完了 |
 
 ---
 
@@ -165,6 +166,7 @@ AI が書きそうな名前を受けるための別名と、機能の重複が�
 - **機能の重複**（`setEnabled` など）はなくす。
 
 **決定**: `sheet.rows()` を正にする（`ui.table(rows)`・`db.insert(table, rows)` と並ぶ）。`toObjects()` は受け付けるだけにする。
+→ D1 で `sheet.toRowObjects()` を正に変えた（`rows` は行全体を指す `sheet.rows(5)` に使う）。引数なしの `rows()` と `toObjects()` は受け付けるだけ。
 
 ---
 
@@ -261,7 +263,7 @@ AI が書きそうな名前を受けるための別名と、機能の重複が�
 - セルの値: `sheet.cell("A1").value`、`sheet.getValue("A1")` / `sheet.setValue("A1", v)`。
 - 表として読む: `sheet.toObjects()`・`sheet.rows()`（A4）・`sheet.toArrays()`・`sheet.range("A1:D10").values`。
 - 書く: `sheet.write(rows)`・`sheet.append(rows)`・`range.values = [[...]]`。
-- 行数は `sheet.rowCount`、範囲は `sheet.dimension`（列数はない）。
+- 行数は `sheet.rowCount`、範囲は `sheet.dimension`（列数はない）。→ D1 で `sheet.lastRow` / `sheet.lastColumn` にした。
 
 **案**
 
@@ -374,6 +376,40 @@ API は残し、ドキュメント（`docs/ai/reference.md` の「カスタム�
 ## C7. メタデータの大きさ
 
 `@size 900x600` と、各 API の `width` / `height`。メタデータは 1 行で書く形なのでそのままにする。`@titlebar custom` と `titleBar: "custom"` も同じ。
+
+## D1. 行と列
+
+B の見直しのあとで出てきたもの。
+
+**現状（直す前）**
+
+- 行・列のメソッドがシートに 9 つ並ぶ: `insertRows` / `deleteRows` / `insertColumns` / `deleteColumns` / `setColumnWidth` / `getColumnWidth` / `setRowHeight` / `getRowHeight` / `autoFit(columns)`。
+  引数も不揃い（`setColumnWidth` は `"A:C"` だけ、`insertColumns` は `"C"` か `3`、`setRowHeight` は 1 行だけ）。
+- 行・列の非表示、行全体・列全体の書式、列ごとの最終行（VBA の `Cells(Rows.Count, "A").End(xlUp).Row`）がない。今の形で足すと、機能ごとに行用・列用の get / set がシートに増える。
+- 最終行は `sheet.rowCount`。名前が「数」なので最終行だと気づけない。
+- `sheet.dimension` は必ず `A1` から（表が C5 から始まっていても `"A1:..."`）。
+
+**決定**
+
+- `sheet.rows(5)` / `sheet.rows("2:4")` が `RowRange`、`sheet.columns("C")` / `sheet.columns(3)` / `sheet.columns("A:C")` が `ColumnRange`（VBA の `Rows`・`Columns`）。
+  どちらも `Range` を継承する（`address`・`setStyle`・`getStyle`・`merge`・`values`）。
+  - `RowRange`: `height`・`hidden`・`insert(count?)`・`delete()`・`autoFit()`・`lastColumn`
+  - `ColumnRange`: `width`・`hidden`・`insert(count?)`・`delete()`・`autoFit(options?)`・`lastRow`
+  - 幅・高さ・非表示は丸ごと置き換える値なのでプロパティ（B5 の `cell.value` と同じ分け方）。複数の行・列では、読むと先頭、代入するとすべて。
+- 表をオブジェクトの配列で読むのは `sheet.toRowObjects()`（`toArrays()` と対）。名詞のメソッド（`cell`・`range`・`rows`・`columns`）はブックにつながったものを返し、`to...` は値の写しを返す。
+  - `sheet.rows` を両方に使う案（引数なしでデータ、引数ありで行）は、引数の有無で意味が変わる（基準 2・5）のでやめた。
+    単数形の `sheet.row(5)` も、`sheet.rows()` と 1 文字違いで別物になるのでやめた。
+  - 引数なし・オプションだけの `sheet.rows()` は、実行時には今までどおりデータを返す（A4 の扱い。d.ts では引数が必須なので tsc はエラーにする）。
+- 型の名前: 行のデータは `Row`（`[column: string]: any`。CSV・SQLite の挿入と共通）のまま。行全体は `RowRange`。
+  `Row` を行全体の型にすると、ExcelJS を知っている AI が `toRowObjects()` の要素にも `height` があると考える。`SheetRow` は `SqlRow` と並んで「シートから読んだ行データ」に見える。
+- 最終行・最終列は `sheet.lastRow` / `sheet.lastColumn`（列ごと・行ごとは `sheet.columns("A").lastRow` / `sheet.rows(1).lastColumn`）。
+- `sheet.dimension` は値のあるセルを囲む範囲（左上も実際のセル）。
+- 前の名前（`insertRows` など 8 つ、`autoFit("A:C")`、`rowCount` / `columnCount`）は受け付けるだけ。
+
+**残り**
+
+- 行・列のグループ化（アウトライン）は入れていない（保存で残るかの確認が先。`save-fidelity.md`）。
+- `RowRange.autoFit()` は高さの指定を外すだけ（Excel が開いたときに合わせる）。xljs の PDF 出力は、高さの指定がない行を既定の高さで描く（折り返した文字に合わせない）。
 
 ---
 

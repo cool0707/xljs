@@ -532,8 +532,164 @@ fn has_style(st: &Style) -> bool {
     st.font().is_some() || st.fill().is_some() || st.borders().is_some() || st.alignment().is_some() || st.number_format().is_some() || st.protection().is_some()
 }
 
-/// Merges sp into every cell of the range.
+/// Whole rows ("2:4") or whole columns ("A:C").
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Lines {
+    Rows(u32, u32),
+    Cols(u32, u32),
+}
+
+const MAX_ROW: u32 = 1_048_576;
+const MAX_COL: u32 = 16_384;
+
+/// "2:4", "5", "A:C" or "C" (any order) as whole rows or columns; None for
+/// an address of cells.
+pub fn parse_lines(r: &str) -> Option<Lines> {
+    let up = r.trim().replace('$', "").to_uppercase();
+    let (a, b) = up.split_once(':').unwrap_or((&up, &up));
+    if a.is_empty() || b.is_empty() {
+        return None;
+    }
+    if a.bytes().chain(b.bytes()).all(|c| c.is_ascii_digit()) {
+        let (x, y) = (a.parse::<u32>().ok()?, b.parse::<u32>().ok()?);
+        return ((1..=MAX_ROW).contains(&x) && (1..=MAX_ROW).contains(&y)).then(|| Lines::Rows(x.min(y), x.max(y)));
+    }
+    if a.bytes().chain(b.bytes()).all(|c| c.is_ascii_uppercase()) {
+        let (x, y) = (xlsx::column_number(a).ok()?, xlsx::column_number(b).ok()?);
+        return Some(Lines::Cols(x.min(y), x.max(y)));
+    }
+    None
+}
+
+/// The format of the cell at (col, row), as Excel shows it: the cell's own,
+/// or that of its row, or that of its column.
+pub(crate) fn shown_style(ws: &umya_spreadsheet::Worksheet, col: u32, row: u32) -> Option<&Style> {
+    match ws.cell((col, row)) {
+        Some(c) => Some(c.style()),
+        None => line_style(ws, col, row),
+    }
+}
+
+/// The format a cell that is not in the file shows: that of its row, or
+/// that of its column.
+pub(crate) fn line_style(ws: &umya_spreadsheet::Worksheet, col: u32, row: u32) -> Option<&Style> {
+    if let Some(r) = ws.row_dimension(row).filter(|r| has_style(r.style())) {
+        return Some(r.style());
+    }
+    ws.column_dimension_by_number(col).filter(|c| has_style(c.style())).map(|c| c.style())
+}
+
+/// The column's settings to change. A column without settings of its own
+/// gets the width it is shown with, as umya writes a width for every column
+/// it knows.
+pub(crate) fn column_mut(ws: &mut umya_spreadsheet::Worksheet, col: u32) -> &mut umya_spreadsheet::structs::Column {
+    let fresh = ws.column_dimension_by_number(col).is_none();
+    let c = ws.column_dimension_by_number_mut(col);
+    if fresh {
+        c.set_width(xlsx::DEFAULT_COL_WIDTH);
+    }
+    c
+}
+
+/// Merges sp into whole rows or columns, as formatting them in Excel does:
+/// the format of the rows (columns) themselves, which the cells written
+/// later take, the cells there are, and the cells where a formatted row and
+/// a formatted column cross.
+fn apply_style_lines(b: &mut Book, sheet: &str, lines: Lines, sp: &StyleSpec, replace: bool) -> Result<()> {
+    let df = b.default_font.clone();
+    let ws = b.layout_mut(sheet)?;
+    let (c1, r1, c2, r2) = match lines {
+        Lines::Rows(x, y) => (1, x, MAX_COL, y),
+        Lines::Cols(x, y) => (x, 1, y, MAX_ROW),
+    };
+    let restyle = |st: &Style, col: u32, row: u32| {
+        let mut st = if replace { Style::default() } else { st.clone() };
+        apply(&mut st, sp, sp.sides_for(col, row, c1, r1, c2, r2).as_ref(), &df);
+        st
+    };
+    // A cell without a format of its own shows that of its row, and only
+    // then that of its column: where the two cross, the cell gets its own.
+    match lines {
+        Lines::Rows(x, y) => {
+            let cols: Vec<(u32, Style)> = ws.column_dimensions().iter().filter(|c| has_style(c.style())).map(|c| (c.col_num(), c.style().clone())).collect();
+            for row in x..=y {
+                if cols.is_empty() || ws.row_dimension(row).is_some_and(|r| has_style(r.style())) {
+                    continue;
+                }
+                for (col, st) in &cols {
+                    if ws.cell((*col, row)).is_none() {
+                        ws.cell_mut((*col, row)).set_style(st.clone());
+                    }
+                }
+            }
+        }
+        Lines::Cols(x, y) => {
+            let rows: Vec<(u32, Style)> = ws.row_dimensions().iter().filter(|r| has_style(r.style())).map(|r| (r.row_num(), r.style().clone())).collect();
+            for (row, st) in &rows {
+                for col in x..=y {
+                    if ws.cell((col, *row)).is_none() {
+                        ws.cell_mut((col, *row)).set_style(st.clone());
+                    }
+                }
+            }
+        }
+    }
+    let inside = |col: u32, row: u32| (c1..=c2).contains(&col) && (r1..=r2).contains(&row);
+    let cells: Vec<(u32, u32)> = ws.cells().iter().map(|c| (c.coordinate().col_num(), c.coordinate().row_num())).filter(|&(c, r)| inside(c, r)).collect();
+    for (col, row) in cells {
+        let st = restyle(ws.cell((col, row)).map(|c| c.style()).unwrap_or(&Style::default()), col, row);
+        ws.cell_mut((col, row)).set_style(st);
+    }
+    // The rows (columns) themselves: a cell in the middle stands for them.
+    match lines {
+        Lines::Rows(x, y) => {
+            for row in x..=y {
+                let st = restyle(ws.row_dimension(row).map(|r| r.style()).unwrap_or(&Style::default()), 2, row);
+                ws.row_dimension_mut(row).set_style(st);
+            }
+        }
+        Lines::Cols(x, y) => {
+            for col in x..=y {
+                let st = restyle(ws.column_dimension_by_number(col).map(|c| c.style()).unwrap_or(&Style::default()), col, 2);
+                column_mut(ws, col).set_style(st);
+            }
+        }
+    }
+    // The formatted cells next to the rows (columns) take the border of the
+    // edge they touch (see apply_style).
+    let edges: [(&str, &str, i64, i64); 2] = match lines {
+        Lines::Rows(..) => [("top", "bottom", 0, -1), ("bottom", "top", 0, 1)],
+        Lines::Cols(..) => [("left", "right", -1, 0), ("right", "left", 1, 0)],
+    };
+    for (side, opposite, dc, dr) in edges {
+        // The neighbors of the edge: the cells of the row above (below), of the column to the left (right).
+        let (nc, nr) = (if dc < 0 { c1 as i64 - 1 } else { c2 as i64 + 1 }, if dr < 0 { r1 as i64 - 1 } else { r2 as i64 + 1 });
+        let near: Vec<(u32, u32)> = ws
+            .cells()
+            .iter()
+            .filter(|c| has_style(c.style()))
+            .map(|c| (c.coordinate().col_num(), c.coordinate().row_num()))
+            .filter(|&(c, r)| if dc == 0 { r as i64 == nr } else { c as i64 == nc })
+            .collect();
+        for (col, row) in near {
+            let (ec, er) = ((col as i64 - dc) as u32, (row as i64 - dr) as u32);
+            let Some(sides) = sp.sides_for(ec, er, c1, r1, c2, r2) else { continue };
+            let Some(s) = sides.get(side) else { continue };
+            let mut st = ws.cell((col, row)).map(|c| c.style().clone()).unwrap_or_default();
+            let one: Sides = [(opposite.to_string(), s.clone())].into_iter().collect();
+            apply(&mut st, &StyleSpec::default(), Some(&one), &df);
+            ws.cell_mut((col, row)).set_style(st);
+        }
+    }
+    Ok(())
+}
+
+/// Merges sp into every cell of the range ("A1:C3"), or into whole rows
+/// ("2:4") or columns ("A:C").
 pub fn apply_style(b: &mut Book, sheet: &str, r: &str, sp: &StyleSpec, replace: bool) -> Result<()> {
+    if let Some(lines) = parse_lines(r) {
+        return apply_style_lines(b, sheet, lines, sp, replace);
+    }
     let (c1, r1, c2, r2) = parse_range(r)?;
     let df = b.default_font.clone();
     let ws = b.layout_mut(sheet)?;
@@ -740,7 +896,7 @@ pub(super) fn install(n: &N) {
         with_book(h, a, |b| {
             let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
-            let st = ws.cell((col, row)).map(|c| c.style().clone()).unwrap_or_default();
+            let st = shown_style(ws, col, row).cloned().unwrap_or_default();
             style_object(&a.ctx, &st, &b.default_font)
         })
     });
@@ -832,22 +988,90 @@ pub(super) fn install(n: &N) {
         })?;
         a.ret(hidden)
     });
+    // xlsxSetRowHeight(book, sheet, row, height[, lastRow]) — a height that is not a number (null) gives the
+    // rows back to Excel, which fits them to their content.
     n.set("xlsxSetRowHeight", |h, a| {
-        let (sheet, row, ht) = (a.str(1), a.int(2), a.f64(3));
+        let (sheet, row) = (a.str(1), a.int(2));
+        let ht = if nullish(&a.arg(3)) { None } else { Some(a.f64(3)) };
+        let last = if nullish(&a.arg(4)) { row } else { a.int(4) };
         with_book(h, a, |b| {
-            if !(1..=1_048_576).contains(&row) {
-                return Err(a.throw(&Error::msg(format!("invalid row number {row}"))));
+            for r in [row, last] {
+                if !(1..=MAX_ROW as i64).contains(&(r as i64)) {
+                    return Err(a.throw(&Error::msg(format!("invalid row number {r}"))));
+                }
             }
-            if !(0.0..=409.0).contains(&ht) {
+            if ht.is_some_and(|ht| !(0.0..=409.0).contains(&ht)) {
                 return Err(a.throw(&Error::msg("the height of the row must be less than or equal to 409 points")));
             }
             let ws = b.layout_mut(&sheet).map_err(|e| a.throw(&e))?;
-            let rd = ws.row_dimension_mut(row as u32);
-            rd.set_height(ht);
-            rd.set_custom_height(true);
+            for r in row.min(last)..=row.max(last) {
+                match ht {
+                    Some(ht) => {
+                        let rd = ws.row_dimension_mut(r as u32);
+                        rd.set_height(ht);
+                        rd.set_custom_height(true);
+                    }
+                    None if ws.row_dimension(r as u32).is_some() => {
+                        let rd = ws.row_dimension_mut(r as u32);
+                        rd.set_height(0.0);
+                        rd.set_custom_height(false);
+                    }
+                    None => {}
+                }
+            }
             Ok(())
         })?;
         a.undefined()
+    });
+    // xlsxLinesHidden(book, sheet, columns, first, last[, hidden]) -> whether the first of the rows
+    // (columns) is hidden; with hidden, hides or shows them all.
+    n.set("xlsxLinesHidden", |h, a| {
+        let (sheet, columns, first, last) = (a.str(1), a.bool(2), a.int(3), a.int(4));
+        let set = if nullish(&a.arg(5)) { None } else { Some(a.bool(5)) };
+        let hidden = with_book(h, a, |b| {
+            let max = if columns { MAX_COL } else { MAX_ROW } as i64;
+            if !(1..=max).contains(&(first as i64)) || !(first as i64..=max).contains(&(last as i64)) {
+                return Err(a.throw(&err!("xlsx.invalidRange", format!("{first}:{last}"))));
+            }
+            let (first, last) = (first as u32, last as u32);
+            if let Some(hide) = set {
+                // SUBTOTAL and AGGREGATE look at the hidden rows.
+                let ws = b.sheet_mut(&sheet).map_err(|e| a.throw(&e))?;
+                for i in first..=last {
+                    if columns {
+                        if hide || ws.column_dimension_by_number(i).is_some() {
+                            column_mut(ws, i).set_hidden(hide);
+                        }
+                    } else if hide || ws.row_dimension(i).is_some() {
+                        ws.row_dimension_mut(i).set_hidden(hide);
+                    }
+                }
+            }
+            let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            Ok(if columns { ws.column_dimension_by_number(first).is_some_and(|c| c.hidden()) } else { ws.row_dimension(first).is_some_and(|r| r.hidden()) })
+        })?;
+        a.ret(hidden)
+    });
+    // xlsxLastUsed(book, sheet, columns, first, last) -> the last row with a value in the columns
+    // first..last (columns: true), or the last column with a value in the rows; 0 when they are empty.
+    n.set("xlsxLastUsed", |h, a| {
+        let (sheet, columns, first, last) = (a.str(1), a.bool(2), a.int(3) as i64, a.int(4) as i64);
+        let n = with_book(h, a, |b| {
+            let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            let mut n = 0;
+            for c in ws.cells() {
+                if !xlsx::has_value(c) {
+                    continue;
+                }
+                let (col, row) = (c.coordinate().col_num(), c.coordinate().row_num());
+                let (at, other) = if columns { (col, row) } else { (row, col) };
+                if (first..=last).contains(&(at as i64)) {
+                    n = n.max(other);
+                }
+            }
+            Ok(n)
+        })?;
+        a.ret(n as f64)
     });
     // xlsxGetRowHeight(book, sheet, row) -> points (the sheet's default for rows without a height of their own)
     n.set("xlsxGetRowHeight", |h, a| {

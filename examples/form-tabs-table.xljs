@@ -49,7 +49,7 @@ const values = await ui.form({
             book.close();
             continue;
           }
-          for (const r of sheet.rows()) {
+          for (const r of sheet.toRowObjects()) {
             if (!codes.has(r.支店)) continue;
             if (v.from && r.日付 instanceof Date && r.日付 < v.from) continue;
             rows.push(r);

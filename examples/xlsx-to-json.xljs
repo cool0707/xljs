@@ -6,7 +6,7 @@ const [h] = await showOpenFilePicker({
 });
 if (!h) exit();
 
-const rows = excel.open(h).sheet(0).rows();
+const rows = excel.open(h).sheet(0).toRowObjects();
 const base = path.join(path.dirname(h), path.basename(h.name, path.extname(h.name)));
 fs.writeJSON(base + ".json", rows);
 fs.writeJSONL(base + ".jsonl", rows);

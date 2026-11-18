@@ -6,7 +6,7 @@ api: ChartSpec, ChartSpecBase, SeriesChartSpec, GanttChartSpec, ChartType, Chart
 <figure class="shot"><img src="../images/home-chart.png" alt="月別の売上を棒グラフ、粗利を折れ線グラフで重ねた 2 軸のグラフ" width="962" loading="lazy"><figcaption>棒と折れ線を組み合わせた 2 軸のグラフ（examples/chart-sales.xljs）。Excel のブックにあるグラフも、このように表示できます。</figcaption></figure>
 
 ```js
-const rows = sheet.rows();                                   // [{ 月: "4月", 売上: 1200, 原価: 800 }, ...]
+const rows = sheet.toRowObjects();                           // [{ 月: "4月", 売上: 1200, 原価: 800 }, ...]
 ui.chart({ type: "column", data: rows, x: "月", y: ["売上", "原価"], title: "月別売上" }); // 表示するだけ（すぐ次へ進む）
 const view = ui.chart({
   type: "column", data: rows, x: "月",
