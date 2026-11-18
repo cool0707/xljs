@@ -111,7 +111,7 @@ pub fn doc(path: &str) -> Option<&'static str> {
 
 /// The skills for Copilot's agents (docs/ai/copilot/skills), in the order
 /// they are offered.
-const SKILLS: &[&str] = &["xljs-reference", "xljs-app-design", "xljs-pdf", "xljs-sqlite", "xljs-network", "xljs-chart", "vba-port"];
+const SKILLS: &[&str] = &["xljs-reference", "xljs-excel", "xljs-app-design", "xljs-pdf", "xljs-sqlite", "xljs-network", "xljs-chart", "vba-port"];
 
 /// The description in a skill's front matter.
 fn skill_description(text: &str) -> String {

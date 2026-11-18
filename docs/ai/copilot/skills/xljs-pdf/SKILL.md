@@ -5,7 +5,7 @@ description: xljs の PDF 出力（book.toPdf・sheet.toPdf・xljs.htmlToPdf・p
 
 # xljs API リファレンス: PDF
 
-xljs の PDF 出力と PDF の編集です。基本の API（ファイル・Excel・CSV・JSON・フォーム・表・日付など）はスキル `xljs-reference` にあります。ここに書いていない関数・オプションは存在しないものとして扱ってください。
+xljs の PDF 出力と PDF の編集です。基本の API（ファイル・CSV・JSON・フォーム・表・日付など）はスキル `xljs-reference`、Excel は `xljs-excel` にあります。ここに書いていない関数・オプションは存在しないものとして扱ってください。
 
 ## PDF 出力
 

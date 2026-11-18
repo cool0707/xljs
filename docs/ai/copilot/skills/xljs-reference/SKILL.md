@@ -1,6 +1,6 @@
 ---
 name: xljs-reference
-description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows 用の実行環境）の API リファレンスとレシピ（実行環境・ファイル・Excel・CSV・JSON・進捗表示・ui.form・ui.table・dayjs）。スクリプトを書く・直すときにオプションを確かめる。画面の設計・アプリモード・PDF・SQLite・fetch・AD・グラフは別のスキル。
+description: xljs（Excel・CSV・JSON を JavaScript で処理する Windows 用の実行環境）の API リファレンスとレシピ（実行環境・ファイル・CSV・JSON・進捗表示・ui.form・ui.table・dayjs）。スクリプトを書く・直すときにオプションを確かめる。Excel・画面の設計・アプリモード・PDF・SQLite・fetch・AD・グラフは別のスキル。
 ---
 
 # xljs API リファレンス
@@ -10,6 +10,7 @@ xljs の基本の API とレシピです。ここにない関数・オプショ�
 
 | スキル | 内容 |
 |---|---|
+| `xljs-excel` | Excel（`excel.open`・`excel.create`。ブック・シート・セルの読み書き、書式） |
 | `xljs-app-design` | 画面の設計（ツールかアプリかの決め方、フォームアプリ・カスタムアプリの方針・型・アンチパターン）とアプリモード（`@mode app`） |
 | `xljs-pdf` | PDF 出力（`book.toPdf`・`sheet.toPdf`・`xljs.htmlToPdf`）と PDF の編集（`pdf`） |
 | `xljs-sqlite` | SQLite データベース（`sqlite.open`） |
@@ -122,87 +123,6 @@ xljs の基本の API とレシピです。ここにない関数・オプショ�
 | `shell.runSync(cmd, [args], opts)` | run の同期版 |
 | `shell.spawn(cmd, [args], opts)` | 起動して待たない。`{ pid, running, wait(), kill(), write(s), end() }`（stdin: "pipe" で write） |
 
-## Excel
-
-対応形式は `.xlsx` / `.xlsm`。`.xls` は不可。マクロ・ピボットテーブルは保存で失われることがある。
-
-### ブック
-
-| API | 説明 |
-|---|---|
-| `excel.open(p)` | 開く |
-| `excel.create({ font? })` | 新しいブック。最初の `addSheet` が既定のシートを置き換える |
-| `book.sheets[0]` / `book.sheets["名前"]` / `book.sheet(名前・番号・正規表現)` | シート（無ければ `undefined` / `null`）。大文字小文字・空白・全角半角の違いは許す |
-| `book.sheetNames` / `book.addSheet(name)` / `book.removeSheet(name)` / `book.copySheet(sheet, name?)` | シート名の配列 / 追加・削除・コピー（元の後ろに） |
-| `book.save()` / `book.save(p)` / `book.close()` | 上書き / 別名で保存 / 閉じる（メモリ解放） |
-| `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | PDF に（「PDF 出力」） |
-| `excel.readVBA(p)` | マクロブックの VBA コード `{ name, modules: [{ name, type, code, sheet }], text }`（`text` は Markdown）か `null` |
-| `excel.columnName(3)` → `"C"`、`excel.cellName(2, 3)` → `"C2"` | 番地の変換 |
-
-### シートの読み取り
-
-| API | 説明 |
-|---|---|
-| `sheet.toRowObjects({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行（既定 1）。`header: 0, columns: [...]` で見出しなし |
-| `sheet.toRowObjects({ start, untilBlank, pick })` | `start`: 表の見出しの左端（`"B4"`・`find` の結果）、`untilBlank`: 空行まで、`pick: { code: "コード", amount: /金額/ }`: 見出しで列を選びキーを付け替える |
-| `sheet.find(x)` / `findAll(x)` / `cell.offset(行, 列)` | 値が x のセル（なければ `null`）/ すべて / 下・右のセル。x は文字列（全角半角・空白は区別しない）・正規表現・関数。`sheet.columns("A").find(x)`、`sheet.find("氏名")?.offset(0, 1).value` |
-| `sheet.toArrays({ text })` | 2 次元配列（0 始まり）。`text: true` で表示の文字列 |
-| `sheet.cell("B2")` / `sheet.cell(行, 列)` | セル（1 から） |
-| `cell.value` / `cell.text` / `cell.formula` | 値（number / string / boolean / Date / null）/ 表示どおりの文字列 / `"=SUM(A1:A3)"` か `null` |
-| `cell.phonetic` / `cell.note` / `cell.comment` | ふりがな（値の後に代入）/ メモ / コメント（`addComment`） |
-| `sheet.lastRow()` / `sheet.lastColumn()` / `sheet.columns("A").lastRow()` | 最終行 / 最終列 / A 列の最終行（`{ skipBlank: true }` で `""` を返す数式を除く） |
-| `sheet.dimension` / `sheet.merges` / `sheet.frozen` / `sheet.filter` | 値のある範囲 / 結合範囲の配列 / 固定 `{ rows, columns }` か `null` / フィルターの範囲か `null` |
-| `sheet.range("A1:C3").values` / `sheet.getStyle("A1")` | 範囲の 2 次元配列（代入で書く）/ 書式（`setStyle` と同じ形） |
-| `sheet.name` / `sheet.hidden` / `sheet.rows(3).hidden` | シート名 / 非表示（行・列も）。代入で変更 |
-
-- 結合セルは、どのセルを指定しても左上のセルとして読み書きする（表では結合のどの行も同じ値）。
-- 数式セルの `value` は保存された計算結果。書いたら `book.calculate()` で入る（`skipped` は計算できないもの）。`cell.calc()` は数式 1 つの結果。`=FILTER(...)` はスピルする。
-
-### シートへの書き込み
-
-| API | 説明 |
-|---|---|
-| `sheet.write(rows, options)` | オブジェクトの配列（見出し＋データ）か 2 次元配列を書く |
-| `sheet.append(rows, options)` | 最終行の下に追記（見出しは書かない） |
-| `cell.value = v` / `cell.formula = "=..."` | 1 セル |
-| `sheet.rows(5).insert(n?)` / `sheet.rows("2:4").delete()` / `sheet.columns("C").insert(n?)` | 行・列の挿入・削除（数式の参照も動く） |
-
-`write` のオプション:
-
-| オプション | 説明 |
-|---|---|
-| `start` | 書き始めのセル（既定 `"A1"`） |
-| `matchHeader` | いまある見出しの列に書く（見出しは書かない）。`true`・見出しの行番号・左端のセル。`sheet.append(rows, { matchHeader: true })` |
-| `header` | 見出し行を書くか（既定 `true`） |
-| `columns` | 書く列と順番（`["日付", "金額"]`） |
-| `table` | 表の体裁（見出しの太字・塗り・罫線、データの罫線、列幅自動、先頭行固定、フィルター） |
-| `headerStyle` / `style` / `columnStyles` | 見出し / 全体 / 列ごとの書式（`{ 金額: { format: "#,##0" } }`） |
-| `autoFit` / `freeze` / `filter` | 列幅自動 / 見出しの固定 / フィルター（`table` では既定で有効） |
-
-### 書式
-
-```js
-sheet.setStyle("A1:D1", { bold: true, color: "#FFFFFF", background: "#305496", align: "center" });
-sheet.cell("D10").setStyle({ fontSize: 14, bold: true, format: "¥#,##0", border: { top: "double" } });
-sheet.range("A3:D10").setStyle({ border: { outline: "medium", inside: { style: "thin", color: "#BFBFBF" } } });
-sheet.merge("A1:D1");  // セル結合（unmerge で解除）
-sheet.freeze("A2");  // 1 行目を固定（"B2" で 1 行目と A 列）
-sheet.autoFilter("A3:D10");  // フィルター（null で外す）
-sheet.autoFit();  // 列幅を内容に合わせる
-sheet.columns("A:C").width = 16; // 列幅（文字数）
-sheet.rows(1).height = 30;  // 行の高さ（ポイント）
-```
-
-| 項目 | 指定 |
-|---|---|
-| 文字 | `bold` `italic` `underline` `strike` `color` `fontSize` `fontName` |
-| 塗り | `background: "#DDEBF7"`（`null` で塗りなし） |
-| 配置 | `align`（`left` `center` `right`）、`valign`（`top` `center` `bottom`）、`wrap: true`（折り返し） |
-| 表示形式 | `format`: `"#,##0"` `"#,##0.00"` `"0.0%"` `"¥#,##0"` `"yyyy/m/d"` `"yyyy年m月d日"` `"h:mm"` `"@"`（文字列） |
-| 罫線 | `border: "thin"`（全セルの上下左右）、または `{ outline, inside, horizontal, vertical, top, bottom, left, right }`。線種 `"thin"` `"medium"` `"thick"` `"double"` `"dashed"` `"dotted"`、色付きは `{ style: "thin", color: "#999999" }` |
-
-色は `"#RRGGBB"` か `red` などの色名。書式は既存の書式に重なる（`{ replace: true }` で置き換え）。入れ子のキー（`font` `fill` など）はない。
-
 ## CSV
 
 | API | 説明 |
@@ -219,11 +139,11 @@ sheet.rows(1).height = 30;  // 行の高さ（ポイント）
 ## JSON
 
 ```js
-const data = fs.readJSON(h);  // BOM・Shift_JIS も自動判定
+const data = fs.readJSON(h);                       // BOM・Shift_JIS も自動判定
 const withDates = fs.readJSON(h, { dates: true }); // ISO 形式の日時文字列を Date に
-fs.writeJSON(dest, rows);  // 2 スペースでインデント、UTF-8
-fs.writeJSON(dest, rows, { space: 0 });  // 1 行で
-fs.writeJSONL(dest, rows);  // 1 行 1 レコード
+fs.writeJSON(dest, rows);                          // 2 スペースでインデント、UTF-8
+fs.writeJSON(dest, rows, { space: 0 });            // 1 行で
+fs.writeJSONL(dest, rows);                         // 1 行 1 レコード
 ```
 
 設定ファイルを既定値と合わせて読むときは、既定値を複製してから使う（既定値の配列をそのまま返して `push` すると、既定値も増える）:
@@ -255,7 +175,7 @@ if (ui.cancelled) alert("途中で中止しました");
 const p = ui.progress({ title: "処理中", total: files.length });
 for (const [i, f] of files.entries()) {
   if (p.cancelled) break;
-  p.update(i, f.name);  // 完了件数と表示する文字
+  p.update(i, f.name);    // 完了件数と表示する文字
 }
 p.close();
 ```
@@ -276,7 +196,7 @@ await ui.form({
     { name: "rate", label: "税率(%)", type: "number", default: 10, min: 0, max: 100 },
   ],
   remember: true,
-  validate(v) {  // 追加の検証。問題があれば { 項目名: "メッセージ" } を返す
+  validate(v) {                                        // 追加の検証。問題があれば { 項目名: "メッセージ" } を返す
     if (v.rate !== 8 && v.rate !== 10) return { rate: "8 か 10 を入力してください" };
   },
   buttons: [{ label: "作成", variant: "primary", async onClick(v, form) { // 処理はここに書く（フォームは開いたまま。下の buttons）
@@ -353,7 +273,7 @@ await ui.form({
   buttons: [{ label: "集計", variant: "primary", async onClick(v, form) {
     const files = v.src.walk("*.xlsx").toArray();
     for (const h of form.withProgress(files)) {  // 中止ボタンが押されると onClick はここで終わる
-      form.log(h.relativePath);  // ログ欄に表示（form.error で赤字）
+      form.log(h.relativePath);      // ログ欄に表示（form.error で赤字）
     }
     // ... 保存
     // return dest;
@@ -371,13 +291,13 @@ await ui.form({
 ## 表の表示（ui.table）
 
 ```js
-ui.table(rows, { title: "結果" });  // 表示するだけ（すぐ次へ進む）
-await ui.table(rows, { title: "結果" }).closed;  // 閉じるまで待つ
+ui.table(rows, { title: "結果" });                         // 表示するだけ（すぐ次へ進む）
+await ui.table(rows, { title: "結果" }).closed;            // 閉じるまで待つ
 const picked = await ui.table(rows, { title: "選択", selectable: "multiple" }); // 選んだ行。キャンセルは []
 const [one] = await ui.table(rows, { selectable: "single" });
 ui.table(rows, {
   columns: ["名前", { key: "size", label: "サイズ", width: 80 }],
-  onDoubleClick(e) { shell.open(e.row.handle); },  // e: { row, index, column, value, close() }
+  onDoubleClick(e) { shell.open(e.row.handle); },          // e: { row, index, column, value, close() }
 });
 ```
 
@@ -388,10 +308,10 @@ ui.table(rows, {
 ```js
 ui.table(rows, { formats: [
   { column: "金額", gte: 100000, color: "#9c0006", background: "#ffc7ce" }, // 条件: equals notEquals gt gte lt lte between contains startsWith endsWith empty
-  { column: "状態", equals: "未完了", row: true, bold: true },  // row: true で行全体
-  { column: "金額", dataBar: true },  // データバー（数値の列。太さは { color, height: 0.3 }）
-  { column: "達成率", colorScale: ["#f8696b", "#ffeb84", "#63be7b"] },  // カラースケール（2 色か 3 色）
-  { when: (row) => row.期限 < new Date(), color: "red" },  // 関数（column なしは行ごと、行全体に付く）
+  { column: "状態", equals: "未完了", row: true, bold: true },              // row: true で行全体
+  { column: "金額", dataBar: true },                                        // データバー（数値の列。太さは { color, height: 0.3 }）
+  { column: "達成率", colorScale: ["#f8696b", "#ffeb84", "#63be7b"] },      // カラースケール（2 色か 3 色）
+  { when: (row) => row.期限 < new Date(), color: "red" },                    // 関数（column なしは行ごと、行全体に付く）
 ] });
 ```
 
@@ -406,24 +326,24 @@ ui.table(rows, { formats: [
 `Date` を直接計算しない（`new Date("2026-04-01")` が UTC になる、月が 0 始まり、`setMonth` で月末がずれる、など）。Excel・CSV から読んだ `Date` も `dayjs(値)` で包んで扱う。
 
 ```js
-const d = dayjs(r.日付);  // Date・"2026/4/1"・"2026-04-01 09:30" など（文字列はローカル時刻）
-dayjs("20260401", "YYYYMMDD");  // 形式を指定して読む
+const d = dayjs(r.日付);                         // Date・"2026/4/1"・"2026-04-01 09:30" など（文字列はローカル時刻）
+dayjs("20260401", "YYYYMMDD");                   // 形式を指定して読む
 dayjs("2026/02/30", "YYYY/MM/DD", true).isValid(); // false（厳密に読む）
-d.format("YYYY/MM/DD");  // "2026/04/01"
-d.format("YYYY年M月D日(ddd)");  // "2026年4月1日(水)"
-d.format("YYYY-MM");  // 月別集計のキー
-dayjs().format("YYYYMMDD_HHmmss");  // ファイル名用のタイムスタンプ
-d.add(1, "month"); d.subtract(7, "day");  // 新しい値を返す（d は変わらない）
-d.startOf("month"); d.endOf("month");  // 月初・月末（endOf は 23:59:59.999）
-d.year(); d.month() + 1; d.date(); d.day();  // 年・月（0 始まり）・日・曜日（0 = 日曜）
-d.quarter(); d.isoWeek(); d.daysInMonth();  // 四半期・ISO 週番号・月の日数
-dayjs(b).diff(a, "day");  // 日数の差（b - a）。"month" "year" も
+d.format("YYYY/MM/DD");                          // "2026/04/01"
+d.format("YYYY年M月D日(ddd)");                  // "2026年4月1日(水)"
+d.format("YYYY-MM");                             // 月別集計のキー
+dayjs().format("YYYYMMDD_HHmmss");               // ファイル名用のタイムスタンプ
+d.add(1, "month"); d.subtract(7, "day");         // 新しい値を返す（d は変わらない）
+d.startOf("month"); d.endOf("month");            // 月初・月末（endOf は 23:59:59.999）
+d.year(); d.month() + 1; d.date(); d.day();      // 年・月（0 始まり）・日・曜日（0 = 日曜）
+d.quarter(); d.isoWeek(); d.daysInMonth();       // 四半期・ISO 週番号・月の日数
+dayjs(b).diff(a, "day");                         // 日数の差（b - a）。"month" "year" も
 d.isBefore(x); d.isAfter(x); d.isSame(x, "month");
-d.isBetween(from, to, "day", "[]");  // 期間内（両端含む）
-dayjs.max(list); dayjs.min(list);  // 最新・最古（dayjs の配列）
-dayjs.duration(90, "minutes").format("H:mm");  // "1:30"
-dayjs.fromExcel(45383);  // Excel のシリアル値 → 2024/4/1（xljs 拡張）
-d.toDate();  // Date に戻す
+d.isBetween(from, to, "day", "[]");              // 期間内（両端含む）
+dayjs.max(list); dayjs.min(list);                // 最新・最古（dayjs の配列）
+dayjs.duration(90, "minutes").format("H:mm");    // "1:30"
+dayjs.fromExcel(45383);                          // Excel のシリアル値 → 2024/4/1（xljs 拡張）
+d.toDate();                                      // Date に戻す
 ```
 
 - dayjs の値はそのまま `cell.value`・`sheet.write`・`csv.write`・`fs.writeJSON`・`ui.table`・フォームの `default` に渡せる（`Date` として扱う）。
@@ -492,7 +412,7 @@ const rows = excel.open(v.list).sheets[0].toRowObjects();
 const safe = (s) => String(s ?? "").replace(/[\\\/:*?"<>|]/g, "_");  // ファイル名に使えない文字を置き換える
 let count = 0;
 for (const r of ui.withProgress(rows, "作成中")) {
-  const book = excel.open(v.template);  // 毎回ひな形を開き直す
+  const book = excel.open(v.template);       // 毎回ひな形を開き直す
   const ws = book.sheets[0];
   ws.cell("B3").value = r.顧客名;
   ws.cell("B4").value = r.住所;

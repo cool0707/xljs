@@ -5,7 +5,7 @@ description: xljs のグラフ（ui.chart。棒・折れ線・円・散布図・
 
 # xljs API リファレンス: グラフ
 
-xljs のグラフ（`ui.chart`）です。基本の API（ファイル・Excel・CSV・JSON・フォーム・表・日付など）はスキル `xljs-reference` にあります。ここに書いていない関数・オプションは存在しないものとして扱ってください。
+xljs のグラフ（`ui.chart`）です。基本の API（ファイル・CSV・JSON・フォーム・表・日付など）はスキル `xljs-reference`、Excel は `xljs-excel` にあります。ここに書いていない関数・オプションは存在しないものとして扱ってください。
 
 ## グラフ（ui.chart）
 

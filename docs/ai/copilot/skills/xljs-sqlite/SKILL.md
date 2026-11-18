@@ -5,7 +5,7 @@ description: xljs の SQLite データベース（sqlite.open。共有フォル�
 
 # xljs API リファレンス: SQLite
 
-xljs の SQLite データベースです。基本の API（ファイル・Excel・CSV・JSON・フォーム・表・日付など）はスキル `xljs-reference` にあります。ここに書いていない関数・オプションは存在しないものとして扱ってください。
+xljs の SQLite データベースです。基本の API（ファイル・CSV・JSON・フォーム・表・日付など）はスキル `xljs-reference`、Excel は `xljs-excel` にあります。ここに書いていない関数・オプションは存在しないものとして扱ってください。
 
 ## SQLite データベース
 

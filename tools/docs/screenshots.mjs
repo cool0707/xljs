@@ -58,7 +58,7 @@ const agents = [["m365", "Microsoft 365 Copilot"], ["gemini", "Gemini"], ["chatg
   .map(([id, name]) => ({ id, what: t(`dev.agentWhat.${id}`), name }));
 
 // src/dev/agent.rs: kit(Service::Gemini).
-const SKILLS = ["xljs-reference", "xljs-app-design", "xljs-pdf", "xljs-sqlite", "xljs-network", "xljs-chart", "vba-port"];
+const SKILLS = ["xljs-reference", "xljs-excel", "xljs-app-design", "xljs-pdf", "xljs-sqlite", "xljs-network", "xljs-chart", "vba-port"];
 const aiDoc = (f) => fs.readFileSync(path.join(ROOT, "docs/ai", f), "utf8");
 const skillDescription = (text) => (text.match(/^---[\s\S]*?^description:(.*)$/m)?.[1] ?? "").trim();
 const item = (file, name, description) => ({ file, name, description, size: [...aiDoc(file)].length });
