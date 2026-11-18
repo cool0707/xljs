@@ -1245,6 +1245,7 @@
     "table.saved": "保存しました: {0}",
     "table.empty": "表示する行がありません",
     "table.badHandler": "ui.table: {0} には関数を指定してください",
+    "table.badNumberFormat": "列「{0}」の format は Excel の表示形式の文字列（#,##0\"円\" など）で指定してください",
     "table.badFormats": "{0}: formats にはオブジェクトの配列を指定してください",
     "table.badFormatKey": "{0}: formats に不明なキー \"{1}\" があります",
     "table.badFormatColumn": "{0}: formats の列 \"{1}\" は表にありません",

@@ -50,6 +50,7 @@ await rejects(() => ui.form({ fields: [{ name: "x" }, { group: "a", fields: [{ n
 await rejects(() => ui.form({ fields: [{ name: "x" }], tabs: [{ fields: [{ name: "x" }] }] }), /"x"/, "same name on a tab");
 await rejects(() => ui.form({ tabs: [1] }), /タブ/);
 await rejects(() => ui.form({ fields: [{ name: "t", type: "table", selectable: "some" }] }), /some/);
+await rejects(() => ui.form({ fields: [{ name: "t", type: "table", rows: customers, columns: [{ key: "合計", format: ["#"] }] }] }), /合計/);
 
 // form.table replaces a table's rows while a button's onClick runs.
 await ui.form({

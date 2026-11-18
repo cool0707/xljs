@@ -2588,7 +2588,7 @@
       }
       if (!CELL_TYPES.includes(String(type))) throw new TypeError(T("form.cellType", c.label, type));
       // The column's own keys aside, the rest is checked as a field's.
-      const { key, label, width, editable, validate, ...rest } = s;
+      const { key, label, width, format, editable, validate, ...rest } = s;
       const cf = normField(Object.assign(rest, { name: c.label, type: String(type) }), i, -1);
       cf.col = i;
       cf.validate = typeof s.validate === "function" ? s.validate : null;
@@ -2667,6 +2667,7 @@
     columns: t.cols.map((c) => c.label),
     rows: t.data.map((r) => t.cols.map((c) => cellWire(c.get(r)))),
     widths: t.cols.some((c) => c.width) ? t.cols.map((c) => c.width) : undefined,
+    numFmts: t.cols.some((c) => c.format) ? t.cols.map((c) => c.format || null) : undefined,
     formats: t.formats ? t.formats.wire : undefined,
     hits: t.formats && t.formats.fns.length ? t.data.map((r, i) => formatHits(t.formats, t.cols, r, i)) : undefined,
   });
@@ -4104,7 +4105,11 @@
   /** Sets a cell of an object or array row (editable form tables). */
   const setter = (key) => (r, v) => { if (r !== null && typeof r === "object") r[key] = v; };
 
-  /** Columns as [{ key, label, width, get(row), set(row, value) }] (key is null for a list of plain values). */
+  /**
+   * Columns as [{ key, label, width, format, get(row), set(row, value) }]
+   * (key is null for a list of plain values; format: the column's Excel
+   * number format for the pages, or "").
+   */
   function tableColumns(rows, columns) {
     const sample = rows.find((r) => r !== null && r !== undefined);
     const arrays = Array.isArray(sample);
@@ -4114,7 +4119,11 @@
         let key = spec.key === undefined ? i : spec.key;
         const label = String(spec.label === undefined ? key : spec.label);
         if (arrays && typeof key !== "number") key = /^\d+$/.test(String(key)) && spec.label !== undefined ? Number(key) : i;
-        return { key, label, width: Number(spec.width) || 0, get: (r) => (r === null || r === undefined ? undefined : r[key]), set: setter(key) };
+        if (spec.format !== undefined && spec.format !== null && typeof spec.format !== "string") throw new TypeError(T("table.badNumberFormat", label));
+        return {
+          key, label, width: Number(spec.width) || 0, format: spec.format || "",
+          get: (r) => (r === null || r === undefined ? undefined : r[key]), set: setter(key),
+        };
       });
     }
     if (arrays) {
@@ -4368,7 +4377,10 @@
         const book = workbooksObj.create();
         try {
           const name = t.replace(/[[\]:*?/\\]/g, "_").slice(0, 31) || "Sheet1";
-          book.addSheet(name).write(matrix, { columns: labels, table: true });
+          // The columns' number formats go with the values.
+          const columnStyles = {};
+          use.forEach((c, k) => { if (c.format) columnStyles[k] = { format: c.format }; });
+          book.addSheet(name).write(matrix, { columns: labels, table: true, columnStyles });
           book.save(h);
         } finally {
           book.close();
@@ -4383,8 +4395,8 @@
     function sendAll() {
       const fm = options.formats;
       page.send({
-        type: "init", select: sel, total: data.length, texts: tableTexts(), dblclick: !!options.onDoubleClick, ...looks,
-        columns: cols.map((c) => ({ label: c.label, width: c.width })), formats: fm ? fm.wire : undefined,
+        type: "init", select: sel, total: data.length, texts: tableTexts(), dblclick: !!options.onDoubleClick, ...looks, lang: native.lang,
+        columns: cols.map((c) => ({ label: c.label, width: c.width, format: c.format || undefined })), formats: fm ? fm.wire : undefined,
       });
       const chunk = 2000;
       for (let i = 0; i < data.length; i += chunk) {

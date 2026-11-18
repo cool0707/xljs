@@ -48,4 +48,7 @@ ui.table(rows, { formats: [{ column: "合計", dataBar: { color: "green", height
 throws(() => ui.table(rows, { formats: [{ column: "合計", dataBar: { height: 2 } }] }), /height/);
 throws(() => ui.table(rows, { formats: [{ when: "x" }] }), /when/);
 throws(() => ui.table(rows, { formats: { bold: true } }), /formats/);
+// The columns' number formats are strings (shown by the page).
+throws(() => ui.table(rows, { columns: [{ key: "合計", format: 0 }] }), /合計/);
+ui.table(rows, { columns: [{ key: "合計", format: '#,##0"円"' }, { key: "件数", format: null }] });
 console.log("table ok");
