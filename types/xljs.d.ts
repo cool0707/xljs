@@ -2219,8 +2219,35 @@ declare global {
     getStyle(): CellStyle;
     merge(): this;
     unmerge(): this;
-    /** 範囲の値（2 次元配列）。代入すると左上から書き込む */
+    /** 範囲の値（2 次元配列）。代入すると左上から書き込む。結合セルは、読むとどの位置も左上のセルの値で、書くのは左上の位置の値だけ */
     values: CellValue[][];
+    /** 範囲の中で what に一致する最初のセル（なければ null）。詳しくは Worksheet.find */
+    find(what: FindTarget, options?: FindOptions): Cell | null;
+    /** 範囲の中で what に一致するすべてのセル。詳しくは Worksheet.find */
+    findAll(what: FindTarget, options?: FindOptions): Cell[];
+  }
+
+  /**
+   * `find()`・`findAll()` で探すもの。
+   *
+   * - 文字列: セルの文字と比べる（既定はセル全体の一致で、全角半角・大文字小文字・空白と改行の違いは区別しない）
+   * - `RegExp`: セルの文字に当てる（全角は半角にしてから。`/^\d+月$/` は「４月」にも一致）
+   * - 数値・`Date`・真偽値: セルの値と比べる
+   * - 関数: 値のあるセルごとに呼ばれ、true を返したセルが一致
+   *
+   * 文字列と `RegExp` は、数値・日付のセルを表示されている文字（"1,200"・"2026/4/1"）で比べる（数値は "1200" でも一致）
+   */
+  type FindTarget = string | number | boolean | Date | RegExp | ((cell: Cell) => boolean);
+
+  interface FindOptions {
+    /** 文字列の一致のしかた。"whole"（既定）: セル全体、"partial": セルの一部 */
+    match?: "whole" | "partial";
+    /** 全角半角・大文字小文字・空白（改行も）の違いを区別する（既定 false）。RegExp はセルの文字にそのまま当てる */
+    strict?: boolean;
+    /** 非表示の行・列（フィルターで隠れた行も）のセルを探さない（既定 false） */
+    visibleOnly?: boolean;
+    /** 探す順。"rows"（既定）: 行ごとに左から、"columns": 列ごとに上から */
+    order?: "rows" | "columns";
   }
 
   /**
@@ -2301,6 +2328,11 @@ declare global {
     lastRow(options?: LastCellOptions): number;
   }
 
+  /**
+   * セル。結合セルは、中のどのセルを指定しても左上のセルとして扱う: `A1:C1` が結合なら `sheet.cell("B1")` の
+   * 値・数式・書式・メモ・コメントは A1 のもので、代入も A1 に入る（`address`・`row`・`column` は指定したまま）。
+   * 数式の中の参照は Excel と同じ（`=B1` は空）
+   */
   interface Cell {
     readonly address: string;
     readonly row: number;
@@ -2370,6 +2402,13 @@ declare global {
     setStyle(style: CellStyle, options?: StyleOptions): this;
     /** 現在の書式（setStyle に渡せる形） */
     getStyle(): CellStyle;
+    /**
+     * rows 行下・columns 列右のセル（負の数で上・左）。結合セルからは、その範囲の端から数える
+     * （`A1:B1` が結合なら `offset(0, 1)` は C1）。VBA の `Offset`。シートの外になると例外
+     *
+     *     sheet.find("氏名")?.offset(0, 1).value   // 見出しの右のセルの値
+     */
+    offset(rows: number, columns: number): Cell;
   }
 
   /** 最終行・最終列（`lastRow()`・`lastColumn()`）で数えるセル。既定は値か数式のあるセル */
@@ -2391,10 +2430,41 @@ declare global {
     skipEmpty?: boolean;
     /** 表示形式を適用した文字列で返す */
     text?: boolean;
+    /**
+     * 表の左上のセル（見出しの左端。"C5" か `find()` の結果）。そこから右へ見出しが続くところ（最初の空のセルの手前）までを表の列にし、
+     * 下の行を読む。A1 から始まらない表・シートに複数ある表に使う。`header: 0` のときは最初のデータの行の左端
+     */
+    start?: string | Cell;
+    /** 表の列がすべて空の行を表の終わりとする（下にある合計・注記を読まない。既定 false） */
+    untilBlank?: boolean;
+    /**
+     * 読む列を見出しで選び、キーを付け替える（`{ code: "コード", amount: /金額|売上/ }` → `[{ code, amount }]`）。
+     * 選んだ列だけのオブジェクトになる。見つからない見出しがあると例外（見つかった見出しをメッセージに出す）
+     */
+    pick?: Record<string, ColumnPick>;
   }
+  /**
+   * `pick` で列を選ぶ条件。
+   *
+   * - 文字列: その見出しの列（全角半角・大文字小文字・空白と改行の違いは区別しない。"品名" は「品　名」にも一致）
+   * - `RegExp`: 見出しに当てる（全角は半角にしてから）
+   * - 数値: 表の左端からの位置（0 から）
+   * - `{ header, nth, offset, optional }`: 同じ見出しの nth 番目（1 から）、見出しから offset 列右、
+   *   `optional: true` で見出しがなくても例外にせず null を入れる
+   */
+  type ColumnPick = string | RegExp | number | { header: string | RegExp; nth?: number; offset?: number; optional?: boolean };
   interface WriteOptions {
     /** 書き込み開始セル（既定 "A1"） */
-    start?: string;
+    start?: string | Cell;
+    /**
+     * いまある見出しに合わせて書く: 行のキーと同じ見出しの列にだけ値を入れる（見出しは書かず、ほかの列＝数式の列などはそのまま。
+     * 見出しにないキーは書かない）。キーと見出しは `toRowObjects()` が付ける名前で比べ、なければ全角半角・大文字小文字・空白の違いを区別せずに比べる。
+     * true: 見出しは `start` のセルから右（`append` では 1 行目）、数値: その行、"C5"・セル: 見出しの左端。
+     * `write` は見出しのすぐ下から、`append` はその列の最終行の下に書く。行はオブジェクトで渡す。一致する見出しが 1 つもなければ例外
+     *
+     *     sheet.append([{ 日付: new Date(), 金額: 500 }], { matchHeader: true });
+     */
+    matchHeader?: boolean | number | string | Cell;
     /** オブジェクト配列のとき見出し行を書く（既定 true） */
     header?: boolean;
     columns?: string[];
@@ -2463,10 +2533,17 @@ declare global {
     name: string;
     cell(address: string): Cell;
     cell(row: number, column: number): Cell;
-    /** 表を、見出しの行をキーにしたオブジェクトの配列で読む（[{ 月: "4月", 売上: 1200 }, ...]） */
+    /**
+     * 表を、見出しの行をキーにしたオブジェクトの配列で読む（[{ 月: "4月", 売上: 1200 }, ...]）。
+     * 結合セルは、どの行・列でも左上のセルの値になる（縦に結合した「部署」は各行に入る）。
+     * A1 から始まらない表は `start`、列を見出しで選ぶのは `pick`
+     *
+     *     sheet.toRowObjects({ start: sheet.find("コード"), untilBlank: true, pick: { code: "コード", amount: "金額" } });
+     */
     toRowObjects<T = Row>(options?: RowsOptions): T[];
-    /** 行を値の配列にする（見出しの行も 1 行として含む） */
+    /** 行を値の配列にする（見出しの行も 1 行として含む）。結合セルは、どの位置も左上のセルの値 */
     toArrays(options?: { text?: boolean; skipEmpty?: boolean }): CellValue[][];
+    /** 行（オブジェクトか配列の配列）を start から書く。結合セルに掛かる位置は、左上の位置の値だけを書く */
     write(rows: Row[] | unknown[][], options?: WriteOptions): this;
     /** 最終行（`lastRow()`。値か数式のある最後の行）の下に追記する */
     append(rows: Row[] | unknown[][], options?: WriteOptions): this;
@@ -2481,7 +2558,8 @@ declare global {
     /**
      * 最終行: 値か数式のあるセルの最後の行の番号（空のシートは 0）。列ごとの最終行は `sheet.columns("A").lastRow()`。
      * 行・列が非表示でも、フィルターで隠れていても変わらない。数式のセルは、計算の前でも結果が "" でも数える。
-     * 書式だけのセル（罫線・塗りだけ）は数えない。数えるセルは options で変えられる
+     * 書式だけのセル（罫線・塗りだけ）は数えない。数えるセルは options で変えられる。
+     * 値のある結合セルは、その範囲の最後の行・列まで数える（行全体・列全体の結合は左上のセルだけ）
      *
      *     sheet.lastRow();                      // 値か数式のある最後の行
      *     sheet.lastRow({ skipBlank: true });   // 結果が "" の数式・空白だけのセルを数えない
@@ -2512,11 +2590,28 @@ declare global {
     autoFit(options?: { min?: number; max?: number }): this;
     /** range("A1:D10") */
     range(address: string): Range;
-    /** 書式を付ける（既存の書式に重ねる。options.replace で置き換え）。setStyle("A1:D1", { bold: true, background: "#DDEBF7", border: "thin" }) */
+    /**
+     * what に一致する最初のセル（値のあるセルから探す。なければ null）。結合セルは左上のセルとして 1 回だけ見つかる。
+     * 範囲・行・列の中から探すのは `sheet.range("A1:F20").find(...)`・`sheet.columns("A").find(...)`
+     *
+     *     sheet.find("氏名")?.offset(0, 1).value            // 見出し「氏名」（「氏　名」でも）の右のセル
+     *     sheet.columns("A").find("A-1024")?.row            // A 列でコードのある行
+     *     sheet.find(/^合計/)                               // 「合計」で始まるセル
+     */
+    find(what: FindTarget, options?: FindOptions): Cell | null;
+    /** what に一致するすべてのセル（options.order の順。既定は行ごとに左から） */
+    findAll(what: FindTarget, options?: FindOptions): Cell[];
+    /**
+     * 書式を付ける（既存の書式に重ねる。options.replace で置き換え）。setStyle("A1:D1", { bold: true, background: "#DDEBF7", border: "thin" })。
+     * 結合セルの中のセルを指定すると結合セル全体に付く（外枠の罫線は結合セルの外枠になる）
+     */
     setStyle(address: string, style: CellStyle, options?: StyleOptions): this;
     /** セル（範囲なら左上のセル）の書式（setStyle に渡せる形） */
     getStyle(address: string): CellStyle;
-    /** セルを結合する / 結合を解除する */
+    /**
+     * セルを結合する / 結合を解除する。結合すると、Excel と同じく値は 1 つだけ（行ごとに左から見て最初の値）が左上のセルに残り、ほかは消える。
+     * 結合セルは、中のどのセルを指定しても左上のセルとして読み書きする（Cell を参照）
+     */
     merge(address: string): this;
     unmerge(address: string): this;
     /** 結合しているセル範囲（["A1:C1", ...]） */
@@ -2705,7 +2800,13 @@ declare global {
     readonly sheetNames: string[];
     /** シート一覧。book.sheets["売上"] のように名前でも参照できる（大文字小文字・前後の空白・全角半角の違いは、該当が 1 つなら許す） */
     readonly sheets: Worksheet[] & { [name: string]: Worksheet | undefined };
-    sheet(nameOrIndex: string | number): Worksheet | null;
+    /**
+     * 名前（`book.sheets["名前"]` と同じく、大文字小文字・前後の空白・全角半角の違いは該当が 1 つなら許す）・位置（0 から）・
+     * `RegExp`（名前が一致する最初のシート。全角を半角にした名前にも当てる）でシートを返す。なければ null
+     *
+     *     book.sheet(/^\d+年\d+月$/)   // 「2026年4月」のようなシートの最初の 1 つ
+     */
+    sheet(nameOrIndex: string | number | RegExp): Worksheet | null;
     addSheet(name: string): Worksheet;
     removeSheet(sheet: string | Worksheet): void;
     /**

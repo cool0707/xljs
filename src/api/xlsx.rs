@@ -9,6 +9,7 @@ use rquickjs::{Class, Ctx, JsLifetime, Value};
 use umya_spreadsheet::{CellRawValue, NumberingFormat, Workbook, Worksheet};
 
 use super::js::{self, elems, nullish};
+use super::xlsx_merge::{Merges, anchor_of};
 use super::{A, Host, N, R};
 use crate::{Error, Result, err, i18n};
 
@@ -560,16 +561,33 @@ impl Used {
     }
 
     /// The used cells of the sheet as (first column, first row, last column, last row).
+    /// A merged area counts as its top-left cell and reaches to its last one.
     pub(crate) fn area(self, ws: &Worksheet) -> Option<(u32, u32, u32, u32)> {
+        let merges = Merges::new(ws);
         let mut area: Option<(u32, u32, u32, u32)> = None;
         for c in ws.cells() {
             if self.has(c) {
                 let (col, row) = (c.coordinate().col_num(), c.coordinate().row_num());
-                let a = area.get_or_insert((col, row, col, row));
-                *a = (a.0.min(col), a.1.min(row), a.2.max(col), a.3.max(row));
+                let Some((c2, r2)) = self.reach(&merges, col, row) else { continue };
+                let a = area.get_or_insert((col, row, c2, r2));
+                *a = (a.0.min(col), a.1.min(row), a.2.max(c2), a.3.max(r2));
             }
         }
         area
+    }
+
+    /// The last column and row a used cell counts up to: its own, those of
+    /// the merged area it is the top-left cell of (xlsx_merge::reach), or
+    /// None for a cell a merged area covers (Excel shows nothing of it).
+    pub(crate) fn reach(self, merges: &Merges, col: u32, row: u32) -> Option<(u32, u32)> {
+        if merges.is_empty() {
+            return Some((col, row));
+        }
+        match merges.area(col, row) {
+            Some(m) if (m.0, m.1) == (col, row) => Some(super::xlsx_merge::reach(m)),
+            Some(_) => None,
+            None => Some((col, row)),
+        }
     }
 }
 
@@ -593,6 +611,54 @@ pub(crate) fn rows(ws: &Worksheet) -> Vec<Vec<(u32, &umya_spreadsheet::Cell)>> {
     out
 }
 
+/// The used cells of a sheet as scripts read them (toArrays, toRowObjects,
+/// range.values): the rows of `rows`, with merged cells as xlsx_merge tells.
+/// What a merged area covers is left out, and with `fill` every cell of an
+/// area is its top-left cell (a department merged over three rows is read
+/// in each of them).
+pub(crate) fn grid(ws: &Worksheet, fill: bool) -> Vec<Vec<Option<&umya_spreadsheet::Cell>>> {
+    let merges = Merges::new(ws);
+    let mut by_row: std::collections::BTreeMap<u32, std::collections::BTreeMap<u32, &umya_spreadsheet::Cell>> = Default::default();
+    let (mut width, mut height) = (0, 0);
+    for c in ws.cells() {
+        if has_value(c) {
+            let co = c.coordinate();
+            if !merges.is_empty() && merges.covered(co.col_num(), co.row_num()) {
+                continue;
+            }
+            by_row.entry(co.row_num()).or_default().insert(co.col_num(), c);
+            (width, height) = (width.max(co.col_num()), height.max(co.row_num()));
+        }
+    }
+    if fill {
+        let valued: Vec<_> = merges.rects.iter().filter_map(|&m| Some((m, *by_row.get(&m.1)?.get(&m.0)?))).collect();
+        for (m, _) in &valued {
+            let (c, r) = super::xlsx_merge::reach(*m);
+            (width, height) = (width.max(c), height.max(r));
+        }
+        for ((c1, r1, c2, r2), c) in valued {
+            for row in r1..=r2.min(height) {
+                let line = by_row.entry(row).or_default();
+                for col in c1..=c2.min(width) {
+                    line.insert(col, c);
+                }
+            }
+        }
+    }
+    let last = by_row.keys().next_back().copied().unwrap_or(0);
+    let mut out = Vec::with_capacity(last as usize);
+    for r in 1..=last {
+        let line = by_row.remove(&r).unwrap_or_default();
+        let n = line.keys().next_back().copied().unwrap_or(0);
+        let mut v = vec![None; n as usize];
+        for (col, c) in line {
+            v[col as usize - 1] = Some(c);
+        }
+        out.push(v);
+    }
+    out
+}
+
 fn date_style(code: &str) -> NumberingFormat {
     let mut nf = NumberingFormat::default();
     nf.set_format_code(code);
@@ -600,8 +666,7 @@ fn date_style(code: &str) -> NumberingFormat {
 }
 
 /// Writes a JavaScript value into a cell.
-pub(crate) fn set_value(b: &mut Book, sheet: &str, r: &str, v: &Value) -> Result<()> {
-    let (col, row) = parse_ref(r)?;
+pub(crate) fn set_value(b: &mut Book, sheet: &str, (col, row): (u32, u32), v: &Value) -> Result<()> {
     let date1904 = b.date1904;
     let c = b.cell_mut(sheet, col, row)?;
     if nullish(v) {
@@ -700,6 +765,12 @@ fn track<'js>(h: &Host, ctx: &Ctx<'js>, b: Book) -> R<'js> {
 
 fn upper(s: String) -> String {
     s.to_uppercase()
+}
+
+/// The cell a script means by `r` ("B3"): the top-left cell of the merged
+/// area it is in, or the cell itself (xlsx_merge).
+fn cell_at<'js>(a: &A<'js>, b: &Book, sheet: &str, r: &str) -> rquickjs::Result<(u32, u32)> {
+    anchor_of(b, sheet, r).map_err(|e| a.throw(&e))
 }
 
 /// Checks a new sheet name like Excel (and excelize) do.
@@ -839,30 +910,32 @@ pub(super) fn install(n: &N) {
     n.set("xlsxGet", |h, a| {
         let (sheet, r) = (a.str(1), upper(a.str(2)));
         with_book(h, a, |b| {
-            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let at = cell_at(a, b, &sheet, &r)?;
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
-            cell_value(&a.ctx, b, ws.cell((col, row)))
+            cell_value(&a.ctx, b, ws.cell(at))
         })
     });
     n.set("xlsxGetText", |h, a| {
         let (sheet, r) = (a.str(1), upper(a.str(2)));
         let s = with_book(h, a, |b| {
-            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let at = cell_at(a, b, &sheet, &r)?;
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
-            Ok(ws.cell((col, row)).map(|c| cell_text(b, c)).unwrap_or_default())
+            Ok(ws.cell(at).map(|c| cell_text(b, c)).unwrap_or_default())
         })?;
         a.ret(s)
     });
     n.set("xlsxSet", |h, a| {
         let (sheet, r, v) = (a.str(1), upper(a.str(2)), a.arg(3));
-        with_book(h, a, |b| set_value(b, &sheet, &r, &v).map_err(|e| a.throw(&e)))?;
+        with_book(h, a, |b| {
+            let at = cell_at(a, b, &sheet, &r)?;
+            set_value(b, &sheet, at, &v).map_err(|e| a.throw(&e))
+        })?;
         a.undefined()
     });
     n.set("xlsxGetFormula", |h, a| {
         let (sheet, r) = (a.str(1), upper(a.str(2)));
         let f = with_book(h, a, |b| {
-            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
-            b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            let (col, row) = cell_at(a, b, &sheet, &r)?;
             Ok(super::xlsx_calc::formula_shown(b, &sheet, col, row))
         })?;
         match f {
@@ -873,7 +946,7 @@ pub(super) fn install(n: &N) {
     n.set("xlsxSetFormula", |h, a| {
         let (sheet, r, formula) = (a.str(1), upper(a.str(2)), a.str(3));
         with_book(h, a, |b| {
-            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let (col, row) = cell_at(a, b, &sheet, &r)?;
             super::xlsx_calc::set_formula(b, &sheet, col, row, &formula).map_err(|e| a.throw(&e))
         })?;
         a.undefined()
@@ -883,9 +956,9 @@ pub(super) fn install(n: &N) {
     n.set("xlsxGetPhonetic", |h, a| {
         let (sheet, r, show) = (a.str(1), upper(a.str(2)), a.arg(3).as_bool().unwrap_or(false));
         let got = with_book(h, a, |b| {
-            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let at = cell_at(a, b, &sheet, &r)?;
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
-            Ok(ws.cell((col, row)).map(|c| {
+            Ok(ws.cell(at).map(|c| {
                 let text = phonetic_text(&c.value(), &c.cell_value().phonetic_runs());
                 // As Excel's PHONETIC gives them: in the kind of furigana of the text.
                 let kind = c.cell_value().phonetic_type();
@@ -903,7 +976,7 @@ pub(super) fn install(n: &N) {
         let (sheet, r, v) = (a.str(1), upper(a.str(2)), a.arg(3));
         let reading = (!js::nullish(&v)).then(|| js::to_str(&v)).filter(|s| !s.is_empty());
         with_book(h, a, |b| {
-            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let (col, row) = cell_at(a, b, &sheet, &r)?;
             let c = b.cell_mut(&sheet, col, row).map_err(|e| a.throw(&e))?;
             let text = match c.raw_value() {
                 CellRawValue::String(s) | CellRawValue::Lazy(s) => s.to_string(),
@@ -930,7 +1003,7 @@ pub(super) fn install(n: &N) {
     n.set("xlsxSetShowPhonetic", |h, a| {
         let (sheet, r, show) = (a.str(1), upper(a.str(2)), a.arg(3).as_bool().unwrap_or(false));
         with_book(h, a, |b| {
-            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let (col, row) = cell_at(a, b, &sheet, &r)?;
             b.cell_mut(&sheet, col, row).map_err(|e| a.throw(&e))?.set_show_phonetic(show);
             Ok(())
         })?;
@@ -938,7 +1011,10 @@ pub(super) fn install(n: &N) {
     });
     n.set("xlsxCalc", |h, a| {
         let (sheet, r) = (a.str(1), upper(a.str(2)));
-        let s = with_book(h, a, |b| super::xlsx_calc::calc_cell(b, &sheet, &r).map_err(|e| a.throw(&e)))?;
+        let s = with_book(h, a, |b| {
+            let (col, row) = cell_at(a, b, &sheet, &r)?;
+            super::xlsx_calc::calc_cell(b, &sheet, &cell(col, row)).map_err(|e| a.throw(&e))
+        })?;
         a.ret(s)
     });
     // xlsxCalculate(book) -> JSON { formulas, changed, skipped: [{ sheet, address, formula, reason, name?, message }] }
@@ -957,22 +1033,22 @@ pub(super) fn install(n: &N) {
             .collect();
         a.ret(serde_json::json!({ "formulas": sum.formulas, "changed": sum.changed, "skipped": skipped }).to_string())
     });
-    // xlsxReadAll(book, sheet, text) -> any[][]
+    // xlsxReadAll(book, sheet, text[, covered[, firstRow, lastRow]]) -> any[][]: the rows up to the
+    // last one with a value, each up to its last value, or only the rows firstRow..lastRow of them.
+    // A cell of a merged area is the area's top-left cell; with covered: false only the top-left
+    // cell has the value (the others are null).
     n.set("xlsxReadAll", |h, a| {
         let sheet = a.str(1);
         let text = a.bool(2);
+        let fill = a.arg(3).as_bool() != Some(false);
+        let bound = |i: usize, or: usize| if nullish(&a.arg(i)) { or } else { a.int(i).clamp(1, 1_048_576) as usize };
+        let (first, last) = (bound(4, 1), bound(5, 1_048_576));
         with_book(h, a, |b| {
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
             let mut out = Vec::new();
-            for row in rows(ws) {
-                let width = row.last().map(|(c, _)| *c).unwrap_or(0) as usize;
-                let mut vals: Vec<Value> = Vec::with_capacity(width);
-                let mut it = row.into_iter().peekable();
-                for col in 1..=width as u32 {
-                    let cell = match it.peek() {
-                        Some((c, _)) if *c == col => it.next().map(|(_, c)| c),
-                        _ => None,
-                    };
+            for row in grid(ws, fill).into_iter().take(last).skip(first - 1) {
+                let mut vals: Vec<Value> = Vec::with_capacity(row.len());
+                for cell in row {
                     vals.push(if text {
                         js::v(&a.ctx, cell.map(|c| cell_text(b, c)).unwrap_or_default())
                     } else {
@@ -991,14 +1067,20 @@ pub(super) fn install(n: &N) {
         let data = a.arg(3);
         with_book(h, a, |b| {
             let (c0, r0) = parse_ref(&start).map_err(|e| a.throw(&e))?;
-            b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            // What a merged area covers is not written: the value at the
+            // place of its top-left cell is the area's.
+            let merges = Merges::new(b.sheet(&sheet).map_err(|e| a.throw(&e))?);
             for (r, rowv) in elems(&data).iter().enumerate() {
                 for (c, v) in elems(rowv).iter().enumerate() {
                     if nullish(v) {
                         continue;
                     }
-                    let name = cell_name(c0 + c as u32, r0 + r as u32).map_err(|e| a.throw(&e))?;
-                    set_value(b, &sheet, &name, v).map_err(|e| a.throw(&e.context(format!("{sheet}!{name}"))))?;
+                    let (col, row) = (c0 + c as u32, r0 + r as u32);
+                    let name = cell_name(col, row).map_err(|e| a.throw(&e))?;
+                    if !merges.is_empty() && merges.covered(col, row) {
+                        continue;
+                    }
+                    set_value(b, &sheet, (col, row), v).map_err(|e| a.throw(&e.context(format!("{sheet}!{name}"))))?;
                 }
             }
             Ok(())
