@@ -5,7 +5,7 @@ Go 版 xljs（github.com/cool0707/xljs-go。開発凍結、記録として保管
 （Go 版に合わせる必要はない。スクリプトの API・メタデータ・pack 形式の互換は保つ）。利用者は「VS Code も入れられないような」一般の業務ユーザー。
 Excel 未インストール環境で動くこと、日本語環境での使い勝手（CP932、游ゴシック、日本語メッセージ）を重視する。
 
-HTML UI・フォーム・表表示・デバッガの設計は `docs/design/handoff-ui.md`（Go 版で書かれたメモ。仕組みは同じ）を参照。
+HTML UI・フォーム・テーブル・デバッガの設計は `docs/design/handoff-ui.md`（Go 版で書かれたメモ。仕組みは同じ）を参照。
 グラフ・ガントチャート（`ui.chart`・フォームの `chart` 項目・`xljs.chart`、AG Charts / Frappe Gantt、Excel のグラフ `sheet.charts` からの変換）は `docs/design/charts-design.md`。
 SQLite（`sqlite.open`、ファイルサーバーで複数人が使う共有モード・ロックファイル・自動バックアップと変更ログ・修復、Excel 互換の SQL 関数と `db.function`）は `docs/design/sqlite-design.md`。
 PDF 出力（`book.toPdf`・`sheet.toPdf`・`xljs.htmlToPdf`。シートの印刷レイアウトを HTML にして WebView2 の `Page.printToPDF`。印刷プレビュー `printPreview`・`toPdf` の `preview`、ダイアログなしの印刷 `book.print`（WebView2 の `Print`）も）は `docs/design/pdf-design.md`。

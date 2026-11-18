@@ -69,6 +69,8 @@ cargo check --target x86_64-pc-windows-gnu --all-targets   # Windows 専用コ�
 
 「ファーストステップ」のスクリーンショット（`docs/site/images/first-*.png`）は、`node build.mjs` のあとに `node screenshots.mjs`（`tools/docs`）で撮り直せます（組み込みページを Chromium で開き、Rust 側の応答をスクリプトが返す。AI チャットの画面は灰色の枠で代わりに示す）。画面の文言・配置を変えたら撮り直してください。
 
+API のページの画面の写真（フォーム `form-*.png`・テーブル `table-*.png`・ガントチャート `chart-gantt.png`）も同じ `node screenshots.mjs` で撮ります。フォームはサンプルを実行して取った最初のメッセージ（`tools/docs/shots/`、取り直し方は `tools/docs/shots/README.md`）、テーブルは `screenshots.mjs` の中で組み立てたメッセージを組み込みのページに渡します。グラフのウィンドウと印刷プレビューのページはトップページの写真（`home-chart.png`・`home-print.png`）を使っています。フォーム・テーブル・グラフの見た目を変えたら撮り直してください。
+
 サイトは `tools/docs/build.mjs` が生成し、`.github/workflows/docs.yml` が main への push で GitHub Pages に公開します（リポジトリの Settings → Pages の Source を「GitHub Actions」にしておく）。
 
 ```

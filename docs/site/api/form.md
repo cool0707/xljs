@@ -10,6 +10,8 @@ HTML を書かずに、項目の定義だけで画面を作れます。フォー
 | **ツール**（入力して実行する） | 入力欄と実行ボタン。実行すると進捗・ログ・結果が同じ画面に出る | 処理を実行ボタン（`buttons` の `onClick`）に書く |
 | **アプリ**（開いたまま使う） | 開くと一覧が出ている。検索・追加・更新・削除・出力ができ、操作のたびに一覧が最新になる | 一覧は `table` 項目、操作は `buttons`、連動は `onChange`。機能ごとに画面を分けるなら [`ui.forms`](#複数のフォームをまとめるuiforms) |
 
+<figure class="shot"><img src="../images/home-form.png" alt="商品マスターのフォームアプリ。上に検索欄と商品の一覧、下に選んだ商品の入力欄と、新規・削除・保存のボタン" width="822" loading="lazy"><figcaption>開いたまま使うアプリの例（examples/form-master.xljs）。一覧から選んだ商品を下の欄で直して保存します。</figcaption></figure>
+
 フォームにない見た目・操作（表のセルに打ち込みながら行を増やす明細、独自のレイアウト）が要るときは [カスタムアプリ](app.md)（HTML の画面）にします。
 
 ## 入力して実行する（ツール）
@@ -37,6 +39,8 @@ await ui.form({
     } }],
 });
 ```
+
+<figure class="shot"><img src="../images/form-tool.png" alt="売上集計のフォーム。ファイルと集計の条件の見出しの下に、集計フォルダ・出力先・集計単位などの欄。下に処理したファイルのログと進捗バー、完了しました の表示と、フォルダを開く・集計・閉じる のボタン" width="640" loading="lazy"><figcaption>入力して実行するツールの例（examples/form-aggregate.xljs）。［集計］を押すと、同じ画面に進捗とログが出ます。終わったあとも開いたままなので、条件を変えて続けて実行できます。</figcaption></figure>
 
 ## 開いたまま使う（アプリ）
 
@@ -146,7 +150,7 @@ if (!v) exit();              // v.out は FileSystemDirectoryHandle
 どの項目にも `name` `label` `icon` `help` `tooltip` `disabled` `hidden` を、値のある項目には `default` `required` `validate` `onChange` `remember` を書けます。type に合わないキー（`text` の `options` など）や、ないキーを書くとエラーになります。`options` は文字列か `{ value, label }` の配列です。
 
 - ファイル系は「参照…」ボタンとドラッグ＆ドロップで入力でき、値はハンドルになります（`folder` にファイルを落とすとそのフォルダ、`saveFile` にフォルダを落とすと入力済みのファイル名のままそのフォルダへの保存先になります）。
-- `type: "table"` で表を表示します（`rows` `columns` は `ui.table` と同じ。`height` は高さ（px。既定は 8 行分まで））。`selectable: true`（複数）/ `"single"` を付けると行をクリックして選べ、値は選んだ行（元のオブジェクト）になります。`selectable` なしは表示だけです。列見出しのクリックで並べ替えできます（列幅は最初に表示したときのまま変わりません）。列見出しのボタンから列ごとのフィルタ、列の固定（左端・右端・この列まで）、列の表示・非表示、境界のドラッグで幅の変更ができ、`formats` で条件付き書式を付けられます（いずれも [表表示](table.md) と同じ）。ボタンの `onClick` の中で `form.table(name, rows)` を呼ぶと行を入れ替えられます（結果の表示など）。
+- `type: "table"` で表を表示します（`rows` `columns` は `ui.table` と同じ。`height` は高さ（px。既定は 8 行分まで））。`selectable: true`（複数）/ `"single"` を付けると行をクリックして選べ、値は選んだ行（元のオブジェクト）になります。`selectable` なしは表示だけです。列見出しのクリックで並べ替えできます（列幅は最初に表示したときのまま変わりません）。列見出しのボタンから列ごとのフィルタ、列の固定（左端・右端・この列まで）、列の表示・非表示、境界のドラッグで幅の変更ができ、`formats` で条件付き書式を付けられます（いずれも [テーブル](table.md) と同じ）。ボタンの `onClick` の中で `form.table(name, rows)` を呼ぶと行を入れ替えられます（結果の表示など）。
 - `editable: true`（または列ごとに `columns: [{ key, editable: true }]`）でセルをその場で編集できます。列に `type`（`text` `number` `date` `month` `time` `select` `combobox` `checkbox`。既定は値から判断）、`required` `min` `max` `pattern` `options`（`select` と `combobox` のセルは入力した文字を含む選択肢に絞り込んで一覧に出します。選択肢に空欄は書かず（`""`）、入力を消すとセルが空になります。選択肢にない入力は `combobox` の `allowCustom: true` のときだけ受け付けます）、`validate(value, row, index)` を書くと入力のたびに検証し、エラーのセルを赤く表示して表の下に一覧を出します（クリックでそのセルへ）。行全体の検証は項目の `validateRow(row, index)`。エラーが残っているとボタン（`validate: false` のものを除く）を実行できません。検証を通った値は元の行オブジェクトに直接書き込まれます。Enter で下のセルへ移ります。数値は全角数字や「1,000」も受け付けます。コンソールでは表のあとに編集する行の番号を尋ねます。
 - `fields`（タブの `fields` でも可）に `{ group: "見出し", icon, help, fields: [...] }` を項目と並べて書くと、見出しの下に項目をまとめて表示します。値はグループに関係なく 1 つのオブジェクトにまとまります（グループの中にグループは入れられません）。コンソールでは `-- 見出し --` を出してから順に尋ねます。
 - `fields`（タブ・グループの `fields` でも可）に `{ row: "氏名", fields: [...] }` を書くと、`row` を左のラベルにして項目を横に並べます（姓・名、郵便番号と都道府県など）。各項目の `label` は入力欄の前に小さく出ます（`""` で出しません）。幅は等分で、`maxLength` や数値の項目はその幅になります。値はほかの項目と同じく 1 つのオブジェクトにまとまります。
@@ -191,6 +195,9 @@ const v = await ui.form({
 ```
 
 - `tabs: [{ label, fields }]` を指定するとタブで項目を切り替えて表示します（`fields` はタブの上に常に表示）。値はタブに関係なく 1 つのオブジェクトにまとまります。エラーのある項目のタブには印が付き、そのタブに切り替わります。Ctrl+Tab でも切り替えられます。サンプル: `examples/form-tabs-table.xljs`
+
+<figure class="shot"><img src="../images/form-tabs.png" alt="支店別集計のフォーム。上に集計フォルダの欄、その下に 入力・オプション・結果 のタブ。入力のタブに対象の支店を選ぶ表があり、4 つの支店にチェックが付いている" width="640" loading="lazy"><figcaption>タブと、行を選ぶ表（<code>type: "table"</code> と <code>selectable: true</code>）のあるフォーム（examples/form-tabs-table.xljs）。</figcaption></figure>
+
 - ウィンドウのアイコンはメタデータの `@icon` で変えられます（`@mode app` でなくても有効。表も同じ）。
 - 同梱の [Font Awesome Free](https://fontawesome.com/icons) のアイコンを、項目のラベル（`icon`）、タブ（`tabs: [{ label, icon, fields }]`）、ボタン（`buttons: [{ label, icon, ... }]`）に付けられます。`"folder-open"` のように名前だけなら solid、`"fa-regular fa-calendar"` のようにクラスでも書けます。フォームの `icon` は `titleBar: "custom"` のときに自前のタイトルバーでタイトルの前に表示します（`"system"` では無視）。コンソール・モックでは無視されます。
 - ウィンドウの `title` `width` `height` `resizable`（`false` で大きさを固定）`titleBar` `icon` は `ui.forms`・`ui.table`・`ui.chart`・`app.open` と共通です（`WindowOptions`）。見た目の `accent` `background` `radius`（`PageLooks`）は `ui.forms`・`ui.table`・`ui.chart` でも使えます。

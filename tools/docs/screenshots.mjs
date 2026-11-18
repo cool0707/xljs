@@ -1,5 +1,5 @@
-// The screenshots of the guide "はじめての xljs" (docs/site/guide/first-steps.md):
-// the built-in pages (src/ui/web) in Chromium with the Rust side played here,
+// The screenshots of the guide "はじめての xljs" (docs/site/guide/first-steps.md)
+// and of the API pages (form, table, chart): the built-in pages (src/ui/web) in Chromium with the Rust side played here,
 // as the site's dev mode mock does (demo/dev-demo.js). Run `node build.mjs`
 // first (the pages are taken from _site/demo/web).
 //
@@ -27,6 +27,7 @@ if (!fs.existsSync(path.join(WEB, "dev.html"))) {
 
 const messages = (lang) => JSON.parse(fs.readFileSync(path.join(ROOT, `src/i18n/locales/${lang}.json`), "utf8")).messages;
 const all = { ...messages("en"), ...messages("ja") };
+const raw = (k) => String(all[k] ?? k);
 const t = (k, ...args) => String(all[k] ?? k).replace(/\{(\d+)\}/g, (_, i) => args[i]);
 const under = (prefix) => Object.fromEntries(Object.entries(all).filter(([k]) => k.startsWith(prefix)).map(([k, v]) => [k.slice(prefix.length), v]));
 
@@ -88,7 +89,8 @@ const mock = `
 (() => {
   const listeners = [];
   window.__post = (m) => setTimeout(() => { for (const fn of listeners) fn({ data: "\\x02" + (typeof m === "string" ? m : JSON.stringify(m)) }); }, 0);
-  window.__xljsTitleBar = { title: "xljs", icon: "", texts: ${JSON.stringify(under("window."))}, nonClient: true };
+  // window.__shotTitle (set by an init script): the window's title and Font Awesome icon.
+  window.__xljsTitleBar = Object.assign({ title: "xljs", icon: "", texts: ${JSON.stringify(under("window."))}, nonClient: true }, window.__shotTitle);
   window.chrome = window.chrome || {};
   window.chrome.webview = {
     addEventListener(type, fn) { if (type === "message") listeners.push(fn); },
@@ -106,11 +108,22 @@ const mock = `
     maximize: '<svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg>',
     close: '<svg viewBox="0 0 10 10"><path d="M0 0l10 10M10 0L0 10"/></svg>',
   };
-  document.addEventListener("DOMContentLoaded", () => {
+  // On load: after titlebar.js has built the bar (on DOMContentLoaded, after this).
+  window.addEventListener("load", () => {
     const css = document.createElement("style");
     css.textContent = ".xljs-tb-btn svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; }";
     document.head.append(css);
     for (const b of document.querySelectorAll(".xljs-tb-btn")) b.innerHTML = glyphs[b.dataset.xljsWindow] || "";
+    // A window with the OS title bar: the program's icon before the title.
+    const title = document.querySelector(".xljs-tb-title");
+    if (window.__shotTitle && window.__shotTitle.os && title && !title.querySelector("i")) {
+      const img = document.createElement("img");
+      img.src = "xljs-logo.png";
+      img.style.cssText = "width:16px;height:16px;flex:none";
+      title.prepend(img);
+      // As Windows draws its own title bar: small text on gray.
+      css.textContent += ".xljs-titlebar { --xljs-titlebar-height: 32px; background: #f3f3f3; } .xljs-tb-title { font-size: 12px; padding: 0 10px; gap: 8px; }";
+    }
   });
 })();
 `;
@@ -126,7 +139,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   let body = fs.readFileSync(file);
-  if (name === "launch.html" || name === "dev.html") {
+  if (["launch.html", "dev.html", "form.html", "table.html", "chart.html"].includes(name)) {
     // The title bar script after the page's own (as WebView2 injects it).
     body = body.toString("utf8").replace("<head>", `<head>\n<script>${mock}</script>`).replace("</body>", '<script src="titlebar.js"></script>\n</body>');
   }
@@ -233,6 +246,116 @@ async function chatPlaceholder(page, text) {
   });
   await page.mouse.move(0, 0);
   await shot(page, "first-wizard-overview.png");
+  await page.close();
+}
+
+// ------------------------------------------------------------ the API pages
+//
+// The forms (and the Gantt chart in a form) are the first messages of real
+// scripts, taken as the dev mode's form preview does (shots/README.md); the
+// table is the message ui.table sends (prelude.js tableWindow), written here.
+
+const shotJson = (name) => JSON.parse(fs.readFileSync(path.join(import.meta.dirname, "shots", name), "utf8"));
+// The day the pictures show as today (the Gantt chart's base date).
+const TODAY = new Date("2026-11-18T10:00:00Z");
+
+async function windowPage(file, size, title, init, after) {
+  const page = await browser.newPage({ viewport: size, deviceScaleFactor: 2, locale: "ja-JP" });
+  await page.clock.setFixedTime(TODAY);
+  await page.addInitScript(({ title, init, after }) => {
+    window.__shotTitle = title;
+    window.__answer = (m) => {
+      if (m.type !== "ready") return;
+      for (const x of [init, ...after]) window.__post(x);
+    };
+  }, { title, init, after });
+  await page.goto(base + file);
+  return page;
+}
+
+const settle = async (page) => {
+  await page.evaluate(() => document.activeElement && document.activeElement.blur());
+  await page.mouse.move(0, 0);
+};
+
+{
+  // A tool: the form after a run (examples/form-aggregate.xljs).
+  const init = shotJson("form-aggregate.json");
+  const files = ["2026-04/東京.xlsx", "2026-04/大阪.xlsx", "2026-05/東京.xlsx", "2026-05/大阪.xlsx", "2026-06/東京.xlsx", "2026-06/大阪.xlsx"];
+  const run = [
+    { type: "picked", field: "src", value: "C:\\Users\\user\\Documents\\売上", quiet: true },
+    { type: "running" },
+    { type: "progress", done: files.length, total: files.length, message: files[files.length - 1] },
+    { type: "log", lines: files },
+    { type: "log", lines: ["顧客 12 件を集計結果.xlsx に保存しました"] },
+    { type: "done", ok: true, output: true },
+  ];
+  const page = await windowPage("form.html", { width: 640, height: 760 }, { title: "売上集計", icon: "fa-solid fa-chart-column" }, init, run);
+  await page.waitForSelector("#status.ok");
+  await settle(page);
+  await shot(page, "form-tool.png");
+  await page.close();
+}
+
+{
+  // Tabs and a table to choose rows from (examples/form-tabs-table.xljs).
+  const page = await windowPage("form.html", { width: 640, height: 500 }, { title: "支店別集計", os: true }, shotJson("form-tabs-table.json"), []);
+  await page.waitForSelector("#tabs:not([hidden])");
+  await settle(page);
+  await shot(page, "form-tabs.png");
+  await page.close();
+}
+
+{
+  // A Gantt chart in a form (examples/chart-gantt.xljs).
+  const page = await windowPage("form.html", { width: 960, height: 600 }, { title: "工程表", os: true }, shotJson("chart-gantt.json"), []);
+  await page.waitForSelector(".gantt .bar-wrapper");
+  await page.waitForTimeout(500);
+  await settle(page);
+  await shot(page, "chart-gantt.png");
+  await page.close();
+}
+
+{
+  // ui.table with conditional formats, and a column's filter.
+  const rows = [
+    ["田中", "東京", 42, 5230000, 112, "達成"],
+    ["山田", "東京", 35, 3980000, 96, "未達"],
+    ["佐藤", "大阪", 51, 6120000, 131, "達成"],
+    ["鈴木", "大阪", 28, 2410000, 74, "未達"],
+    ["高橋", "名古屋", 39, 4470000, 103, "達成"],
+    ["伊藤", "名古屋", 22, 1890000, 63, "未達"],
+    ["渡辺", "福岡", 33, 3650000, 99, "未達"],
+    ["中村", "福岡", 46, 5580000, 120, "達成"],
+  ];
+  const tableTexts = {
+    filter: raw("table.filter"), count: raw("table.count"), countFiltered: raw("table.countFiltered"), loading: raw("table.loading"),
+    selected: raw("table.selected"), copy: raw("table.copy"), copied: raw("table.copied"), saveCsv: raw("table.saveCsv"),
+    saveXlsx: raw("table.saveXlsx"), saved: raw("table.saved"), ok: raw("form.ok"), cancel: raw("form.cancel"), close: raw("form.close"),
+    empty: raw("table.empty"), grid: { ...under("grid."), ops: under("grid.op.") },
+  };
+  const style = (o) => ({ cols: null, conds: [], fn: false, row: false, style: {}, bar: null, scale: null, ...o });
+  const formats = [
+    style({ cols: [5], conds: [["equals", "未達"]], row: true, style: { color: "#9c0006", background: "#ffc7ce" } }),
+    style({ cols: [3], bar: { color: "#638EC6", height: 0.75 } }),
+    style({ cols: [4], scale: ["#f8696b", "#ffeb84", "#63be7b"] }),
+  ];
+  const init = {
+    type: "init", select: "", total: rows.length, texts: tableTexts, dblclick: false, accent: null, background: null, radius: "",
+    columns: ["担当", "支店", "件数", "金額", "達成率", "状態"].map((label) => ({ label, width: 110 })), formats,
+  };
+  const page = await windowPage("table.html", { width: 820, height: 420 }, { title: "売上一覧", os: true }, init, [{ type: "rows", rows }]);
+  await page.waitForFunction(() => document.body.innerText.includes("中村"));
+  await settle(page);
+  await shot(page, "table-formats.png");
+  // The filter of the 支店 column.
+  const head = page.locator(".gk-head", { hasText: "支店" });
+  await head.hover();
+  await head.locator(".gk-filter").click();
+  await page.waitForSelector(".gk-filter-pop");
+  await page.locator(".gk-filter-pop input").first().fill("大阪");
+  await page.waitForFunction(() => !document.body.innerText.includes("中村"));
+  await shot(page, "table-filter.png");
   await page.close();
 }
 
