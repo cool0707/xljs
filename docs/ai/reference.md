@@ -111,7 +111,7 @@
 
 ## Excel
 
-対応形式は `.xlsx` / `.xlsm`。`.xls` は不可。マクロ・ピボットテーブルは保存すると失われることがある。
+対応形式は `.xlsx` / `.xlsm`。`.xls` は不可。マクロ・ピボットテーブルは保存で失われることがある。
 
 ### ブック
 
@@ -120,32 +120,25 @@
 | `excel.open(p)` | 開く |
 | `excel.create({ font? })` | 新しいブック。最初の `addSheet` が既定のシートを置き換える |
 | `book.sheets[0]` / `book.sheets["名前"]` / `book.sheet(名前か番号)` | シート（無ければ `undefined` / `null`）。大文字小文字・空白・全角半角の違いは許す |
-| `book.sheetNames` | シート名の配列 |
-| `book.addSheet(name)` / `book.removeSheet(name)` / `book.copySheet(sheet, name?)` | 追加・削除・コピー（元の後ろに） |
-| `book.save()` / `book.save(p)` | 上書き保存 / 別名保存 |
-| `book.close()` | 閉じる（メモリ解放） |
-| `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | PDF に書き出す（「PDF 出力」） |
-| `excel.readVBA(p)` | マクロブックの VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、なければ `null`。`text` は Markdown |
+| `book.sheetNames` / `book.addSheet(name)` / `book.removeSheet(name)` / `book.copySheet(sheet, name?)` | シート名の配列 / 追加・削除・コピー（元の後ろに） |
+| `book.save()` / `book.save(p)` / `book.close()` | 上書き / 別名で保存 / 閉じる（メモリ解放） |
+| `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | PDF に（「PDF 出力」） |
+| `excel.readVBA(p)` | マクロブックの VBA コード `{ name, modules: [{ name, type, code, sheet }], text }`（`text` は Markdown）か `null` |
 | `excel.columnName(3)` → `"C"`、`excel.cellName(2, 3)` → `"C2"` | 番地の変換 |
 
 ### シートの読み取り
 
 | API | 説明 |
 |---|---|
-| `sheet.rows({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行（既定 1）。`header: 0, columns: [...]` で見出しなし |
+| `sheet.toRowObjects({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行（既定 1）。`header: 0, columns: [...]` で見出しなし |
 | `sheet.toArrays({ text })` | 2 次元配列（0 始まり）。`text: true` で表示の文字列 |
 | `sheet.cell("B2")` / `sheet.cell(行, 列)` | セル（1 から） |
-| `cell.value` | 値: number / string / boolean / Date / null |
-| `cell.text` | 表示どおりの文字列 |
-| `cell.formula` | `"=SUM(A1:A3)"` か `null` |
-| `cell.phonetic` | ふりがな（値の後に代入） |
-| `cell.note` / `cell.comment` | メモ / コメント（`addComment`） |
-| `sheet.range("A1:C3").values` | 範囲の 2 次元配列（代入で書く） |
-| `sheet.rowCount` / `sheet.columnCount` / `sheet.dimension` | 最終行 / 最終列 / 範囲 |
-| `sheet.merges` / `sheet.frozen` / `sheet.filter` | 結合範囲の配列 / 固定 `{ rows, columns }` か `null` / フィルターの範囲か `null` |
-| `sheet.getStyle("A1")` / `sheet.getRowHeight(1)` | 書式（`setStyle` と同じ形）/ 行の高さ |
-| `sheet.hidden` | 非表示（代入で切り替え） |
-| `sheet.name` | シート名（代入で変更） |
+| `cell.value` / `cell.text` / `cell.formula` | 値（number / string / boolean / Date / null）/ 表示どおりの文字列 / `"=SUM(A1:A3)"` か `null` |
+| `cell.phonetic` / `cell.note` / `cell.comment` | ふりがな（値の後に代入）/ メモ / コメント（`addComment`） |
+| `sheet.lastRow()` / `sheet.lastColumn()` / `sheet.columns("A").lastRow()` | 最終行 / 最終列 / A 列の最終行（`{ skipBlank: true }` で `""` を返す数式を除く） |
+| `sheet.dimension` / `sheet.merges` / `sheet.frozen` / `sheet.filter` | 値のある範囲 / 結合範囲の配列 / 固定 `{ rows, columns }` か `null` / フィルターの範囲か `null` |
+| `sheet.range("A1:C3").values` / `sheet.getStyle("A1")` | 範囲の 2 次元配列（代入で書く）/ 書式（`setStyle` と同じ形） |
+| `sheet.name` / `sheet.hidden` / `sheet.rows(3).hidden` | シート名 / 非表示（行・列も）。代入で変更 |
 
 - 結合セルの値は左上のセルにだけある。
 - 数式セルの `value` は保存された計算結果。書いたら `book.calculate()` で入る（`skipped` は計算できないもの）。`cell.calc()` は数式 1 つの結果。`=FILTER(...)` はスピルする。
@@ -157,7 +150,7 @@
 | `sheet.write(rows, options)` | オブジェクトの配列（見出し＋データ）か 2 次元配列を書く |
 | `sheet.append(rows, options)` | 最終行の下に追記（見出しは書かない） |
 | `cell.value = v` / `cell.formula = "=..."` | 1 セル |
-| `sheet.insertRows(row, n?)` / `deleteRows` / `insertColumns(col, n?)` / `deleteColumns` | 行・列の挿入・削除（col は "C" か 3。参照は Excel と同じく動く） |
+| `sheet.rows(5).insert(n?)` / `sheet.rows("2:4").delete()` / `sheet.columns("C").insert(n?)` | 行・列の挿入・削除（数式の参照も動く） |
 
 `write` のオプション:
 
@@ -176,12 +169,12 @@
 sheet.setStyle("A1:D1", { bold: true, color: "#FFFFFF", background: "#305496", align: "center" });
 sheet.cell("D10").setStyle({ fontSize: 14, bold: true, format: "¥#,##0", border: { top: "double" } });
 sheet.range("A3:D10").setStyle({ border: { outline: "medium", inside: { style: "thin", color: "#BFBFBF" } } });
-sheet.merge("A1:D1");             // セル結合（unmerge で解除）
-sheet.freeze("A2");               // 1 行目を固定（"B2" で 1 行目と A 列）
-sheet.autoFilter("A3:D10");       // フィルター（null で外す）
-sheet.autoFit();                  // 列幅を内容に合わせる
-sheet.setColumnWidth("A:C", 16);  // 列幅（文字数）
-sheet.setRowHeight(1, 30);        // 行の高さ（ポイント）
+sheet.merge("A1:D1");            // セル結合（unmerge で解除）
+sheet.freeze("A2");              // 1 行目を固定（"B2" で 1 行目と A 列）
+sheet.autoFilter("A3:D10");      // フィルター（null で外す）
+sheet.autoFit();                 // 列幅を内容に合わせる
+sheet.columns("A:C").width = 16; // 列幅（文字数）
+sheet.rows(1).height = 30;       // 行の高さ（ポイント）
 ```
 
 | 項目 | 指定 |
@@ -192,7 +185,7 @@ sheet.setRowHeight(1, 30);        // 行の高さ（ポイント）
 | 表示形式 | `format`: `"#,##0"` `"#,##0.00"` `"0.0%"` `"¥#,##0"` `"yyyy/m/d"` `"yyyy年m月d日"` `"h:mm"` `"@"`（文字列） |
 | 罫線 | `border: "thin"`（全セルの上下左右）、または `{ outline, inside, horizontal, vertical, top, bottom, left, right }`。線種 `"thin"` `"medium"` `"thick"` `"double"` `"dashed"` `"dotted"`、色付きは `{ style: "thin", color: "#999999" }` |
 
-色は `"#RRGGBB"` か `red` などの色名。書式は既存の書式に重ねて適用される（`{ replace: true }` で置き換え）。入れ子のキー（`font` `fill` など）はない。
+色は `"#RRGGBB"` か `red` などの色名。書式は既存の書式に重なる（`{ replace: true }` で置き換え）。入れ子のキー（`font` `fill` など）はない。
 
 ## PDF 出力
 
@@ -288,7 +281,7 @@ db.run("INSERT INTO 受注 VALUES (?, ?, ?, ?)", "A001", new Date(2026, 3, 1), "
 db.run("UPDATE 受注 SET 金額 = :金額 WHERE 番号 = :番号", { 番号: "A001", 金額: 15000 });
 const rows = db.all("SELECT * FROM 受注 WHERE 日付 >= ?", new Date(2026, 3, 1)); // オブジェクトの配列
 const one = db.get("SELECT sum(金額) AS 合計 FROM 受注");                         // 最初の行か null
-db.insert("受注", excel.open(h).sheet(0).rows(), { replace: true });            // まとめて挿入（1 トランザクション）
+db.insert("受注", excel.open(h).sheet(0).toRowObjects(), { replace: true });    // まとめて挿入（1 トランザクション）
 db.transaction(() => {                     // 例外なら取り消し。async にはできない
   db.run("DELETE FROM 受注 WHERE 金額 = 0");
 });
@@ -501,7 +494,7 @@ db.close();
 **アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `form.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`。
 
 ```js
-const all = excel.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].rows();
+const all = excel.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].toRowObjects();
 const pick = (v) => all.filter((r) => (v.kind === "すべて" || r.区分 === v.kind) && (!v.word || String(r.品名 ?? "").includes(v.word)));
 await ui.form({
   title: "商品の検索",
@@ -792,7 +785,7 @@ ui.table(rows, { formats: [
 ## グラフ（ui.chart）
 
 ```js
-const rows = sheet.rows();                                   // [{ 月: "4月", 売上: 1200, 原価: 800 }, ...]
+const rows = sheet.toRowObjects();                           // [{ 月: "4月", 売上: 1200, 原価: 800 }, ...]
 ui.chart({ type: "column", data: rows, x: "月", y: ["売上", "原価"], title: "月別売上" }); // 表示するだけ（すぐ次へ進む）
 const view = ui.chart({
   type: "column", data: rows, x: "月",
@@ -984,7 +977,7 @@ const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [
 if (!h) exit();
 const book = excel.open(h);
 const sheet = book.sheets[0];
-const rows = sheet.rows();
+const rows = sheet.toRowObjects();
 const key = prompt("分ける列の名前", Object.keys(rows[0] ?? {})[0] ?? "");
 if (!key) exit();
 
@@ -1014,7 +1007,7 @@ const v = await ui.form({
 });
 if (!v) exit();
 
-const rows = excel.open(v.list).sheets[0].rows();
+const rows = excel.open(v.list).sheets[0].toRowObjects();
 const safe = (s) => String(s ?? "").replace(/[\\\/:*?"<>|]/g, "_");  // ファイル名に使えない文字を置き換える
 let count = 0;
 for (const r of ui.withProgress(rows, "作成中")) {
@@ -1045,7 +1038,7 @@ const v = await ui.form({
 });
 if (!v) exit();
 
-const load = (h) => h.name.toLowerCase().endsWith(".csv") ? csv.read(h) : excel.open(h).sheets[0].rows();
+const load = (h) => h.name.toLowerCase().endsWith(".csv") ? csv.read(h) : excel.open(h).sheets[0].toRowObjects();
 const a = load(v.a);
 const master = new Map(load(v.b).map((r) => [String(r[v.key]).trim(), r]));
 
@@ -1070,7 +1063,7 @@ shell.showItemInFolder(dest);
 ```js
 const [h] = await showOpenFilePicker({ types: [{ description: "Excel", accept: [".xlsx"] }] });
 if (!h) exit();
-const rows = excel.open(h).sheets[0].rows().filter((r) => r.日付 instanceof Date);
+const rows = excel.open(h).sheets[0].toRowObjects().filter((r) => r.日付 instanceof Date);
 
 const ym = (d) => dayjs(d).format("YYYY-MM");
 const months = [...new Set(rows.map((r) => ym(r.日付)))].sort();

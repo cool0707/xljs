@@ -28,9 +28,10 @@ VBA で遅さを避けるために書かれた工夫は、目的ごと捨てて�
 
 | VBA でよく見る書き方 | xljs での書き方 |
 |---|---|
-| `arr = Range("A1:F1000").Value` で配列にコピー → 配列を編集 → `Range(...).Value = arr` で書き戻す | 表なら `sheet.rows()` で列名で読み、結果は `sheet.write(rows)`。1 セルずつなら `sheet.cell(r, c).value` をそのまま読み書きしてよい |
+| `arr = Range("A1:F1000").Value` で配列にコピー → 配列を編集 → `Range(...).Value = arr` で書き戻す | 表なら `sheet.toRowObjects()` で列名で読み、結果は `sheet.write(rows)`。1 セルずつなら `sheet.cell(r, c).value` をそのまま読み書きしてよい |
 | `Application.ScreenUpdating = False`、`Calculation = xlCalculationManual`、`EnableEvents = False`、`DoEvents` | 消す（画面も再計算もない） |
-| `Cells(Rows.Count, 1).End(xlUp).Row` で最終行を求めてループ | `for (const r of sheet.rows())`。番地が必要なら `sheet.rowCount` |
+| `Cells(Rows.Count, 1).End(xlUp).Row` で最終行を求めてループ | `for (const r of sheet.toRowObjects())`。番地が必要なら `sheet.columns("A").lastRow()`（シート全体は `sheet.lastRow()`。結果が `""` の数式の行を除くなら `lastRow({ skipBlank: true })`。非表示・フィルターには左右されない） |
+| `Rows(5).Insert`・`Rows("2:4").Delete`・`Columns("A:C").ColumnWidth = 12`・`Rows(3).Hidden = True` | `sheet.rows(5).insert()`・`sheet.rows("2:4").delete()`・`sheet.columns("A:C").width = 12`・`sheet.rows(3).hidden = true` |
 | 列番号を定数や `Match` で求める（`colKingaku = 5`） | 見出しの名前で読む（`r.金額`） |
 | `Dictionary` / `Collection` / `VLookup` / `Match` | `Map`、配列、`Object.groupBy` |
 | 作業用シートに一時的に貼り付けて並べ替え・フィルター・重複削除 | 配列の `sort` / `filter` / `Set` |
@@ -42,7 +43,7 @@ VBA で遅さを避けるために書かれた工夫は、目的ごと捨てて�
 ```js
 // VBA: 配列にコピーして単価×数量を計算し、書き戻す
 // → 表として読み、列を足して新しいシートに書く
-const rows = sheet.rows().map((r) => ({ ...r, 金額: (Number(r.単価) || 0) * (Number(r.数量) || 0) }));
+const rows = sheet.toRowObjects().map((r) => ({ ...r, 金額: (Number(r.単価) || 0) * (Number(r.数量) || 0) }));
 out.addSheet("明細").write(rows, { table: true, columnStyles: { 金額: { format: "#,##0" } } });
 
 // 決まった書式の帳票に値を入れるなら、セルを直接書いてよい（配列にまとめなくてよい）

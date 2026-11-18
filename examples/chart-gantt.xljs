@@ -7,7 +7,7 @@ const [file] = await showOpenFilePicker({
 if (!file) exit();
 const book = excel.open(file);
 const sheet = book.sheets[0];
-const tasks = sheet.rows(); // [{ 作業: "設計", 開始: Date, 終了: Date, 進捗: 0.4, 前提: "" }, ...]
+const tasks = sheet.toRowObjects(); // [{ 作業: "設計", 開始: Date, 終了: Date, 進捗: 0.4, 前提: "" }, ...]
 
 const v = await ui.form({
   title: "工程表",

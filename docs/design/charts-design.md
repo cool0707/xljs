@@ -11,7 +11,7 @@ Excel のブックにあるグラフは `sheet.charts` で読み、そのまま�
     （ライセンスキーがないと透かしが出る）。日本語の表示は `ag-charts-locale` の ja-JP。
   - ガントチャート: Frappe Gantt 1.2.2（MIT）。SVG で描画し、バーのドラッグで日付と進捗を変えられる。
 - **使い方は 1 つ**: どちらも「グラフの定義（`ChartSpec`）」というただのオブジェクトで表す。`type: "gantt"` なら Frappe Gantt で、それ以外は AG Charts で描く。
-- **データは行オブジェクトの配列**: `ui.table` や `sheet.rows()` と同じ形。列は「キー名」で指定する（`x: "月", y: ["売上", "原価"]`）。
+- **データは行オブジェクトの配列**: `ui.table` や `sheet.toRowObjects()` と同じ形。列は「キー名」で指定する（`x: "月", y: ["売上", "原価"]`）。
 - **ワイヤ形式で表せること**: 定義は JSON＋`Date`（`{ $date: ms }` で送る）だけ。関数は `onClick` / `onChange` だけで、スクリプト側で動く
   （ページからは行の番号でイベントが届く）。ほかの関数（`options` に入れたフォーマッタなど）は送れないので落ちる。デバッガ（`--debug`）でも同じ経路。
 - **ライブラリの生のオプション**: `options` に書いた値を AG Charts / Frappe Gantt のオプションに深くマージする（JSON で表せるものだけ）。
@@ -32,7 +32,7 @@ Excel のブックにあるグラフは `sheet.charts` で読み、そのまま�
 
 ```js
 // 単独のウィンドウ
-const rows = book.sheets["集計"].rows();               // [{ 月: "4月", 売上: 120, 原価: 80 }, ...]
+const rows = book.sheets["集計"].toRowObjects();       // [{ 月: "4月", 売上: 120, 原価: 80 }, ...]
 ui.chart({ type: "column", data: rows, x: "月", y: ["売上", "原価"], title: "月別売上" });
 
 // フォームの中（実行結果をグラフで見せる）
@@ -46,7 +46,7 @@ await ui.form({
 
 // ガントチャート（使い方は同じ。type と列の指定が違うだけ）
 ui.chart({
-  type: "gantt", data: book.sheets["工程"].rows(),
+  type: "gantt", data: book.sheets["工程"].toRowObjects(),
   name: "作業", start: "開始", end: "終了", progress: "進捗", dependencies: "前提",
   view: "week", editable: true,
   holidays: [new Date(2026, 4, 3), { date: "2026-05-04", name: "みどりの日" }],
@@ -182,7 +182,7 @@ Excel にはガントチャートの種類がなく、ふつうは「横棒の�
   3 つ目があれば「完了日数・残り日数」の作り方とみなし、日数 = 2 つ目＋3 つ目、進捗 = 2 つ目 ÷ 日数。4 つ目以降は省く（警告）。
 - 分類の軸が反転していなければ Excel では最初の作業が下なので、行を逆順にする。
 - 判定を強制・抑止したいときは `c.toSpec({ gantt: true })` / `c.toSpec({ gantt: false })`。
-- セルの塗りつぶし（条件付き書式）で作ったガントチャートはグラフではないので対象外。表から作るなら `ui.chart({ type: "gantt", data: sheet.rows(), ... })`。
+- セルの塗りつぶし（条件付き書式）で作ったガントチャートはグラフではないので対象外。表から作るなら `ui.chart({ type: "gantt", data: sheet.toRowObjects(), ... })`。
 
 ## 4. 実装の構成
 

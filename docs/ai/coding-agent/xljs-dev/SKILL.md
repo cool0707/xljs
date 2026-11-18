@@ -93,7 +93,7 @@ answers.json（キーはどれも省略できる。種類ごとに前から順�
 const book = excel.open(xljs.args[0]);
 for (const sheet of book.sheets) {
   console.log(`# ${sheet.name}`);
-  for (const r of sheet.rows().slice(0, 10)) console.log(JSON.stringify(r));
+  for (const r of sheet.toRowObjects().slice(0, 10)) console.log(JSON.stringify(r));
 }
 ```
 

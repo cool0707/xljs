@@ -16,7 +16,7 @@ for (const h of ui.withProgress(files, { title: "集計中" })) {
   try {
     const book = excel.open(h);
     const sheet = book.sheets["明細"];
-    if (sheet) for (const r of sheet.rows()) rows.push({ ...r, ファイル: h.relativePath });
+    if (sheet) for (const r of sheet.toRowObjects()) rows.push({ ...r, ファイル: h.relativePath });
     else errors.push(`${h.relativePath}: 「明細」シートがありません`);
     book.close();
   } catch (e) {
@@ -39,7 +39,7 @@ const dest = await showSaveFilePicker({
 if (!dest) exit();
 
 const out = excel.create();
-out.addSheet("集計").write(summary).setColumnWidth("A", 24);
+out.addSheet("集計").write(summary).columns("A").width = 24;
 out.addSheet("明細").write(rows);
 if (errors.length) out.addSheet("エラー").write(errors.map((e) => [e]));
 out.save(dest);

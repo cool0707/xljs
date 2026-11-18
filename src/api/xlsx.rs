@@ -538,6 +538,41 @@ fn has_value(c: &umya_spreadsheet::Cell) -> bool {
     }
 }
 
+/// What makes a cell a used one, for the last row and column of a sheet
+/// (lastRow(), lastColumn(), dimension, append()): a value or a formula.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Used {
+    /// A cell with only a format of its own is used too.
+    pub formats: bool,
+    /// A cell whose value is empty or only spaces is not: a formula that
+    /// gives "" (and one that was never calculated).
+    pub skip_blank: bool,
+}
+
+impl Used {
+    pub(crate) fn has(self, c: &umya_spreadsheet::Cell) -> bool {
+        let filled = match c.raw_value() {
+            CellRawValue::Empty => false,
+            CellRawValue::String(s) | CellRawValue::Lazy(s) => !if self.skip_blank { s.trim().is_empty() } else { s.is_empty() },
+            _ => true,
+        };
+        filled || (!self.skip_blank && c.is_formula()) || (self.formats && *c.style() != umya_spreadsheet::Style::default())
+    }
+
+    /// The used cells of the sheet as (first column, first row, last column, last row).
+    pub(crate) fn area(self, ws: &Worksheet) -> Option<(u32, u32, u32, u32)> {
+        let mut area: Option<(u32, u32, u32, u32)> = None;
+        for c in ws.cells() {
+            if self.has(c) {
+                let (col, row) = (c.coordinate().col_num(), c.coordinate().row_num());
+                let a = area.get_or_insert((col, row, col, row));
+                *a = (a.0.min(col), a.1.min(row), a.2.max(col), a.3.max(row));
+            }
+        }
+        area
+    }
+}
+
 /// The used cells of a sheet as rows (like excelize's GetRows): every row
 /// up to the last one with a value, each up to its last value.
 pub(crate) fn rows(ws: &Worksheet) -> Vec<Vec<(u32, &umya_spreadsheet::Cell)>> {
@@ -970,20 +1005,12 @@ pub(super) fn install(n: &N) {
         })?;
         a.undefined()
     });
-    n.set("xlsxRowCount", |h, a| {
-        let sheet = a.str(1);
-        let n = with_book(h, a, |b| Ok(rows(b.sheet(&sheet).map_err(|e| a.throw(&e))?).len()))?;
-        a.ret(n as f64)
-    });
+    // xlsxDimension(book, sheet) -> the range around the used cells ("B2:E9"), "" for an empty sheet
     n.set("xlsxDimension", |h, a| {
         let sheet = a.str(1);
         let d = with_book(h, a, |b| {
-            let rs = rows(b.sheet(&sheet).map_err(|e| a.throw(&e))?);
-            let max_col = rs.iter().filter_map(|r| r.last().map(|(c, _)| *c)).max().unwrap_or(0);
-            if rs.is_empty() || max_col == 0 {
-                return Ok(String::new());
-            }
-            Ok(format!("A1:{}", cell(max_col, rs.len() as u32)))
+            let area = Used::default().area(b.sheet(&sheet).map_err(|e| a.throw(&e))?);
+            Ok(area.map(|(c1, r1, c2, r2)| format!("{}:{}", cell(c1, r1), cell(c2, r2))).unwrap_or_default())
         })?;
         a.ret(d)
     });
@@ -1034,6 +1061,9 @@ pub(super) fn install(n: &N) {
     });
 }
 
+/// The width of a column without a width of its own.
+pub(crate) const DEFAULT_COL_WIDTH: f64 = 9.140625;
+
 pub(crate) fn set_col_width(b: &mut Book, sheet: &str, c1: &str, c2: &str, w: f64) -> Result<()> {
     let (mut x, mut y) = (column_number(c1)?, column_number(c2)?);
     if y < x {
@@ -1054,5 +1084,5 @@ pub(crate) fn col_width(b: &Book, sheet: &str, col: &str) -> Result<f64> {
     let n = column_number(col)?;
     let ws = b.sheet(sheet)?;
     let name = column_name(n as i64)?;
-    Ok(ws.column_dimension(&name).map(|c| c.width()).filter(|w| *w > 0.0).unwrap_or(9.140625))
+    Ok(ws.column_dimension(&name).map(|c| c.width()).filter(|w| *w > 0.0).unwrap_or(DEFAULT_COL_WIDTH))
 }

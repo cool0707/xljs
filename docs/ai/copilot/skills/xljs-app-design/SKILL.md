@@ -130,7 +130,7 @@ db.close();
 **アプリ: 条件を変えて一覧を見る**: 条件の項目の `onChange` で `form.table` を呼ぶ（実行ボタンを押させない）。保存などの操作は `buttons`。
 
 ```js
-const all = excel.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].rows();
+const all = excel.open(path.join(xljs.scriptDir, "商品台帳.xlsx")).sheets[0].toRowObjects();
 const pick = (v) => all.filter((r) => (v.kind === "すべて" || r.区分 === v.kind) && (!v.word || String(r.品名 ?? "").includes(v.word)));
 await ui.form({
   title: "商品の検索",

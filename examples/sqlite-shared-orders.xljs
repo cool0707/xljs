@@ -19,7 +19,7 @@ const [h] = await showOpenFilePicker({
 });
 if (h) {
   const book = excel.open(h);
-  const rows = (book.sheets["明細"] ?? book.sheet(0)).rows();
+  const rows = (book.sheets["明細"] ?? book.sheet(0)).toRowObjects();
   book.close();
   const user = xljs.env("USERNAME") || "";
   // 1 回のトランザクションで取り込む（同じ伝票番号は置き換える）

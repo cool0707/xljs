@@ -935,7 +935,7 @@ declare global {
 
   /**
    * グラフの定義。ui.chart・フォームの chart 項目・画面の xljs.chart で共通。
-   * data は行オブジェクト（ui.table や sheet.rows() と同じ形。配列の行なら列は位置）で、列はキー名で指定する。
+   * data は行オブジェクト（ui.table や sheet.toRowObjects() と同じ形。配列の行なら列は位置）で、列はキー名で指定する。
    * 日付は Date（ローカルの日時）。関数（onClick / onChange 以外）は画面に渡せないので使えない
    */
   type ChartSpec = SeriesChartSpec | GanttChartSpec;
@@ -1944,6 +1944,10 @@ declare global {
     encoding?: Encoding;
     append?: boolean;
   }
+  /**
+   * 見出しをキーにした 1 行分のデータ（{ 月: "4月", 売上: 1200 }）。`sheet.toRowObjects()`・`csv.read()` が返し、
+   * `sheet.write()`・`csv.write()`・`ui.table()`・`db.insert()` に渡せる。シートの行そのもの（高さ・非表示・挿入・削除）は `sheet.rows(5)`
+   */
   interface Row {
     [column: string]: any;
   }
@@ -2219,6 +2223,84 @@ declare global {
     values: CellValue[][];
   }
 
+  /**
+   * 行全体（`sheet.rows(5)`・`sheet.rows("2:4")`。VBA の `Rows("2:4")`）。`address` は "2:4"（1 行でも "5:5"）。
+   * `setStyle` は行そのものの書式になる: いまあるセルに付き、あとから書いたセルにも付く。`getStyle()` は先頭の行の A 列のセルの書式。
+   * `values` は先頭の列から、これらの行の最終列（`lastColumn()`）まで
+   *
+   *     sheet.rows(1).setStyle({ bold: true, background: "#DDEBF7" });
+   *     sheet.rows(1).height = 24;
+   *     sheet.rows("3:5").hidden = true;
+   *     sheet.rows(1).values[0];          // 見出しの行の値（["品名", "数量", "単価"]）
+   */
+  interface RowRange extends Range {
+    /** 行の高さ（ポイント）。読むと先頭の行の高さ（高さを変えていない行はシートの既定の高さ）、代入するとすべての行に設定する */
+    height: number;
+    /** 行を非表示にするか（Excel の「非表示」）。読むと先頭の行、代入するとすべての行に設定する。非表示の行は `SUBTOTAL(109, ...)` の計算から外れる */
+    hidden: boolean;
+    /**
+     * 先頭の行の前に count 行を挿入する（Excel の「行の挿入」。既定はこの範囲の行数: `rows(5)` なら 1 行、`rows("2:4")` なら 3 行）。
+     * Excel と同じく、ずれたセルを参照する数式（ほかのシートの数式も。絶対参照の `$B$5` も）・名前の定義・印刷範囲・入力規則・条件付き書式・
+     * テーブル・グラフ・スパークライン・ピボットテーブルの元データ・フォームコントロールの参照も付いてくる。
+     * 範囲の途中に挿入すると範囲が広がる（`=SUM(B2:B9)` に 5 行目で挿入すると `=SUM(B2:B10)`）。
+     * 挿入した行は上の行（1 行目なら下の行）の書式と高さを引き継ぐ。
+     * 配列数式・ピボットテーブルを分ける挿入と、シートの外に値を押し出す挿入はエラー
+     *
+     *     sheet.rows(5).insert();       // 5 行目の前に 1 行
+     *     sheet.rows(2).insert(3);      // 2〜4 行目に空の 3 行
+     */
+    insert(count?: number): this;
+    /**
+     * これらの行を削除して下の行を詰める（Excel の「行の削除」）。
+     * 参照の付き方は insert と同じで、範囲の一部を削除すると範囲が縮み（`=SUM(B2:B9)` から 5 行目を削除すると `=SUM(B2:B8)`）、
+     * 削除したセルだけを参照していた数式は `#REF!` になる。削除した行にあった結合・入力規則・条件付き書式・メモ・図形もなくなる。
+     * テーブルの見出し行だけの削除と、配列数式・ピボットテーブルの一部の削除はエラー
+     *
+     *     sheet.rows("3:5").delete();
+     */
+    delete(): void;
+    /** 高さの指定を外す。Excel で開くと、内容（折り返した文字・フォントの大きさ）に合わせた高さになる（Excel の「行の高さの自動調整」） */
+    autoFit(): this;
+    /**
+     * これらの行の最終列: 値か数式のある最後の列の番号（なければ 0）。VBA の `Cells(5, Columns.Count).End(xlToLeft).Column`。
+     * 数えるセルは options で変えられる（Worksheet.lastRow を参照）
+     */
+    lastColumn(options?: LastCellOptions): number;
+  }
+
+  /**
+   * 列全体（`sheet.columns("C")`・`sheet.columns(3)`・`sheet.columns("A:C")`。VBA の `Columns("A:C")`）。`address` は "A:C"（1 列でも "C:C"）。
+   * `setStyle` は列そのものの書式になる: いまあるセルに付き、あとから書いたセルにも付く。`getStyle()` は先頭の列の 1 行目のセルの書式。
+   * `values` は 1 行目から、これらの列の最終行（`lastRow()`）まで
+   *
+   *     sheet.columns("C").setStyle({ format: "#,##0" });
+   *     sheet.columns("A").width = 20;
+   *     sheet.columns("D:E").hidden = true;
+   *     const last = sheet.columns("A").lastRow(); // A 列の最終行
+   */
+  interface ColumnRange extends Range {
+    /** 列の幅（半角の文字数）。読むと先頭の列の幅、代入するとすべての列に設定する */
+    width: number;
+    /** 列を非表示にするか（Excel の「非表示」）。読むと先頭の列、代入するとすべての列に設定する */
+    hidden: boolean;
+    /**
+     * 先頭の列の前に count 列を挿入する（既定はこの範囲の列数）。参照の付き方は RowRange.insert と同じ。
+     * 挿入した列は左の列（A 列なら右の列）の書式と幅を引き継ぐ。テーブルの途中に挿入すると、列は「列1」のような名前でテーブルに加わる
+     */
+    insert(count?: number): this;
+    /** これらの列を削除して右の列を詰める。参照の付き方は RowRange.delete と同じ。テーブルの列も削除される */
+    delete(): void;
+    /** 内容に合わせて列幅を調整する。全角文字は 2 文字分として計算 */
+    autoFit(options?: { min?: number; max?: number }): this;
+    /**
+     * これらの列の最終行: 値か数式のある最後の行の番号（なければ 0）。VBA の `Cells(Rows.Count, "A").End(xlUp).Row`。
+     * 数えるセルは options で変えられる（Worksheet.lastRow を参照）
+     *
+     *     sheet.columns("C").lastRow({ skipBlank: true });   // 下まで入れた =IF(A2="","",...) の結果が "" の行を数えない
+     */
+    lastRow(options?: LastCellOptions): number;
+  }
+
   interface Cell {
     readonly address: string;
     readonly row: number;
@@ -2288,6 +2370,17 @@ declare global {
     setStyle(style: CellStyle, options?: StyleOptions): this;
     /** 現在の書式（setStyle に渡せる形） */
     getStyle(): CellStyle;
+  }
+
+  /** 最終行・最終列（`lastRow()`・`lastColumn()`）で数えるセル。既定は値か数式のあるセル */
+  interface LastCellOptions {
+    /** 書式だけのセル（値も数式もなく、罫線・塗り・表示形式などが付いたセル）も数える（既定 false）。行全体・列全体に付けた書式は数えない */
+    formats?: boolean;
+    /**
+     * 値が空か空白だけのセルを数えない（既定 false）。`=IF(A2="","",...)` のように結果が "" の数式と、半角・全角の空白だけのセル。
+     * 数式の結果は保存されている値で見るので、数式を書いた・参照先を書き換えたあとは先に `book.calculate()` を呼ぶ（計算していない数式は数えない）
+     */
+    skipBlank?: boolean;
   }
 
   interface RowsOptions {
@@ -2370,14 +2463,14 @@ declare global {
     name: string;
     cell(address: string): Cell;
     cell(row: number, column: number): Cell;
-    /** 行を見出しの行をキーにしたオブジェクトにする（[{ 月: "4月", 売上: 1200 }, ...]） */
-    rows<T = Row>(options?: RowsOptions): T[];
+    /** 表を、見出しの行をキーにしたオブジェクトの配列で読む（[{ 月: "4月", 売上: 1200 }, ...]） */
+    toRowObjects<T = Row>(options?: RowsOptions): T[];
     /** 行を値の配列にする（見出しの行も 1 行として含む） */
     toArrays(options?: { text?: boolean; skipEmpty?: boolean }): CellValue[][];
     write(rows: Row[] | unknown[][], options?: WriteOptions): this;
-    /** 最終行の下に追記する */
+    /** 最終行（`lastRow()`。値か数式のある最後の行）の下に追記する */
     append(rows: Row[] | unknown[][], options?: WriteOptions): this;
-    /** 使用範囲（例 "A1:D20"） */
+    /** 値か数式のあるセルを囲む範囲（例 "A1:D20"。表が C5 から始まっていれば "C5:F20"）。空のシートは "" */
     readonly dimension: string;
     /** シート上の Excel のグラフ（開いたときのファイルにあったもの。値は読んだ時点のセルから） */
     readonly charts: ExcelChart[];
@@ -2385,48 +2478,38 @@ declare global {
     readonly comments: CellComment[];
     /** シートのメモ（セルの順）。スレッド形式のコメントの代わりに Excel が書くメモは含まない */
     readonly notes: CellNote[];
-    /** 値のある最後の行の番号 */
-    readonly rowCount: number;
-    /** 値のある最後の列の番号（空のシートは 0） */
-    readonly columnCount: number;
+    /**
+     * 最終行: 値か数式のあるセルの最後の行の番号（空のシートは 0）。列ごとの最終行は `sheet.columns("A").lastRow()`。
+     * 行・列が非表示でも、フィルターで隠れていても変わらない。数式のセルは、計算の前でも結果が "" でも数える。
+     * 書式だけのセル（罫線・塗りだけ）は数えない。数えるセルは options で変えられる
+     *
+     *     sheet.lastRow();                      // 値か数式のある最後の行
+     *     sheet.lastRow({ skipBlank: true });   // 結果が "" の数式・空白だけのセルを数えない
+     *     sheet.lastRow({ formats: true });     // 罫線・塗りだけのセルも数える
+     */
+    lastRow(options?: LastCellOptions): number;
+    /** 最終列: 値か数式のあるセルの最後の列の番号（空のシートは 0）。行ごとの最終列は `sheet.rows(1).lastColumn()`。数え方は lastRow と同じ */
+    lastColumn(options?: LastCellOptions): number;
+    /**
+     * 行全体（1 行か、"2:4" のように続いた行）。高さ・非表示・書式・挿入・削除・その行の値と最終列
+     *
+     *     sheet.rows(1).height = 24;
+     *     sheet.rows("2:4").delete();
+     *
+     * 表のデータを読むのは `toRowObjects()`・`toArrays()`
+     */
+    rows(rows: number | string): RowRange;
+    /**
+     * 列全体（"C" か 3、"A:C" のように続いた列）。幅・非表示・書式・挿入・削除・その列の値と最終行
+     *
+     *     sheet.columns("A:C").width = 12;
+     *     sheet.columns("B").insert();
+     */
+    columns(columns: string | number): ColumnRange;
     /** シートを非表示にするか（Excel の「非表示」）。ブックには表示しているシートが 1 つは要る（すべてを非表示にすると例外） */
     hidden: boolean;
-    /**
-     * row 行目の前に count 行（既定 1）を挿入する（Excel の「行の挿入」）。
-     * Excel と同じく、ずれたセルを参照する数式（ほかのシートの数式も。絶対参照の `$B$5` も）・名前の定義・印刷範囲・入力規則・条件付き書式・
-     * テーブル・グラフ・スパークライン・ピボットテーブルの元データ・フォームコントロールの参照も付いてくる。
-     * 範囲の途中に挿入すると範囲が広がる（`=SUM(B2:B9)` に 5 行目で挿入すると `=SUM(B2:B10)`）。
-     * 挿入した行は上の行（1 行目なら下の行）の書式と高さを引き継ぐ。
-     * 配列数式・ピボットテーブルを分ける挿入と、シートの外に値を押し出す挿入はエラー
-     *
-     *     sheet.insertRows(5);      // 5 行目の前に 1 行
-     *     sheet.insertRows(2, 3);   // 2〜4 行目に空の 3 行
-     */
-    insertRows(row: number, count?: number): this;
-    /**
-     * row 行目から count 行（既定 1）を削除して下の行を詰める（Excel の「行の削除」）。
-     * 参照の付き方は insertRows と同じで、範囲の一部を削除すると範囲が縮み（`=SUM(B2:B9)` から 5 行目を削除すると `=SUM(B2:B8)`）、
-     * 削除したセルだけを参照していた数式は `#REF!` になる。削除した行にあった結合・入力規則・条件付き書式・メモ・図形もなくなる。
-     * テーブルの見出し行だけの削除と、配列数式・ピボットテーブルの一部の削除はエラー
-     */
-    deleteRows(row: number, count?: number): this;
-    /**
-     * column 列（"C" か 3）の前に count 列（既定 1）を挿入する。参照の付き方は insertRows と同じ。
-     * 挿入した列は左の列（A 列なら右の列）の書式と幅を引き継ぐ。テーブルの途中に挿入すると、列は「列1」のような名前でテーブルに加わる
-     */
-    insertColumns(column: string | number, count?: number): this;
-    /** column 列（"C" か 3）から count 列（既定 1）を削除して右の列を詰める。参照の付き方は deleteRows と同じ。テーブルの列も削除される */
-    deleteColumns(column: string | number, count?: number): this;
-    /** setColumnWidth("A", 20) / setColumnWidth("A:C", 12) */
-    setColumnWidth(columns: string, width: number): this;
-    getColumnWidth(column: string): number;
-    /** 行の高さ（ポイント） */
-    setRowHeight(row: number, height: number): this;
-    /** 行の高さ（ポイント。高さを変えていない行はシートの既定の高さ） */
-    getRowHeight(row: number): number;
-    /** 内容に合わせて列幅を調整する（省略時は全列）。全角文字は 2 文字分として計算 */
-    autoFit(columns?: string, options?: { min?: number; max?: number }): this;
-    autoFit(options: { min?: number; max?: number }): this;
+    /** 内容に合わせてすべての列の幅を調整する。全角文字は 2 文字分として計算。一部の列だけなら `sheet.columns("A:C").autoFit()` */
+    autoFit(options?: { min?: number; max?: number }): this;
     /** range("A1:D10") */
     range(address: string): Range;
     /** 書式を付ける（既存の書式に重ねる。options.replace で置き換え）。setStyle("A1:D1", { bold: true, background: "#DDEBF7", border: "thin" }) */
@@ -2638,7 +2721,7 @@ declare global {
     save(dest?: PathLike): this;
     /**
      * ブックのすべての数式を計算し直し、結果を各セルに入れる（Excel の「再計算」）。
-     * セルの値を書き換えたあと・数式を書いたあとに、数式の結果を `value` や `rows()` で読む前、
+     * セルの値を書き換えたあと・数式を書いたあとに、数式の結果を `value` や `toRowObjects()` で読む前、
      * 計算済みの値をファイルに入れて保存したいときに呼ぶ（`toPdf()` は書き換えの影響を受ける数式を自動で計算する）。
      * 計算できない数式（マクロやアドインの関数、ほかのブックへの参照など）は保存されていた値のまま残し、
      * 戻り値の `skipped` で知らせる。

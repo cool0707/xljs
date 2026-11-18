@@ -61,7 +61,7 @@ if (!dir) exit();
 const rows = [];
 for (const h of ui.withProgress(dir.walk("*.xlsx"), { title: "集計中" })) {
   const book = excel.open(h);
-  for (const r of book.sheets["明細"]?.rows() ?? []) rows.push({ ...r, ファイル: h.relativePath });
+  for (const r of book.sheets["明細"]?.toRowObjects() ?? []) rows.push({ ...r, ファイル: h.relativePath });
 }
 
 const dest = await showSaveFilePicker({ suggestedName: "集計結果.xlsx" });

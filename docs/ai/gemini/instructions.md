@@ -57,7 +57,7 @@ path.join(path.dirname(list[0]), "出力.xlsx");
 
 const book = excel.open(list[0]);
 const sheet = book.sheets["明細"] ?? book.sheets[0];
-const rows = sheet.rows();                       // 1 行目が見出しのオブジェクト配列（{ header: 3 }）
+const rows = sheet.toRowObjects();               // 1 行目が見出しのオブジェクト配列（{ header: 3 }）
 sheet.cell("B2").value;                          // number / string / boolean / Date / null
 book.close();
 
@@ -98,7 +98,7 @@ await ui.form({
       try {
         const book = excel.open(h);
         const sheet = book.sheets[v.sheet];
-        if (sheet) for (const r of sheet.rows()) rows.push({ ファイル: h.relativePath, ...r });
+        if (sheet) for (const r of sheet.toRowObjects()) rows.push({ ファイル: h.relativePath, ...r });
         else form.error(`${h.relativePath}: 「${v.sheet}」シートがありません`);
         book.close();
       } catch (e) {

@@ -52,7 +52,7 @@
 
 - 1 行ずつ訳さない。まず**マクロが何をしているか**を箇条書きで説明し、xljs の流儀で書き直す（集計・転記のマクロはツール: フォームでファイルを選ぶ → 読む → 処理 → 新しいファイルに保存。ユーザーフォームやシートで入力・検索・登録するマクロはアプリ）。
 - xljs は開いている Excel を操作しない。`ThisWorkbook`・`ActiveSheet` のデータはそのブックを選ばせて読む。画面制御（`ScreenUpdating` など）は消す。
-- 対応: `MsgBox` → `alert` / `confirm`、`InputBox` → `prompt`、ユーザーフォーム → `ui.form`、ログオン中のユーザー（`Environ("USERNAME")`・`Application.UserName`）→ `ad.me()`、`Range` / `Cells` → `sheet.cell`、最終行までのループ → `sheet.rows()`、`Dir` → `fs.walk`、`VLookup` / `Dictionary` → `Map`、`Format` → `dayjs().format`。
+- 対応: `MsgBox` → `alert` / `confirm`、`InputBox` → `prompt`、ユーザーフォーム → `ui.form`、ログオン中のユーザー（`Environ("USERNAME")`・`Application.UserName`）→ `ad.me()`、`Range` / `Cells` → `sheet.cell`、最終行までのループ → `sheet.toRowObjects()`、`Dir` → `fs.walk`、`VLookup` / `Dictionary` → `Map`、`Format` → `dayjs().format`。
 - シートのイベント、ボタン・選択範囲の操作、印刷、グラフ・ピボットの作成、他のアプリの操作は再現できない。はっきり伝えて代わりの方法を示す。PDF 出力（`ExportAsFixedFormat`）は `await book.toPdf("a.pdf")` でできる。PDF の結合・ページの削除・挿入・文字の追加は `pdf.open(p)` の `append` `insert` `removePages` `addText` `save`（リファレンス参照）。
 
 # リファレンス（要点）
@@ -91,7 +91,7 @@ path.join(path.dirname(h), "出力.xlsx");
 ```js
 const book = excel.open(h);
 const sheet = book.sheets["明細"] ?? book.sheets[0];
-const rows = sheet.rows();                      // 1 行目を見出しにしたオブジェクトの配列（{ header: 3 } で 3 行目）
+const rows = sheet.toRowObjects();              // 1 行目を見出しにしたオブジェクトの配列（{ header: 3 } で 3 行目）
 const grid = sheet.toArrays();                  // 2 次元配列
 sheet.cell("B2").value;                         // number / string / boolean / Date / null。cell(2, 3) も可
 book.close();
@@ -221,7 +221,7 @@ await ui.form({
       try {
         const book = excel.open(h);
         const sheet = book.sheets[v.sheet];
-        if (sheet) for (const r of sheet.rows()) rows.push({ ファイル: h.relativePath, ...r });
+        if (sheet) for (const r of sheet.toRowObjects()) rows.push({ ファイル: h.relativePath, ...r });
         else errors.push(`${h.relativePath}: 「${v.sheet}」シートがありません`);
         book.close();
       } catch (e) {

@@ -71,7 +71,7 @@ export async function aggregate() {
       try {
         const book = excel.open(h);
         const sheet = book.sheets["明細"];
-        if (sheet) for (const r of sheet.rows()) rows.push({ ...r, ファイル: h.relativePath });
+        if (sheet) for (const r of sheet.toRowObjects()) rows.push({ ...r, ファイル: h.relativePath });
         else errors.push(`${h.relativePath}: 「明細」シートがありません`);
         book.close();
       } catch (e) {
@@ -119,7 +119,7 @@ export async function save() {
   });
   if (!dest) return null;
   const out = excel.create();
-  out.addSheet("集計").write(summary).setColumnWidth("A", 24);
+  out.addSheet("集計").write(summary).columns("A").width = 24;
   out.addSheet("明細").write(rows);
   out.save(dest);
   shell.showItemInFolder(dest);

@@ -5849,6 +5849,15 @@
     }
     get address() { return this._address; }
     get sheet() { return this._sheet; }
+    /** The cells to read: [firstColumn, firstRow, lastColumn, lastRow]. */
+    _bounds() {
+      const [a, b] = this._address.split(":");
+      const [c1, r1] = native.xlsxParseRef(a);
+      const [c2, r2] = native.xlsxParseRef(b || a);
+      return [Math.min(c1, c2), Math.min(r1, r2), Math.max(c1, c2), Math.max(r1, r2)];
+    }
+    /** The address as cells ("A2:XFD4" for the rows 2:4). */
+    _cells() { return this._address; }
     /** Applies (merges) a style; opts.replace discards the existing style first. */
     setStyle(spec, opts = {}) {
       native.xlsxStyle(this._sheet._book._h, this._sheet._name, this._address, normStyle(spec), !!opts.replace);
@@ -5858,29 +5867,104 @@
     style(spec, opts) { return this.setStyle(spec, opts); }
     /** The style of the range's top-left cell, as setStyle() takes it. */
     getStyle() {
-      return flatStyle(native.xlsxGetStyle(this._sheet._book._h, this._sheet._name, this._address.split(":")[0]));
+      return flatStyle(native.xlsxGetStyle(this._sheet._book._h, this._sheet._name, this._cells().split(":")[0]));
     }
-    merge() { native.xlsxMerge(this._sheet._book._h, this._sheet._name, this._address, false); return this; }
-    unmerge() { native.xlsxMerge(this._sheet._book._h, this._sheet._name, this._address, true); return this; }
+    merge() { native.xlsxMerge(this._sheet._book._h, this._sheet._name, this._cells(), false); return this; }
+    unmerge() { native.xlsxMerge(this._sheet._book._h, this._sheet._name, this._cells(), true); return this; }
     /** Values of the range as a 2-D array; assigning writes from the top-left cell. */
     get values() {
-      const [a, b] = this._address.split(":");
-      const [c1, r1] = native.xlsxParseRef(a);
-      const [c2, r2] = native.xlsxParseRef(b || a);
+      const [c1, r1, c2, r2] = this._bounds();
       const rows = this._sheet.toArrays();
       const out = [];
-      for (let r = Math.min(r1, r2); r <= Math.max(r1, r2); r++) {
+      for (let r = r1; r <= r2; r++) {
         const row = rows[r - 1] || [];
         const line = [];
-        for (let c = Math.min(c1, c2); c <= Math.max(c1, c2); c++) line.push(c - 1 < row.length ? row[c - 1] : null);
+        for (let c = c1; c <= c2; c++) line.push(c - 1 < row.length ? row[c - 1] : null);
         out.push(line);
       }
       return out;
     }
     set values(rows) {
-      native.xlsxWriteRows(this._sheet._book._h, this._sheet._name, this._address.split(":")[0], rows.map((r) => Array.from(r, plainDate)));
+      native.xlsxWriteRows(this._sheet._book._h, this._sheet._name, this._cells().split(":")[0], Array.from(rows, (r) => Array.from(r, plainDate)));
     }
     [inspectSymbol]() { return `Range ${this._sheet._name}!${this._address}`; }
+  }
+
+  /**
+   * The last used row in the columns first..last (columns: true), or the last used column in the
+   * rows. A cell with a value or a formula is used. opts: { formats: true } counts the cells with
+   * only a format too, { skipBlank: true } leaves out the cells whose value is empty or only spaces
+   * (a formula that gives "").
+   */
+  function lastUsed(sheet, columns, first, last, opts) {
+    return native.xlsxLastUsed(sheet._book._h, sheet._name, columns, first, last, !!(opts && opts.formats), !!(opts && opts.skipBlank));
+  }
+
+  /** Whole rows: sheet.rows(5), sheet.rows("2:4"). */
+  class RowRange extends Range {
+    constructor(sheet, first, last) {
+      super(sheet, `${first}:${last}`);
+      define(this, "_first", first);
+      define(this, "_last", last);
+    }
+    _bounds() { return [1, this._first, this.lastColumn(), this._last]; }
+    _cells() { return `A${this._first}:XFD${this._last}`; }
+    /** The height in points (of the first row); assigning sets it for every row. */
+    get height() { return native.xlsxGetRowHeight(this._sheet._book._h, this._sheet._name, this._first); }
+    set height(v) { native.xlsxSetRowHeight(this._sheet._book._h, this._sheet._name, this._first, Number(v), this._last); }
+    /** Whether the (first) row is hidden; assigning hides or shows every row. */
+    get hidden() { return native.xlsxLinesHidden(this._sheet._book._h, this._sheet._name, false, this._first, this._last, null); }
+    set hidden(v) { native.xlsxLinesHidden(this._sheet._book._h, this._sheet._name, false, this._first, this._last, !!v); }
+    /** Inserts count rows (default: as many as the range has) before the first row. */
+    insert(count) {
+      editLines(this._sheet, "rows().insert", false, this._first, count ?? this._last - this._first + 1, true);
+      return this;
+    }
+    /** Deletes the rows; the rows below move up. */
+    delete() { editLines(this._sheet, "rows().delete", false, this._first, this._last - this._first + 1, false); }
+    /** Gives the height back to Excel, which fits the rows to their content. */
+    autoFit() {
+      native.xlsxSetRowHeight(this._sheet._book._h, this._sheet._name, this._first, null, this._last);
+      return this;
+    }
+    /** The last used column in the rows (0 when they are empty). opts: see lastUsed(). */
+    lastColumn(opts) { return lastUsed(this._sheet, false, this._first, this._last, opts); }
+    [inspectSymbol]() { return `RowRange ${this._sheet._name}!${this._address}`; }
+  }
+
+  /** Whole columns: sheet.columns("C"), sheet.columns(3), sheet.columns("A:C"). */
+  class ColumnRange extends Range {
+    constructor(sheet, first, last) {
+      super(sheet, `${native.xlsxColumnName(first)}:${native.xlsxColumnName(last)}`);
+      define(this, "_first", first);
+      define(this, "_last", last);
+    }
+    _bounds() { return [this._first, 1, this._last, this.lastRow()]; }
+    _cells() { const [a, b] = this._address.split(":"); return `${a}1:${b}1048576`; }
+    /** The width in characters (of the first column); assigning sets it for every column. */
+    get width() { return native.xlsxGetColWidth(this._sheet._book._h, this._sheet._name, this._address.split(":")[0]); }
+    set width(v) {
+      const [a, b] = this._address.split(":");
+      native.xlsxSetColWidth(this._sheet._book._h, this._sheet._name, a, b, Number(v));
+    }
+    /** Whether the (first) column is hidden; assigning hides or shows every column. */
+    get hidden() { return native.xlsxLinesHidden(this._sheet._book._h, this._sheet._name, true, this._first, this._last, null); }
+    set hidden(v) { native.xlsxLinesHidden(this._sheet._book._h, this._sheet._name, true, this._first, this._last, !!v); }
+    /** Inserts count columns (default: as many as the range has) before the first column. */
+    insert(count) {
+      editLines(this._sheet, "columns().insert", true, this._first, count ?? this._last - this._first + 1, true);
+      return this;
+    }
+    /** Deletes the columns; the columns to the right move left. */
+    delete() { editLines(this._sheet, "columns().delete", true, this._first, this._last - this._first + 1, false); }
+    /** Sets the widths from the cell contents. opts: { min = 6, max = 60 } */
+    autoFit(opts = {}) {
+      native.xlsxAutoFit(this._sheet._book._h, this._sheet._name, this._first, this._last, opts.min !== undefined ? opts.min : 6, opts.max !== undefined ? opts.max : 60);
+      return this;
+    }
+    /** The last used row in the columns (0 when they are empty). opts: see lastUsed(). */
+    lastRow(opts) { return lastUsed(this._sheet, true, this._first, this._last, opts); }
+    [inspectSymbol]() { return `ColumnRange ${this._sheet._name}!${this._address}`; }
   }
 
   /** One comment of a thread (the first or a reply), read again on each access. */
@@ -5990,6 +6074,16 @@
     return n;
   }
 
+  /** The rows of rows(5) / rows("2:4"), the columns of columns("C") / columns(3) / columns("A:C"): [first, last]. */
+  function lineSpan(v, columns, who) {
+    const parts = typeof v === "string" ? v.replace(/\$/g, "").split(":") : [v];
+    if (parts.length > 2) throw new RangeError(T("xlsx.edit.badLine", who, String(v)));
+    const a = lineNumber(parts[0], columns, who);
+    const b = parts.length === 2 ? lineNumber(parts[1], columns, who) : a;
+    if (Math.max(a, b) > (columns ? 16384 : 1048576)) throw new RangeError(T("xlsx.edit.badLine", who, String(v)));
+    return [Math.min(a, b), Math.max(a, b)];
+  }
+
   function editLines(sheet, who, columns, at, count, insert) {
     const n = count === undefined || count === null ? 1 : Number(count);
     if (!Number.isInteger(n) || n < 0) throw new RangeError(T("xlsx.edit.badCount", who, String(count)));
@@ -6019,7 +6113,7 @@
      * Rows as objects keyed by the header row.
      * opts: { header = 1 (row number), columns, skipEmpty = true, text = false }
      */
-    rows(opts = {}) {
+    toRowObjects(opts = {}) {
       const rows = native.xlsxReadAll(this._book._h, this._name, !!opts.text);
       const headerRow = opts.header === undefined ? 1 : opts.header;
       let keys, body;
@@ -6038,8 +6132,18 @@
         return o;
       });
     }
-    /** Alias of rows() (not documented). */
-    toObjects(opts) { return this.rows(opts); }
+    /** Alias of toRowObjects() (not documented). */
+    toObjects(opts) { return this.toRowObjects(opts); }
+    /**
+     * Whole rows: rows(5), rows("2:4"). Without a row (rows(), rows({ header: 3 })) it is the
+     * earlier name of toRowObjects() (not documented).
+     */
+    rows(a) {
+      if (typeof a === "number" || typeof a === "string") return new RowRange(this, ...lineSpan(a, false, "rows"));
+      return this.toRowObjects(a ?? undefined);
+    }
+    /** Whole columns: columns("C"), columns(3), columns("A:C"). */
+    columns(a) { return new ColumnRange(this, ...lineSpan(a, true, "columns")); }
     /**
      * Writes rows (array of objects or array of arrays) starting at opts.start ("A1").
      * Objects get a header row unless opts.header === false.
@@ -6088,7 +6192,7 @@
     }
     /** Appends rows below the last used row (objects are written without a header). */
     append(rows, opts = {}) {
-      const next = native.xlsxRowCount(this._book._h, this._name) + 1;
+      const next = this.lastRow() + 1;
       const header = opts.header !== undefined ? opts.header : next === 1;
       return this.write(rows, Object.assign({}, opts, { start: "A" + next, header }));
     }
@@ -6113,15 +6217,17 @@
     /** Writes the sheet as Excel would print it to a PDF file (WebView2); resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this._book, dest, options, [this._name]); }
     get dimension() { return native.xlsxDimension(this._book._h, this._name); }
-    get rowCount() { return native.xlsxRowCount(this._book._h, this._name); }
+    /** The number of the last used row (0 for an empty sheet). opts: see lastUsed(). */
+    lastRow(opts) { return lastUsed(this, true, 1, 16384, opts); }
     /** The number of the last used column (0 for an empty sheet). */
-    get columnCount() {
-      const d = this.dimension;
-      return d ? native.xlsxParseRef(d.split(":")[1] || d)[0] : 0;
-    }
+    lastColumn(opts) { return lastUsed(this, false, 1, 1048576, opts); }
+    /** The earlier names of lastRow() and lastColumn() (not documented). */
+    get rowCount() { return this.lastRow(); }
+    get columnCount() { return this.lastColumn(); }
     /** Whether the sheet is hidden (Excel's "非表示"); assigning hides or shows it. */
     get hidden() { return native.xlsxSheetHidden(this._book._h, this._name, null); }
     set hidden(v) { native.xlsxSheetHidden(this._book._h, this._name, !!v); }
+    // The earlier forms of rows(n).insert() and the like, of columns(c).width and rows(n).height (not documented).
     /** Inserts count rows before row (1-based); what refers to the cells moves with them, as in Excel. */
     insertRows(row, count = 1) { return editLines(this, "insertRows", false, row, count, true); }
     deleteRows(row, count = 1) { return editLines(this, "deleteRows", false, row, count, false); }

@@ -19,7 +19,7 @@ for (const c of charts) {
 }
 
 // 表からグラフを作る（行オブジェクトの配列。列はキー名で指定）
-const rows = book.sheets[0].rows();
+const rows = book.sheets[0].toRowObjects();
 if (rows.length && Object.keys(rows[0]).length >= 2) {
   const [x, ...ys] = Object.keys(rows[0]);
   const numeric = ys.filter((k) => rows.some((r) => typeof r[k] === "number"));
