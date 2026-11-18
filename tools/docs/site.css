@@ -118,7 +118,7 @@ body.home nav.toc { display: none; }
 body.home main { max-width: 1180px; }
 .hero { padding: 28px 0 8px; display: flex; align-items: center; gap: 32px; }
 .hero-text { flex: 1 1 auto; min-width: 0; }
-.hero-logo { flex: 0 0 auto; width: clamp(140px, 22vw, 260px); height: auto; }
+.hero-logo { flex: 0 0 auto; width: clamp(140px, 22vw, 260px); height: auto; filter: drop-shadow(-4px 2px 12px rgba(160, 255, 0, 0.25)) drop-shadow(4px 4px 16px rgba(0, 200, 80, 0.3)); }
 @media (max-width: 900px) { .hero-logo { display: none; } }
 .badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .badge { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--fg-soft); background: var(--bg-soft); }
