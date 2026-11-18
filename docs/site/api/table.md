@@ -14,7 +14,25 @@ const picked = await ui.table(files, { title: "処理するファイル", select
 // 選んだ行（元のオブジェクト）の配列。キャンセルは []。1 行だけなら selectable: "single"
 ```
 
-`columns` は省略するとオブジェクトのキー（配列の行は A, B, C…）。`{ key, label, width }` でも指定できます。
+`columns` は省略するとオブジェクトのキー（配列の行は A, B, C…）。`{ key, label, width, format }` でも指定できます。
+
+## 表示形式
+
+列の `format` に Excel の表示形式（セルの書式設定の「ユーザー定義」と同じ書き方）を書くと、その列の数値・日付を書式どおりに表示します。`[赤]`・`[Red]` の色、`;` で区切った正・負・ゼロ・文字列の区画、`[>=1000]` のような条件も使えます。
+
+```js
+ui.table(rows, {
+  columns: [
+    "顧客名",
+    { key: "金額", format: '#,##0"円"' },              // 1,234,567円
+    { key: "前年比", format: "0.0%;[赤]-0.0%" },        // 12.3%（マイナスは赤）
+    { key: "受注日", format: 'yyyy"年"m"月"d"日"(aaa)' }, // 2024年1月5日(金)
+    { key: "担当", format: '@" 様"' },                   // 山田 様
+  ],
+});
+```
+
+変わるのは表示だけです。並べ替え・絞り込み・コピーはもとの値で行い、［Excel で保存］では列の表示形式として保存します。フォームの `table` 項目でも同じ `format` が使え、編集できるセルは入力中だけ書式を付けずにもとの値を表示します（Excel と同じ）。
 
 表示のみの表（`selectable` なし）が返す `view` の `view.update(rows, columns?)` で、表示する行（と列）を差し替えられます（並べ替え・絞り込みは解除。コンソールでは表をもう一度出力）。`view.close()` で閉じます。ウィンドウのオプション（`title` `width` `height` `resizable` `titleBar` `icon`）と見た目の `accent` `background` `radius` はフォームと同じです（[フォーム](form.md)）。
 

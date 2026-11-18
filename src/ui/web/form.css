@@ -117,6 +117,8 @@ main { padding: var(--sp-xxl) var(--sp-xxl) var(--sp-xxl); }
   color: inherit;
 }
 .ctl .ftable td.edit.number input { text-align: right; }
+/* While typing, a cell shows its plain value without the number format's color (as in Excel). */
+.ctl .ftable td.edit input:focus { color: var(--fg); }
 /* select / combobox cells: typing filters the options (cellCombo); the arrow on hover and focus. */
 .ctl .ftable td.edit input.cell-combo { padding-right: 22px; background-repeat: no-repeat; background-position: right 4px center; }
 .ctl .ftable td.edit input.cell-combo:is(:hover, :focus):not(:disabled) {

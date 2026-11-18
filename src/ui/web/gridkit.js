@@ -2,8 +2,9 @@
 // Shared parts of the built-in tables (table.js: ui.table, form.js: table
 // fields): the column headings (sort mark, filter and menu buttons, resize
 // grip), the column menu (pin, freeze, hide, the list of columns), the
-// column filters, the layout of pinned (sticky) columns and the conditional
-// formats of cells (the formats option, compiled by prelude.js).
+// column filters, the layout of pinned (sticky) columns, the conditional
+// formats of cells (the formats option, compiled by prelude.js) and the
+// columns' Excel number formats (display, with numfmt.js).
 //
 // Cells are wire values: numbers, strings (dates as "yyyy-mm-dd" or
 // "yyyy-mm-dd hh:mm:ss"), booleans or null.
@@ -53,6 +54,22 @@ const GridKit = (() => {
     return t === "" ? NaN : Number(t);
   };
   const DATE = /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}(:\d{2})?)?$/;
+
+  /**
+   * A cell shown with a column's Excel number format (the column's format
+   * option): { text, color } (color: the format's [Red] etc., or null), or
+   * null to show the value as it is. Dates come as their wire strings.
+   */
+  function display(fmt, v, lang) {
+    if (!fmt || !window.xljsNumfmt || v === null || v === undefined || v === "" || typeof v === "boolean") return null;
+    let x = v;
+    if (typeof v === "string" && DATE.test(v)) {
+      const [y, mo, d, h = 0, mi = 0, sec = 0] = v.split(/[-: ]/).map(Number);
+      x = new Date(y, mo - 1, d, h, mi, sec);
+      x.setFullYear(y);
+    }
+    return window.xljsNumfmt.cell(fmt, x, lang || "ja");
+  }
 
   /** The kind of a column from its values (rows: arrays of cells): "number", "date" or "text". */
   function kindOf(rows, c) {
@@ -504,7 +521,8 @@ const GridKit = (() => {
     const get = (k) => (s && s[k] !== undefined ? s[k] : rowStyle ? rowStyle[k] : undefined);
     const st = cell.style;
     const fg = get("color"), bg = get("background");
-    st.color = fg && !selected ? fg : "";
+    // The color of the column's number format ([Red]) unless a format gives one.
+    st.color = selected ? "" : fg || cell.dataset.nfColor || "";
     st.fontWeight = get("bold") ? "700" : "";
     st.fontStyle = get("italic") ? "italic" : "";
     const deco = [get("underline") ? "underline" : "", get("strike") ? "line-through" : ""].filter(Boolean).join(" ");
@@ -528,6 +546,6 @@ const GridKit = (() => {
 
   return {
     svg, kindOf, OPS, filterOn, match, Columns, stickyLayout, stick, heading, resize,
-    columnMenu, filterPopup, closePopup, stats, rowFormats, paint,
+    columnMenu, filterPopup, closePopup, stats, rowFormats, paint, display,
   };
 })();

@@ -2,11 +2,14 @@
 // Built-in table page (ui.table): virtual scrolling, sort, filter (the box
 // above and per column), column resize, pinned / frozen / hidden columns
 // (gridkit.js), conditional formats, copy as TSV, save as CSV/Excel (done by
-// the script) and row selection. Cells are numbers, strings, booleans or null.
+// the script) and row selection. Cells are numbers, strings, booleans or null,
+// shown with the columns' Excel number formats (format; sorting, filtering,
+// searching and copying use the values).
 const $ = (id) => document.getElementById(id);
 
 let texts = {};
-let columns = [];   // [{ label, width }]
+let columns = [];   // [{ label, width, format }]
+let lang = "ja";
 let widths = [];    // px per column (by index in columns)
 let cols = new GridKit.Columns(0); // hidden, pinned and frozen columns
 let order = [];     // the columns shown: [{ c, side }] (GridKit.Columns.order)
@@ -45,6 +48,7 @@ function init(m) {
   texts = m.texts || {};
   texts.grid = texts.grid || {};
   columns = m.columns || [];
+  lang = m.lang || "ja";
   total = m.total || 0;
   select = m.select || "";
   dblclick = !!m.dblclick;
@@ -93,6 +97,11 @@ function addRows(chunk, chunkHits) {
 function cellText(v) {
   if (v === null || v === undefined) return "";
   return String(v);
+}
+
+/** A cell as shown: { text, color } (with the column's number format when it applies). */
+function cellShown(c, v) {
+  return GridKit.display(columns[c] && columns[c].format, v, lang) || { text: cellText(v), color: null };
 }
 
 function rowText(r) {
@@ -187,7 +196,7 @@ function measure(texts, header) {
 function columnWidth(i, list) {
   const texts = new Set();
   for (const ri of list) {
-    const t = cellText(rows[ri][i]);
+    const t = cellShown(i, rows[ri][i]).text;
     if (t.length > 80) return 360;
     texts.add(t);
   }
@@ -323,8 +332,9 @@ function render() {
       const td = document.createElement("div");
       td.className = "cell" + (typeof v === "number" ? " num" : "");
       td.dataset.c = c;
-      const t = cellText(v);
+      const { text: t, color } = cellShown(c, v);
       td.textContent = t;
+      if (color) { td.dataset.nfColor = color; if (!sel) td.style.color = color; }
       if (t.length > 20) td.title = t;
       if (sticky[k]) GridKit.stick(td, sticky[k]);
       if (fm) GridKit.paint(td, fm[0], fm[1].get(c), sel);

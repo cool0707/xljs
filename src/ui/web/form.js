@@ -694,6 +694,9 @@ function flushCells() {
 const fill = (t, ...a) => String(t || "").replace(/\{(\d)\}/g, (_, i) => a[i]);
 
 /** The input of an editable cell (e: the column's { type, options, custom, min, max, step }). */
+/** The text typed in a cell (not the formatted one shown while it is not focused). */
+const typedText = (input) => (input._raw !== undefined ? input._raw : input.value);
+
 function cellInput(e, v) {
   if (e.type === "select" || e.type === "combobox") return cellCombo(e, v);
   let i;
@@ -848,6 +851,7 @@ function cellCombo(e, v) {
 function tableControl(f, id) {
   let cols = f.table.columns, rows = f.table.rows, select = f.table.select, edit = f.table.editable || null;
   let specWidths = f.table.widths || [], formats = f.table.formats || [], hits = f.table.hits || [];
+  let numFmts = f.table.numFmts || []; // per column: an Excel number format (the column's format), or null
   let order = [], sortCol = -1, sortDir = 1, boxes = [], cellInputs = [];
   let off = false; // disabled by the script
   const locked = () => state !== "input" || off;
@@ -961,7 +965,7 @@ function tableControl(f, id) {
     wrap.append(probe);
     let w = 0;
     const texts = new Set([cols[k]]);
-    for (const r of rows) texts.add(r[k] === null || r[k] === undefined ? "" : String(r[k]));
+    for (const r of rows) texts.add(cellShown(k, r[k]).text);
     for (const t of texts) {
       probe.textContent = t;
       w = Math.max(w, probe.offsetWidth);
@@ -1002,7 +1006,7 @@ function tableControl(f, id) {
   /** Sends the value of an editable cell; text inputs wait until typing pauses. */
   function changed(i, k, input, now) {
     const e = edit[k];
-    const v = e.type === "checkbox" ? input.checked : input.cellValue ? input.cellValue() : input.value;
+    const v = e.type === "checkbox" ? input.checked : input.cellValue ? input.cellValue() : typedText(input);
     rows[i][k] = e.type === "number" && v.trim() !== "" && isFinite(v) ? Number(v) : v;
     paintAll();
     const key = i + ":" + k;
@@ -1019,6 +1023,35 @@ function tableControl(f, id) {
       pendingCells.set(key, send);
       input._timer = setTimeout(send, 250);
     }
+  }
+
+  /** A cell as shown: { text, color } (with the column's number format when it applies to the value). */
+  function cellShown(k, v) {
+    const d = GridKit.display(numFmts[k], v, lang);
+    return d || { text: v === null || v === undefined ? "" : String(v), color: null };
+  }
+
+  /**
+   * A text or number cell with a number format shows the formatted value
+   * and, while focused, the value as it is (as in Excel). input._raw keeps
+   * the typed text while the formatted one is shown.
+   */
+  function formatInput(input, i, k) {
+    const show = () => {
+      input._raw = input.value;
+      const d = GridKit.display(numFmts[k], rows[i][k], lang);
+      input.closest("td").dataset.nfColor = (d && d.color) || "";
+      input.closest("td").style.color = (d && d.color) || "";
+      if (d) input.value = d.text;
+      else input._raw = undefined;
+    };
+    input.addEventListener("focus", () => {
+      if (input._raw !== undefined) input.value = input._raw;
+      input._raw = undefined;
+    });
+    // After the change event, which reads the typed text.
+    input.addEventListener("blur", show);
+    return show;
   }
 
   function render() {
@@ -1054,9 +1087,11 @@ function tableControl(f, id) {
           if (text) input.addEventListener("change", () => changed(i, k, input, true));
           cellInputs.push(input);
           td = el("td", { className: "edit " + edit[k].type }, input);
+          if (numFmts[k] && (edit[k].type === "text" || edit[k].type === "number")) formatInput(input, i, k)();
         } else {
-          const t = v === null ? "" : String(v);
+          const { text: t, color } = cellShown(k, v);
           td = el("td", { className: "cell" + (typeof v === "number" ? " num" : ""), textContent: t });
+          if (color) { td.dataset.nfColor = color; td.style.color = color; }
           if (t.length > 20) td.dataset.tip = t;
         }
         td.dataset.col = k;
@@ -1072,11 +1107,11 @@ function tableControl(f, id) {
 
   /** Applies the conditional formats to the cells shown. */
   function paintAll() {
-    if (!formats.length) return;
-    stats = GridKit.stats(formats, rows, cols.length);
+    if (!formats.length && !numFmts.some(Boolean)) return;
+    stats = formats.length ? GridKit.stats(formats, rows, cols.length) : null;
     body.querySelectorAll("tr[data-i]").forEach((tr) => {
       const i = Number(tr.dataset.i);
-      const fm = GridKit.rowFormats(formats, rows[i], hits[i], stats);
+      const fm = formats.length ? GridKit.rowFormats(formats, rows[i], hits[i], stats) : [null, new Map()];
       const on = selected.has(i);
       tr.querySelectorAll(":scope > td[data-col], :scope > td.fill").forEach((td) => GridKit.paint(td, fm[0], td.dataset.col ? fm[1].get(Number(td.dataset.col)) : null, on));
     });
@@ -1180,7 +1215,7 @@ function tableControl(f, id) {
       // The same columns keep how they are shown; others start again.
       const same = m.columns.length === cols.length && m.columns.every((c, k) => c === cols[k]);
       cols = m.columns; rows = m.rows; select = m.select; edit = m.editable || null;
-      specWidths = m.widths || []; formats = m.formats || []; hits = m.hits || [];
+      specWidths = m.widths || []; formats = m.formats || []; hits = m.hits || []; numFmts = m.numFmts || [];
       wrap.classList.toggle("editable", !!edit);
       selected.clear();
       errors.clear();

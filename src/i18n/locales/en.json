@@ -1244,6 +1244,7 @@
     "table.saved": "Saved: {0}",
     "table.empty": "No rows",
     "table.badHandler": "ui.table: {0} must be a function",
+    "table.badNumberFormat": "The format of column \"{0}\" must be a string of an Excel number format (such as #,##0\"円\")",
     "table.badFormats": "{0}: formats must be an array of objects",
     "table.badFormatKey": "{0}: unknown key \"{1}\" in formats",
     "table.badFormatColumn": "{0}: formats names column \"{1}\", which the table does not have",

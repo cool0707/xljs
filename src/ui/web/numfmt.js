@@ -1,9 +1,11 @@
 "use strict";
 // A small Excel number format for the pages (chart axes, tooltips and
-// labels): sections (positive;negative;zero), literals ("円", \x),
-// currency ([$¥-411]), digits (0 # ?), thousands separators and scaling,
-// decimals, percent and dates. What it does not understand gives null
-// (the chart's own formatting). The script's side is src/api/numfmt.rs.
+// labels, the cells of tables): sections (positive;negative;zero;text) and
+// conditions ([>=1000]), colors ([Red], [赤]), literals ("円", \x), currency
+// ([$¥-411]), digits (0 # ?), thousands separators and scaling, decimals,
+// percent and dates. What it does not understand gives null (the chart's own
+// formatting, the table's plain value). The script's side is
+// src/api/numfmt.rs.
 (() => {
   const DATE = /(^|[^"\\])(yy|m|d|h|s|aaa|ddd)/i;
 
@@ -45,6 +47,7 @@
         else if (/^h+$|^m+$|^s+$/i.test(inner)) code += inner; // elapsed time: shown as the plain unit
       } else if (/[0#?.,%]/.test(c) || (/[Ee]/.test(c) && /^[+-]/.test(s.slice(i + 1))) || (/[+-]/.test(c) && /[Ee]$/.test(code))) code += c;
       else if (/[ymdhsaAP/:]/i.test(c)) code += c;
+      else if (c === "@") { flush(); out.push({ code: c }); }
       else { flush(); lit(c); }
     }
     flush();
@@ -129,24 +132,63 @@
     return d;
   };
 
-  /**
-   * v formatted with the Excel format fmt, or null when the format is
-   * empty, "General" or text ("@"), or v is not a number or date.
-   */
-  function format(fmt, v, lang) {
-    if (!fmt || /^(general|@)$/i.test(fmt.trim())) return null;
-    const isDate = v instanceof Date;
-    if (!isDate && (typeof v !== "number" || !isFinite(v))) return null;
-    const secs = sections(fmt);
-    let s = secs[0], val = v;
-    if (!isDate) {
-      if (v < 0 && secs.length > 1 && secs[1] !== "") { s = secs[1]; val = -v; }
-      else if (v === 0 && secs.length > 2 && secs[2] !== "") s = secs[2];
+  const COLORS = {
+    black: "#000000", blue: "#0000ff", cyan: "#00ffff", green: "#008000", magenta: "#ff00ff", red: "#ff0000", white: "#ffffff", yellow: "#ffff00",
+    "黒": "#000000", "青": "#0000ff", "水": "#00ffff", "緑": "#008000", "紫": "#ff00ff", "赤": "#ff0000", "白": "#ffffff", "黄": "#ffff00",
+  };
+  /** The color ([Red], [赤]) and condition ([>=100]) of a section. */
+  function brackets(s) {
+    let color = null, cond = null;
+    for (const m of s.replace(/"[^"]*"/g, "").matchAll(/\[([^\]]*)\]/g)) {
+      const c = COLORS[m[1].toLowerCase()];
+      if (c) color = c;
+      const k = /^(<=|>=|<>|<|>|=)\s*(-?[\d.]+(?:E[+-]?\d+)?)$/i.exec(m[1].trim());
+      if (k) cond = [k[1], Number(k[2])];
     }
+    return { color, cond };
+  }
+  const test = (cond, v) => {
+    const [op, n] = cond;
+    return op === "<" ? v < n : op === "<=" ? v <= n : op === ">" ? v > n : op === ">=" ? v >= n : op === "=" ? v === n : v !== n;
+  };
+
+  /**
+   * The section of fmt for v: { s, val, color } (val is what the section
+   * shows: without the sign in a negative section), or null.
+   */
+  function pick(fmt, v) {
+    const secs = sections(fmt);
+    const info = secs.map(brackets);
+    if (typeof v === "string") {
+      // The text section: the 4th, or the only one with @.
+      const k = secs.length > 3 ? 3 : secs.length === 1 && /@/.test(secs[0].replace(/"[^"]*"/g, "")) ? 0 : -1;
+      return k < 0 ? null : { s: secs[k], val: v, color: info[k].color };
+    }
+    if (v instanceof Date) return { s: secs[0], val: v, color: info[0].color };
+    if (info.some((x) => x.cond)) {
+      // Conditions: the first two sections when theirs hold, then the next one.
+      const n = Math.min(secs.length, 3);
+      for (let k = 0; k < n; k++) {
+        if (!info[k].cond || test(info[k].cond, v)) {
+          // A section for negatives (a condition < or <= 0) shows the number without its sign.
+          const neg = info[k].cond && /^</.test(info[k].cond[0]) && info[k].cond[1] <= 0 && k > 0;
+          return { s: secs[k], val: neg ? -v : v, color: info[k].color };
+        }
+      }
+      return null;
+    }
+    if (v < 0 && secs.length > 1 && secs[1] !== "") return { s: secs[1], val: -v, color: info[1].color };
+    if (v === 0 && secs.length > 2 && secs[2] !== "") return { s: secs[2], val: v, color: info[2].color };
+    return { s: secs[0], val: v, color: info[0].color };
+  }
+
+  /** The text of a section for v (see format), or null. */
+  function render(s, val, isDate, lang) {
     const toks = tokens(s);
+    if (typeof val === "string") return toks.map((t) => (t.lit !== undefined ? t.lit : t.code === "@" ? val : "")).join("");
     const code = toks.filter((t) => t.code).map((t) => t.code).join("");
     if (DATE.test(code.replace(/E[+-]/gi, ""))) {
-      const d = isDate ? v : val >= 0 && val < 2958466 ? fromSerial(val) : null;
+      const d = isDate ? val : val >= 0 && val < 2958466 ? fromSerial(val) : null;
       return d && !isNaN(d) ? date(toks, d, lang || "ja") : null;
     }
     if (isDate) return null;
@@ -158,5 +200,28 @@
     return lits(toks.slice(0, first)) + number(code, val) + lits(toks.slice(last + 1));
   }
 
-  window.xljsNumfmt = { format };
+  /**
+   * v formatted with the Excel format fmt as { text, color } (color: a
+   * section's [Red] etc., or null), or null when the format is empty,
+   * "General" or "@", or does not apply to v (a number or Date, or a string
+   * with a text section).
+   */
+  function cell(fmt, v, lang) {
+    if (!fmt || /^(general|@)$/i.test(fmt.trim())) return null;
+    const isDate = v instanceof Date;
+    if (isDate ? isNaN(v) : typeof v === "string" ? false : typeof v !== "number" || !isFinite(v)) return null;
+    const p = pick(fmt, v);
+    if (!p) return null;
+    const text = render(p.s, p.val, isDate, lang);
+    return text === null ? null : { text, color: p.color };
+  }
+
+  /** v (a number or Date) formatted with the Excel format fmt, or null (see cell). */
+  function format(fmt, v, lang) {
+    if (typeof v === "string") return null;
+    const c = cell(fmt, v, lang);
+    return c && c.text;
+  }
+
+  window.xljsNumfmt = { format, cell };
 })();
