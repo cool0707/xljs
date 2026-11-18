@@ -11,7 +11,7 @@ ws.write([
   { 日付: null, 顧客: "C社", 金額: -5 },
 ]);
 equal(ws.dimension, "A1:D4");
-equal(ws.lastRow, 4);
+equal(ws.lastRow(), 4);
 
 // Cell access by address and (row, column).
 equal(ws.cell("B2").value, "A社");

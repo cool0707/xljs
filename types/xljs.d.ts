@@ -2226,7 +2226,7 @@ declare global {
   /**
    * 行全体（`sheet.rows(5)`・`sheet.rows("2:4")`。VBA の `Rows("2:4")`）。`address` は "2:4"（1 行でも "5:5"）。
    * `setStyle` は行そのものの書式になる: いまあるセルに付き、あとから書いたセルにも付く。`getStyle()` は先頭の行の A 列のセルの書式。
-   * `values` は先頭の列から、これらの行で値のある最後の列（`lastColumn`）まで
+   * `values` は先頭の列から、これらの行の最終列（`lastColumn()`）まで
    *
    *     sheet.rows(1).setStyle({ bold: true, background: "#DDEBF7" });
    *     sheet.rows(1).height = 24;
@@ -2261,19 +2261,22 @@ declare global {
     delete(): void;
     /** 高さの指定を外す。Excel で開くと、内容（折り返した文字・フォントの大きさ）に合わせた高さになる（Excel の「行の高さの自動調整」） */
     autoFit(): this;
-    /** これらの行で値のある最後の列の番号（値がなければ 0）。VBA の `Cells(5, Columns.Count).End(xlToLeft).Column` */
-    readonly lastColumn: number;
+    /**
+     * これらの行の最終列: 値か数式のある最後の列の番号（なければ 0）。VBA の `Cells(5, Columns.Count).End(xlToLeft).Column`。
+     * 数えるセルは options で変えられる（Worksheet.lastRow を参照）
+     */
+    lastColumn(options?: LastCellOptions): number;
   }
 
   /**
    * 列全体（`sheet.columns("C")`・`sheet.columns(3)`・`sheet.columns("A:C")`。VBA の `Columns("A:C")`）。`address` は "A:C"（1 列でも "C:C"）。
    * `setStyle` は列そのものの書式になる: いまあるセルに付き、あとから書いたセルにも付く。`getStyle()` は先頭の列の 1 行目のセルの書式。
-   * `values` は 1 行目から、これらの列で値のある最後の行（`lastRow`）まで
+   * `values` は 1 行目から、これらの列の最終行（`lastRow()`）まで
    *
    *     sheet.columns("C").setStyle({ format: "#,##0" });
    *     sheet.columns("A").width = 20;
    *     sheet.columns("D:E").hidden = true;
-   *     const last = sheet.columns("A").lastRow;   // A 列の最終行
+   *     const last = sheet.columns("A").lastRow(); // A 列の最終行
    */
   interface ColumnRange extends Range {
     /** 列の幅（半角の文字数）。読むと先頭の列の幅、代入するとすべての列に設定する */
@@ -2289,8 +2292,13 @@ declare global {
     delete(): void;
     /** 内容に合わせて列幅を調整する。全角文字は 2 文字分として計算 */
     autoFit(options?: { min?: number; max?: number }): this;
-    /** これらの列で値のある最後の行の番号（値がなければ 0）。VBA の `Cells(Rows.Count, "A").End(xlUp).Row` */
-    readonly lastRow: number;
+    /**
+     * これらの列の最終行: 値か数式のある最後の行の番号（なければ 0）。VBA の `Cells(Rows.Count, "A").End(xlUp).Row`。
+     * 数えるセルは options で変えられる（Worksheet.lastRow を参照）
+     *
+     *     sheet.columns("C").lastRow({ skipBlank: true });   // 下まで入れた =IF(A2="","",...) の結果が "" の行を数えない
+     */
+    lastRow(options?: LastCellOptions): number;
   }
 
   interface Cell {
@@ -2362,6 +2370,17 @@ declare global {
     setStyle(style: CellStyle, options?: StyleOptions): this;
     /** 現在の書式（setStyle に渡せる形） */
     getStyle(): CellStyle;
+  }
+
+  /** 最終行・最終列（`lastRow()`・`lastColumn()`）で数えるセル。既定は値か数式のあるセル */
+  interface LastCellOptions {
+    /** 書式だけのセル（値も数式もなく、罫線・塗り・表示形式などが付いたセル）も数える（既定 false）。行全体・列全体に付けた書式は数えない */
+    formats?: boolean;
+    /**
+     * 値が空か空白だけのセルを数えない（既定 false）。`=IF(A2="","",...)` のように結果が "" の数式と、半角・全角の空白だけのセル。
+     * 数式の結果は保存されている値で見るので、数式を書いた・参照先を書き換えたあとは先に `book.calculate()` を呼ぶ（計算していない数式は数えない）
+     */
+    skipBlank?: boolean;
   }
 
   interface RowsOptions {
@@ -2449,9 +2468,9 @@ declare global {
     /** 行を値の配列にする（見出しの行も 1 行として含む） */
     toArrays(options?: { text?: boolean; skipEmpty?: boolean }): CellValue[][];
     write(rows: Row[] | unknown[][], options?: WriteOptions): this;
-    /** 最終行の下に追記する */
+    /** 最終行（`lastRow()`。値か数式のある最後の行）の下に追記する */
     append(rows: Row[] | unknown[][], options?: WriteOptions): this;
-    /** 値のあるセルを囲む範囲（例 "A1:D20"。表が C5 から始まっていれば "C5:F20"）。空のシートは "" */
+    /** 値か数式のあるセルを囲む範囲（例 "A1:D20"。表が C5 から始まっていれば "C5:F20"）。空のシートは "" */
     readonly dimension: string;
     /** シート上の Excel のグラフ（開いたときのファイルにあったもの。値は読んだ時点のセルから） */
     readonly charts: ExcelChart[];
@@ -2459,10 +2478,18 @@ declare global {
     readonly comments: CellComment[];
     /** シートのメモ（セルの順）。スレッド形式のコメントの代わりに Excel が書くメモは含まない */
     readonly notes: CellNote[];
-    /** 最終行: 値のある最後の行の番号（空のシートは 0）。列ごとの最終行は `sheet.columns("A").lastRow` */
-    readonly lastRow: number;
-    /** 最終列: 値のある最後の列の番号（空のシートは 0）。行ごとの最終列は `sheet.rows(1).lastColumn` */
-    readonly lastColumn: number;
+    /**
+     * 最終行: 値か数式のあるセルの最後の行の番号（空のシートは 0）。列ごとの最終行は `sheet.columns("A").lastRow()`。
+     * 行・列が非表示でも、フィルターで隠れていても変わらない。数式のセルは、計算の前でも結果が "" でも数える。
+     * 書式だけのセル（罫線・塗りだけ）は数えない。数えるセルは options で変えられる
+     *
+     *     sheet.lastRow();                      // 値か数式のある最後の行
+     *     sheet.lastRow({ skipBlank: true });   // 結果が "" の数式・空白だけのセルを数えない
+     *     sheet.lastRow({ formats: true });     // 罫線・塗りだけのセルも数える
+     */
+    lastRow(options?: LastCellOptions): number;
+    /** 最終列: 値か数式のあるセルの最後の列の番号（空のシートは 0）。行ごとの最終列は `sheet.rows(1).lastColumn()`。数え方は lastRow と同じ */
+    lastColumn(options?: LastCellOptions): number;
     /**
      * 行全体（1 行か、"2:4" のように続いた行）。高さ・非表示・書式・挿入・削除・その行の値と最終列
      *

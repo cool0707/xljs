@@ -85,7 +85,7 @@ ws.rows(1).height = 30;
 equal(ws.getRowHeight(1), 30);
 ws.columns("A:B").width = 12;
 equal(ws.getColumnWidth("A"), 12);
-equal(ws.lastColumn, 4, "the last column with a value (D)");
+equal(ws.lastColumn(), 4, "the last column with a value (D)");
 ws.cell("G1").value = "とても長い見出しのテキストです";
 ws.autoFit("G");
 ok(ws.getColumnWidth("G") > 25, "autoFit widens for wide text: " + ws.getColumnWidth("G"));

@@ -1052,21 +1052,20 @@ pub(super) fn install(n: &N) {
         })?;
         a.ret(hidden)
     });
-    // xlsxLastUsed(book, sheet, columns, first, last) -> the last row with a value in the columns
-    // first..last (columns: true), or the last column with a value in the rows; 0 when they are empty.
+    // xlsxLastUsed(book, sheet, columns, first, last, formats, skipBlank) -> the last used row in the
+    // columns first..last (columns: true), or the last used column in the rows; 0 when they are empty.
+    // A cell with a value or a formula is used (xlsx::Used).
     n.set("xlsxLastUsed", |h, a| {
         let (sheet, columns, first, last) = (a.str(1), a.bool(2), a.int(3) as i64, a.int(4) as i64);
+        let used = xlsx::Used { formats: a.bool(5), skip_blank: a.bool(6) };
         let n = with_book(h, a, |b| {
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
             let mut n = 0;
             for c in ws.cells() {
-                if !xlsx::has_value(c) {
-                    continue;
-                }
                 let (col, row) = (c.coordinate().col_num(), c.coordinate().row_num());
                 let (at, other) = if columns { (col, row) } else { (row, col) };
-                if (first..=last).contains(&(at as i64)) {
-                    n = n.max(other);
+                if other > n && (first..=last).contains(&(at as i64)) && used.has(c) {
+                    n = other;
                 }
             }
             Ok(n)

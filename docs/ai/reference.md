@@ -111,7 +111,7 @@
 
 ## Excel
 
-対応形式は `.xlsx` / `.xlsm`。`.xls` は不可。マクロ・ピボットテーブルは保存すると失われることがある。
+対応形式は `.xlsx` / `.xlsm`。`.xls` は不可。マクロ・ピボットテーブルは保存で失われることがある。
 
 ### ブック
 
@@ -121,9 +121,9 @@
 | `excel.create({ font? })` | 新しいブック。最初の `addSheet` が既定のシートを置き換える |
 | `book.sheets[0]` / `book.sheets["名前"]` / `book.sheet(名前か番号)` | シート（無ければ `undefined` / `null`）。大文字小文字・空白・全角半角の違いは許す |
 | `book.sheetNames` / `book.addSheet(name)` / `book.removeSheet(name)` / `book.copySheet(sheet, name?)` | シート名の配列 / 追加・削除・コピー（元の後ろに） |
-| `book.save()` / `book.save(p)` / `book.close()` | 上書き保存 / 別名保存 / 閉じる（メモリ解放） |
-| `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | PDF に書き出す（「PDF 出力」） |
-| `excel.readVBA(p)` | マクロブックの VBA コード。`{ name, modules: [{ name, type, code, sheet }], text }`、なければ `null`。`text` は Markdown |
+| `book.save()` / `book.save(p)` / `book.close()` | 上書き / 別名で保存 / 閉じる（メモリ解放） |
+| `await book.toPdf(p, options?)` / `await sheet.toPdf(p, options?)` | PDF に（「PDF 出力」） |
+| `excel.readVBA(p)` | マクロブックの VBA コード `{ name, modules: [{ name, type, code, sheet }], text }`（`text` は Markdown）か `null` |
 | `excel.columnName(3)` → `"C"`、`excel.cellName(2, 3)` → `"C2"` | 番地の変換 |
 
 ### シートの読み取り
@@ -133,13 +133,11 @@
 | `sheet.toRowObjects({ header, columns, text, skipEmpty })` | 行をオブジェクトに。`header` は見出しの行（既定 1）。`header: 0, columns: [...]` で見出しなし |
 | `sheet.toArrays({ text })` | 2 次元配列（0 始まり）。`text: true` で表示の文字列 |
 | `sheet.cell("B2")` / `sheet.cell(行, 列)` | セル（1 から） |
-| `cell.value` / `cell.text` | 値（number / string / boolean / Date / null）/ 表示どおりの文字列 |
-| `cell.formula` | `"=SUM(A1:A3)"` か `null` |
+| `cell.value` / `cell.text` / `cell.formula` | 値（number / string / boolean / Date / null）/ 表示どおりの文字列 / `"=SUM(A1:A3)"` か `null` |
 | `cell.phonetic` / `cell.note` / `cell.comment` | ふりがな（値の後に代入）/ メモ / コメント（`addComment`） |
-| `sheet.range("A1:C3").values` | 範囲の 2 次元配列（代入で書く） |
-| `sheet.lastRow` / `sheet.lastColumn` / `sheet.columns("A").lastRow` | 最終行 / 最終列 / A 列の最終行 |
+| `sheet.lastRow()` / `sheet.lastColumn()` / `sheet.columns("A").lastRow()` | 最終行 / 最終列 / A 列の最終行（`{ skipBlank: true }` で `""` を返す数式を除く） |
 | `sheet.dimension` / `sheet.merges` / `sheet.frozen` / `sheet.filter` | 値のある範囲 / 結合範囲の配列 / 固定 `{ rows, columns }` か `null` / フィルターの範囲か `null` |
-| `sheet.getStyle("A1")` | 書式（`setStyle` と同じ形） |
+| `sheet.range("A1:C3").values` / `sheet.getStyle("A1")` | 範囲の 2 次元配列（代入で書く）/ 書式（`setStyle` と同じ形） |
 | `sheet.name` / `sheet.hidden` / `sheet.rows(3).hidden` | シート名 / 非表示（行・列も）。代入で変更 |
 
 - 結合セルの値は左上のセルにだけある。
@@ -152,7 +150,7 @@
 | `sheet.write(rows, options)` | オブジェクトの配列（見出し＋データ）か 2 次元配列を書く |
 | `sheet.append(rows, options)` | 最終行の下に追記（見出しは書かない） |
 | `cell.value = v` / `cell.formula = "=..."` | 1 セル |
-| `sheet.rows(5).insert(n?)` / `sheet.rows("2:4").delete()` / `sheet.columns("C").insert(n?)` | 行・列の挿入・削除（参照は Excel と同じく動く） |
+| `sheet.rows(5).insert(n?)` / `sheet.rows("2:4").delete()` / `sheet.columns("C").insert(n?)` | 行・列の挿入・削除（数式の参照も動く） |
 
 `write` のオプション:
 

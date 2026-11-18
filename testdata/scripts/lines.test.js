@@ -13,19 +13,57 @@ s.cell("E2").value = "メモ";
 s.cell("A7").value = "合計";
 
 // The last row and column with a value: of the sheet, of columns, of rows.
-equal(s.lastRow, 7);
-equal(s.lastColumn, 5);
-equal(s.columns("B").lastRow, 4, "the last row of one column (End(xlUp))");
-equal(s.columns("A").lastRow, 7);
-equal(s.columns("B:C").lastRow, 4);
-equal(s.columns(4).lastRow, 0, "an empty column");
-equal(s.rows(1).lastColumn, 3, "the last column of one row (End(xlToLeft))");
-equal(s.rows(2).lastColumn, 5);
-equal(s.rows("3:4").lastColumn, 3);
-equal(s.rows(6).lastColumn, 0, "an empty row");
+equal(s.lastRow(), 7);
+equal(s.lastColumn(), 5);
+equal(s.columns("B").lastRow(), 4, "the last row of one column (End(xlUp))");
+equal(s.columns("A").lastRow(), 7);
+equal(s.columns("B:C").lastRow(), 4);
+equal(s.columns(4).lastRow(), 0, "an empty column");
+equal(s.rows(1).lastColumn(), 3, "the last column of one row (End(xlToLeft))");
+equal(s.rows(2).lastColumn(), 5);
+equal(s.rows("3:4").lastColumn(), 3);
+equal(s.rows(6).lastColumn(), 0, "an empty row");
 // The earlier names (not documented).
 equal(s.rowCount, 7);
 equal(s.columnCount, 5);
+
+// What counts: a cell with a value or a formula. The options count the cells with only a format
+// too, and leave out the cells whose value is empty or only spaces (a formula that gives "").
+const u = wb.addSheet("最終行");
+u.write([["品名", "数量", "金額"], ["りんご", 3], ["みかん", 5]]);
+for (let r = 2; r <= 6; r++) u.cell(`C${r}`).formula = `=IF(B${r}="","",B${r}*100)`;
+equal(u.columns("C").lastRow(), 6, "a formula counts, calculated or not");
+equal(u.lastRow(), 6);
+equal(u.dimension, "A1:C6");
+wb.calculate();
+equal(u.cell("C3").value, 500);
+equal(u.cell("C5").value, null, 'a formula that gives ""');
+equal(u.columns("C").lastRow(), 6, "and counts whatever it gives");
+equal(u.columns("C").lastRow({ skipBlank: true }), 3, 'skipBlank leaves out the formulas that give ""');
+equal(u.lastRow({ skipBlank: true }), 3);
+equal(u.rows(5).lastColumn(), 3);
+equal(u.rows(5).lastColumn({ skipBlank: true }), 0);
+u.cell("A8").value = " ";
+u.cell("A9").value = "\u3000";
+equal(u.columns("A").lastRow(), 9, "spaces are a value");
+equal(u.columns("A").lastRow({ skipBlank: true }), 3, "skipBlank leaves out the cells with only spaces");
+u.cell("A9").value = null;
+u.cell("A8").value = null;
+equal(u.columns("A").lastRow(), 3);
+u.setStyle("A12:E12", { border: { top: "thin" } });
+equal(u.lastRow(), 6, "a cell with only a format does not count");
+equal(u.lastRow({ formats: true }), 12, "formats counts the cells with only a format");
+equal(u.lastColumn(), 3);
+equal(u.lastColumn({ formats: true }), 5);
+equal(u.columns("E").lastRow(), 0);
+equal(u.columns("E").lastRow({ formats: true }), 12);
+equal(u.rows(12).lastColumn({ formats: true }), 5);
+equal(u.lastRow({ formats: true, skipBlank: true }), 12);
+equal(u.columns("C").lastRow({ formats: true, skipBlank: true }), 12);
+// The rows are written below the formulas, not over them.
+u.append([["ぶどう", 2]]);
+equal(u.cell("A7").value, "ぶどう");
+equal(u.cell("C6").formula, '=IF(B6="","",B6*100)');
 
 // The addresses.
 equal(s.rows(5).address, "5:5");
@@ -182,15 +220,15 @@ deepEqual(s.merges, []);
 // The used range starts at the first cell with a value.
 const t = wb.addSheet("表");
 equal(t.dimension, "");
-equal(t.lastRow, 0);
-equal(t.lastColumn, 0);
+equal(t.lastRow(), 0);
+equal(t.lastColumn(), 0);
 t.cell("C5").value = 1;
 equal(t.dimension, "C5:C5");
 t.cell("E9").value = 2;
 t.cell("B7").value = 3;
 equal(t.dimension, "B5:E9");
-equal(t.lastRow, 9);
-equal(t.lastColumn, 5);
+equal(t.lastRow(), 9);
+equal(t.lastColumn(), 5);
 
 // Saved and opened again.
 s.rows(2).height = 30;
@@ -206,5 +244,5 @@ equal(back.columns("C").hidden, true);
 equal(back.columns("A").width, 18);
 equal(back.cell("Z1").getStyle().bold, true, "the format of the row is saved");
 equal(back.cell("C100").getStyle().format, "#,##0", "the format of the column is saved");
-equal(back.columns("B").lastRow, 4);
+equal(back.columns("B").lastRow(), 4);
 console.log("lines ok");

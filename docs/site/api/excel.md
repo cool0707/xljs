@@ -1,6 +1,6 @@
 ---
 title: Excel
-api: Excel, excel, Workbook, Worksheet, Cell, Range, RowRange, ColumnRange, CellValue, RowsOptions, WriteOptions, CellStyle, StyleOptions, BorderSpec, BorderSide, BorderStyleName, Color, CalcResult, CalcSkipped, VBAProject, VBAModule, CellComment, CommentReply, CommentEntry, CommentOptions, CellNote
+api: Excel, excel, Workbook, Worksheet, Cell, Range, RowRange, ColumnRange, LastCellOptions, CellValue, RowsOptions, WriteOptions, CellStyle, StyleOptions, BorderSpec, BorderSide, BorderStyleName, Color, CalcResult, CalcSkipped, VBAProject, VBAModule, CellComment, CommentReply, CommentEntry, CommentOptions, CellNote
 ---
 
 ```js
@@ -26,7 +26,7 @@ out.save("集計.xlsx");
 - 数式は保存時に「開いたときに再計算」フラグを立てるので、Excel で開けば計算結果が表示されます。スクリプトの中で結果が必要なとき・計算済みの値をファイルに入れておきたいときは `book.calculate()`（下の「数式の計算」）。
 - xlsx / xlsm に対応しています（旧形式の .xls は不可）。マクロ、ピボットテーブルなどは読み書きの過程で失われることがあります（グラフは開いて保存しても残ります）。
 - シートの名前は `sheet.name = "新しい名前"` で変えられます。Excel で名前を変えたときと同じく、そのシートを参照する数式・名前の定義・入力規則・条件付き書式・グラフ・スパークライン・ピボットテーブルの元データ・フォームコントロールも新しい名前を指すようになります（ハイパーリンクの行き先と、`INDIRECT("Sheet1!A1")` のような文字列の中は変わりません）。
-- シートの状態は、`sheet.hidden`（非表示。代入で切り替えます。表示しているシートがなくなる変更はエラー）、`sheet.lastRow` / `sheet.lastColumn`（最終行・最終列: 値のある最後の行・列の番号）、`sheet.dimension`（値のあるセルを囲む範囲）、`sheet.merges`（結合しているセル範囲の配列）、`sheet.frozen`（ウィンドウ枠の固定。`{ rows, columns }` か `null`）、`sheet.filter`（フィルターの範囲か `null`）で読めます（下の「シートの表示」）。行の高さ・列の幅・非表示は `sheet.rows(行)`・`sheet.columns(列)`（下の「行と列」）。セルの書式は `sheet.getStyle("A1")`（下の「セルの書式」）。
+- シートの状態は、`sheet.hidden`（非表示。代入で切り替えます。表示しているシートがなくなる変更はエラー）、`sheet.lastRow()` / `sheet.lastColumn()`（最終行・最終列: 値か数式のある最後の行・列の番号）、`sheet.dimension`（値か数式のあるセルを囲む範囲）、`sheet.merges`（結合しているセル範囲の配列）、`sheet.frozen`（ウィンドウ枠の固定。`{ rows, columns }` か `null`）、`sheet.filter`（フィルターの範囲か `null`）で読めます（下の「シートの表示」）。行の高さ・列の幅・非表示は `sheet.rows(行)`・`sheet.columns(列)`（下の「行と列」）。セルの書式は `sheet.getStyle("A1")`（下の「セルの書式」）。
 - シートのコピーは `book.copySheet(シート, 名前?)`（元のシートのすぐ後ろに置き、名前を省くと「売上 (2)」）。テーブルは「売上表_2」のような名前になり、コピーの数式もそれを使います。グラフ・スパークラインはコピーのセルを指し、数式は元と同じシートを参照します（Excel と同じ）。
 - 行・列の挿入と削除は `sheet.rows(行).insert(数?)`・`sheet.rows("3:5").delete()`・`sheet.columns(列).insert(数?)`・`sheet.columns("B:C").delete()`（下の「行と列」）。
 
@@ -98,15 +98,21 @@ sheet.rows(2).insert(3);                   // 2〜4 行目に空の 3 行
 sheet.rows("8:9").delete();                // 8〜9 行目を削除して詰める
 sheet.columns("C").insert();               // C 列の前に 1 列
 
-const last = sheet.columns("A").lastRow;   // A 列の最終行（値のある最後の行。なければ 0）
-const right = sheet.rows(1).lastColumn;    // 1 行目の最終列
+const last = sheet.columns("A").lastRow(); // A 列の最終行（値か数式のある最後の行。なければ 0）
+const right = sheet.rows(1).lastColumn();  // 1 行目の最終列
 const header = sheet.rows(1).values[0];    // 1 行目の値（["品名", "数量", "単価"]）
 const names = sheet.columns("A").values.map((r) => r[0]); // A 列の値（最終行まで）
 ```
 
 - 表のデータを読むのは `sheet.toRowObjects()`・`sheet.toArrays()` です。`sheet.rows(5)` は 5 行目そのもの（高さ・書式など）を指します。
-- 最終行・最終列は、シート全体なら `sheet.lastRow`・`sheet.lastColumn`、列ごと・行ごとなら `sheet.columns("A").lastRow`・`sheet.rows(1).lastColumn`（VBA の `Cells(Rows.Count, "A").End(xlUp).Row`）。書式だけのセルは数えません。
-- 複数の行・列（`"2:4"`・`"A:C"`）では、`height`・`width`・`hidden` を読むと先頭の行・列の値、代入するとすべてに設定します。`lastRow`・`lastColumn` はその中でいちばん大きい番号です。
+- 最終行・最終列は、シート全体なら `sheet.lastRow()`・`sheet.lastColumn()`、列ごと・行ごとなら `sheet.columns("A").lastRow()`・`sheet.rows(1).lastColumn()`（VBA の `Cells(Rows.Count, "A").End(xlUp).Row`）。値か数式のあるセルを数えます。VBA と違い、行・列が非表示でも、フィルターで隠れていても結果は変わりません。
+- 数えるセルはオプションで変えられます。`{ skipBlank: true }` は、値が空か空白だけのセルを数えません（下まで入れた `=IF(A2="","",...)` の結果が `""` の行、半角・全角の空白だけのセル）。数式の結果は保存されている値で見るので、数式を書いたあとは先に `book.calculate()` を呼びます。`{ formats: true }` は、罫線・塗りだけで値のないセルも数えます（Excel の `UsedRange` に近い数え方）。
+
+```js
+sheet.columns("C").lastRow({ skipBlank: true });   // 結果が "" の数式の行を数えない
+sheet.lastRow({ formats: true });                   // 罫線・塗りだけの行も数える
+```
+- 複数の行・列（`"2:4"`・`"A:C"`）では、`height`・`width`・`hidden` を読むと先頭の行・列の値、代入するとすべてに設定します。`lastRow()`・`lastColumn()` はその中でいちばん大きい番号です。
 - `setStyle` は行・列そのものの書式になります。いまあるセルに付き、あとから値を書いたセルにも付きます（Excel で行・列を選んで書式を付けたときと同じ）。
 - 挿入と削除では、Excel と同じく、ずれたセルを参照する数式（ほかのシートの数式・絶対参照も）・名前の定義・印刷範囲・入力規則・条件付き書式・テーブル・グラフ・スパークライン・ピボットテーブルの元データが付いてきます。範囲の途中に挿入すると範囲が広がり、削除したセルだけを参照していた数式は `#REF!` になります。挿入した行（列）は上の行（左の列）の書式を引き継ぎます。`insert()` の数を省くと、その範囲の行数・列数だけ挿入します（`rows("2:4").insert()` は 3 行）。
 - 非表示の行は `SUBTOTAL(109, ...)` などの計算から外れます。

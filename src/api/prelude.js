@@ -5890,6 +5890,16 @@
     [inspectSymbol]() { return `Range ${this._sheet._name}!${this._address}`; }
   }
 
+  /**
+   * The last used row in the columns first..last (columns: true), or the last used column in the
+   * rows. A cell with a value or a formula is used. opts: { formats: true } counts the cells with
+   * only a format too, { skipBlank: true } leaves out the cells whose value is empty or only spaces
+   * (a formula that gives "").
+   */
+  function lastUsed(sheet, columns, first, last, opts) {
+    return native.xlsxLastUsed(sheet._book._h, sheet._name, columns, first, last, !!(opts && opts.formats), !!(opts && opts.skipBlank));
+  }
+
   /** Whole rows: sheet.rows(5), sheet.rows("2:4"). */
   class RowRange extends Range {
     constructor(sheet, first, last) {
@@ -5897,7 +5907,7 @@
       define(this, "_first", first);
       define(this, "_last", last);
     }
-    _bounds() { return [1, this._first, this.lastColumn, this._last]; }
+    _bounds() { return [1, this._first, this.lastColumn(), this._last]; }
     _cells() { return `A${this._first}:XFD${this._last}`; }
     /** The height in points (of the first row); assigning sets it for every row. */
     get height() { return native.xlsxGetRowHeight(this._sheet._book._h, this._sheet._name, this._first); }
@@ -5917,8 +5927,8 @@
       native.xlsxSetRowHeight(this._sheet._book._h, this._sheet._name, this._first, null, this._last);
       return this;
     }
-    /** The last column with a value in the rows (0 when they are empty). */
-    get lastColumn() { return native.xlsxLastUsed(this._sheet._book._h, this._sheet._name, false, this._first, this._last); }
+    /** The last used column in the rows (0 when they are empty). opts: see lastUsed(). */
+    lastColumn(opts) { return lastUsed(this._sheet, false, this._first, this._last, opts); }
     [inspectSymbol]() { return `RowRange ${this._sheet._name}!${this._address}`; }
   }
 
@@ -5929,7 +5939,7 @@
       define(this, "_first", first);
       define(this, "_last", last);
     }
-    _bounds() { return [this._first, 1, this._last, this.lastRow]; }
+    _bounds() { return [this._first, 1, this._last, this.lastRow()]; }
     _cells() { const [a, b] = this._address.split(":"); return `${a}1:${b}1048576`; }
     /** The width in characters (of the first column); assigning sets it for every column. */
     get width() { return native.xlsxGetColWidth(this._sheet._book._h, this._sheet._name, this._address.split(":")[0]); }
@@ -5952,8 +5962,8 @@
       native.xlsxAutoFit(this._sheet._book._h, this._sheet._name, this._first, this._last, opts.min !== undefined ? opts.min : 6, opts.max !== undefined ? opts.max : 60);
       return this;
     }
-    /** The last row with a value in the columns (0 when they are empty). */
-    get lastRow() { return native.xlsxLastUsed(this._sheet._book._h, this._sheet._name, true, this._first, this._last); }
+    /** The last used row in the columns (0 when they are empty). opts: see lastUsed(). */
+    lastRow(opts) { return lastUsed(this._sheet, true, this._first, this._last, opts); }
     [inspectSymbol]() { return `ColumnRange ${this._sheet._name}!${this._address}`; }
   }
 
@@ -6182,7 +6192,7 @@
     }
     /** Appends rows below the last used row (objects are written without a header). */
     append(rows, opts = {}) {
-      const next = native.xlsxRowCount(this._book._h, this._name) + 1;
+      const next = this.lastRow() + 1;
       const header = opts.header !== undefined ? opts.header : next === 1;
       return this.write(rows, Object.assign({}, opts, { start: "A" + next, header }));
     }
@@ -6207,16 +6217,13 @@
     /** Writes the sheet as Excel would print it to a PDF file (WebView2); resolves to its full path. */
     toPdf(dest, options) { return printToPdf(this._book, dest, options, [this._name]); }
     get dimension() { return native.xlsxDimension(this._book._h, this._name); }
-    /** The number of the last row with a value (0 for an empty sheet). */
-    get lastRow() { return native.xlsxRowCount(this._book._h, this._name); }
-    /** The number of the last column with a value (0 for an empty sheet). */
-    get lastColumn() {
-      const d = this.dimension;
-      return d ? native.xlsxParseRef(d.split(":")[1] || d)[0] : 0;
-    }
-    /** Aliases of lastRow and lastColumn (not documented). */
-    get rowCount() { return this.lastRow; }
-    get columnCount() { return this.lastColumn; }
+    /** The number of the last used row (0 for an empty sheet). opts: see lastUsed(). */
+    lastRow(opts) { return lastUsed(this, true, 1, 16384, opts); }
+    /** The number of the last used column (0 for an empty sheet). */
+    lastColumn(opts) { return lastUsed(this, false, 1, 1048576, opts); }
+    /** The earlier names of lastRow() and lastColumn() (not documented). */
+    get rowCount() { return this.lastRow(); }
+    get columnCount() { return this.lastColumn(); }
     /** Whether the sheet is hidden (Excel's "非表示"); assigning hides or shows it. */
     get hidden() { return native.xlsxSheetHidden(this._book._h, this._name, null); }
     set hidden(v) { native.xlsxSheetHidden(this._book._h, this._name, !!v); }

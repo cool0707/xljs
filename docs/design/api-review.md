@@ -263,7 +263,7 @@ AI が書きそうな名前を受けるための別名と、機能の重複が�
 - セルの値: `sheet.cell("A1").value`、`sheet.getValue("A1")` / `sheet.setValue("A1", v)`。
 - 表として読む: `sheet.toObjects()`・`sheet.rows()`（A4）・`sheet.toArrays()`・`sheet.range("A1:D10").values`。
 - 書く: `sheet.write(rows)`・`sheet.append(rows)`・`range.values = [[...]]`。
-- 行数は `sheet.rowCount`、範囲は `sheet.dimension`（列数はない）。→ D1 で `sheet.lastRow` / `sheet.lastColumn` にした。
+- 行数は `sheet.rowCount`、範囲は `sheet.dimension`（列数はない）。→ D1 で `sheet.lastRow()` / `sheet.lastColumn()` にした。
 
 **案**
 
@@ -393,8 +393,8 @@ B の見直しのあとで出てきたもの。
 
 - `sheet.rows(5)` / `sheet.rows("2:4")` が `RowRange`、`sheet.columns("C")` / `sheet.columns(3)` / `sheet.columns("A:C")` が `ColumnRange`（VBA の `Rows`・`Columns`）。
   どちらも `Range` を継承する（`address`・`setStyle`・`getStyle`・`merge`・`values`）。
-  - `RowRange`: `height`・`hidden`・`insert(count?)`・`delete()`・`autoFit()`・`lastColumn`
-  - `ColumnRange`: `width`・`hidden`・`insert(count?)`・`delete()`・`autoFit(options?)`・`lastRow`
+  - `RowRange`: `height`・`hidden`・`insert(count?)`・`delete()`・`autoFit()`・`lastColumn(options?)`
+  - `ColumnRange`: `width`・`hidden`・`insert(count?)`・`delete()`・`autoFit(options?)`・`lastRow(options?)`
   - 幅・高さ・非表示は丸ごと置き換える値なのでプロパティ（B5 の `cell.value` と同じ分け方）。複数の行・列では、読むと先頭、代入するとすべて。
 - 表をオブジェクトの配列で読むのは `sheet.toRowObjects()`（`toArrays()` と対）。名詞のメソッド（`cell`・`range`・`rows`・`columns`）はブックにつながったものを返し、`to...` は値の写しを返す。
   - `sheet.rows` を両方に使う案（引数なしでデータ、引数ありで行）は、引数の有無で意味が変わる（基準 2・5）のでやめた。
@@ -402,7 +402,11 @@ B の見直しのあとで出てきたもの。
   - 引数なし・オプションだけの `sheet.rows()` は、実行時には今までどおりデータを返す（A4 の扱い。d.ts では引数が必須なので tsc はエラーにする）。
 - 型の名前: 行のデータは `Row`（`[column: string]: any`。CSV・SQLite の挿入と共通）のまま。行全体は `RowRange`。
   `Row` を行全体の型にすると、ExcelJS を知っている AI が `toRowObjects()` の要素にも `height` があると考える。`SheetRow` は `SqlRow` と並んで「シートから読んだ行データ」に見える。
-- 最終行・最終列は `sheet.lastRow` / `sheet.lastColumn`（列ごと・行ごとは `sheet.columns("A").lastRow` / `sheet.rows(1).lastColumn`）。
+- 最終行・最終列は `sheet.lastRow(options?)` / `sheet.lastColumn(options?)`（列ごと・行ごとは `sheet.columns("A").lastRow()` / `sheet.rows(1).lastColumn()`）。
+  - 数えるのは値か数式のあるセル。VBA の `End(xlUp)` と違い、非表示・フィルターには左右されない。数式のセルは計算の前でも結果が `""` でも数える
+    （前は値だけを見ていたので、計算の前後で最終行が変わり、`append` が計算前の数式の行を上書きしていた）。`dimension`・`append` も同じ数え方。
+  - オプションは `{ formats: true }`（書式だけのセルも数える）と `{ skipBlank: true }`（値が空か空白だけのセル＝結果が `""` の数式を数えない）。
+    オプションが要るのでプロパティではなくメソッドにした（プロパティと、オプション付きの別のメソッドの 2 つにはしない）。
 - `sheet.dimension` は値のあるセルを囲む範囲（左上も実際のセル）。
 - 前の名前（`insertRows` など 8 つ、`autoFit("A:C")`、`rowCount` / `columnCount`）は受け付けるだけ。
 
