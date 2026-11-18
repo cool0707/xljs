@@ -1,6 +1,6 @@
 ---
 title: Excel
-api: Excel, excel, Workbook, Worksheet, Cell, Range, RowRange, ColumnRange, LastCellOptions, CellValue, RowsOptions, WriteOptions, CellStyle, StyleOptions, BorderSpec, BorderSide, BorderStyleName, Color, CalcResult, CalcSkipped, VBAProject, VBAModule, CellComment, CommentReply, CommentEntry, CommentOptions, CellNote
+api: Excel, excel, Workbook, Worksheet, Cell, Range, RowRange, ColumnRange, LastCellOptions, CellValue, RowsOptions, ColumnPick, WriteOptions, FindTarget, FindOptions, CellStyle, StyleOptions, BorderSpec, BorderSide, BorderStyleName, Color, CalcResult, CalcSkipped, VBAProject, VBAModule, CellComment, CommentReply, CommentEntry, CommentOptions, CellNote
 ---
 
 ```js
@@ -40,6 +40,95 @@ const may = book.copySheet("4月", "5月");
 
 - `excel.readVBA(src)` はマクロブック（.xlsm / .xlsb / .xlam など）の VBA コードを、ブックを開かずに読みます。`{ name, codePage, modules: [{ name, type, code, sheet }], text }` を返し、マクロがなければ `null` です。`type` は `"standard"`（標準モジュール）・`"class"`・`"document"`（ThisWorkbook とシート）・`"form"`、`sheet` はシートのモジュールのシート名（.xlsm などで分かる場合）、`text` は `xljs vba` と同じ Markdown です。
 
+## 表の読み書き
+
+`sheet.toRowObjects()` は 1 行目を見出しにして A 列から読みます。帳票の途中にある表・見出しの文字がそろっていない表は、表の左上（`start`）と読む列（`pick`）を指定します。
+
+```js
+const sheet = book.sheets["受注"];
+const rows = sheet.toRowObjects({
+  start: sheet.find("コード") ?? "B4",   // 表の左上（見出しの左端）。セルか "B4"
+  untilBlank: true,                       // 空の行で表の終わり（下の合計・注記を読まない）
+  pick: {                                 // 読む列を見出しで選び、キーを付け替える
+    code: "コード",
+    name: "品名",                         // 「品　名」・改行入りの見出しにも一致
+    amount: /金額|売上/,                  // 正規表現
+    tax: { header: "金額", nth: 2 },      // 同じ見出しの 2 番目
+    memo: { header: "備考", optional: true }, // なくてもよい列（なければ null）
+  },
+});
+// [{ code: "A-1", name: "りんご", amount: 100, tax: 10, memo: null }, ...]
+```
+
+- `start` を指定すると、そこから右へ見出しが続くところ（最初の空のセルの手前）までが表の列になります。指定しないときは `header`（見出しの行番号。既定 1）の行を A 列から読みます。
+- `pick` の条件は、文字列（その見出しの列。全角半角・大文字小文字・空白と改行の違いは区別しません）、正規表現、数値（表の左端からの位置。0 から）、`{ header, nth, offset, optional }`（同じ見出しの `nth` 番目、見出しから `offset` 列右）です。見つからない見出しがあるとエラーになり、メッセージに見つかった見出しが出ます。
+- 結合セルは、どの行・列でも左上のセルの値になります（縦に結合した「部署」は各行に入り、2 列にまたがる見出し「金額」は `金額`・`金額_2` になります）。
+
+いまある表に書き足すときは `matchHeader` を付けます。行のキーと同じ見出しの列にだけ値を入れ、見出しは書かず、ほかの列（数式の列など）には触りません。
+
+```js
+const ledger = book.sheets["台帳"];
+// 1 行目の見出しに合わせて、最終行の下に追記する（キーの順は見出しの順と違ってよい）
+ledger.append([{ 金額: 500, 日付: new Date(), 品名: "りんご" }], { matchHeader: true });
+// 見出しが 3 行目の B 列から始まる表
+ledger.append(rows, { matchHeader: "B3" });
+// 見出しのすぐ下から書く（ひな形への流し込み）
+ledger.write(rows, { matchHeader: 3 });
+// 別のシートの表を、見出しの同じ列へ写す
+ledger.append(book.sheets["受注"].toRowObjects({ start: "B4", untilBlank: true }), { matchHeader: true });
+```
+
+- `matchHeader` は、`true`（見出しは `start` のセルから右。`append` では 1 行目）、行番号、見出しの左端のセル（`"B3"` か `find()` の結果）で指定します。
+- キーと見出しは `toRowObjects()` が付ける名前で比べ、なければ全角半角・大文字小文字・空白の違いを区別せずに比べます。見出しにないキーは書きません。一致する見出しが 1 つもなければエラーです。
+- `append` は、その表の列の最終行の下に書きます（表の右に別の表があっても、その行数には影響されません）。
+
+## セルを探す
+
+`sheet.find(探すもの)` は一致する最初のセル（なければ `null`）、`sheet.findAll(探すもの)` はすべてのセルを返します。範囲・行・列の中だけを探すときは `sheet.range("A1:F20").find(...)`・`sheet.columns("A").find(...)`・`sheet.rows(4).find(...)` です。
+
+```js
+const sheet = book.sheets["申請書"];
+const name = sheet.find("氏名")?.offset(0, 1).value;      // 見出し「氏名」の右のセルの値
+const row = sheet.columns("A").find("A-1024")?.row;        // A 列でコードのある行（なければ undefined）
+const total = sheet.find(/^合計/);                         // 「合計」で始まるセル
+const big = sheet.findAll((c) => typeof c.value === "number" && c.value >= 10000); // 条件を関数で
+const subtotals = sheet.findAll("小計", { match: "partial" });                      // 「小計」を含むセル
+
+// 行の見出しと列の見出しが交わるセル
+const r = sheet.find("4月"), c = sheet.find("売上");
+if (r && c) console.log(sheet.cell(r.row, c.column).value);
+```
+
+| 探すもの | 一致するセル |
+|---|---|
+| 文字列 | セルの文字がそれと同じもの（セル全体。`{ match: "partial" }` で一部）。全角半角・大文字小文字・空白と改行の違いは区別しません（`"氏名"` は「氏　名」に、`"a-1"` は「Ａ－１」に一致） |
+| 正規表現 | セルの文字に当てます（全角は半角にしてから。`/^\d+月$/` は「４月」にも一致） |
+| 数値・`Date`・真偽値 | セルの値がそれと同じもの |
+| 関数 | 値のあるセルごとに呼ばれ、`true` を返したセル |
+
+- 文字列と正規表現は、数値・日付のセルを表示されている文字（`"1,200"`・`"2026/4/1"`）で比べます（数値は `"1200"` でも一致します）。数式のセルは保存されている結果で比べるので、数式を書いたあとは先に `book.calculate()` を呼びます。
+- `{ strict: true }` で全角半角・大文字小文字・空白を区別します。`{ visibleOnly: true }` で非表示の行・列（フィルターで隠れた行も）を探しません。`{ order: "columns" }` で列ごとに上から探します（既定は行ごとに左から）。
+- `cell.offset(行, 列)` は、そのセルから下・右（負の数で上・左）に進んだセルです（VBA の `Offset`）。
+
+## 結合セル
+
+結合セルは、中のどのセルを指定しても左上のセルとして扱います。VBA のように、結合セルの途中を指定してエラーになったり、見えないセルに値が入ったりしません。
+
+```js
+sheet.merge("A1:C1");
+sheet.cell("B1").value = "売上一覧";     // A1 に入る
+sheet.cell("C1").value;                  // "売上一覧"（A1 の値）
+sheet.cell("B1").setStyle({ border: "thin", align: "center" }); // 結合セル全体に付く（外枠の罫線は結合セルの外枠）
+sheet.cell("A1").offset(0, 1).address;   // "D1"（結合セルからは、その範囲の端から数える）
+```
+
+- 値・数式・表示文字・書式・メモ・コメント・ふりがなの読み書きが左上のセルに向きます（`cell.address`・`row`・`column` は指定したまま）。
+- `toRowObjects()`・`toArrays()`・`range.values` は、結合セルのどの位置にも左上のセルの値を返します。`write()`・`append()`・`range.values = ...` は、結合セルに掛かる位置では左上の位置の値だけを書きます。
+- `find()`・`findAll()` は、結合セルを左上のセルとして 1 回だけ返します。
+- `lastRow()`・`lastColumn()`・`dimension` は、値のある結合セルをその範囲の最後の行・列まで数えます（`append()` は結合セルの下に書きます）。
+- `sheet.merge()` は、Excel の「セルを結合」と同じく、値を 1 つだけ（行ごとに左から見て最初の値）左上のセルに残して、ほかを消します。
+- 数式の中の参照は Excel と同じです（`A1:C1` が結合のとき `=B1` は空）。
+
 ## セルの書式
 
 文字・塗りつぶし・罫線・配置・表示形式（Excel の「セルの書式設定」）を付けます。
@@ -74,7 +163,7 @@ sheet.cell("A1").getStyle();   // 現在の書式（setStyle に渡せる形。s
 セルの結合、ウィンドウ枠の固定、フィルター、列幅の自動調整です。それぞれ今の状態を読めます。
 
 ```js
-sheet.merge("A1:D1");          // セル結合（unmerge で解除。sheet.merges で結合範囲の一覧）
+sheet.merge("A1:D1");          // セル結合（unmerge で解除。sheet.merges で結合範囲の一覧。上の「結合セル」）
 sheet.freeze("A2");            // 1 行目を固定（freeze({ rows: 1, columns: 1 }) も可。unfreeze で解除。sheet.frozen で読める）
 sheet.autoFilter("A3:D10");    // フィルター（null で外す。sheet.filter で範囲を読める）
 sheet.autoFit();               // すべての列の幅を内容に合わせる（全角は 2 文字分）

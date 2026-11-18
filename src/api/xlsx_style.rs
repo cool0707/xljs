@@ -14,6 +14,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::js::{self, get, has, nullish, object, to_bool, to_f64, to_str, v};
 use super::xlsx::{self, Book, cell, column_name, parse_ref, with_book};
+use super::xlsx_calc;
 use super::{N, R};
 use crate::{Error, Result, err};
 
@@ -690,7 +691,8 @@ pub fn apply_style(b: &mut Book, sheet: &str, r: &str, sp: &StyleSpec, replace: 
     if let Some(lines) = parse_lines(r) {
         return apply_style_lines(b, sheet, lines, sp, replace);
     }
-    let (c1, r1, c2, r2) = parse_range(r)?;
+    // A cell of a merged area is formatted as the area (xlsx_merge).
+    let (c1, r1, c2, r2) = super::xlsx_merge::format_area(b.sheet(sheet)?, parse_range(r)?);
     let df = b.default_font.clone();
     let ws = b.layout_mut(sheet)?;
     for row in r1..=r2 {
@@ -729,6 +731,36 @@ pub fn apply_style(b: &mut Book, sheet: &str, r: &str, sp: &StyleSpec, replace: 
             apply(&mut st, &StyleSpec::default(), Some(&one), &df);
             ws.cell_mut((nc as u32, nr as u32)).set_style(st);
         }
+    }
+    Ok(())
+}
+
+/// What merging the cells does to their values, as Excel's "セルを結合": the
+/// area keeps one value, the first there is (by rows), in its top-left
+/// cell; the others are removed.
+fn keep_one_value(b: &mut Book, sheet: &str, (c1, r1, c2, r2): (u32, u32, u32, u32)) -> Result<()> {
+    let filled = |c: &umya_spreadsheet::Cell| c.is_formula() || !c.raw_value().is_empty();
+    let ws = b.sheet(sheet)?;
+    let mut held: Vec<(u32, u32)> = ws
+        .cells()
+        .iter()
+        .filter(|c| filled(c))
+        .map(|c| (c.coordinate().row_num(), c.coordinate().col_num()))
+        .filter(|&(row, col)| (c1..=c2).contains(&col) && (r1..=r2).contains(&row) && (col, row) != (c1, r1))
+        .collect();
+    held.sort_unstable();
+    let first = held.first().copied().filter(|_| !ws.cell((c1, r1)).is_some_and(filled));
+    if let Some((row, col)) = first {
+        match xlsx_calc::formula_shown(b, sheet, col, row) {
+            Some(formula) => xlsx_calc::set_formula(b, sheet, c1, r1, &formula)?,
+            None => {
+                let value = b.sheet(sheet)?.cell((col, row)).map(|c| c.cell_value().clone()).unwrap_or_default();
+                b.cell_mut(sheet, c1, r1)?.set_cell_value(value);
+            }
+        }
+    }
+    for (row, col) in held {
+        b.cell_mut(sheet, col, row)?.cell_value_mut().set_blank();
     }
     Ok(())
 }
@@ -894,7 +926,7 @@ pub(super) fn install(n: &N) {
     n.set("xlsxGetStyle", |h, a| {
         let (sheet, r) = (a.str(1), a.str(2).to_uppercase());
         with_book(h, a, |b| {
-            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let (col, row) = super::xlsx_merge::anchor_of(b, &sheet, &r).map_err(|e| a.throw(&e))?;
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
             let st = shown_style(ws, col, row).cloned().unwrap_or_default();
             style_object(&a.ctx, &st, &b.default_font)
@@ -911,12 +943,37 @@ pub(super) fn install(n: &N) {
                 // Drop merges that overlap the new one (or the one removed).
                 x2 < c1 || x1 > c2 || y2 < r1 || y1 > r2
             });
-            if !unmerge {
-                ws.add_merge_cells(range);
+            if !unmerge && (c1, r1) != (c2, r2) {
+                keep_one_value(b, &sheet, (c1, r1, c2, r2)).map_err(|e| a.throw(&e))?;
+                b.layout_mut(&sheet).map_err(|e| a.throw(&e))?.add_merge_cells(range);
             }
             Ok(())
         })?;
         a.undefined()
+    });
+    // xlsxMergeArea(book, sheet, cell) -> [firstColumn, firstRow, lastColumn, lastRow] of the merged
+    // area the cell is in, or null
+    n.set("xlsxMergeArea", |h, a| {
+        let (sheet, r) = (a.str(1), a.str(2).to_uppercase());
+        let m = with_book(h, a, |b| {
+            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            Ok(super::xlsx_merge::area(b.sheet(&sheet).map_err(|e| a.throw(&e))?, col, row))
+        })?;
+        match m {
+            Some((c1, r1, c2, r2)) => a.ret(vec![c1 as f64, r1 as f64, c2 as f64, r2 as f64]),
+            None => a.null(),
+        }
+    });
+    // xlsxHiddenLines(book, sheet) -> [rows, columns]: the numbers of the hidden rows and columns
+    n.set("xlsxHiddenLines", |h, a| {
+        let sheet = a.str(1);
+        let (rows, cols) = with_book(h, a, |b| {
+            let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            let rows: Vec<f64> = ws.row_dimensions().iter().filter(|r| r.hidden()).map(|r| r.row_num() as f64).collect();
+            let cols: Vec<f64> = ws.column_dimensions().iter().filter(|c| c.hidden()).map(|c| c.col_num() as f64).collect();
+            Ok((rows, cols))
+        })?;
+        js::array(&a.ctx, [v(&a.ctx, rows), v(&a.ctx, cols)])
     });
     // xlsxFreeze(book, sheet, topLeftCell) — "" removes the panes.
     n.set("xlsxFreeze", |h, a| {
@@ -1060,11 +1117,17 @@ pub(super) fn install(n: &N) {
         let used = xlsx::Used { formats: a.bool(5), skip_blank: a.bool(6) };
         let n = with_book(h, a, |b| {
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
+            let merges = super::xlsx_merge::Merges::new(ws);
             let mut n = 0;
             for c in ws.cells() {
+                if !used.has(c) {
+                    continue;
+                }
                 let (col, row) = (c.coordinate().col_num(), c.coordinate().row_num());
-                let (at, other) = if columns { (col, row) } else { (row, col) };
-                if other > n && (first..=last).contains(&(at as i64)) && used.has(c) {
+                // A merged area is used in every row and column it is in.
+                let Some((c2, r2)) = used.reach(&merges, col, row) else { continue };
+                let (lo, hi, other) = if columns { (col, c2, r2) } else { (row, r2, c2) };
+                if other > n && lo as i64 <= last && hi as i64 >= first {
                     n = other;
                 }
             }

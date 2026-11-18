@@ -14,6 +14,7 @@ use umya_spreadsheet::structs::office2019::threaded_comment::ThreadedComment;
 use umya_spreadsheet::{Comment, Worksheet};
 
 use super::xlsx::{Book, cell_name, parse_ref, with_book};
+use super::xlsx_merge::{anchor_name, anchor_of};
 use super::{N, js};
 use crate::{Result, err, t};
 
@@ -246,7 +247,7 @@ pub(super) fn install(n: &N) {
     n.set("xlsxGetNote", |h, a| {
         let (sheet, r) = (a.str(1), a.str(2).to_uppercase());
         let text = with_book(h, a, |b| {
-            let (col, row) = parse_ref(&r).map_err(|e| a.throw(&e))?;
+            let (col, row) = anchor_of(b, &sheet, &r).map_err(|e| a.throw(&e))?;
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
             Ok(ws.comments().iter().find(|c| at(col, row)(c.coordinate()) && !is_fallback(c)).map(note_text))
         })?;
@@ -259,7 +260,10 @@ pub(super) fn install(n: &N) {
     n.set("xlsxSetNote", |h, a| {
         let (sheet, r, v, name) = (a.str(1), a.str(2).to_uppercase(), a.arg(3), a.str(4));
         let text = (!js::nullish(&v)).then(|| js::to_str(&v));
-        with_book(h, a, |b| set_note(b, &sheet, &r, text, &name).map_err(|e| a.throw(&e)))?;
+        with_book(h, a, |b| {
+            let r = anchor_name(b, &sheet, &r).map_err(|e| a.throw(&e))?;
+            set_note(b, &sheet, &r, text, &name).map_err(|e| a.throw(&e))
+        })?;
         a.undefined()
     });
     // xlsxNotes(book, sheet) -> JSON [{ address, text, author }] in the order of the cells
@@ -282,7 +286,7 @@ pub(super) fn install(n: &N) {
     n.set("xlsxComments", |h, a| {
         let (sheet, r) = (a.str(1), a.str(2).to_uppercase());
         let out = with_book(h, a, |b| {
-            let only = if r.is_empty() { None } else { Some(parse_ref(&r).map_err(|e| a.throw(&e))?) };
+            let only = if r.is_empty() { None } else { Some(anchor_of(b, &sheet, &r).map_err(|e| a.throw(&e))?) };
             let ws = b.sheet(&sheet).map_err(|e| a.throw(&e))?;
             Ok(threads(b, ws, only).to_string())
         })?;
@@ -291,7 +295,10 @@ pub(super) fn install(n: &N) {
     // xlsxAddComment(book, sheet, ref, parentId | "", text, author, date ISO) -> the id
     n.set("xlsxAddComment", |h, a| {
         let (sheet, r, parent, text, name, date) = (a.str(1), a.str(2).to_uppercase(), a.str(3), a.str(4), a.str(5), a.str(6));
-        let id = with_book(h, a, |b| add_comment(b, &sheet, &r, &parent, &text, &name, &date).map_err(|e| a.throw(&e)))?;
+        let id = with_book(h, a, |b| {
+            let r = anchor_name(b, &sheet, &r).map_err(|e| a.throw(&e))?;
+            add_comment(b, &sheet, &r, &parent, &text, &name, &date).map_err(|e| a.throw(&e))
+        })?;
         a.ret(id)
     });
     // xlsxEditComment(book, sheet, id, "text" | "resolved", value)

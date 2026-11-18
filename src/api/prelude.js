@@ -5842,6 +5842,114 @@
     body: { border: { all: { style: "thin", color: "#BFBFBF" } } },
   };
 
+  /** A text for comparing labels and headers: full/half width, case and spaces (line breaks too) do not matter. */
+  const looseText = (s) => String(s).normalize("NFKC").replace(/\s+/g, "").toLowerCase();
+  /** A RegExp to test texts with one after another (no lastIndex). */
+  const plainRegExp = (re) => new RegExp(re.source, re.flags.replace(/[gy]/g, ""));
+
+  /**
+   * What find() / findAll() look for, as (value, texts) => boolean; texts() gives the texts the cell
+   * is compared by (a string itself; a number, date or boolean as it is displayed, a number also as
+   * String(value)). A function is called with the Cell instead (see findCells).
+   */
+  function cellMatcher(what, opts, who) {
+    what = plainDate(what);
+    if (what instanceof Date) { const t = what.getTime(); return (v) => v instanceof Date && v.getTime() === t; }
+    if (typeof what === "number" || typeof what === "boolean") return (v) => v === what;
+    if (what instanceof RegExp) {
+      const re = plainRegExp(what);
+      return (v, texts) => texts().some((t) => re.test(opts.strict ? t : t.normalize("NFKC")));
+    }
+    if (typeof what !== "string") throw new TypeError(T("xlsx.find.badTarget", who));
+    const mode = opts.match === undefined ? "whole" : opts.match;
+    if (mode !== "whole" && mode !== "partial") throw new RangeError(T("xlsx.find.badOption", who, "match", String(mode), '"whole", "partial"'));
+    const norm = opts.strict ? (t) => t : looseText;
+    const want = norm(what);
+    return (v, texts) => texts().some((t) => (mode === "whole" ? norm(t) === want : norm(t).includes(want)));
+  }
+
+  /**
+   * The cells with a value in the columns c1..c2 and rows r1..r2 that what matches, as Cells, in
+   * the order of the rows (or of the columns: opts.order). A merged area is its top-left cell.
+   * opts: { match = "whole" | "partial", strict, visibleOnly, order = "rows" | "columns" }
+   */
+  function findCells(sheet, [c1, r1, c2, r2], what, opts, all, who) {
+    opts = opts || {};
+    const order = opts.order === undefined ? "rows" : opts.order;
+    if (order !== "rows" && order !== "columns") throw new RangeError(T("xlsx.find.badOption", who, "order", String(order), '"rows", "columns"'));
+    const byCell = typeof what === "function";
+    const match = byCell ? null : cellMatcher(what, opts, who);
+    const h = sheet._book._h, name = sheet._name;
+    const values = native.xlsxReadAll(h, name, false, false, r1, r2);
+    let shown = null;
+    const textsOf = (v, i, j) => () => {
+      if (typeof v === "string") return [v];
+      shown = shown || native.xlsxReadAll(h, name, true, false, r1, r2);
+      const t = (shown[i] || [])[j] || "";
+      return typeof v === "number" && String(v) !== t ? [t, String(v)] : [t];
+    };
+    let hiddenRows = null, hiddenCols = null;
+    if (opts.visibleOnly) {
+      const [rows, cols] = native.xlsxHiddenLines(h, name);
+      hiddenRows = new Set(rows);
+      hiddenCols = new Set(cols);
+    }
+    const width = Math.min(c2, values.reduce((m, r) => Math.max(m, r.length), 0));
+    const found = [];
+    const test = (i, col) => {
+      const v = (values[i] || [])[col - 1];
+      if (v === null || v === undefined) return false;
+      if (hiddenRows && (hiddenRows.has(r1 + i) || hiddenCols.has(col))) return false;
+      const cell = new Cell(sheet, native.xlsxCellName(col, r1 + i));
+      if (!(byCell ? what(cell) : match(v, textsOf(v, i, col - 1)))) return false;
+      found.push(cell);
+      return !all;
+    };
+    if (order === "rows") {
+      for (let i = 0; i < values.length; i++) for (let col = c1; col <= width; col++) if (test(i, col)) return found;
+    } else {
+      for (let col = c1; col <= width; col++) for (let i = 0; i < values.length; i++) if (test(i, col)) return found;
+    }
+    return found;
+  }
+
+  /** The address of a cell given as "C5" or as a Cell. */
+  const cellRef = (x) => (x instanceof Cell ? x.address : String(x));
+
+  /**
+   * The columns toRowObjects({ pick }) reads: [[key, index | null]], the index from the table's
+   * first column. pick: { key: header (string | RegExp) | position (number) | { header, nth, offset, optional } }
+   */
+  function pickColumns(pick, headers) {
+    const loose = headers.map(looseText);
+    const show = (x) => (x instanceof RegExp ? String(x) : JSON.stringify(x));
+    return Object.entries(pick).map(([key, p]) => {
+      if (typeof p === "number") {
+        if (!Number.isInteger(p) || p < 0) throw new RangeError(T("xlsx.pick.bad", key));
+        return [key, p];
+      }
+      const spec = typeof p === "string" || p instanceof RegExp ? { header: p } : p;
+      if (!spec || typeof spec !== "object" || !(typeof spec.header === "string" || spec.header instanceof RegExp)) throw new TypeError(T("xlsx.pick.bad", key));
+      const nth = spec.nth === undefined ? 1 : spec.nth, offset = spec.offset === undefined ? 0 : spec.offset;
+      if (!Number.isInteger(nth) || nth < 1 || !Number.isInteger(offset)) throw new RangeError(T("xlsx.pick.bad", key));
+      let test;
+      if (spec.header instanceof RegExp) {
+        const re = plainRegExp(spec.header);
+        test = (i) => re.test(headers[i].normalize("NFKC"));
+      } else {
+        const want = looseText(spec.header);
+        test = (i) => loose[i] === want;
+      }
+      let seen = 0;
+      for (let i = 0; i < headers.length; i++) if (test(i) && ++seen === nth) return [key, i + offset];
+      if (spec.optional) return [key, null];
+      throw new Error(T("xlsx.pick.notFound", key, show(spec.header) + (nth > 1 ? ` (${nth})` : ""), headers.filter((x) => x !== "").join(", ")));
+    });
+  }
+
+  /** The text of a header cell, as toRowObjects() names the column. */
+  const headerText = (v) => (v === null || v === undefined ? "" : v instanceof Date ? formatDateLocal(v) : String(v).trim());
+
   class Range {
     constructor(sheet, address) {
       define(this, "_sheet", sheet);
@@ -5887,6 +5995,10 @@
     set values(rows) {
       native.xlsxWriteRows(this._sheet._book._h, this._sheet._name, this._cells().split(":")[0], Array.from(rows, (r) => Array.from(r, plainDate)));
     }
+    /** The first cell of the range that what matches (see findCells), or null. */
+    find(what, opts) { return findCells(this._sheet, this._bounds(), what, opts, false, "find()")[0] || null; }
+    /** Every cell of the range that what matches. */
+    findAll(what, opts) { return findCells(this._sheet, this._bounds(), what, opts, true, "findAll()"); }
     [inspectSymbol]() { return `Range ${this._sheet._name}!${this._address}`; }
   }
 
@@ -6042,10 +6154,15 @@
     /** The threaded comment of the cell, or null. */
     get comment() {
       const t = JSON.parse(native.xlsxComments(this._sheet._book._h, this._sheet._name, this._address))[0];
-      return t ? new CellComment(this._sheet, this._address, t.id) : null;
+      return t ? new CellComment(this._sheet, t.address, t.id) : null;
     }
     /** Starts a threaded comment on the cell. opts: { author = xljs.userName } */
-    addComment(text, opts) { return new CellComment(this._sheet, this._address, addComment(this._sheet, this._address, "", text, opts)); }
+    addComment(text, opts) {
+      // The comment of a merged area is on its top-left cell.
+      const m = native.xlsxMergeArea(this._sheet._book._h, this._sheet._name, this._address);
+      const at = m ? native.xlsxCellName(m[0], m[1]) : this._address;
+      return new CellComment(this._sheet, at, addComment(this._sheet, at, "", text, opts));
+    }
     /** Evaluates the formula with excelize's calculation engine (subset of Excel functions). */
     calc() { return native.xlsxCalc(this._sheet._book._h, this._sheet._name, this._address); }
     /** Applies (merges) a style to the cell. */
@@ -6054,6 +6171,18 @@
     style(spec, opts) { return this.setStyle(spec, opts); }
     /** The cell's current style ({ font, fill, border, alignment, numberFormat }). */
     getStyle() { return flatStyle(native.xlsxGetStyle(this._sheet._book._h, this._sheet._name, this._address)); }
+    /**
+     * The cell rows below and columns to the right (negative: above, to the left). From a cell of
+     * a merged area the count starts at the edge of the area: the cell next to the area is 1 away.
+     */
+    offset(rows = 0, columns = 0) {
+      if (!Number.isInteger(rows) || !Number.isInteger(columns)) throw new RangeError(T("xlsx.offset.bad", String(rows), String(columns)));
+      const [col, row] = native.xlsxParseRef(this._address);
+      const [c1, r1, c2, r2] = native.xlsxMergeArea(this._sheet._book._h, this._sheet._name, this._address) || [col, row, col, row];
+      const c = (columns > 0 ? c2 : c1) + columns, r = (rows > 0 ? r2 : r1) + rows;
+      if (c < 1 || c > 16384 || r < 1 || r > 1048576) throw new RangeError(T("xlsx.offset.outside", this._address, String(rows), String(columns)));
+      return new Cell(this._sheet, native.xlsxCellName(c, r));
+    }
     [inspectSymbol]() { return `Cell ${this._sheet._name}!${this._address} ${inspect(this.value)}`; }
   }
 
@@ -6111,24 +6240,47 @@
     }
     /**
      * Rows as objects keyed by the header row.
-     * opts: { header = 1 (row number), columns, skipEmpty = true, text = false }
+     * opts: { header = 1 (row number, 0: none), columns, skipEmpty = true, text = false,
+     *   start (the top-left cell of the table: its header, or its first row without one; the
+     *   columns are those of the headers up to the first empty one),
+     *   untilBlank (the table ends at the first empty row), pick (see pickColumns) }
      */
     toRowObjects(opts = {}) {
       const rows = native.xlsxReadAll(this._book._h, this._name, !!opts.text);
-      const headerRow = opts.header === undefined ? 1 : opts.header;
-      let keys, body;
-      if (opts.columns) {
-        keys = opts.columns;
-        body = headerRow ? rows.slice(headerRow) : rows;
-      } else {
-        const h = rows[headerRow - 1] || [];
-        keys = uniqueKeys(h.map((v) => (v === null ? "" : v instanceof Date ? formatDateLocal(v) : String(v).trim())));
-        body = rows.slice(headerRow);
+      const noHeader = opts.header === 0 || opts.header === false;
+      const anchored = opts.start !== undefined && opts.start !== null;
+      let c0 = 1, headerRow = opts.header === undefined || opts.header === true ? 1 : Number(opts.header) || 0, first = headerRow;
+      if (anchored) {
+        const [c, r] = native.xlsxParseRef(cellRef(opts.start));
+        c0 = c;
+        headerRow = noHeader ? 0 : r;
+        first = noHeader ? r - 1 : r;
       }
-      if (opts.skipEmpty !== false) body = body.filter((r) => r.some((v) => v !== null && v !== ""));
+      let headers = headerRow ? (rows[headerRow - 1] || []).slice(c0 - 1).map(headerText) : [];
+      if (anchored) {
+        const end = headers.indexOf("");
+        if (end >= 0) headers.length = end;
+      }
+      // The columns of the table (an empty row is one with nothing in them): those of its headers
+      // when it is given by its top-left cell, else every column.
+      const width = anchored ? (headerRow ? headers.length : opts.columns ? opts.columns.length : Infinity) : Infinity;
+      const empty = (r) => !r.slice(0, width).some((v) => v !== null && v !== "");
+      let body = rows.slice(first).map((r) => r.slice(c0 - 1));
+      if (opts.untilBlank) {
+        const end = body.findIndex(empty);
+        if (end >= 0) body = body.slice(0, end);
+      }
+      if (opts.skipEmpty !== false) body = body.filter((r) => !empty(r));
+      let cols;
+      if (opts.pick) {
+        cols = pickColumns(opts.pick, headers);
+      } else {
+        const keys = opts.columns || uniqueKeys(headerRow ? headers : new Array(body.reduce((m, r) => Math.max(m, r.length), 0)).fill(""));
+        cols = keys.map((k, i) => [k, i]);
+      }
       return body.map((r) => {
         const o = {};
-        keys.forEach((k, i) => { o[k] = i < r.length ? r[i] : null; });
+        for (const [k, i] of cols) o[k] = i !== null && i >= 0 && i < r.length ? r[i] : null;
         return o;
       });
     }
@@ -6150,7 +6302,8 @@
      */
     write(rows, opts = {}) {
       rows = Array.from(rows || []);
-      const start = String(opts.start || "A1").toUpperCase();
+      if (opts.matchHeader !== undefined && opts.matchHeader !== null && opts.matchHeader !== false) return this._writeMatched(rows, opts, false);
+      const start = cellRef(opts.start || "A1").toUpperCase();
       let data, cols = null, hasHeader = false;
       if (rows.length && !Array.isArray(rows[0])) {
         cols = opts.columns || keysOf(rows);
@@ -6190,8 +6343,41 @@
       if (want("freeze") && hasHeader) this.freeze(ref(1, r1 + 1));
       if (want("filter") && hasHeader) this.autoFilter(`${ref(c1, r1)}:${ref(c2, r2)}`);
     }
+    /**
+     * write() / append() with matchHeader: the values go under the headers there are, each key of
+     * the rows into the column of the header it names (as toRowObjects() names the columns, or
+     * else ignoring full/half width, case and spaces). No header is written and the other columns
+     * are left as they are. matchHeader: true (the header is at opts.start; row 1 for append), a
+     * row number, or the header's first cell ("C5", a Cell).
+     */
+    _writeMatched(rows, opts, append) {
+      if (rows.length && Array.isArray(rows[0])) throw new TypeError(T("xlsx.matchHeader.arrays"));
+      const m = opts.matchHeader;
+      const at = typeof m === "number" ? native.xlsxCellName(1, m) : m === true ? (append ? "A1" : cellRef(opts.start || "A1")) : cellRef(m);
+      const [c0, hr] = native.xlsxParseRef(at.toUpperCase());
+      const line = (native.xlsxReadAll(this._book._h, this._name, false, true, hr, hr)[0] || []).slice(c0 - 1);
+      const where = `${this._name}!${native.xlsxCellName(c0, hr)}`;
+      if (!line.some((v) => v !== null && v !== "")) throw new Error(T("xlsx.matchHeader.noHeader", where));
+      const headers = uniqueKeys(line.map(headerText));
+      const loose = headers.map(looseText);
+      const keys = opts.columns || keysOf(rows);
+      const cols = new Array(headers.length).fill(undefined);
+      for (const k of keys) {
+        let i = headers.indexOf(k);
+        if (i < 0) i = loose.findIndex((x, j) => cols[j] === undefined && x === looseText(k));
+        if (i >= 0 && cols[i] === undefined) cols[i] = k;
+      }
+      if (rows.length && !cols.some((k) => k !== undefined)) throw new Error(T("xlsx.matchHeader.none", where, headers.join(", "), keys.join(", ")));
+      const data = rows.map((r) => cols.map((k) => (k === undefined ? undefined : plainDate(r[k]))));
+      const top = append ? Math.max(hr, lastUsed(this, true, c0, c0 + headers.length - 1)) + 1 : hr + 1;
+      const start = native.xlsxCellName(c0, top);
+      native.xlsxWriteRows(this._book._h, this._name, start, data);
+      this._formatWritten(start, data, cols, false, opts);
+      return this;
+    }
     /** Appends rows below the last used row (objects are written without a header). */
     append(rows, opts = {}) {
+      if (opts.matchHeader !== undefined && opts.matchHeader !== null && opts.matchHeader !== false) return this._writeMatched(Array.from(rows || []), opts, true);
       const next = this.lastRow() + 1;
       const header = opts.header !== undefined ? opts.header : next === 1;
       return this.write(rows, Object.assign({}, opts, { start: "A" + next, header }));
@@ -6261,6 +6447,10 @@
     }
     /** range("A1:D10") */
     range(address) { return new Range(this, address); }
+    /** The first cell with a value that what matches (see findCells), or null. */
+    find(what, opts) { return findCells(this, [1, 1, 16384, 1048576], what, opts, false, "find()")[0] || null; }
+    /** Every cell with a value that what matches. */
+    findAll(what, opts) { return findCells(this, [1, 1, 16384, 1048576], what, opts, true, "findAll()"); }
     /** style("A1:D1", { bold: true, background: "#DDEBF7", border: "thin" }) */
     setStyle(address, spec, opts) { new Range(this, address).setStyle(spec, opts); return this; }
     /** Alias of setStyle() (not documented). */
@@ -6312,10 +6502,16 @@
         },
       });
     }
-    /** sheet("名前") or sheet(0); null when missing. */
+    /** sheet("名前"), sheet(0) or sheet(/^\d+月$/) (the first whose name matches); null when missing. */
     sheet(nameOrIndex) {
       const names = native.xlsxSheetNames(this._h);
-      const n = typeof nameOrIndex === "number" ? names[nameOrIndex] : sheetNameLike(names, String(nameOrIndex));
+      let n;
+      if (nameOrIndex instanceof RegExp) {
+        const re = plainRegExp(nameOrIndex);
+        n = names.find((x) => re.test(x) || re.test(x.normalize("NFKC")));
+      } else {
+        n = typeof nameOrIndex === "number" ? names[nameOrIndex] : sheetNameLike(names, String(nameOrIndex));
+      }
       return n === undefined || n === null ? null : new Worksheet(this, n);
     }
     addSheet(name) {
