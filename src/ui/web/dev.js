@@ -2005,6 +2005,15 @@
       b.error ? b.error : b.modules ? fmt(L.wzModules, b.modules) : L.wzNoMacros)));
     const f = $("wz-folder");
     if (m.dir && (!f.value || f.value === st.home)) f.value = m.dir;
+    // The script is named after the (first) workbook unless a name was typed.
+    const first = wz.books.find((b) => !b.error);
+    const name = $("wz-name");
+    if (first && (!name.value.trim() || name.value === wz.bookName)) {
+      wz.bookName = first.name.replace(/\.[^.]*$/, "");
+      name.value = wz.bookName;
+      setRadio("wz-name-mode", "name");
+      updateWizard();
+    }
   }
 
   function wizardPrompt(m) {
