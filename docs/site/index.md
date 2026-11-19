@@ -45,7 +45,7 @@ JavaScript のオブジェクト定義だけで、フォーム画面・表・グ
 
 <div class="cards">
 <div class="card"><h3>インストーラー・Excel不要</h3><p>シングルバイナリで動作します。Excel・Acrobat・Node.js などのインストールは不要です。</p></div>
-<div class="card"><h3>JavaScript / TypeScript</h3><p>ES2023 相当と TypeScript をそのまま実行できます。</p></div>
+<div class="card"><h3>JavaScript / TypeScriptで開発</h3><p>JavaScript (ES2023 相当) と TypeScript をそのまま実行できます。</p></div>
 <div class="card"><h3>Excel・PDF・CSV・SQLite</h3><p>xlsx の読み書きと数式の計算、PDF 出力と PDF の編集、CSV 入出力、SQLiteでのデータ保管ができます。</p></div>
 <div class="card"><h3>AI チャットで作って exe で配る</h3><p>開発モードで AI チャットに頼んで作り、テストを記録して、exe にパックして配れます。</p></div>
 </div>
