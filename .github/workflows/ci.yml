@@ -5,6 +5,9 @@ on:
     branches: [main, "ccr-*"]
     tags: ["v*"]
   pull_request:
+  # Release from the Actions page (also from the phone): run on main, and the
+  # release (and its tag) is v<the version in Cargo.toml>.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -54,8 +57,36 @@ jobs:
           find "$ex" -name '*.xljs' -exec sh -c 'mv "$1" "${1%.xljs}.ts"' _ {} \;
           cd "$ex" && npx -y -p typescript@6.0.2 tsc -p jsconfig.json
 
+  # The release's tag: the pushed tag, or v<Cargo.toml's version> when run
+  # from the Actions page (only on main, and only for a tag not used yet).
+  tag:
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.tag.outputs.name }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: Cargo.toml
+          sparse-checkout-cone-mode: false
+      - id: tag
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then
+            echo "name=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error title=release::Run the release on main (it ran on $GITHUB_REF_NAME)"
+            exit 1
+          fi
+          tag=v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; then
+            echo "::error title=release::$tag is already released: raise the version in Cargo.toml"
+            exit 1
+          fi
+          echo "name=$tag" >> "$GITHUB_OUTPUT"
+
   build:
-    needs: test
+    needs: [test, tag]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
@@ -71,7 +102,7 @@ jobs:
       - name: Build Windows binaries
         shell: bash
         env:
-          XLJS_VERSION: ${{ github.ref_name }}
+          XLJS_VERSION: ${{ needs.tag.outputs.name }}
         run: |
           for t in x86_64-pc-windows-msvc aarch64-pc-windows-msvc; do
             cargo build --release --target $t
@@ -96,8 +127,8 @@ jobs:
           path: dist/*.zip
 
   release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: [build, tag]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -112,12 +143,15 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.name }}
         # Notes from docs/release-notes/<tag>.md when there is one,
-        # else GitHub's generated list of pull requests.
+        # else GitHub's generated list of pull requests. --target makes the
+        # tag on this commit when it does not exist (run from the Actions page).
         run: |
-          notes=docs/release-notes/$GITHUB_REF_NAME.md
+          notes=docs/release-notes/$TAG.md
           if [ -f "$notes" ]; then
-            gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+            set -- --notes-file "$notes"
           else
-            gh release create "$GITHUB_REF_NAME" dist/*.zip --repo "$GITHUB_REPOSITORY" --generate-notes
+            set -- --generate-notes
           fi
+          gh release create "$TAG" dist/*.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" "$@"
