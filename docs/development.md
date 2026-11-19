@@ -26,7 +26,7 @@ make windows-gnu    # dist/x64/
 ## リリース
 
 1. `Cargo.toml` の `version` を上げ、`docs/release-notes/v<版>.md` にリリースノートを書いて main に入れる。
-2. GitHub の Actions で「CI」を開き、［Run workflow］で main を選んで実行する（スマホのブラウザ・GitHub アプリからもできる）。テストのあと x64 / arm64 の zip を作り、タグ `v<Cargo.toml の版>` を main の先頭に付けて GitHub の Release を作る（本文はそのリリースノート。ファイルがなければ PR の一覧を自動で作る）。その版のタグがもうあれば、テストの前に止まる。
+2. GitHub の Actions で「CI」を開き、［Run workflow］で main を選んで実行する（スマホのブラウザ・GitHub アプリからもできる）。テストのあと x64 / arm64 の zip を作り、タグ `v<Cargo.toml の版>` を main の先頭に付けて GitHub の Release を作る（本文はそのリリースノート。ファイルがなければ PR の一覧を自動で作る）。その版のタグがもうあれば、zip を作る前に止まる。
    - 代わりに、main のコミットにタグ `v<版>` を付けて push してもよい（そのタグの名前でリリースする）。
    - exe が表示する版はタグの名前（`XLJS_VERSION`）。
 
