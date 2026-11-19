@@ -77,6 +77,8 @@ xljs dev 集計.js
 // ==/xljs==
 ```
 
+<figure class="shot"><img src="../images/error-contact.png" alt="xljs のエラーの画面。ReferenceError: hoge は定義されていません、dialog-aggregate.xljs の 9 行目。このツールの作成者 総務課 山田太郎（yamada@example.com）に連絡してください、のあとにレポートを保存とメールで連絡の案内。レポートを保存・メールで連絡・コピー・OK のボタン" width="597" loading="lazy"><figcaption><code>@author</code>・<code>@contact</code> を書いたときのエラーの画面。作成者と連絡先が出て、［メールで連絡］でメールを作れます。</figcaption></figure>
+
 `@contact` がメールアドレスなら［メールで連絡］で、エラーの内容を入れたメールを作れます（`https://` の URL なら［連絡先を開く］）。エラーを見るのはたいていスクリプトを作った人ではないので、配布するスクリプトには書いておくことをおすすめします。開発モードからの実行では、連絡先の案内は出ず、代わりに［AI への依頼をコピー］が出ます（[メタデータ](metadata.md)）。
 
 ## .xljs ファイル
