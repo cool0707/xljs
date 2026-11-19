@@ -1,3 +1,5 @@
+日本語 | [English](README.en.md)
+
 # <img src="assets/xljs.png" width="40" align="top"> xljs
 
 JavaScript / TypeScript で Excel・CSV の集計やデータ変換を行えるツールです。シンプルな入力・実行フォームから、一覧・検索・登録画面を備えた業務アプリまで JS / TS だけで構築できます。Excel 不要の Windows 向けシングルバイナリで、環境構築なしですぐに使えます。
