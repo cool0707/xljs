@@ -7,7 +7,7 @@ xljs をダウンロードしてサンプルを動かし、開発モードで AI
 
 ## 1. ダウンロードして展開する
 
-[GitHub の Releases](https://github.com/cool0707/xljs/releases) から `xljs-windows-x64.zip` をダウンロードします（ARM の Windows では `xljs-windows-arm64.zip`）。
+[GitHub の最新のリリース](https://github.com/cool0707/xljs/releases/latest)から [`xljs-windows-x64.zip`](https://github.com/cool0707/xljs/releases/latest/download/xljs-windows-x64.zip) をダウンロードします（ARM の Windows では [`xljs-windows-arm64.zip`](https://github.com/cool0707/xljs/releases/latest/download/xljs-windows-arm64.zip)）。
 
 ダウンロードした zip を右クリックして「すべて展開」を選び、好きなフォルダ（ドキュメントの下など）に展開します。インストーラーはなく、展開したフォルダのまま使います。zip を開いただけの状態（展開せずに中を見ている状態）では動かないので、必ず展開してください。
 

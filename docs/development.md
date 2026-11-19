@@ -23,6 +23,11 @@ make windows-gnu    # dist/x64/
 - exe のアイコン（`assets/xljs.ico`）とマニフェスト（`src/cli/xljs.manifest`、ビジュアルスタイル・高 DPI 対応）は `build.rs` が `src/cli/xljs.rc` をリソースとして埋め込みます。アイコンを作り直すときは `python3 tools/make_icon.py ロゴ.png`（`assets/xljs.png` と `assets/xljs.ico` を生成）。
 - WebView2 は WebView2Loader.dll を使わず、インストール済みのランタイムを直接読み込みます（`src/ui/native/loader.rs`）。配布物は exe 1 つです。
 
+## リリース
+
+1. `Cargo.toml` の `version` を上げ、`docs/release-notes/v<版>.md` にリリースノートを書いて main に入れる。
+2. main のコミットにタグ `v<版>` を付けて push する。CI が x64 / arm64 の zip を作り、GitHub の Release を作る（本文はそのリリースノート。ファイルがなければ PR の一覧を自動で作る）。exe が表示する版はタグの名前（`XLJS_VERSION`）。
+
 ## テスト
 
 ```
