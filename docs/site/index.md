@@ -44,9 +44,9 @@ JavaScript のオブジェクト定義だけで、フォーム画面・表・グ
 ## 主な特徴
 
 <div class="cards">
-<div class="card"><h3>置くだけで動く</h3><p>実行ファイル 1 つで動きます。Excel・Acrobat・Node.js などのインストールは要りません。</p></div>
-<div class="card"><h3>JavaScript / TypeScript</h3><p>ES2023 相当と TypeScript をそのまま実行します。<code>xljs init</code> の型定義でエディタの補完も効きます。</p></div>
-<div class="card"><h3>Excel・PDF・CSV・SQLite</h3><p>xlsx の読み書きと数式の計算、印刷どおりの PDF 出力と PDF の編集、Shift_JIS の CSV、ファイルサーバーで共有する SQLite。</p></div>
+<div class="card"><h3>置くだけで動く</h3><p>シングルバイナリで動作します。Excel・Acrobat・Node.js などのインストールは不要です。</p></div>
+<div class="card"><h3>JavaScript / TypeScript</h3><p>ES2023 相当と TypeScript をそのまま実行できます。</p></div>
+<div class="card"><h3>Excel・PDF・CSV・SQLite</h3><p>xlsx の読み書きと数式の計算、PDF 出力と PDF の編集、CSV 入出力、SQLiteでのデータ保管ができます。</p></div>
 <div class="card"><h3>AI チャットで作って exe で配る</h3><p>開発モードで AI チャットに頼んで作り、テストを記録して、exe にパックして配れます。</p></div>
 </div>
 
@@ -73,13 +73,13 @@ if (dest) {
 }
 ```
 
-- **言語**: ES2023 相当（オプショナルチェーン、`??`、async/await、トップレベル await、クラスフィールドなど）と TypeScript。`import` でファイル分割可能
+- **言語**: JavaScript (ES2023 相当) と TypeScript。`import` でファイル分割が可能
 - **ファイル操作**: ブラウザの File System Access API 風（`showOpenFilePicker` / `FileSystemFileHandle` など）＋ フォルダ走査などの独自拡張
-- **Excel**: xlsx の読み書き（[umya-spreadsheet](https://github.com/MathNya/umya-spreadsheet)）。値は数値・文字列・真偽値・`Date` で受け渡し
-- **PDF**: Excel で印刷したときと同じページでの PDF 出力（WebView2）、PDF の結合・ページの削除・挿入・回転・文字の追加（Excel・Acrobat 不要）
-- **CSV / JSON**: Shift_JIS(CP932) / UTF-8 の自動判定、BOM 付き UTF-8 での書き出し、JSON Lines
-- **エクスプローラー連携**: 出力したファイルを選択した状態でエクスプローラーを開く、既定のアプリで開く
-- **UI**: Windows ネイティブのダイアログ（メッセージボックス、ファイル選択、進捗ダイアログ）、フォーム（HTML を書かずに作る画面。入力して実行するツールから、一覧・登録のあるアプリまで）・表・グラフ・HTML の画面（WebView2）。コンソールでも動作
+- **Excel**: xlsx のセル値の読み書きに対応
+- **PDF**: Excelによる出力とほぼ同じ PDF 出力、PDF の結合・ページの削除・挿入・回転・文字の追加（Excel・Acrobat 不要）
+- **CSV / JSON**: 日本語文字コードの自動判定、BOM 付き UTF-8 での書き出し、JSON Lines
+- **エクスプローラー連携**: エクスプローラーでファイルを表示、既定のアプリで開く
+- **UI**: Windows ネイティブのダイアログ（メッセージボックス、ファイル選択、進捗ダイアログ）、フォーム（JS/TSのみで作成する画面。入力して実行するツールから、一覧・登録のあるアプリまで）・表・グラフ・HTML の画面（WebView2）。コンソールでも動作
 - **その他**: SQLite（ファイルサーバーでの共有も）、Web API（`fetch`）、Active Directory、プログラムの実行、exe へのパック、VBA マクロ・数式の取り出し
 
 ## このサイトの読み方
