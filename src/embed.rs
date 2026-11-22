@@ -1,6 +1,6 @@
 //! Files built into the executable: the built-in web pages (src/ui/web),
-//! Day.js, the message files, prelude.js, the preset shape definitions, the
-//! type definitions and the documents for AI chats (docs/ai).
+//! Day.js, the message files, prelude.js, the type definitions and the
+//! documents for AI chats (docs/ai).
 //!
 //! build.rs stores them deflate-compressed (except files that do not get
 //! smaller, such as fonts) to keep the exe small; a file is decompressed on
@@ -73,8 +73,6 @@ mod tests {
         }
         for (f, path) in [
             (&PRELUDE, "src/api/prelude.js"),
-            (&PRESET_SHAPES, "src/api/preset_shapes.xml"),
-            (&PRESET_TEXT_WARPS, "src/api/preset_text_warps.xml"),
             (&DTS, "types/xljs.d.ts"),
         ] {
             assert_eq!(f.text(), std::fs::read_to_string(root.join(path)).unwrap(), "{path}");

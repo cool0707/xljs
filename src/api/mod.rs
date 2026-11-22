@@ -27,7 +27,6 @@ mod xlsx_cond;
 mod xlsx_edit;
 mod xlsx_print;
 mod xlsx_table;
-mod xlsx_geom;
 mod xlsx_merge;
 mod xlsx_shape;
 mod xlsx_style;

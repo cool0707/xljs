@@ -14,6 +14,9 @@ use std::io::Cursor;
 
 use serde_json::{Map, Value as J, json};
 use umya_spreadsheet::CellRawValue;
+use umya_spreadsheet::drawingml::anchor::anchor_cells;
+use umya_spreadsheet::drawingml::chart::{AutoColors, DataSource, paint, ref_areas};
+use umya_spreadsheet::drawingml::package::Package;
 
 use super::xlsx::{Book, date_format_code, format_code, from_serial, parse_ref, style_is_date};
 
@@ -48,66 +51,14 @@ impl ChartParts {
         }
         ChartParts { files }
     }
-
-    pub(super) fn xml(&self, part: &str) -> Option<Node> {
-        parse(self.files.get(part)?)
-    }
-
-    /// The relationships of a part: id -> (type, part it points to).
-    pub(super) fn rels(&self, part: &str) -> HashMap<String, (String, String)> {
-        let (dir, file) = part.rsplit_once('/').unwrap_or(("", part));
-        let mut out = HashMap::new();
-        let Some(root) = self.xml(&format!("{dir}/_rels/{file}.rels")) else { return out };
-        for r in root.all("Relationship") {
-            let (Some(id), Some(target)) = (r.attr("Id"), r.attr("Target")) else { continue };
-            if r.attr("TargetMode") == Some("External") {
-                continue;
-            }
-            out.insert(id.to_string(), (r.attr("Type").unwrap_or("").to_string(), resolve(dir, target)));
-        }
-        out
-    }
-
-    /// The part of the worksheet named sheet.
-    pub(super) fn sheet_part(&self, sheet: &str) -> Option<String> {
-        let wb = self.xml("xl/workbook.xml")?;
-        let s = wb.child("sheets")?.all("sheet").find(|s| s.attr("name") == Some(sheet))?;
-        let id = s.attr("id")?;
-        self.rels("xl/workbook.xml").remove(id).map(|(_, p)| p)
-    }
-
-    /// The theme's colors by name (accent1, dk1, ...) as RRGGBB.
-    pub(super) fn theme(&self) -> HashMap<String, String> {
-        let mut out = HashMap::new();
-        let Some(t) = self.xml("xl/theme/theme1.xml") else { return out };
-        if let Some(cs) = t.find("clrScheme") {
-            for c in &cs.children {
-                let v = c.child("srgbClr").and_then(|x| x.attr("val")).or_else(|| c.child("sysClr").and_then(|x| x.attr("lastClr")));
-                if let Some(v) = v {
-                    out.insert(c.name.clone(), v.to_uppercase());
-                }
-            }
-        }
-        out
-    }
 }
 
-/// target relative to the folder dir ("../drawings/drawing1.xml"), or absolute ("/xl/...").
-pub(super) fn resolve(dir: &str, target: &str) -> String {
-    if let Some(t) = target.strip_prefix('/') {
-        return t.to_string();
+/// The parts as XML (well-formed only), their relationships, the sheets'
+/// parts and the theme's colors.
+impl Package for ChartParts {
+    fn xml(&self, part: &str) -> Option<Node> {
+        parse(self.files.get(part)?)
     }
-    let mut parts: Vec<&str> = if dir.is_empty() { vec![] } else { dir.split('/').collect() };
-    for seg in target.split('/') {
-        match seg {
-            ".." => {
-                parts.pop();
-            }
-            "." | "" => {}
-            s => parts.push(s),
-        }
-    }
-    parts.join("/")
 }
 
 pub(super) use crate::xml::{Node, parse};
@@ -147,21 +98,10 @@ type Area = (String, u32, u32, u32, u32);
 
 /// The areas of a series reference ("'売上 2026'!$B$2:$B$13", "(Sheet1!$A$1,Sheet1!$A$3)").
 fn areas(f: &str) -> Option<Vec<Area>> {
-    let f = f.trim();
-    let f = f.strip_prefix('(').and_then(|x| x.strip_suffix(')')).unwrap_or(f);
-    let mut parts = Vec::new();
-    let (mut cur, mut quoted) = (String::new(), false);
-    for ch in f.chars() {
-        match ch {
-            '\'' => {
-                quoted = !quoted;
-                cur.push(ch);
-            }
-            ',' if !quoted => parts.push(std::mem::take(&mut cur)),
-            _ => cur.push(ch),
-        }
+    let parts = ref_areas(f);
+    if parts.is_empty() {
+        return None;
     }
-    parts.push(cur);
     parts
         .iter()
         .map(|p| {
@@ -205,41 +145,33 @@ fn area_cells(a: &[Area]) -> Vec<(String, u32, u32)> {
 /// c:val, c:yVal, c:bubbleSize) is no value, as Excel draws nothing for it.
 fn source(b: &Book, n: &Node) -> J {
     let labels = !matches!(n.name.as_str(), "val" | "yVal" | "bubbleSize");
-    let r = n.children.iter().find(|c| matches!(c.name.as_str(), "numRef" | "strRef" | "multiLvlStrRef" | "numLit" | "strLit"));
-    let Some(r) = r else { return J::Null };
-    let formula = r.child("f").map(|f| f.text.trim().to_string()).unwrap_or_default();
+    let Some(src) = DataSource::read(n) else { return J::Null };
+    let numeric = src.numeric();
     // The cache (and literals): values by point index.
-    let cache = r.children.iter().find(|c| matches!(c.name.as_str(), "numCache" | "strCache" | "multiLvlStrCache")).unwrap_or(r);
-    let cache = if cache.name == "multiLvlStrCache" { cache.all("lvl").next().unwrap_or(cache) } else { cache };
-    let cache_format = cache.child("formatCode").map(|f| f.text.trim().to_string()).unwrap_or_default();
-    let count = cache.val("ptCount").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
-    let numeric = matches!(r.name.as_str(), "numRef" | "numLit");
-    let mut cached = vec![J::Null; count];
-    for p in cache.all("pt") {
-        let idx = p.attr("idx").and_then(|v| v.parse::<usize>().ok()).unwrap_or(cached.len());
-        if idx >= cached.len() {
-            cached.resize(idx + 1, J::Null);
-        }
-        let text = p.child("v").map(|v| v.text.clone()).unwrap_or_default();
-        let fmt = p.attr("formatCode").map(str::to_string).unwrap_or_else(|| cache_format.clone());
-        cached[idx] = match text.trim().parse::<f64>() {
-            Ok(f) if numeric => {
-                if date_format_code(&fmt)
-                    && let Some(t) = from_serial(f, b.date1904)
-                {
-                    date_json(t)
-                } else {
-                    json!(f)
+    let cached: Vec<J> = src
+        .points
+        .iter()
+        .map(|p| {
+            let Some(p) = p else { return J::Null };
+            match p.text.trim().parse::<f64>() {
+                Ok(f) if numeric => {
+                    if date_format_code(&p.format)
+                        && let Some(t) = from_serial(f, b.date1904)
+                    {
+                        date_json(t)
+                    } else {
+                        json!(f)
+                    }
                 }
+                _ => J::String(p.text.clone()),
             }
-            _ => J::String(text),
-        };
-    }
+        })
+        .collect();
     let mut out = Map::new();
-    let mut format = cache_format.clone();
-    let mut values = cached.clone();
-    if !formula.is_empty()
-        && let Some(a) = areas(&formula)
+    let mut format = src.format;
+    let mut values = cached;
+    if !src.formula.is_empty()
+        && let Some(a) = areas(&src.formula)
     {
         let cells = area_cells(&a);
         if !cells.is_empty() && cells.iter().all(|(s, _, _)| b.wb.sheet_by_name(s).is_ok()) {
@@ -273,7 +205,7 @@ fn source(b: &Book, n: &Node) -> J {
                 }
             }
         }
-        out.insert("ref".into(), J::String(formula));
+        out.insert("ref".into(), J::String(src.formula));
     }
     if format == "General" {
         format.clear();
@@ -304,206 +236,6 @@ fn text_of(b: &Book, tx: &Node) -> Option<String> {
     Some(parts.join(" "))
 }
 
-// ---- colors ----
-
-/// A color element (a:srgbClr, a:schemeClr, a:sysClr) as RRGGBB, before its modifiers.
-fn base_color(c: &Node, theme: &HashMap<String, String>) -> Option<String> {
-    Some(match c.name.as_str() {
-        "srgbClr" => c.attr("val")?.to_uppercase(),
-        "sysClr" => c.attr("lastClr")?.to_uppercase(),
-        "prstClr" => match c.attr("val")? {
-            "black" => "000000",
-            "white" => "FFFFFF",
-            "red" => "FF0000",
-            "green" => "008000",
-            "blue" => "0000FF",
-            "yellow" => "FFFF00",
-            "gray" | "grey" => "808080",
-            _ => return None,
-        }
-        .to_string(),
-        "schemeClr" => {
-            let name = match c.attr("val")? {
-                "tx1" => "dk1",
-                "bg1" => "lt1",
-                "tx2" => "dk2",
-                "bg2" => "lt2",
-                v => v,
-            };
-            theme.get(name).cloned().or_else(|| office_color(name).map(str::to_string))?
-        }
-        _ => return None,
-    })
-}
-
-/// The color modifiers among the children of n (lumMod, lumOff, shade, tint) as fractions.
-fn mods_of(n: &Node) -> Vec<(String, f64)> {
-    n.children
-        .iter()
-        .filter(|c| matches!(c.name.as_str(), "lumMod" | "lumOff" | "shade" | "tint"))
-        .filter_map(|c| Some((c.name.clone(), c.attr("val")?.parse::<f64>().ok()? / 100000.0)))
-        .collect()
-}
-
-/// rgb (RRGGBB) with modifiers applied, as "#RRGGBB". lumMod / lumOff work
-/// on the luminance (HSL), as Office does; shade / tint darken and lighten.
-fn modified(rgb: &str, mods: &[(String, f64)]) -> Option<String> {
-    let v = u32::from_str_radix(rgb, 16).ok()?;
-    let (mut r, mut g, mut b) = (((v >> 16) & 255) as f64 / 255.0, ((v >> 8) & 255) as f64 / 255.0, (v & 255) as f64 / 255.0);
-    let get = |k: &str| mods.iter().find(|(n, _)| n == k).map(|(_, x)| *x);
-    if get("lumMod").is_some() || get("lumOff").is_some() {
-        let (h, s, l) = to_hsl(r, g, b);
-        let l = (l * get("lumMod").unwrap_or(1.0) + get("lumOff").unwrap_or(0.0)).clamp(0.0, 1.0);
-        (r, g, b) = from_hsl(h, s, l);
-    }
-    if let Some(x) = get("shade") {
-        (r, g, b) = (r * x, g * x, b * x);
-    }
-    if let Some(x) = get("tint") {
-        (r, g, b) = (1.0 - (1.0 - r) * x, 1.0 - (1.0 - g) * x, 1.0 - (1.0 - b) * x);
-    }
-    let f = |v: f64| (v * 255.0).round().clamp(0.0, 255.0) as u8;
-    Some(format!("#{:02X}{:02X}{:02X}", f(r), f(g), f(b)))
-}
-
-fn to_hsl(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
-    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
-    let l = (max + min) / 2.0;
-    if max == min {
-        return (0.0, 0.0, l);
-    }
-    let d = max - min;
-    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
-    let h = if max == r {
-        (g - b) / d + if g < b { 6.0 } else { 0.0 }
-    } else if max == g {
-        (b - r) / d + 2.0
-    } else {
-        (r - g) / d + 4.0
-    };
-    (h / 6.0, s, l)
-}
-
-fn from_hsl(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
-    if s == 0.0 {
-        return (l, l, l);
-    }
-    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
-    let p = 2.0 * l - q;
-    let hue = |mut t: f64| {
-        if t < 0.0 {
-            t += 1.0;
-        }
-        if t > 1.0 {
-            t -= 1.0;
-        }
-        if t < 1.0 / 6.0 {
-            p + (q - p) * 6.0 * t
-        } else if t < 0.5 {
-            q
-        } else if t < 2.0 / 3.0 {
-            p + (q - p) * (2.0 / 3.0 - t) * 6.0
-        } else {
-            p
-        }
-    };
-    (hue(h + 1.0 / 3.0), hue(h), hue(h - 1.0 / 3.0))
-}
-
-/// A color of a fill (a:solidFill and the like) as "#RRGGBB".
-pub(super) fn color_of(fill: &Node, theme: &HashMap<String, String>) -> Option<String> {
-    let c = fill.children.iter().find(|c| matches!(c.name.as_str(), "srgbClr" | "schemeClr" | "sysClr" | "prstClr"))?;
-    modified(&base_color(c, theme)?, &mods_of(c))
-}
-
-/// The automatic colors of a chart's series and points, as Excel 2013 and
-/// later picks them: the chart's color style (xl/charts/colorsN.xml, the
-/// palette chosen with "Change Colors") or else the theme's accent1 to
-/// accent6. After the last color they repeat with the next variation
-/// (darker, lighter, ...). Monochrome styles are read the same way, which
-/// is close to (not exactly) what Excel shows.
-struct AutoColors {
-    colors: Vec<String>,
-    variations: Vec<Vec<(String, f64)>>,
-}
-
-impl AutoColors {
-    fn new(parts: &ChartParts, chart_part: &str, theme: &HashMap<String, String>) -> AutoColors {
-        let style = parts
-            .rels(chart_part)
-            .into_values()
-            .find(|(t, _)| t.ends_with("/chartColorStyle"))
-            .and_then(|(_, p)| parts.xml(&p));
-        if let Some(st) = style {
-            let colors: Vec<String> = st
-                .children
-                .iter()
-                .filter(|c| matches!(c.name.as_str(), "srgbClr" | "schemeClr" | "sysClr"))
-                .filter_map(|c| modified(&base_color(c, theme)?, &mods_of(c)).map(|x| x[1..].to_string()))
-                .collect();
-            if !colors.is_empty() {
-                return AutoColors { colors, variations: st.all("variation").map(mods_of).collect() };
-            }
-        }
-        // Office's default color style (colors1.xml of a new chart).
-        let m = |v: &[(&str, f64)]| v.iter().map(|(k, x)| (k.to_string(), *x)).collect::<Vec<_>>();
-        AutoColors {
-            colors: (1..=6).map(|i| format!("accent{i}")).filter_map(|a| theme.get(&a).cloned().or_else(|| office_color(&a).map(str::to_string))).collect(),
-            variations: vec![
-                vec![],
-                m(&[("lumMod", 0.6)]),
-                m(&[("lumMod", 0.8), ("lumOff", 0.2)]),
-                m(&[("lumMod", 0.8)]),
-                m(&[("lumMod", 0.6), ("lumOff", 0.4)]),
-                m(&[("lumMod", 0.5)]),
-                m(&[("lumMod", 0.7), ("lumOff", 0.3)]),
-                m(&[("lumMod", 0.7)]),
-                m(&[("lumMod", 0.5), ("lumOff", 0.5)]),
-            ],
-        }
-    }
-
-    /// The color of the i-th series (its c:idx) or point.
-    fn nth(&self, i: usize) -> Option<String> {
-        let n = self.colors.len();
-        if n == 0 {
-            return None;
-        }
-        let none = Vec::new();
-        let var = if self.variations.is_empty() { &none } else { &self.variations[(i / n) % self.variations.len()] };
-        modified(&self.colors[i % n], var)
-    }
-}
-
-/// Office's default theme (when the workbook has none).
-fn office_color(name: &str) -> Option<&'static str> {
-    Some(match name {
-        "dk1" => "000000",
-        "lt1" => "FFFFFF",
-        "dk2" => "44546A",
-        "lt2" => "E7E6E6",
-        "accent1" => "4472C4",
-        "accent2" => "ED7D31",
-        "accent3" => "A5A5A5",
-        "accent4" => "FFC000",
-        "accent5" => "5B9BD5",
-        "accent6" => "70AD47",
-        _ => return None,
-    })
-}
-
-/// { color, noFill } of a c:spPr: the fill, or the line for lines.
-fn shape(sp: Option<&Node>, line: bool, theme: &HashMap<String, String>) -> (Option<String>, bool) {
-    let Some(sp) = sp else { return (None, false) };
-    let src = if line { sp.child("ln").unwrap_or(sp) } else { sp };
-    if src.child("noFill").is_some() {
-        return (None, true);
-    }
-    let color = src.child("solidFill").and_then(|f| color_of(f, theme));
-    let color = color.or_else(|| src.child("gradFill").and_then(|g| g.find("gs")).and_then(|gs| color_of(gs, theme)));
-    (color, false)
-}
-
 // ---- charts ----
 
 const GROUPS: &[&str] = &[
@@ -531,9 +263,9 @@ fn chart_json(b: &Book, root: &Node, theme: &HashMap<String, String>, auto: &Aut
             o.insert("name".into(), s.child("tx").and_then(|tx| text_of(b, tx)).map(J::String).unwrap_or(J::Null));
             // Lines take their color from the line; markers-only scatter from the marker.
             let marker_none = s.path(&["marker", "symbol"]).and_then(|m| m.attr("val")) == Some("none");
-            let (mut color, no_fill) = shape(s.child("spPr"), line, theme);
+            let (mut color, no_fill) = paint(s.child("spPr"), line, theme);
             if color.is_none() && line {
-                color = shape(s.path(&["marker", "spPr"]), false, theme).0;
+                color = paint(s.path(&["marker", "spPr"]), false, theme).0;
             }
             // No color of its own: the automatic color of its index (a line
             // without its line still has its markers in that color).
@@ -554,7 +286,7 @@ fn chart_json(b: &Book, root: &Node, theme: &HashMap<String, String>, auto: &Aut
                 .all("dPt")
                 .filter_map(|p| {
                     let idx = p.val("idx")?.parse::<u32>().ok()?;
-                    let (c, _) = shape(p.child("spPr"), false, theme);
+                    let (c, _) = paint(p.child("spPr"), false, theme);
                     Some(json!({ "idx": idx, "color": c }))
                 })
                 .collect();
@@ -622,7 +354,7 @@ fn chart_ex_kind(root: &Node) -> String {
 
 /// "E2:L18" for the cells an anchor covers.
 fn anchor_range(a: &Node) -> J {
-    match crate::xml::anchor_cells(a) {
+    match anchor_cells(a) {
         Some((f, Some(t))) => J::String(format!("{}:{}", super::xlsx::cell(f.0, f.1), super::xlsx::cell(t.0, t.1))),
         Some((f, None)) => J::String(super::xlsx::cell(f.0, f.1)),
         None => J::Null,
@@ -656,7 +388,7 @@ fn each_chart(parts: &ChartParts, sheet: &str, mut f: impl FnMut(&Node, &Node, &
 pub fn sheet_charts(b: &Book, sheet: &str) -> Vec<J> {
     let mut out = Vec::new();
     let Some(parts) = &b.charts else { return out };
-    let theme = parts.theme();
+    let theme = parts.theme_colors();
     each_chart(parts, sheet, |anchor, frame, kind, part| {
         let Some(root) = parts.xml(part) else { return };
         let mut o = if kind.ends_with("/chartEx") {
@@ -664,7 +396,7 @@ pub fn sheet_charts(b: &Book, sheet: &str) -> Vec<J> {
             m.insert("chartEx".into(), J::String(chart_ex_kind(&root)));
             m
         } else {
-            chart_json(b, &root, &theme, &AutoColors::new(parts, part, &theme))
+            chart_json(b, &root, &theme, &AutoColors::of_chart(parts, part, &theme))
         };
         let name = frame.path(&["nvGraphicFramePr", "cNvPr"]).and_then(|c| c.attr("name")).unwrap_or("");
         o.insert("name".into(), J::String(name.to_string()));
@@ -674,51 +406,9 @@ pub fn sheet_charts(b: &Book, sheet: &str) -> Vec<J> {
     out
 }
 
-/// Where a drawing object is on its sheet: the cell markers (zero-based
-/// column and row, offsets in EMU) and/or the size and position in EMU.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct Anchor {
-    pub from: Option<(u32, i64, u32, i64)>,
-    pub to: Option<(u32, i64, u32, i64)>,
-    pub ext: Option<(i64, i64)>,
-    pub pos: Option<(i64, i64)>,
-}
-
-/// The anchor of a drawing (twoCellAnchor, oneCellAnchor, absoluteAnchor).
-pub(super) fn anchor_of(a: &Node) -> Anchor {
-    let marker = |n: &str| -> Option<(u32, i64, u32, i64)> {
-        let m = a.child(n)?;
-        let num = |k: &str| m.child(k).and_then(|c| c.text.trim().parse::<i64>().ok());
-        Some((num("col")? as u32, num("colOff").unwrap_or(0), num("row")? as u32, num("rowOff").unwrap_or(0)))
-    };
-    let pair = |n: &str, x: &str, y: &str| -> Option<(i64, i64)> {
-        let e = a.child(n)?;
-        Some((e.attr(x)?.parse().ok()?, e.attr(y)?.parse().ok()?))
-    };
-    Anchor { from: marker("from"), to: marker("to"), ext: pair("ext", "cx", "cy"), pos: pair("pos", "x", "y") }
-}
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn color_modifiers() {
-        let m = |v: &[(&str, f64)]| v.iter().map(|(k, x)| (k.to_string(), *x)).collect::<Vec<_>>();
-        // As Excel shows them (Office 2013+ theme): accent1 darker 40% / lighter 40%, accent2 darker 25%.
-        assert_eq!(modified("4472C4", &m(&[("lumMod", 0.6)])).unwrap(), "#264478");
-        assert_eq!(modified("4472C4", &m(&[("lumMod", 0.6), ("lumOff", 0.4)])).unwrap(), "#8FAADC");
-        assert_eq!(modified("ED7D31", &m(&[("lumMod", 0.75)])).unwrap(), "#C55A11");
-        assert_eq!(modified("70AD47", &[]).unwrap(), "#70AD47");
-    }
-
-    #[test]
-    fn default_auto_colors() {
-        let a = AutoColors::new(&ChartParts::default(), "xl/charts/chart1.xml", &HashMap::new());
-        let got: Vec<String> = [0, 1, 5, 6, 12].iter().map(|i| a.nth(*i).unwrap()).collect();
-        assert_eq!(got, ["#4472C4", "#ED7D31", "#70AD47", "#264478", "#698ED0"]);
-    }
 
     /// What a sheet's charts are read as, from a workbook saved without
     /// changes: the same as from the file it was opened from (the charts
