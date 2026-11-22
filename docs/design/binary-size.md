@@ -32,7 +32,7 @@ xljs.exe（と、`xljs pack` で作る exe）のサイズの内訳、すでに�
 | 開発モード（CodeMirror・Prettier・`dev*`） | 1.60MB | 0.49MB |
 | グラフ（AG Charts・Frappe Gantt・`chart*`） | 1.48MB | 0.45MB |
 | Font Awesome | 0.35MB | 0.28MB（woff2 は圧縮済み） |
-| 図形の定義（`preset_shapes.xml` ほか） | 0.30MB | 0.03MB |
+| 図形の定義（`preset_shapes.xml` ほか。umya のフォークの `presets.zip`） | 0.30MB | 0.03MB |
 | prelude.js | 0.25MB | 0.07MB |
 | d.ts・メッセージ・フォーム／表・Day.js ほか | 0.5MB | 0.2MB |
 | 合計 | 4.5MB | 1.5MB |
@@ -45,7 +45,8 @@ xljs.exe（と、`xljs pack` で作る exe）のサイズの内訳、すでに�
 - `src/ui/web`（`WEB_FILES`）
 - `src/api/dayjs`（`DAYJS_FILES`）
 - `src/i18n/locales/*.json`（`LOCALE_FILES`。フォルダの `.json` はすべて入る）
-- `prelude.js`、`preset_shapes.xml`、`preset_text_warps.xml`、`types/xljs.d.ts`、`docs/ai/prompt.md`
+- `prelude.js`、`types/xljs.d.ts`、`docs/ai/prompt.md`
+- 図形の定義（`preset_shapes.xml`・`preset_text_warps.xml`）は umya のフォークが deflate の zip（`src/drawingml/presets.zip`）で持ち、初めて使うときに展開する
 
 結果: 15.98MB → 12.94MB（−3.0MB）。展開は zip と同じ flate2（zlib-rs）で、コードはほとんど増えない。
 展開にかかる時間は prelude（250KB）で 1ms 程度。

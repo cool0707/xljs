@@ -125,7 +125,7 @@ ui.chart({ ...c.toSpec(), data: newRows });   // 見た目は Excel のまま、
   （`c:ser`）の名前・色・参照式・マーカー・近似曲線などと、軸（`catAx` `dateAx` `valAx`）の題名・書式・最小／最大・対数・反転を読む。
 - 系列の値は参照式（`'集計'!$B$2:$B$13`、複数の範囲も）のセルから読む（**読んだ時点のセルの値**）。シートがないなどで読めなければグラフ内のキャッシュ。
   日付の書式のセルは `Date`。分類の範囲の 1 つ上（行方向なら 1 つ左）のセルが文字なら、分類の列の名前に使う。
-- **色**（`AutoColors` と `color_of`）:
+- **色**（フォークの `umya_spreadsheet::drawingml` の `chart::AutoColors`・`chart::paint` と `color::color_of`。RAS と共用。系列の参照の分け方とキャッシュの読み方も `chart::DataSource`）:
   - 系列・扇に色の指定があればそれ。テーマの色（`schemeClr`）はブックのテーマ（`xl/theme/theme1.xml`）から引く。
     明るさの調整は Office と同じく `lumMod` / `lumOff` を HSL の輝度に掛け、`shade` / `tint` は暗く・明るくする。
   - 色の指定がない系列（自動の色）は、系列の番号（`c:idx`）で Excel 2013 以降と同じ順に選ぶ: グラフの配色
@@ -195,7 +195,7 @@ Excel にはガントチャートの種類がなく、ふつうは「横棒の�
 | `src/ui/web/form.js` | `type: "chart"` の項目（`chart` メッセージで更新、`chartClick` / `chartChange` を送る）。ライブラリは最初の描画で読み込む |
 | `src/ui/web/xljs.js` | アプリモードの `xljs.chart(el, spec)`（`/_xljs/chart.js` を読み込む） |
 | `src/api/prelude.js` | `ui.chart` / `ChartView`、`chartOf`（検査と既定値）、`chartInit`（ワイヤ形式）、フォームの `chart` 項目と `ctx.chart`、`ExcelChart` と `excelChartSpec`、`Worksheet.charts` |
-| `src/api/xlsx_chart.rs` | Excel のグラフの読み取り（§3） |
+| `src/api/xlsx_chart.rs` | Excel のグラフの読み取り（§3。色・参照・キャッシュの読み方はフォークの `drawingml::chart`） |
 | `src/i18n/locales/*.json` | `chart.*`（画面の文字・エラー・警告・Excel の種類名）と `form.noChart` |
 | `types/xljs.d.ts` | `ChartSpec` `ChartSeries` `ChartAxis` `ChartWindowOptions` `ChartView` `ExcelChart`、`FormField.chart`、`FormContext.chart`、`Worksheet.charts` |
 

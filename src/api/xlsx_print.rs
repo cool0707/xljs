@@ -9,17 +9,16 @@ use std::fmt::Write as _;
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
+use umya_spreadsheet::drawingml::EMU_PT;
+use umya_spreadsheet::drawingml::anchor::Anchor;
 use umya_spreadsheet::structs::EnumTrait;
 use umya_spreadsheet::structs::drawing::Theme;
 use umya_spreadsheet::{Cell, CellRawValue, Color, Style, Worksheet};
 
 use super::xlsx::{Book, format_code, style_is_date};
-use super::xlsx_chart::Anchor;
 use super::xlsx_table::{Overlay, Side};
 use crate::{Result, err};
 
-/// EMU per point.
-const EMU_PT: f64 = 12700.0;
 const PT_MM: f64 = 72.0 / 25.4;
 
 /// The height (points) of the rows of a sheet without a height of their

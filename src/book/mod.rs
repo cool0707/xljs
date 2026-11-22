@@ -334,7 +334,7 @@ fn number_formats(styles: &Node) -> Vec<(u32, String)> {
 /// The cells a drawing's anchor covers ("L2:S16"), or where it starts
 /// ("L2", false) without its end; "" for an absolute anchor.
 fn anchor_range(a: &Node) -> (String, bool) {
-    match xml::anchor_cells(a) {
+    match umya_spreadsheet::drawingml::anchor::anchor_cells(a) {
         Some(((c1, r1), Some((c2, r2)))) => (Rect { r1, c1, r2, c2 }.display(), true),
         Some(((c, r), None)) => (Rect::cell(c, r).display(), false),
         None => (String::new(), false),
