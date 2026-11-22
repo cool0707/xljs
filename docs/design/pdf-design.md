@@ -51,14 +51,14 @@ await xljs.htmlToPdf("<h1>報告書</h1>", "報告書.pdf", { paper: "A4" }); //
 | 項目 | 読み方 |
 |---|---|
 | 用紙・向き・拡大縮小 | umya の `PageSetup`（`paperSize` のコード → mm。不明なら A4） |
-| 次のページ数に合わせて印刷 | `fitToPage`（umya）＋ `fitToWidth` / `fitToHeight`（**シートの XML から直接**。umya は属性がないこと＝1 と 0＝自動を区別できない） |
+| 次のページ数に合わせて印刷 | `fitToPage` ＋ `fitToWidth` / `fitToHeight`（umya の `PageSetup`。属性がないこと＝1 と 0＝自動は `has_fit_to_width` / `has_fit_to_height` で区別する） |
 | 余白・ヘッダー/フッターの位置 | `PageMargins`（ないときは Excel の「標準」0.7/0.75/0.3 インチ） |
 | 印刷範囲・印刷タイトル | 定義された名前 `_xlnm.Print_Area` / `_xlnm.Print_Titles`（シートの名前、ブックの `localSheetId` 付きの名前）。複数の範囲は範囲ごとにページを分ける。列全体・行全体（`$A:$Q`）は使用範囲の端まで。数式の印刷範囲（`OFFSET($A$1,0,0,MAX(IFNA(MATCH(10^10,$B:$B),0)+5,43),7)` のような可変の範囲）は `xlsx_calc::eval_area` で計算する（`OFFSET` と単純な参照だけ。計算できなければ使用範囲） |
-| 白黒印刷 | `pageSetup blackAndWhite`（シートの XML から直接）。塗りを消し、文字・罫線を黒にする。`options.blackAndWhite` が優先（`false` で確認用にカラーで出せる） |
-| テーブル（リスト）の書式 | `src/api/xlsx_table.rs`。テーブルの範囲とスタイル名・縞模様などの表示は umya の `Table`、ブック独自のテーブルスタイルは styles.xml の `tableStyles` と `dxfs`（開いたときに `Book::table_styles`）。組み込みの `TableStyleLight1`〜`Dark11` は系統ごとの近似。要素（全体・縞・先頭/最後の列・見出し行・集計行・角のセル）を優先順に重ね、セル自身の塗り・罫線・文字色（既定の黒以外）が優先する |
+| 白黒印刷 | `pageSetup blackAndWhite`（umya の `PageSetup::black_and_white`）。塗りを消し、文字・罫線を黒にする。`options.blackAndWhite` が優先（`false` で確認用にカラーで出せる） |
+| テーブル（リスト）の書式 | `src/api/xlsx_table.rs`。テーブルの範囲とスタイル名・縞模様などの表示は umya の `Table`、ブック独自のテーブルスタイルは umya の `Workbook::table_styles` と `differential_format`（開いたときに `Book::table_styles`）。見出し行のないテーブル（`headerRowCount` 0）は 1 行目から縞を付ける。組み込みの `TableStyleLight1`〜`Dark11` は系統ごとの近似。要素（全体・縞・先頭/最後の列・見出し行・集計行・角のセル）を優先順に重ね、セル自身の塗り・罫線・文字色（既定の黒以外）が優先する |
 | 改ページ | `rowBreaks` / `colBreaks`（`id` は 0 始まりで、その次の行・列から新しいページ） |
-| ページの順序・枠線の印刷 | `pageOrder="overThenDown"`、`printOptions gridLines`（シートの XML から直接） |
-| 非表示のシート | `workbook.xml` の `state`（umya は読まない）。ブックを開いたときに `RawPrint`（`Book::print`）に保持する。シート名の変更に追従する |
+| ページの順序・枠線の印刷 | `pageOrder="overThenDown"`（`PageSetup::page_order`）、`printOptions gridLines`（`PrintOptions::grid_lines`） |
+| 非表示のシート | umya の `Worksheet::state`（スクリプトで表示・非表示を変えたものもそのとおり） |
 | ヘッダー/フッター | `oddHeader` / `oddFooter` の `&L` `&C` `&R`。`&P` `&N` → `counter(page)` / `counter(pages)`、`&D` `&T` `&A` `&F` `&Z`、`&B` `&I` `&U` `&S`、`&"フォント,太字"`、`&nn`（サイズ）、`&K`（色）。先頭ページ・偶数ページ用と画像（`&G`）は使わない |
 
 印刷範囲がなければ使用範囲（値・塗り・罫線（斜線も）のあるセル、値のある結合セル、テーブル、画像・グラフ）。先頭の空の行・列は印刷しない。
@@ -131,16 +131,17 @@ await xljs.htmlToPdf("<h1>報告書</h1>", "報告書.pdf", { paper: "A4" }); //
 
 ブックを開いたときに描画の部品（`xl/drawings/*`、`xl/media/*`、テーマ。`ChartParts`）を保持しておき、描画の XML を順に読む。
 umya-spreadsheet の図形のモデルは一部しか持たないので使わない（新しいブックは描画の部品がないので、umya の画像だけを置く）。
+XML の木・図形の形・色・アンカーと変形・部品のリレーションの読み方は、RAS（`ras book view`）と共用でフォークの `xml_tree`・`drawingml` にある（7 章）。HTML/SVG にするところは xljs の `xlsx_shape.rs`。
 
 | 要素 | 描き方 |
 |---|---|
-| 図形（`sp`）の形 | SVG の path。アンカーの実寸（pt）を viewBox にする。既定の形（`prstGeom`）は ECMA-376 の定義（Part 1 の付録 "Preset Shape Definitions"、187 種）をそのまま評価する（`src/api/xlsx_geom.rs`）: 調整値（`avLst`）→ ガイドの式（`gdLst`。`*/` `+-` `?:` `pin` `at2` `sin` など。EMU で計算）→ パス（`moveTo` `lnTo` `arcTo` `quadBezTo` `cubicBezTo` `close`。パスごとの `w`/`h` の座標系）。パスごとの塗りの有無・濃淡（`darken` `lighten` など。立方体の側面や額縁の内側）・線の有無も定義のとおり。文字は定義の `rect`（楕円なら内接する四角）の中に置く（反転すると左右・上下も入れ替える）。定義は `src/api/preset_shapes.xml`（`tools/preset-shapes/make.py` で ECMA の XML から名前空間・空白・接続点・ハンドルを除いたもの）。定義にない名前は四角 |
+| 図形（`sp`）の形 | SVG の path。アンカーの実寸（pt）を viewBox にする。既定の形（`prstGeom`）は ECMA-376 の定義（Part 1 の付録 "Preset Shape Definitions"、187 種）をそのまま評価する（フォークの `drawingml::geometry`）: 調整値（`avLst`）→ ガイドの式（`gdLst`。`*/` `+-` `?:` `pin` `at2` `sin` など。EMU で計算）→ パス（`moveTo` `lnTo` `arcTo` `quadBezTo` `cubicBezTo` `close`。パスごとの `w`/`h` の座標系）。パスごとの塗りの有無・濃淡（`darken` `lighten` など。立方体の側面や額縁の内側）・線の有無も定義のとおり。文字は定義の `rect`（楕円なら内接する四角）の中に置く（反転すると左右・上下も入れ替える）。定義はフォークの `src/drawingml/presets.zip` の `preset_shapes.xml`（フォークの `tools/preset-shapes/make.py` で ECMA の XML から名前空間・空白・接続点・ハンドルを除いたもの。zip は deflate で、初めて使うときに展開する）。定義にない名前は四角 |
 | フリーフォーム（`custGeom`） | 既定の形と同じ評価（`avLst` `gdLst` `rect` `pathLst`。`arcTo` も）。`rect` が空（幅 0）なら文字は枠全体 |
 | 線・コネクタ（`cxnSp`） | 既定の形の直線・カギ線（`bentConnector2`〜`5`）・曲線（`curvedConnector2`〜`5`）。矢じりは閉じていないパスに付ける。矢じり（`headEnd` / `tailEnd` の triangle・stealth・arrow・oval・diamond、大きさ sm/med/lg）は SVG の marker。破線（`prstDash`） |
 | 塗り・線 | `spPr` の `solidFill`（グラデーションは最初の色）・`noFill`・`alpha`、`ln` の幅・色。指定がなければ図形のスタイル（`fillRef` / `lnRef` のテーマの色。線の幅は idx から 0.5/1/1.5pt） |
 | 文字（`txBody`） | 段落ごとの揃え、ランの大きさ・太字・斜体・下線・取り消し線・色・フォント（`ea` / `latin`。`+mn-ea` などはブックの既定のフォント）、改行、箇条書きの文字。`bodyPr` の内側の余白・上下の位置・折り返しなし・縦書き。色の既定は `fontRef` |
 | ワードアート（文字の効果） | ランの `rPr` の塗り（`solidFill`・`alpha`・`gradFill` は CSS のグラデーションを `background-clip:text` で文字に・`noFill` は輪郭だけ）、輪郭（`ln` → `-webkit-text-stroke`）、`effectLst` の光彩（`glow` → 2 重の `drop-shadow`）と影（`outerShdw` → `filter:drop-shadow`。`rotWithShape="0"` なら図形の回転を戻す）、反射（`reflection` → 文字を包む `div` の `-webkit-box-reflect`。`stA`/`endA`/`endPos` の濃さで消える）、文字間隔（`spc`）、大文字（`cap`）。図形の `spPr` の `effectLst`（影・光彩・反射）は図形の `div` 全体に（塗りのない図形なら文字に付く。Excel と同じ） |
-| 文字の変形（`bodyPr` の `prstTxWarp`） | 定義は ECMA-376 の "Preset Text Warp Definitions"（`src/api/preset_text_warps.xml`、`tools/preset-shapes/make.py` で作る。40 種）。Rust が文字の枠（内側の余白を除く）でパスを評価して点列にし（`xlsx_geom::text_warp`）、`<div class="xljs-warp" data-warp="{w,h,paths}">` に段落と一緒に出す。印刷ページ（`print-page.js` の `warpText`）が 1 文字ずつ span にして測り、アフィン変換（`matrix`）で置く: パスが偶数なら 2 本ずつが帯の上下で、帯の行を帯いっぱいに引き伸ばす（文字は約 5pt 幅の縦の短冊に分け（`clip-path`）、短冊ごとに上下のパスの間に置くので曲がる）。奇数（アーチ・円・ボタン）なら 1 本ずつに行が乗り、パスの長さいっぱいに並べてパスに垂直に立てる（枠の中心の側に）。行は帯・パスに順に割り振る。グラデーションは行の幅で 1 つ |
+| 文字の変形（`bodyPr` の `prstTxWarp`） | 定義は ECMA-376 の "Preset Text Warp Definitions"（同じ `presets.zip` の `preset_text_warps.xml`、同じ `make.py` で作る。40 種）。Rust が文字の枠（内側の余白を除く）でパスを評価して点列にし（`drawingml::geometry::text_warp`）、`<div class="xljs-warp" data-warp="{w,h,paths}">` に段落と一緒に出す。印刷ページ（`print-page.js` の `warpText`）が 1 文字ずつ span にして測り、アフィン変換（`matrix`）で置く: パスが偶数なら 2 本ずつが帯の上下で、帯の行を帯いっぱいに引き伸ばす（文字は約 5pt 幅の縦の短冊に分け（`clip-path`）、短冊ごとに上下のパスの間に置くので曲がる）。奇数（アーチ・円・ボタン）なら 1 本ずつに行が乗り、パスの長さいっぱいに並べてパスに垂直に立てる（枠の中心の側に）。行は帯・パスに順に割り振る。グラデーションは行の幅で 1 つ |
 | 回転・反転 | 回転は外側の `div` の `transform`（文字も一緒に回る）、反転は SVG の形だけ |
 | グループ（`grpSp`） | 子の位置を子の座標（`chOff` / `chExt`）からグループの枠の割合にして置く（入れ子も） |
 | 画像（`pic`） | `blip` の画像を data URL で（PNG・JPEG・GIF・BMP・SVG。EMF/WMF は描けないので出さない）。SVG の画像は `blip` が画面の大きさの PNG の代替画像なので、拡張（`extLst` の `asvg:svgBlip`）の SVG を使う（PDF でも線のまま）。Excel と同じく枠いっぱいに伸ばす（`preserveAspectRatio` がなければ `none`、`viewBox` がなければ `width` / `height` から） |
@@ -290,7 +291,7 @@ Excel の印刷プレビューのように、ページを出して設定を変�
 
 ## 5. テスト
 
-- `src/api/xlsx_geom.rs` の単体テスト: すべての既定の形が評価できること、形の path（`arcTo` の楕円・調整値）、文字の枠、塗りの濃淡、フリーフォームのガイド、すべての文字の変形が評価できること（平ら・アーチ・調整値）。
+- フォークの `src/drawingml/geometry.rs` の単体テスト: すべての既定の形が評価できること、形の path（`arcTo` の楕円・調整値）、文字の枠、塗りの濃淡、フリーフォームのガイド、すべての文字の変形が評価できること（平ら・アーチ・調整値）。
 - `src/api/xlsx_table.rs` の単体テスト: テーブルスタイルの読み方、要素の罫線の当て方。
 - `src/api/xlsx_cond/tests.rs`: `testdata/xlsx/conditional.xlsx`（`make_conditional.py`。openpyxl の出力に Excel 2010 の拡張のデータバー（負の値・軸）と `3Stars` を足す）で、強調表示（停止・相対参照の数式・重複・文字列）、カラースケール、データバー、アイコンセット、期間、HTML。
 - `src/api/xlsx_print.rs` の単体テスト: 範囲の読み方、ページの分け方（印刷タイトル・改ページ・非表示）、ヘッダー/フッター、表示形式の色、ページ設定の XML。
@@ -323,6 +324,8 @@ Excel の印刷プレビューのように、ページを出して設定を変�
 `.cargo/config.toml` に `[patch.crates-io]` を足してそのブランチで組み立てる（設定ファイルの `[patch]` は `Cargo.toml` のものより優先される）。
 同じ名前のブランチがなければ `Cargo.lock` が固定したコミットのままで、それが `excel-compat` の先頭より古ければ警告を出す。
 フォークのブランチを `excel-compat` に取り込んだら、xljs 側で `cargo update -p umya-spreadsheet` して `Cargo.lock` を進める。
+RAS も同じブランチを同じやり方で使う（RAS は `.github/scripts/umya-branch.sh`）。xljs と RAS が共有するもの・まだ足りないものの一覧は
+フォークの `FORK.md`、保存で落ちるものは `docs/design/save-fidelity.md`。
 
 直したもの:
 
@@ -387,6 +390,36 @@ Excel の印刷プレビューのように、ページを出して設定を変�
   解決済み（`done`）・メンション（`mentions`）と、代わりのメモの `xr:uid` が落ちていた。新しいブックに書いたときは Content_Types にコメントと作成者の部品がなかった。
   行・列の挿入と削除でコメントの位置が動かなかった。`Workbook::persons`、`ThreadedComment` の `person_id`・`parent_id`・`done`・`mentions`、`Comment::uid`。
   `tests/threaded_comments.rs`。スクリプトの `cell.comment` などは `src/api/xlsx_comment.rs`（代わりのメモを書き換えのたびに作り直す）。
+
+- **保存で落ちていたもの（2026-11-22。手元のブック 107 冊を属性まで比べて見つけた。`save-fidelity.md` 1 章）**: `tests/format_fidelity.rs`・
+  `tests/excel_compat.rs`・`tests/excel_features.rs`・`tests/vba_project.rs`。
+  - テーブル: 名前付きスタイルのオプション（縞模様。本家の修正）、見出し行の数（見出しのないテーブルに見出しが付いた）、書式の番号などの属性、
+    集計行の数式。
+  - シート: 表示（行列番号・ゼロ値・右から左・数式・枠線の色・アウトライン記号）、印刷の枠線・行列番号、先頭ページと偶数ページの
+    ヘッダー・フッターと `alignWithMargins` など、オートフィルターのボタンを隠した列、フィルターの日付のグループ・色・アイコン、
+    シートと文字列のふりがなの種類（`phoneticPr`）。ブックのシート見出し・スクロールバーの表示。
+  - ウィンドウ枠: 列だけを固定すると `activePane="TopRight"`（Excel にない値）を書いていた。xljs の `freeze` はシートの表示を作り直していたので、
+    元のファイルに `showGridLines` がないと枠線が消えていた（umya がない属性を「表示しない」と読んでいた）。
+  - 書式: `quotePrefix`・`pivotButton`、セルのスタイル（`xfId`。常に標準になっていた）、`readingOrder`、セルのスタイルの `hidden`、色のパレット。
+  - 入力規則のメッセージ: 文字参照（`&#25968;`）や `&amp;` で書いたものが二重にエスケープされていた。
+  - ハイパーリンク: ほかのファイルの場所（アドレスと `location` の両方）の場所が落ちていた。範囲の `ref` で読めなかった（本家の修正）。
+  - 描画: 印刷しない図形（`fPrintsWithSheet`）、代替テキスト（`descr`）、線の始点の矢印（`headEnd`）、図形の文字の下線・上付き、反射などの効果、
+    画像とコネクタのマクロ、SmartArt。
+  - ActiveX コントロール: `xl/activeX` が落ち、シートの `controls` がないリレーションを指したまま残っていた（Excel が修復を求める）。
+  - VBA プロジェクトの署名（`vbaProjectSignature*.bin`）。プロジェクトを置き換えると消える。
+
+足したもの:
+
+- **VBA プロジェクト（xljs と RAS が共用）**: `vba`（`vbaProject.bin` の読み書き。RAS の `crates/ras-ovba` から移した。`.xls` の
+  `_VBA_PROJECT_CUR` は `VbaProject::read_storage`）。xljs の `src/vba` はブックの形（zip・`.xls`・`.xlsb`）を見分けて渡すだけ。
+- **モデルから読めるようにしたもの**: xljs がファイルを開き直して読んでいたもの・保存後に書き換えていたもの
+  （標準のフォント `Workbook::default_font` / `set_default_font`、テーブルスタイル `table_styles` / `differential_format`、ページ設定の
+  `has_fit_to_width`・`black_and_white`・`page_order`、印刷の枠線 `PrintOptions::grid_lines`、`date1904`）。RAS も同じものを使う。
+- **描画を読む部品（xljs と RAS が共用）**: 描画・グラフ・VML・テーマなどの部品を読む小さな XML の木 `xml_tree`（`Node`。深さ 256 より下は捨てる。
+  `parse` は整形式のみ、`parse_partial` は読めたところまで、`parse_lenient` は終了タグを開始タグと照らさない＝VML 用）と、それを読む `drawingml`:
+  図形の形（`geometry`。既定の形・ワードアートの文字の変形・フリーフォーム → SVG のパス。定義は `src/drawingml/presets.zip`、`tools/preset-shapes/make.py` で作る）、
+  色（`color`。テーマ・修飾・塗り・図形のスタイル）、アンカーと変形（`anchor`）、グラフの自動の色・`c:spPr` の色・系列の参照とキャッシュ（`chart`）、
+  部品のリレーション（`package`。プログラムは `Package::xml` だけを実装する）。xljs の印刷と RAS のブックの表示が同じものを使う。HTML/SVG にするところは各プログラムに残す。
 
 本家の版を上げるときは、`excel-compat` ブランチを新しいタグへ載せ替える（本家に取り込まれた修正は落とす）。どちらも取り込まれたら
 `[patch.crates-io]` を消して本家に戻す。

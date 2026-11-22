@@ -96,8 +96,6 @@ fn main() {
     g.dir("DAYJS_FILES", "src/api/dayjs", |_| true);
     g.dir("LOCALE_FILES", "src/i18n/locales", |n| n.ends_with(".json"));
     g.single("PRELUDE", "src/api/prelude.js");
-    g.single("PRESET_SHAPES", "src/api/preset_shapes.xml");
-    g.single("PRESET_TEXT_WARPS", "src/api/preset_text_warps.xml");
     g.single("DTS", "types/xljs.d.ts");
     // The documents for AI chats (the prompt, the reference and the skills;
     // not the skill for coding agents, which the exe does not offer).

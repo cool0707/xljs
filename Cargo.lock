@@ -214,9 +214,9 @@ dependencies = [
 
 [[package]]
 name = "cfb"
-version = "0.14.0"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a347dcabdae9c31b0825fd6a8bed285ec9c2acb89c47827126d52fa4f59cece3"
+checksum = "fef29b910ef2b9dbecc60168d1568d643c633b0518af970c17e83bd5f6e2c94f"
 dependencies = [
  "fnv",
  "uuid",
@@ -2209,7 +2209,7 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 [[package]]
 name = "umya-spreadsheet"
 version = "3.1.1"
-source = "git+https://github.com/cool0707/umya-spreadsheet?branch=excel-compat#8bebb052f9345cb55a79e47586c9974a413ec514"
+source = "git+https://github.com/cool0707/umya-spreadsheet?branch=excel-compat#7bdb509889122f230e0152c1fb467b3f59b51f50"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -2231,6 +2231,8 @@ dependencies = [
  "rgb",
  "sha2",
  "thousands",
+ "uuid",
+ "web-time",
  "zip",
 ]
 

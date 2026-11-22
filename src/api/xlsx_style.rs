@@ -1173,14 +1173,11 @@ fn freeze(b: &mut Book, sheet: &str, r: &str) -> Result<()> {
     if views.is_empty() {
         views.push(SheetView::default());
     }
-    let old = views[0].clone();
-    let mut view = SheetView::default();
-    view.set_tab_selected(old.tab_selected());
-    view.set_workbook_view_id(old.workbook_view_id());
-    view.set_show_grid_lines(old.show_grid_lines());
-    if old.zoom_scale() != 0 {
-        view.set_zoom_scale(old.zoom_scale());
-    }
+    // The view as it was (gridlines, zoom, headings...) without its pane and
+    // where it was scrolled to.
+    let mut view = views[0].clone();
+    view.remove_pane().set_top_left_cell("A1");
+    view.selection_mut().clear();
     if r.is_empty() || r == "A1" {
         views[0] = view;
         return Ok(());

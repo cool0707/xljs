@@ -2,20 +2,23 @@
 //! text boxes, lines and connectors, groups and pictures as HTML/SVG, in
 //! the order of the sheet's drawing, with the places of its charts.
 //!
-//! The geometry of shapes (all the preset shapes, and freeforms) is in
-//! xlsx_geom.rs.
+//! The geometry of shapes (all the preset shapes, and freeforms), the
+//! colors, anchors and transforms are read with umya-spreadsheet's
+//! `drawingml` (in the fork; RAS draws workbooks with it too).
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use base64::Engine as _;
+use umya_spreadsheet::drawingml::EMU_PT;
+use umya_spreadsheet::drawingml::anchor::{Anchor, Xfrm, anchor_of, xfrm};
+use umya_spreadsheet::drawingml::color::{alpha_of, color_of, fill_color, style_ref};
+use umya_spreadsheet::drawingml::geometry as geom;
+use umya_spreadsheet::drawingml::package::Package;
 
 use super::xlsx::Book;
-use super::xlsx_geom as geom;
-use super::xlsx_chart::{Anchor, ChartParts, Node, anchor_of, color_of};
+use super::xlsx_chart::{ChartParts, Node};
 use super::xlsx_print::{esc, font_family, n};
-
-const EMU_PT: f64 = 12700.0;
 
 /// One object of a sheet's drawing.
 pub enum Drawn {
@@ -52,7 +55,7 @@ pub fn sheet_drawing(b: &Book, sheet: &str, ids: &std::cell::Cell<usize>, size: 
     let Some(sheet_part) = parts.sheet_part(sheet) else { return Some(out) };
     let mut drawings: Vec<String> = parts.rels(&sheet_part).into_values().filter(|(t, _)| t.ends_with("/drawing")).map(|(_, p)| p).collect();
     drawings.sort();
-    let theme = parts.theme();
+    let theme = parts.theme_colors();
     let mut chart = 0;
     for d in drawings {
         let Some(drawing) = parts.xml(&d) else { continue };
@@ -87,41 +90,6 @@ pub fn sheet_drawing(b: &Book, sheet: &str, ids: &std::cell::Cell<usize>, size: 
         }
     }
     Some(out)
-}
-
-/// The transform of a shape, picture or group (pt).
-#[derive(Clone, Copy, Debug, Default)]
-struct Xfrm {
-    off: (f64, f64),
-    ext: (f64, f64),
-    ch_off: (f64, f64),
-    ch_ext: (f64, f64),
-    rot: f64,
-    flip_h: bool,
-    flip_v: bool,
-}
-
-fn xfrm(obj: &Node) -> Option<Xfrm> {
-    let props = obj.children.iter().find(|c| matches!(c.name.as_str(), "spPr" | "grpSpPr"))?;
-    let x = props.child("xfrm")?;
-    let pair = |n: &str, a: &str, b: &str| -> (f64, f64) {
-        x.child(n)
-            .map(|e| {
-                let g = |k: &str| e.attr(k).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / EMU_PT;
-                (g(a), g(b))
-            })
-            .unwrap_or((0.0, 0.0))
-    };
-    let flag = |k: &str| matches!(x.attr(k), Some("1" | "true"));
-    Some(Xfrm {
-        off: pair("off", "x", "y"),
-        ext: pair("ext", "cx", "cy"),
-        ch_off: pair("chOff", "x", "y"),
-        ch_ext: pair("chExt", "cx", "cy"),
-        rot: x.attr("rot").and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0) / 60000.0,
-        flip_h: flag("flipH"),
-        flip_v: flag("flipV"),
-    })
 }
 
 /// The HTML of a shape, connector, picture or group. Without place it
@@ -235,29 +203,6 @@ fn svg_stretched(data: &[u8]) -> Vec<u8> {
     format!("{}{add}{}", &s[..end], &s[end..]).into_bytes()
 }
 
-/// A fill or line color: "none", a color, or None (not said).
-fn paint(props: Option<&Node>, theme: &HashMap<String, String>) -> Option<(String, f64)> {
-    let p = props?;
-    if p.child("noFill").is_some() {
-        return Some(("none".into(), 1.0));
-    }
-    let fill = p.child("solidFill").or_else(|| p.child("gradFill").and_then(|g| g.find("gs")))?;
-    let color = color_of(fill, theme)?;
-    let alpha = fill.children.first().and_then(|c| c.child("alpha")).and_then(|a| a.attr("val")).and_then(|v| v.parse::<f64>().ok()).map(|v| v / 100000.0).unwrap_or(1.0);
-    Some((color, alpha))
-}
-
-/// The color of a style reference (lnRef, fillRef, fontRef) when its index is not 0.
-fn style_ref(sp: &Node, name: &str, theme: &HashMap<String, String>) -> Option<(String, usize)> {
-    let r = sp.child("style")?.child(name)?;
-    let idx = r.attr("idx").and_then(|v| v.parse::<usize>().ok()).unwrap_or(0);
-    let color = color_of(r, theme)?;
-    if name != "fontRef" && idx == 0 {
-        return None;
-    }
-    Some((color, idx))
-}
-
 /// An arrowhead of a line end (headEnd / tailEnd), as an SVG marker.
 fn marker(end: Option<&Node>, color: &str, id: &str, width: f64) -> Option<String> {
     let e = end?;
@@ -318,8 +263,8 @@ fn shape_html(ctx: &Ctx, sp: &Node, x: &Xfrm, w: f64, h: f64) -> String {
     let paths = geom.as_ref().map(|g| g.paths.as_slice()).unwrap_or_default();
     let ln = props.and_then(|p| p.child("ln"));
     // Fill: the shape's own, else the theme's by its style.
-    let fill = paint(props, &ctx.theme).or_else(|| style_ref(sp, "fillRef", &ctx.theme).map(|(c, _)| (c, 1.0))).unwrap_or(("none".into(), 1.0));
-    let stroke = paint(ln, &ctx.theme).or_else(|| style_ref(sp, "lnRef", &ctx.theme).map(|(c, _)| (c, 1.0))).unwrap_or(("none".into(), 1.0));
+    let fill = fill_color(props, &ctx.theme).or_else(|| style_ref(sp, "fillRef", &ctx.theme).map(|(c, _)| (c, 1.0))).unwrap_or(("none".into(), 1.0));
+    let stroke = fill_color(ln, &ctx.theme).or_else(|| style_ref(sp, "lnRef", &ctx.theme).map(|(c, _)| (c, 1.0))).unwrap_or(("none".into(), 1.0));
     let width = ln.and_then(|l| l.attr("w")).and_then(|v| v.parse::<f64>().ok()).map(|v| v / EMU_PT).unwrap_or_else(|| {
         match style_ref(sp, "lnRef", &ctx.theme).map(|(_, i)| i) {
             Some(1) => 0.5,
@@ -550,7 +495,7 @@ fn run_css(ctx: &Ctx, rpr: Option<&Node>, def: Option<&Node>, base_color: &str, 
     css.push_str(&text_fill(rpr, def, &ctx.theme, base_color));
     // The outline of the characters.
     let ln = rpr.and_then(|x| x.child("ln")).or_else(|| def.and_then(|x| x.child("ln")));
-    if let Some((c, a)) = paint(ln, &ctx.theme).filter(|(c, _)| c != "none") {
+    if let Some((c, a)) = fill_color(ln, &ctx.theme).filter(|(c, _)| c != "none") {
         let w = ln.and_then(|l| l.attr("w")).and_then(|v| v.parse::<f64>().ok()).map(|v| v / EMU_PT).unwrap_or(0.75).max(0.25);
         let _ = write!(css, "-webkit-text-stroke:{}pt {};", n(w), rgba(&c, a));
     }
@@ -580,18 +525,6 @@ fn text_fill(rpr: Option<&Node>, def: Option<&Node>, theme: &HashMap<String, Str
             }
         }
     }
-}
-
-/// The alpha of a fill's color (alpha 100000 = opaque).
-fn alpha_of(fill: &Node) -> f64 {
-    fill.children
-        .iter()
-        .find(|c| matches!(c.name.as_str(), "srgbClr" | "schemeClr" | "sysClr" | "prstClr"))
-        .and_then(|c| c.child("alpha"))
-        .and_then(|a| a.attr("val"))
-        .and_then(|v| v.parse::<f64>().ok())
-        .map(|v| (v / 100000.0).clamp(0.0, 1.0))
-        .unwrap_or(1.0)
 }
 
 /// A CSS color of "#RRGGBB" with an alpha.

@@ -14,7 +14,9 @@
 use std::collections::HashMap;
 use std::io::Cursor;
 
-use super::xlsx_chart::{Node, parse, resolve};
+use umya_spreadsheet::drawingml::package::relationships;
+
+use super::xlsx_chart::{Node, parse};
 
 /// A picture of the workbook placed in cells.
 #[derive(Debug, Clone, PartialEq)]
@@ -144,16 +146,7 @@ impl CellImages {
 
 /// The relationships of a .rels part: id -> (type, part).
 fn rels(root: Option<&Node>, dir: &str) -> HashMap<String, (String, String)> {
-    let mut out = HashMap::new();
-    let Some(root) = root else { return out };
-    for r in root.all("Relationship") {
-        let (Some(id), Some(target)) = (r.attr("Id"), r.attr("Target")) else { continue };
-        if r.attr("TargetMode") == Some("External") {
-            continue;
-        }
-        out.insert(id.to_string(), (r.attr("Type").unwrap_or("").to_string(), resolve(dir, target)));
-    }
-    out
+    root.map(|r| relationships(r, dir)).unwrap_or_default()
 }
 
 /// The type of a picture by the extension of its name; None for those

@@ -9,11 +9,11 @@
 
 use std::collections::HashMap;
 
-use umya_spreadsheet::{Color, ConditionalFormatValueObject, ConditionalFormattingRule, EnumTrait, Style, Worksheet};
+use umya_spreadsheet::{Color, ConditionalFormatValueObject, ConditionalFormattingRule, EnumTrait, Worksheet};
 
 use super::xlsx::Book;
 use super::xlsx_calc::{CalcVal, eval_at, prepare, value_at};
-use super::xlsx_table::{Dxf, Side};
+use super::xlsx_table::{Dxf, Side, color, style_dxf};
 
 /// A rectangle of cells (1-based, inclusive): c1, r1, c2, r2.
 type Area = (u32, u32, u32, u32);
@@ -148,42 +148,8 @@ fn sqref(s: &str) -> Vec<Area> {
         .collect()
 }
 
-/// A color that is given (not automatic, not the system foreground).
-fn color(c: &Color) -> Option<Color> {
-    if !c.has_value() || c.automatic() || c.indexed() == 64 {
-        return None;
-    }
-    Some(c.clone())
-}
-
 fn cfvo(v: &ConditionalFormatValueObject) -> Cfvo {
     Cfvo { kind: v.get_type().value_string().to_string(), val: v.val().to_string(), gte: v.gte() }
-}
-
-/// A conditional format's differential format.
-fn style_dxf(st: &Style) -> Dxf {
-    let mut d = Dxf::default();
-    if let Some(f) = st.font() {
-        d.bold = f.bold().then_some(true);
-        d.italic = f.italic().then_some(true);
-        d.strike = f.strikethrough().then_some(true);
-        d.underline = (f.font_underline().val().value_string() != "none").then_some(true);
-        d.color = color(f.color());
-    }
-    d.num_fmt = st.numbering_format().map(|n| n.format_code().to_string());
-    // A dxf's solid fill is its background color (and no pattern type is solid).
-    if let Some(p) = st.fill().and_then(|f| f.pattern_fill()) {
-        d.fill = p.background_color().and_then(color).or_else(|| p.foreground_color().and_then(color));
-    }
-    if let Some(b) = st.borders() {
-        for (i, s) in [b.left(), b.right(), b.top(), b.bottom(), b.vertical(), b.horizontal()].into_iter().enumerate() {
-            let style = s.border_style();
-            if !style.is_empty() && style != "none" {
-                d.sides[i] = Some(Side { style: style.to_string(), color: s.color().as_ref().and_then(color) });
-            }
-        }
-    }
-    d
 }
 
 fn read_rule(r: &ConditionalFormattingRule, x14: bool) -> Rule {

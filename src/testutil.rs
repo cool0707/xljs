@@ -67,3 +67,38 @@ impl std::io::Write for SharedBuf {
         Ok(())
     }
 }
+
+/// An xlsx file made by umya-spreadsheet, with `edit` applied to the text of
+/// its parts (name, text).
+pub fn xlsx_edited(edit: impl Fn(&str, String) -> String) -> Vec<u8> {
+    use std::io::{Read, Write};
+    let mut file = std::io::Cursor::new(Vec::new());
+    umya_spreadsheet::writer::xlsx::write_writer(&umya_spreadsheet::new_file(), &mut file).unwrap();
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(file.into_inner())).unwrap();
+    let mut out = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for i in 0..archive.len() {
+        let mut f = archive.by_index(i).unwrap();
+        let name = f.name().to_string();
+        let mut data = Vec::new();
+        f.read_to_end(&mut data).unwrap();
+        let data = match String::from_utf8(data) {
+            Ok(text) => edit(&name, text).into_bytes(),
+            Err(e) => e.into_bytes(),
+        };
+        out.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+        out.write_all(&data).unwrap();
+    }
+    out.finish().unwrap().into_inner()
+}
+
+/// An xlsx file whose first sheet holds `body` (what goes in `<worksheet>`).
+pub fn xlsx_with_sheet(body: &str) -> Vec<u8> {
+    xlsx_edited(|name, text| {
+        if name != "xl/worksheets/sheet1.xml" {
+            return text;
+        }
+        let start = text.find("<worksheet").and_then(|i| text[i..].find('>').map(|j| i + j + 1)).unwrap();
+        let end = text.rfind("</worksheet>").unwrap();
+        format!("{}{}{}", &text[..start], body, &text[end..])
+    })
+}

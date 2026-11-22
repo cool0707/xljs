@@ -38,9 +38,9 @@ gridcraft を使う。依存（git）ではなく `vendor/gridcraft/` に写し�
 |---|---|---|
 | セルの値・数式 | `Worksheet::cells()` | 書式は写さない |
 | 名前の定義 | ブックと各シートの `defined_names()` | `_xlnm.`（印刷範囲など）は除く。`localSheetId` があるものだけシートの名前 |
-| テーブル | `Worksheet::tables()` | 名前・範囲・列名。構造化参照（`売上表[金額]`・`[@数量]`）用。見出し行はあるものとする（umya が `headerRowCount` を持たない） |
+| テーブル | `Worksheet::tables()` | 名前・範囲・列名。構造化参照（`売上表[金額]`・`[@数量]`）用。見出し行の有無は `Table::header_row_count` |
 | 結合セル | `merge_cells()` | スピルを妨げるかの判定用 |
-| 非表示の行 | `row_dimensions()` | `SUBTOTAL`・`AGGREGATE` 用。フィルターの範囲の中で隠れている行は「フィルターで隠れた行」とみなす（umya がフィルターの条件を持たない） |
+| 非表示の行 | `row_dimensions()` | `SUBTOTAL`・`AGGREGATE` 用。フィルターの範囲の中で隠れている行は「フィルターで隠れた行」とみなす（条件はエンジンに渡さない。umya は `FilterColumn::criteria` で読める） |
 | 1904 年の日付システム | `Book::date1904` | |
 
 写しは `Book::calc` に持ち、ブックを閉じるか、追えない変更があるまで使い回す。
