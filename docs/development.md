@@ -50,7 +50,7 @@ cargo check --target x86_64-pc-windows-gnu --all-targets   # Windows 専用コ�
 | `src/ui` | UI トレイトと native（Win32・WebView2）/ console / mock 実装、UI スレッド |
 | `src/pack` | exe へのスクリプト・アセット埋め込み（zip） |
 | `src/meta` | スクリプト先頭のメタデータの読み取りとアセットの範囲 |
-| `src/vba` | マクロブックの VBA コードの読み取り |
+| `src/vba` | マクロブックの VBA コードの読み取り（VBA プロジェクトそのものは umya-spreadsheet のフォークの `vba` モジュールが読む。RAS と共用） |
 | `src/book` | ブックの数式・入力規則・名前の定義・条件付き書式・グラフ・表の列の特徴をテキストに（`xljs vba`） |
 | `types/xljs.d.ts` | 型定義（`xljs init` で出力） |
 

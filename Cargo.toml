@@ -25,7 +25,7 @@ rquickjs = { version = "0.14", features = ["classes", "properties", "macro"] }
 oxc = { version = "0.156", features = ["transformer", "codegen", "semantic", "ast_visit"] }
 oxc_sourcemap = "9"
 umya-spreadsheet = "3.1"
-cfb = "0.14"
+cfb = "0.16"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 # Decompresses the embedded files (src/embed.rs); the same backend as zip.
 flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
