@@ -3,8 +3,9 @@
     py -I partdiff.py <before.xlsx> <after.xlsx>
 
 Parts: the names without their numbers (`xl/slicers/slicer#.xml`), those
-fewer after. Elements: in each kind of part (workbook, styles, sheets,
-drawings...), the element names none of the parts of that kind has any
+fewer after. Elements and attributes: in each kind of part (workbook,
+styles, sheets, drawings...), the element names and the attributes of
+elements (`sheetView@showZeros`) none of the parts of that kind has any
 more. Prints nothing and exits with 0 when nothing was lost.
 """
 import collections
@@ -17,6 +18,9 @@ sys.stdout.reconfigure(encoding="utf-8")
 # Lost without harm (Excel makes them again, or they are the same written another way).
 HARMLESS_PARTS = {"xl/calcChain.xml"}
 HARMLESS_ELEMENTS = {"is", "xr:revisionPtr", "xcalcf:calcFeatures", "x15ac:absPath", "mc:AlternateContent", "mc:Choice", "mc:Fallback"}
+# Attributes (of any element) lost without harm: the ids for co-authoring, what the markup
+# compatibility ignores, how spaces are kept.
+HARMLESS_ATTRIBUTES = {"mc:Ignorable", "xml:space", "xr:uid", "xr2:uid", "xr3:uid", "xr6:uid", "xr10:uid", "xr16:uid"}
 # By kind of part: the id of the theme's family, the ids shapes are made with (for co-authoring).
 HARMLESS_BY_KIND = {
     "xl/theme/theme#.xml": {"a:ext", "a:extLst", "thm15:themeFamily"},
@@ -38,7 +42,21 @@ def elements(data):
         text = data.decode("utf-8")
     except UnicodeDecodeError:
         return set()
-    return set(re.findall(r"<([A-Za-z][\w.]*(?::[\w.]+)?)[\s/>]", text))
+    out = set()
+    for m in TAG.finditer(text):
+        name = m.group(1)
+        if name in HARMLESS_ELEMENTS:
+            continue
+        out.add(name)
+        for attr in ATTRIBUTE.findall(m.group(2)):
+            if not attr.startswith("xmlns") and attr not in HARMLESS_ATTRIBUTES:
+                out.add(f"{name}@{attr}")
+    return out
+
+
+# A start tag and its attributes; an attribute's name.
+TAG = re.compile(r"<([A-Za-z][\w.]*(?::[\w.]+)?)((?:\s+[\w.:-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'))*)\s*/?>")
+ATTRIBUTE = re.compile(r"([\w.:-]+)\s*=")
 
 
 before, after = parts(sys.argv[1]), parts(sys.argv[2])
