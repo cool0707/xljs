@@ -251,9 +251,6 @@ pub(crate) fn copy_sheet(b: &mut Book, sheet: &str, name: Option<&str>, position
     if !renamed.is_empty() {
         copy.rewrite_formulas(&mut |_, text| rename_tables(text, &renamed));
     }
-    if let Some(p) = b.print.get(sheet).cloned() {
-        b.print.insert(name.clone(), p);
-    }
     if b.fresh && sheet == "Sheet1" {
         b.fresh = false;
     }

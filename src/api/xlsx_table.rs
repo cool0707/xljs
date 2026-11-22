@@ -5,10 +5,7 @@
 
 use std::collections::HashMap;
 
-use umya_spreadsheet::Color;
-use umya_spreadsheet::Worksheet;
-
-use super::xlsx_chart::{Node, parse};
+use umya_spreadsheet::{Color, Style, Workbook, Worksheet};
 
 /// A border side of a differential format: style and color (None = automatic).
 #[derive(Debug, Clone, PartialEq)]
@@ -39,77 +36,50 @@ type Area = (u32, u32, u32, u32);
 pub type StyleDef = Vec<(String, u32, Dxf)>;
 
 /// The custom table styles of a workbook by name.
-pub fn custom_styles(styles_xml: &[u8]) -> HashMap<String, StyleDef> {
-    let mut out = HashMap::new();
-    let Some(root) = parse(styles_xml) else {
-        return out;
-    };
-    let dxfs: Vec<Dxf> = root.child("dxfs").map(|d| d.all("dxf").map(dxf).collect()).unwrap_or_default();
-    let Some(ts) = root.child("tableStyles") else {
-        return out;
-    };
-    for s in ts.all("tableStyle") {
-        let Some(name) = s.attr("name") else { continue };
-        let els = s
-            .all("tableStyleElement")
-            .filter_map(|e| {
-                let d = dxfs.get(e.attr("dxfId")?.parse::<usize>().ok()?)?.clone();
-                let size = e.attr("size").and_then(|v| v.parse().ok()).unwrap_or(1);
-                Some((e.attr("type")?.to_string(), size, d))
-            })
-            .collect();
-        out.insert(name.to_string(), els);
-    }
-    out
+pub fn custom_styles(wb: &Workbook) -> HashMap<String, StyleDef> {
+    wb.table_styles()
+        .iter()
+        .map(|s| {
+            let els = s
+                .elements()
+                .iter()
+                .filter_map(|e| Some((e.kind().to_string(), e.size(), style_dxf(&wb.differential_format(e.dxf_id()?)?))))
+                .collect();
+            (s.name().to_string(), els)
+        })
+        .collect()
 }
 
-fn color(n: &Node) -> Option<Color> {
-    let mut c = Color::default();
-    if n.attr("auto").is_some_and(|v| v == "1" || v == "true") {
+/// A color that is given (not automatic, not the system foreground).
+pub(crate) fn color(c: &Color) -> Option<Color> {
+    if !c.has_value() || c.automatic() || c.indexed() == 64 {
         return None;
     }
-    if let Some(t) = n.attr("theme").and_then(|v| v.parse().ok()) {
-        c.set_theme_index(t);
-    } else if let Some(rgb) = n.attr("rgb") {
-        let rgb = if rgb.len() == 6 { format!("FF{rgb}") } else { rgb.to_string() };
-        if rgb.len() != 8 || !rgb.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return None;
-        }
-        c.set_argb_str(rgb);
-    } else {
-        let i = n.attr("indexed").and_then(|v| v.parse().ok())?;
-        if i == 64 {
-            return None; // the system foreground
-        }
-        c.set_indexed(i);
-    }
-    if let Some(t) = n.attr("tint").and_then(|v| v.parse().ok()) {
-        c.set_tint(t);
-    }
-    Some(c)
+    Some(c.clone())
 }
 
-fn dxf(n: &Node) -> Dxf {
+/// The parts of a differential format (a table style's element, a
+/// conditional format's) that show on paper. What it leaves unset stays
+/// None, so that what it is laid over shows (`<b val="0"/>` takes bold off).
+pub(crate) fn style_dxf(st: &Style) -> Dxf {
     let mut d = Dxf::default();
-    let on = |e: Option<&Node>| e.map(|e| !matches!(e.attr("val"), Some("0" | "false")));
-    if let Some(f) = n.child("font") {
-        d.bold = on(f.child("b"));
-        d.italic = on(f.child("i"));
-        d.color = f.child("color").and_then(color);
+    if let Some(f) = st.font() {
+        d.bold = f.bold_value();
+        d.italic = f.italic_value();
+        d.strike = f.strikethrough_value();
+        d.underline = f.underline_value().map(|u| u != "none");
+        d.color = color(f.color());
     }
-    if let Some(p) = n.child("fill").and_then(|f| f.child("patternFill")) {
-        let t = p.attr("patternType").unwrap_or("solid");
-        if t != "none" {
-            // A dxf's solid fill is its background color.
-            d.fill = p.child("bgColor").and_then(color).or_else(|| p.child("fgColor").and_then(color));
-        }
+    d.num_fmt = st.numbering_format().map(|n| n.format_code().to_string());
+    // A dxf's solid fill is its background color (and no pattern type is solid).
+    if let Some(p) = st.fill().and_then(|f| f.pattern_fill()) {
+        d.fill = p.background_color().and_then(color).or_else(|| p.foreground_color().and_then(color));
     }
-    if let Some(b) = n.child("border") {
-        for (i, name) in ["left", "right", "top", "bottom", "vertical", "horizontal"].into_iter().enumerate() {
-            if let Some(s) = b.child(name)
-                && let Some(st) = s.attr("style")
-            {
-                d.sides[i] = Some(Side { style: st.to_string(), color: s.child("color").and_then(color) });
+    if let Some(b) = st.borders() {
+        for (i, s) in [b.left(), b.right(), b.top(), b.bottom(), b.vertical(), b.horizontal()].into_iter().enumerate() {
+            let style = s.border_style();
+            if !style.is_empty() && style != "none" {
+                d.sides[i] = Some(Side { style: style.to_string(), color: s.color().as_ref().and_then(color) });
             }
         }
     }
@@ -336,7 +306,8 @@ pub fn overlays(ws: &Worksheet, custom: &HashMap<String, StyleDef>) -> HashMap<(
             Some(i) => (i.is_show_first_col(), i.is_show_last_col(), i.is_show_row_stripes(), i.is_show_col_stripes()),
             None => (false, false, true, false),
         };
-        let header = 1u32; // headerRowCount is not kept; tables nearly always have one
+        // A table without a heading row (headerRowCount 0) starts with its data.
+        let header = t.header_row_count().min(1);
         let totals = t.totals_row_count();
         let body_r1 = r1 + header;
         let body_r2 = r2.saturating_sub(totals);
@@ -382,7 +353,9 @@ pub fn overlays(ws: &Worksheet, custom: &HashMap<String, StyleDef>) -> HashMap<(
         if first_col && let Some(e) = get("firstColumn") {
             regions.push((&e.2, (c1, r1, c1, r2)));
         }
-        if let Some(e) = get("headerRow") {
+        if header > 0
+            && let Some(e) = get("headerRow")
+        {
             regions.push((&e.2, (c1, r1, c2, r1)));
         }
         if totals > 0
@@ -391,7 +364,9 @@ pub fn overlays(ws: &Worksheet, custom: &HashMap<String, StyleDef>) -> HashMap<(
             regions.push((&e.2, (c1, r2, c2, r2)));
         }
         for (ty, cell) in [("firstHeaderCell", (c1, r1)), ("lastHeaderCell", (c2, r1))] {
-            if let Some(e) = get(ty) {
+            if header > 0
+                && let Some(e) = get(ty)
+            {
                 regions.push((&e.2, (cell.0, cell.1, cell.0, cell.1)));
             }
         }
@@ -422,8 +397,18 @@ mod tests {
 
     #[test]
     fn custom_style() {
-        let xml = br#"<styleSheet><dxfs count="2"><dxf><font><b val="0"/><color theme="1"/></font><fill><patternFill><bgColor theme="7" tint="0.8"/></patternFill></fill></dxf><dxf><border><left style="thin"><color theme="0" tint="-0.5"/></left><right style="thin"/><top style="thin"/><bottom style="thin"/><vertical style="hair"/><horizontal style="thin"/></border></dxf></dxfs><tableStyles count="1"><tableStyle name="mine" count="2"><tableStyleElement type="wholeTable" dxfId="1"/><tableStyleElement type="headerRow" dxfId="0"/></tableStyle></tableStyles></styleSheet>"#;
-        let s = custom_styles(xml);
+        let styles = r#"<dxfs count="2"><dxf><font><b val="0"/><color theme="1"/></font><fill><patternFill><bgColor theme="7" tint="0.8"/></patternFill></fill></dxf><dxf><border><left style="thin"><color theme="0" tint="-0.5"/></left><right style="thin"/><top style="thin"/><bottom style="thin"/><vertical style="hair"/><horizontal style="thin"/></border></dxf></dxfs><tableStyles count="1"><tableStyle name="mine" count="2"><tableStyleElement type="wholeTable" dxfId="1"/><tableStyleElement type="headerRow" dxfId="0"/></tableStyle></tableStyles>"#;
+        let file = crate::testutil::xlsx_edited(|name, text| {
+            if name != "xl/styles.xml" {
+                return text;
+            }
+            // In place of the empty tableStyles umya-spreadsheet writes.
+            let i = text.find("<tableStyles").unwrap();
+            let j = i + text[i..].find("/>").unwrap() + 2;
+            format!("{}{}{}", &text[..i], styles, &text[j..])
+        });
+        let b = super::super::xlsx::open_bytes(&file, String::new()).unwrap();
+        let s = &b.table_styles;
         let def = &s["mine"];
         assert_eq!(def.len(), 2);
         assert_eq!(def[0].0, "wholeTable");

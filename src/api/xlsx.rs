@@ -1,9 +1,7 @@
 //! Workbooks (xlsx) on top of umya-spreadsheet.
 
-use std::io::{Cursor, Read, Write};
-use std::sync::LazyLock;
+use std::io::Cursor;
 
-use regex::Regex;
 use rquickjs::class::Trace;
 use rquickjs::{Class, Ctx, JsLifetime, Value};
 use umya_spreadsheet::{CellRawValue, NumberingFormat, Workbook, Worksheet};
@@ -32,15 +30,10 @@ pub struct Book {
     pub closed: bool,
     /// The font of the Normal style (name, size).
     pub default_font: (String, f64),
-    /// Whether the default font must be written into styles.xml on save.
-    pub font_changed: bool,
     /// The parts of the file with its charts (None for a new workbook).
     pub charts: Option<super::xlsx_chart::ChartParts>,
     /// The workbook changed where charts are (Book::parts_changed).
     pub parts_stale: bool,
-    /// What umya-spreadsheet does not keep of the sheets' page setup, by
-    /// sheet name (empty for a new workbook).
-    pub print: std::collections::HashMap<String, super::xlsx_print::RawPrint>,
     /// The workbook's own table styles (tableStyles in styles.xml) by name.
     pub table_styles: std::collections::HashMap<String, super::xlsx_table::StyleDef>,
     /// The pictures placed in cells (empty for a new workbook).
@@ -67,10 +60,11 @@ pub(crate) fn zerr(e: impl std::fmt::Display) -> Error {
 }
 
 impl Book {
-    fn new(wb: Workbook, path: String, styles_xml: Option<&[u8]>) -> Book {
-        let default_font = styles_xml.and_then(first_font).unwrap_or(("Calibri".into(), 11.0));
-        let date1904 = false; // see read_date1904
-        Book { wb, path, date1904, fresh: false, closed: false, default_font, font_changed: false, charts: None, parts_stale: false, print: Default::default(), table_styles: Default::default(), cell_images: Default::default(), calc: Default::default(), touched: Default::default(), shape: Default::default(), areas: Default::default() }
+    fn new(wb: Workbook, path: String) -> Book {
+        let default_font = wb.default_font().unwrap_or(("Calibri".into(), 11.0));
+        let date1904 = wb.date1904();
+        let table_styles = super::xlsx_table::custom_styles(&wb);
+        Book { wb, path, date1904, fresh: false, closed: false, default_font, charts: None, parts_stale: false, table_styles, cell_images: Default::default(), calc: Default::default(), touched: Default::default(), shape: Default::default(), areas: Default::default() }
     }
 
     pub fn sheet(&self, name: &str) -> Result<&Worksheet> {
@@ -137,79 +131,15 @@ impl Book {
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
         let mut buf = Cursor::new(Vec::new());
         umya_spreadsheet::writer::xlsx::write_writer(&self.wb, &mut buf).map_err(zerr)?;
-        let data = buf.into_inner();
-        if !self.font_changed {
-            return Ok(data);
-        }
-        self.postprocess(&data)
+        Ok(buf.into_inner())
     }
-
-    /// Writes what umya-spreadsheet cannot: the default font of the Normal
-    /// style.
-    fn postprocess(&self, data: &[u8]) -> Result<Vec<u8>> {
-        let mut zr = zip::ZipArchive::new(Cursor::new(data)).map_err(zerr)?;
-        let mut zw = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        for i in 0..zr.len() {
-            let mut f = zr.by_index(i).map_err(zerr)?;
-            let name = f.name().to_string();
-            let mut content = Vec::new();
-            f.read_to_end(&mut content).map_err(zerr)?;
-            if name == "xl/styles.xml" && self.font_changed {
-                content = set_first_font(&String::from_utf8_lossy(&content), &self.default_font.0, self.default_font.1).into_bytes();
-            }
-            let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-            zw.start_file(name, opts).map_err(zerr)?;
-            zw.write_all(&content).map_err(zerr)?;
-        }
-        Ok(zw.finish().map_err(zerr)?.into_inner())
-    }
-}
-
-static FONTS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<fonts\b[^>]*>\s*<font\b[^>]*>(.*?)</font>").unwrap());
-static FONT_NAME: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<name\s+val="([^"]*)"\s*/>"#).unwrap());
-static FONT_SIZE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"<sz\s+val="([^"]*)"\s*/>"#).unwrap());
-
-fn xml_unescape(s: &str) -> String {
-    s.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&")
-}
-
-fn xml_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
-}
-
-/// The first font of styles.xml (the Normal style's).
-fn first_font(styles: &[u8]) -> Option<(String, f64)> {
-    let s = String::from_utf8_lossy(styles);
-    let c = FONTS.captures(&s)?;
-    let body = &c[1];
-    let name = FONT_NAME.captures(body).map(|m| xml_unescape(&m[1]))?;
-    let size = FONT_SIZE.captures(body).and_then(|m| m[1].parse().ok()).unwrap_or(11.0);
-    Some((name, size))
-}
-
-fn set_first_font(styles: &str, name: &str, size: f64) -> String {
-    let Some(m) = FONTS.captures(styles).and_then(|c| c.get(1)) else { return styles.to_string() };
-    let body = m.as_str();
-    let mut nb = FONT_NAME.replace(body, format!("<name val=\"{}\"/>", xml_escape(name)).as_str()).into_owned();
-    nb = FONT_SIZE.replace(&nb, format!("<sz val=\"{}\"/>", fmt_num(size)).as_str()).into_owned();
-    // The theme's font would win over the name.
-    nb = Regex::new(r#"<scheme\s+val="[^"]*"\s*/>"#).unwrap().replace(&nb, "").into_owned();
-    format!("{}{}{}", &styles[..m.start()], nb, &styles[m.end()..])
 }
 
 /// Reads the bytes of a part of an xlsx file.
+#[cfg(test)]
 pub(super) fn zip_part(data: &[u8], name: &str) -> Option<Vec<u8>> {
     let mut zr = zip::ZipArchive::new(Cursor::new(data)).ok()?;
     crate::zippart::read(&mut zr, name)
-}
-
-fn read_date1904(data: &[u8]) -> bool {
-    zip_part(data, "xl/workbook.xml")
-        .map(|b| {
-            let s = String::from_utf8_lossy(&b);
-            Regex::new(r#"<workbookPr\b[^>]*\bdate1904="(1|true)""#).unwrap().is_match(&s)
-        })
-        .unwrap_or(false)
 }
 
 /// Opens xlsx bytes.
@@ -218,12 +148,8 @@ pub fn open_bytes(data: &[u8], path: String) -> Result<Book> {
         return Err(Error::msg("the encrypted file is not supported"));
     }
     let wb = umya_spreadsheet::reader::xlsx::read_reader(Cursor::new(data), true).map_err(zerr)?;
-    let styles = zip_part(data, "xl/styles.xml");
-    let mut b = Book::new(wb, path, styles.as_deref());
-    b.table_styles = styles.as_deref().map(super::xlsx_table::custom_styles).unwrap_or_default();
-    b.date1904 = read_date1904(data);
+    let mut b = Book::new(wb, path);
     b.charts = Some(super::xlsx_chart::ChartParts::collect(data));
-    b.print = super::xlsx_print::collect_raw(data);
     b.cell_images = super::xlsx_cellimage::CellImages::collect(data);
     Ok(b)
 }
@@ -799,7 +725,7 @@ pub(super) fn install(n: &N) {
         track(h, &a.ctx, b)
     });
     n.set("xlsxCreate", |h, a| {
-        let mut b = Book::new(umya_spreadsheet::new_file(), String::new(), None);
+        let mut b = Book::new(umya_spreadsheet::new_file(), String::new());
         b.fresh = true;
         // New workbooks use the language's default font (游ゴシック for
         // Japanese, like Excel itself); create({ font }) overrides it.
@@ -810,8 +736,8 @@ pub(super) fn install(n: &N) {
             font = if f.is_null() { String::new() } else { js::to_str(&f) };
         }
         if !font.is_empty() {
+            b.wb.set_default_font(&font, b.default_font.1);
             b.default_font.0 = font;
-            b.font_changed = true;
         }
         track(h, &a.ctx, b)
     });
@@ -877,9 +803,6 @@ pub(super) fn install(n: &N) {
             }
             b.calc_reset();
             b.wb.set_sheet_name(idx, to.clone()).map_err(|e| a.throw(&Error::msg(e.to_string())))?;
-            if let Some(p) = b.print.remove(&from) {
-                b.print.insert(to.clone(), p);
-            }
             if b.fresh && from == "Sheet1" {
                 b.fresh = false;
             }
@@ -1125,7 +1048,7 @@ pub(super) fn install(n: &N) {
         if let Some(id) = handle_id(&a.arg(0)) {
             h.books.borrow_mut().remove(&id);
             // A closed handle keeps reporting "closed".
-            h.books.borrow_mut().insert(id, Book { closed: true, ..Book::new(Workbook::default(), String::new(), None) });
+            h.books.borrow_mut().insert(id, Book { closed: true, ..Book::new(Workbook::default(), String::new()) });
         }
         a.undefined()
     });

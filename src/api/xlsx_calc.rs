@@ -478,8 +478,9 @@ fn layout(ws: &Worksheet, id: &mut u32) -> gm::Sheet {
             sh.rows.insert(r.row_num() - 1, gm::LineInfo { hidden: true, ..Default::default() });
         }
     }
-    // The criteria of a filter are not kept: rows hidden inside its range
-    // count as filtered out (SUBTOTAL leaves those out, unlike rows hidden by hand).
+    // The engine is not told the criteria of a filter: rows hidden inside its
+    // range count as filtered out (SUBTOTAL leaves those out, unlike rows
+    // hidden by hand).
     let filtered = |r: &RangeRef| hidden.iter().any(|h| *h > r.start.row && *h <= r.end.row);
     let criterion = || vec![(0u32, gm::FilterCriterion::Values { values: Vec::new(), blanks: false })];
     if let Some(r) = ws.auto_filter().and_then(|f| range(&f.range().range())) {
@@ -496,8 +497,7 @@ fn layout(ws: &Worksheet, id: &mut u32) -> gm::Sheet {
             id: *id,
             name: (if t.display_name().is_empty() { t.name() } else { t.display_name() }).to_string(),
             range: r,
-            // headerRowCount is not kept; tables nearly always have the row.
-            header_row: true,
+            header_row: t.header_row_count() > 0,
             totals_row: t.totals_row_shown() || t.totals_row_count() > 0,
             columns: t
                 .columns()

@@ -6,7 +6,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as _;
-use std::io::Cursor;
 
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
@@ -15,30 +14,13 @@ use umya_spreadsheet::structs::drawing::Theme;
 use umya_spreadsheet::{Cell, CellRawValue, Color, Style, Worksheet};
 
 use super::xlsx::{Book, format_code, style_is_date};
-use super::xlsx_chart::{Anchor, parse, resolve};
+use super::xlsx_chart::Anchor;
 use super::xlsx_table::{Overlay, Side};
 use crate::{Result, err};
 
 /// EMU per point.
 const EMU_PT: f64 = 12700.0;
 const PT_MM: f64 = 72.0 / 25.4;
-
-/// What the page setup of a sheet says that umya-spreadsheet does not keep
-/// (or keeps without telling a missing attribute from 0).
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct RawPrint {
-    /// fitToWidth / fitToHeight as written (absent = 1, 0 = automatic).
-    pub fit_width: Option<u32>,
-    pub fit_height: Option<u32>,
-    /// pageOrder="overThenDown".
-    pub over_then_down: bool,
-    /// printOptions gridLines.
-    pub grid_lines: bool,
-    /// The sheet is hidden (state="hidden" / "veryHidden" in workbook.xml).
-    pub hidden: bool,
-    /// pageSetup blackAndWhite: printed without colors.
-    pub black_and_white: bool,
-}
 
 /// The height (points) of the rows of a sheet without a height of their
 /// own. Excel sizes rows by the Normal font unless the sheet says otherwise
@@ -58,59 +40,6 @@ pub(crate) fn default_row_height(font: &(String, f64), fmt: &umya_spreadsheet::s
         _ if fmt.default_row_height() > 0.0 => fmt.default_row_height(),
         Some(k) => ((font.1 * k) / 0.75).round() * 0.75,
         None => ((font.1 * 15.0 / 11.0) / 0.75).round() * 0.75,
-    }
-}
-
-/// Reads the page setup of every sheet of an xlsx file (see RawPrint).
-pub fn collect_raw(data: &[u8]) -> HashMap<String, RawPrint> {
-    let mut out = HashMap::new();
-    for_each_sheet(data, |s, name, xml| {
-        let mut r = raw_print(xml);
-        r.hidden = matches!(s.attr("state"), Some("hidden" | "veryHidden"));
-        out.insert(name.to_string(), r);
-    });
-    out
-}
-
-/// Calls f with the `<sheet>` element of workbook.xml, the name and the XML
-/// of every worksheet of an xlsx file.
-pub(super) fn for_each_sheet(data: &[u8], mut f: impl FnMut(&super::xlsx_chart::Node, &str, &[u8])) {
-    let Ok(mut zr) = zip::ZipArchive::new(Cursor::new(data)) else { return };
-    let mut read = |name: &str| crate::zippart::read(&mut zr, name);
-    let Some(wb) = read("xl/workbook.xml").and_then(|b| parse(&b)) else { return };
-    let rels: HashMap<String, String> = read("xl/_rels/workbook.xml.rels")
-        .and_then(|b| parse(&b))
-        .map(|r| r.all("Relationship").filter_map(|x| Some((x.attr("Id")?.to_string(), resolve("xl", x.attr("Target")?)))).collect())
-        .unwrap_or_default();
-    let Some(sheets) = wb.child("sheets") else { return };
-    for s in sheets.all("sheet") {
-        let (Some(name), Some(id)) = (s.attr("name"), s.attr("id")) else { continue };
-        let Some(part) = rels.get(id) else { continue };
-        let Some(xml) = read(part) else { continue };
-        f(s, name, &xml);
-    }
-}
-
-/// The page setup of a sheet's XML. Only the elements before sheetData and
-/// after it matter, so the cells are skipped with a plain search.
-fn raw_print(xml: &[u8]) -> RawPrint {
-    let s = String::from_utf8_lossy(xml);
-    let attr = |tag: &str, name: &str| -> Option<String> {
-        let i = s.find(&format!("<{tag} "))?;
-        let rest = &s[i..];
-        let end = rest.find('>')?;
-        let el = &rest[..end];
-        let k = el.find(&format!(" {name}=\""))? + name.len() + 3;
-        Some(el[k..].split('"').next()?.to_string())
-    };
-    let on = |v: Option<String>| matches!(v.as_deref(), Some("1" | "true"));
-    RawPrint {
-        fit_width: attr("pageSetup", "fitToWidth").and_then(|v| v.parse().ok()),
-        fit_height: attr("pageSetup", "fitToHeight").and_then(|v| v.parse().ok()),
-        over_then_down: attr("pageSetup", "pageOrder").as_deref() == Some("overThenDown"),
-        grid_lines: on(attr("printOptions", "gridLines")),
-        hidden: false,
-        black_and_white: on(attr("pageSetup", "blackAndWhite")),
     }
 }
 
@@ -698,7 +627,7 @@ impl<'a> Sheet<'a> {
             y_cache: Default::default(),
             font,
             table: super::xlsx_table::overlays(ws, &b.table_styles),
-            mono: b.print.get(name).is_some_and(|p| p.black_and_white),
+            mono: ws.page_setup().black_and_white(),
             images,
             cond,
         })
@@ -1296,7 +1225,7 @@ pub fn workbook_html(b: &Book, o: &PrintOptions) -> Result<PrintOut> {
         if let Some(v) = o.black_and_white {
             sh.mono = v;
         }
-        let setup = setup_of(&sh, b.print.get(name), o)?;
+        let setup = setup_of(&sh, o)?;
         // The drawing's objects as (anchor, opening tag, content), later ones on top.
         let mut objects: Vec<(Anchor, String, String)> = Vec::new();
         match super::xlsx_shape::sheet_drawing(b, name, &ids, &|an| sh.anchor_rect(an).map(|r| (r.2, r.3))) {
@@ -1511,8 +1440,8 @@ fn print_names(b: &Book, o: &PrintOptions) -> Vec<String> {
     if o.sheets.is_empty() {
         b.wb.sheet_collection()
             .iter()
+            .filter(|s| matches!(s.state(), umya_spreadsheet::structs::SheetStateValues::Visible))
             .map(|s| s.name().to_string())
-            .filter(|name| !b.print.get(name).is_some_and(|p| p.hidden))
             .collect()
     } else {
         o.sheets.clone()
@@ -1568,7 +1497,7 @@ pub fn print_setup(b: &Book, o: &PrintOptions) -> Result<Vec<SheetSetup>> {
     let mut out = Vec::new();
     for name in print_names(b, o) {
         let sh = Sheet::new(b, &name)?;
-        let s = setup_of(&sh, b.print.get(&name), o)?;
+        let s = setup_of(&sh, o)?;
         let paper = match &o.paper {
             Some(p) => paper_code(p).and_then(paper_name),
             None => paper_name(sh.ws.page_setup().paper_size()),
@@ -1605,7 +1534,7 @@ fn condense_css(c: Option<f64>) -> String {
     }
 }
 
-fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setup> {
+fn setup_of(sh: &Sheet, o: &PrintOptions) -> Result<Setup> {
     let ps = sh.ws.page_setup();
     let code = match &o.paper {
         Some(p) => paper_code(p).ok_or_else(|| err!("pdf.badPaper", p))?,
@@ -1631,13 +1560,14 @@ fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setu
             }
         }
     }
-    let raw = raw.cloned().unwrap_or_default();
     let (scale, fit) = if o.fit_to_width.is_some() || o.fit_to_height.is_some() {
         (None, Some((o.fit_to_width.unwrap_or(0), o.fit_to_height.unwrap_or(0))))
     } else if let Some(s) = o.scale {
         (Some((s / 100.0).clamp(0.1, 4.0)), None)
     } else if ps.fit_to_page() {
-        (None, Some((raw.fit_width.unwrap_or(1), raw.fit_height.unwrap_or(1))))
+        // fitToWidth / fitToHeight absent = 1, 0 = automatic.
+        let fit = |has: bool, v: u32| if has { v } else { 1 };
+        (None, Some((fit(ps.has_fit_to_width(), ps.fit_to_width()), fit(ps.has_fit_to_height(), ps.fit_to_height()))))
     } else {
         let s = ps.scale();
         (Some(if s == 0 { 1.0 } else { (s as f64 / 100.0).clamp(0.1, 4.0) }), None)
@@ -1651,8 +1581,8 @@ fn setup_of(sh: &Sheet, raw: Option<&RawPrint>, o: &PrintOptions) -> Result<Setu
         scale: if fit.is_some() { None } else { scale.or(Some(1.0)) },
         fit,
         zoom: o.zoom.map(|z| (z / 100.0).clamp(0.1, 4.0)).unwrap_or(1.0),
-        over_then_down: raw.over_then_down,
-        grid: o.grid_lines.unwrap_or(raw.grid_lines),
+        over_then_down: ps.page_order() == "overThenDown",
+        grid: o.grid_lines.unwrap_or(sh.ws.print_options().grid_lines()),
         center_h: o.center_horizontally.unwrap_or(sh.ws.print_options().horizontal_centered()),
         center_v: sh.ws.print_options().vertical_centered(),
         mirror: o.mirror_margins.unwrap_or(match o.duplex.as_deref() {
@@ -2727,12 +2657,14 @@ mod tests {
     }
 
     #[test]
-    fn raw_page_setup() {
-        let xml = br#"<worksheet><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetData><row r="1"/></sheetData><printOptions gridLines="1"/><pageSetup paperSize="9" orientation="landscape" fitToHeight="0" pageOrder="overThenDown"/></worksheet>"#;
-        let r = raw_print(xml);
-        assert_eq!(r.fit_width, None);
-        assert_eq!(r.fit_height, Some(0));
-        assert!(r.over_then_down && r.grid_lines);
+    fn page_setup_from_the_sheet() {
+        let xml = r#"<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1"/><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData><printOptions gridLines="1"/><pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="landscape" fitToHeight="0" pageOrder="overThenDown"/>"#;
+        let b = super::super::xlsx::open_bytes(&crate::testutil::xlsx_with_sheet(xml), String::new()).unwrap();
+        let sh = Sheet::new(&b, "Sheet1").unwrap();
+        let s = setup_of(&sh, &PrintOptions::default()).unwrap();
+        // fitToWidth absent: 1 page wide; fitToHeight 0: as many pages as needed.
+        assert_eq!(s.fit, Some((1, 0)));
+        assert!(s.over_then_down && s.grid);
     }
 }
 
