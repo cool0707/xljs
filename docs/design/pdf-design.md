@@ -440,7 +440,9 @@ RAS も同じブランチを同じやり方で使う（RAS は `.github/scripts/
   `parse` は整形式のみ、`parse_partial` は読めたところまで、`parse_lenient` は終了タグを開始タグと照らさない＝VML 用）と、それを読む `drawingml`:
   図形の形（`geometry`。既定の形・ワードアートの文字の変形・フリーフォーム → SVG のパス。定義は `src/drawingml/presets.zip`、`tools/preset-shapes/make.py` で作る）、
   色（`color`。テーマ・修飾・塗り・図形のスタイル）、アンカーと変形（`anchor`）、グラフの自動の色・`c:spPr` の色・系列の参照とキャッシュ（`chart`）、
-  部品のリレーション（`package`。プログラムは `Package::xml` だけを実装する）。xljs の印刷と RAS のブックの表示が同じものを使う。HTML/SVG にするところは各プログラムに残す。
+  部品のリレーション（`package`。プログラムは `Package::xml` だけを実装する）、シートのフォームコントロールと ActiveX コントロール
+  （`controls`。種類・位置・文字・リンクするセル・状態・値。RAS から移した。読むだけで、保存は読んだまま持つ部品のまま。モデルには入れない）。
+  xljs の印刷と RAS のブックの表示が同じものを使う（コントロールは今は RAS だけ。xljs の印刷は描いていない）。HTML/SVG にするところは各プログラムに残す。
 
 本家の版を上げるときは、`excel-compat` ブランチを新しいタグへ載せ替える（本家に取り込まれた修正は落とす）。どちらも取り込まれたら
 `[patch.crates-io]` を消して本家に戻す。
