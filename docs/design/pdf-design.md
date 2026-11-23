@@ -407,6 +407,25 @@ RAS も同じブランチを同じやり方で使う（RAS は `.github/scripts/
     画像とコネクタのマクロ、SmartArt。
   - ActiveX コントロール: `xl/activeX` が落ち、シートの `controls` がないリレーションを指したまま残っていた（Excel が修復を求める）。
   - VBA プロジェクトの署名（`vbaProjectSignature*.bin`）。プロジェクトを置き換えると消える。
+- **保存で落ちていたもの、その 2（2026-11-23。`save-fidelity.md` 2 章の表にあったもの。フォームコントロールの VML と `.xlsb` を除く）**:
+  `tests/kept_as_read.rs`・`tests/excel_features.rs`。
+  - 外部データ: 接続（`xl/connections.xml`）、テーブルとシートのクエリ（`xl/queryTables`。テーブルのリレーションを `Table` が持つ）、データモデル。
+  - パッケージの部品（`_rels/.rels`）: 秘密度ラベル（`docMetadata/LabelInfo.xml`）、リボンのカスタマイズ（`customUI`）など。ブックとそのプロパティ・
+    サムネイル・デジタル署名のほかは読んだまま持つ（`Workbook` の `package_relationships`）。
+  - 図形・画像: アンカーをモデルにも読み、モデルが読んだときのままなら読んだ XML を書く（グラフと同じ仕組み。`KeptShape`）。色の名前（`a:prstClr`）、
+    段落の 2〜9 段目（`a:lvl2pPr`〜）、Excel 2010 の互換用の隠した塗り・線・効果（`a14:hiddenFill`）、グラデーションが残る。画像の部品はモデルが書く。
+    行・列の挿入と削除では両方を動かす。フォームコントロールの図形（`a14:compatExt`）はモデルから書く。
+  - テーマ（`objectDefaults`・グラデーションの形・拡張）とメモの枠（塗り・線の矢印・文字の配置、ほかの形の `v:shapetype`）も同じく読んだまま書く。
+    メモの枠は位置（`x:Anchor`・`x:Row`・`x:Column`）をモデルのものに置き換えて書く。
+  - ブック: `fileVersion`、`fileSharing`、`workbookPr` の属性（`showObjects` など。`Workbook::workbook_pr_attribute`）、ユーザー設定のビュー、`oleSize`、
+    スマートタグ、Web 公開、`fileRecoveryPr`、名前の定義の `function`・`vbProcedure` などの属性、マクロのないブックの `codeName`。
+  - シート: `sheetCalcPr`・`protectedRanges`・`scenarios`・`sortState`・`dataConsolidate`・`customSheetViews`（ビューのプリンターの設定も）・
+    `ignoredErrors`・`smartTags`・`customProperties`・`cellWatches`・`legacyDrawingHF`（ヘッダー・フッターの画像）・`picture`・`webPublishItems`、
+    `sheetPr` の属性と `outlinePr`、ハイパーリンクの `display`（`Hyperlink::display`）。
+  - SmartArt の描画のキャッシュ（`xl/diagrams/drawing*.xml`）。データの `dsp:dataModelExt` の `relId` が描画のリレーションの id を指すので、
+    そのリレーションを決まった id（`rIdDgm…`）で書く。
+  - Word・PowerPoint の文書などの埋め込み（`.xlsx` と `.bin` しか書かず、`oleObject` の `r:id` が画像を指していた）。
+  - 読んだまま持つ要素の `r:id` の付け替えを 1 回でする（読んだ id が書く id＝`rIdKept2` と同じ形だと、続けて置き換えて崩れていた）。
 
 足したもの:
 
