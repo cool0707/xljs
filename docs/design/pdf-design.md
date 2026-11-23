@@ -425,6 +425,8 @@ RAS も同じブランチを同じやり方で使う（RAS は `.github/scripts/
   - SmartArt の描画のキャッシュ（`xl/diagrams/drawing*.xml`）。データの `dsp:dataModelExt` の `relId` が描画のリレーションの id を指すので、
     そのリレーションを決まった id（`rIdDgm…`）で書く。
   - Word・PowerPoint の文書などの埋め込み（`.xlsx` と `.bin` しか書かず、`oleObject` の `r:id` が画像を指していた）。
+  - 読んだまま持つシートの要素の範囲とセル（範囲の編集の許可・エラーチェックを無視するセル・ウォッチ・並べ替え・シナリオ、ユーザー設定のビューの
+    ウィンドウ枠・選択範囲・改ページ・フィルターの範囲と列の番号）を、行・列の挿入と削除で動かす（`KeptRelationships::shift_elements`）。
   - 読んだまま持つ要素の `r:id` の付け替えを 1 回でする（読んだ id が書く id＝`rIdKept2` と同じ形だと、続けて置き換えて崩れていた）。
 
 足したもの:
